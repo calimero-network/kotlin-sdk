@@ -24,12 +24,13 @@ internal fun base64UrlDecode(input: String): ByteArray {
     for (c in s) {
         if (c == '=') break
         val v = if (c.code < 128) table[c.code] else -1
-        if (v < 0) continue
-        buffer = (buffer shl 6) or v
-        bits += 6
-        if (bits >= 8) {
-            bits -= 8
-            out.add(((buffer shr bits) and 0xFF).toByte())
+        if (v >= 0) {
+            buffer = (buffer shl 6) or v
+            bits += 6
+            if (bits >= 8) {
+                bits -= 8
+                out.add(((buffer shr bits) and 0xFF).toByte())
+            }
         }
     }
     return out.toByteArray()

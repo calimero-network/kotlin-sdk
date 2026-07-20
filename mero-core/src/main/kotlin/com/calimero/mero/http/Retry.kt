@@ -27,7 +27,9 @@ suspend fun <T> withRetry(
             delay((backoff + jitter).toLong().coerceAtLeast(0))
         }
     }
-    throw lastError ?: IllegalStateException("Retry failed without error")
+    val err = lastError
+    if (err != null) throw err
+    error("Retry failed without error")
 }
 
 private fun isRetryable(error: Throwable): Boolean =
