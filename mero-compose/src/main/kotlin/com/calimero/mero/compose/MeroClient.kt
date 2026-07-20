@@ -73,7 +73,7 @@ class MeroClient(
             _state.update { it.copy(error = "SSO callback node_url is not trusted; tokens ignored") }
             return false
         }
-        mero.setTokenData(TokenData(callback.accessToken, callback.refreshToken, expiresAt = 0))
+        mero.setTokenData(TokenData(callback.accessToken, callback.refreshToken, expiresAt = 0L))
         _state.update {
             it.copy(
                 isAuthenticated = true,

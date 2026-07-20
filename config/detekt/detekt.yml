@@ -10,8 +10,6 @@ complexity:
   TooManyFunctions:
     thresholdInClasses: 40
     thresholdInFiles: 40
-  ThrowsCount:
-    max: 4
 
 style:
   MagicNumber:
@@ -23,13 +21,14 @@ style:
     active: false
   UnnecessaryAbstractClass:
     active: false
-  UnusedPrivateMember:
-    active: true
 
 naming:
   # Test methods use backtick-quoted sentence names; the core code is camelCase, so turn off the
   # camelCase function-name gate rather than special-casing test sources.
   FunctionNaming:
+    active: false
+  # Backing properties use the idiomatic leading underscore (e.g. `_state`).
+  VariableNaming:
     active: false
   FunctionParameterNaming:
     active: true
@@ -38,4 +37,8 @@ exceptions:
   TooGenericExceptionCaught:
     active: false
   SwallowedException:
+    active: false
+  ThrowsCount:
+    max: 4
+  TooGenericExceptionThrown:
     active: false
