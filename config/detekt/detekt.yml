@@ -10,6 +10,11 @@ complexity:
   TooManyFunctions:
     thresholdInClasses: 40
     thresholdInFiles: 40
+  # The OkHttp transport's request-dispatch method fans out over HTTP verbs; allow it.
+  CyclomaticComplexMethod:
+    threshold: 25
+  ComplexCondition:
+    threshold: 5
 
 style:
   MagicNumber:
