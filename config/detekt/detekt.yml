@@ -1,0 +1,41 @@
+# Detekt config for mero-kotlin. Builds upon the default config (buildUponDefaultConfig = true),
+# so this file only records deliberate deviations.
+
+complexity:
+  LongMethod:
+    threshold: 80
+  LongParameterList:
+    functionThreshold: 8
+    constructorThreshold: 8
+  TooManyFunctions:
+    thresholdInClasses: 40
+    thresholdInFiles: 40
+  ThrowsCount:
+    max: 4
+
+style:
+  MagicNumber:
+    active: false
+  ReturnCount:
+    max: 5
+  # Long lines are common in KDoc and snake_case wire DTOs; wrapping is ktlint's job, not detekt's.
+  MaxLineLength:
+    active: false
+  UnnecessaryAbstractClass:
+    active: false
+  UnusedPrivateMember:
+    active: true
+
+naming:
+  # Test methods use backtick-quoted sentence names; the core code is camelCase, so turn off the
+  # camelCase function-name gate rather than special-casing test sources.
+  FunctionNaming:
+    active: false
+  FunctionParameterNaming:
+    active: true
+
+exceptions:
+  TooGenericExceptionCaught:
+    active: false
+  SwallowedException:
+    active: false
