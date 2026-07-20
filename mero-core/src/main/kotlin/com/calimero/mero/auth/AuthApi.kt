@@ -5,7 +5,7 @@ import com.calimero.mero.http.getJson
 import com.calimero.mero.http.postJson
 
 /**
- * Thin, typed wrapper over the node's `/auth/*` and `/admin/*` (key-management) endpoints.
+ * Thin, typed wrapper over the node's `/auth/…` and `/admin/…` (key-management) endpoints.
  * Ported 1:1 from mero-js `auth-client.ts`. Every method is a suspend function dispatched on IO by
  * the underlying [HttpClient].
  */

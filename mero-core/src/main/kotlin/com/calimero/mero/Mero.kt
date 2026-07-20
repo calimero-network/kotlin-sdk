@@ -73,7 +73,7 @@ class Mero(private val config: MeroConfig) {
             onAuthRevoked = { store.clear() },
         )
 
-    /** Typed `/auth/*` + key-management client. */
+    /** Typed `/auth/…` + key-management client. */
     val auth: AuthApi = AuthApi(transport)
 
     /** JSON-RPC 2.0 client (`/jsonrpc`). */
