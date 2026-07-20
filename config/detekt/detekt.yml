@@ -38,7 +38,3 @@ exceptions:
     active: false
   SwallowedException:
     active: false
-  ThrowsCount:
-    max: 4
-  TooGenericExceptionThrown:
-    active: false
