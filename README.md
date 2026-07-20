@@ -23,7 +23,8 @@ See [`ROADMAP-TASKS/task-2-android-sdk.md`] in the planning repo for the full de
 
 ## Install
 
-Once published (Maven Central / GitHub Packages):
+Published to **GitHub Packages** on each `v*` tag (see [PUBLISHING.md](PUBLISHING.md) for the
+consumer repository + credentials snippet, and the Maven Central roadmap):
 
 ```kotlin
 dependencies {
@@ -35,6 +36,9 @@ dependencies {
 - **Kotlin 2.x**, coroutines + `Flow` throughout.
 - **minSdk 24**, compileSdk 34.
 - Dependencies: OkHttp (+ `okhttp-sse`), kotlinx.serialization, AndroidX Security, AndroidX Browser.
+
+Coordinates are `com.calimero.mero:{mero-core,mero-compose}:<version>`. Maven — not npm — is the
+Android package registry; there's a full walkthrough in [PUBLISHING.md](PUBLISHING.md).
 
 ## Quick start (core)
 
