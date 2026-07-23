@@ -53,14 +53,20 @@ class MockViewModel : ViewModel() {
         isLoading = true
         viewModelScope.launch {
             try {
-                val srv = server ?: withContext(Dispatchers.IO) { FakeNode().start() }.also { server = it }
-                val client = Mero(MeroConfig(baseUrl = srv.url("/").toString(), tokenStore = MemoryTokenStore()))
+                // Start the server AND build the base URL on IO: MockWebServer.url() calls
+                // getCanonicalHostName(), a reverse-DNS lookup that throws
+                // NetworkOnMainThreadException if resumed on the main dispatcher.
+                val client = withContext(Dispatchers.IO) {
+                    val srv = server ?: FakeNode().start().also { server = it }
+                    Mero(MeroConfig(baseUrl = srv.url("/").toString(), tokenStore = MemoryTokenStore()))
+                }
                 client.authenticate(Credentials(username = user, password = password))
                 mero = client
                 nodeUrl = node
                 username = user
                 isAuthenticated = true
             } catch (e: Exception) {
+                android.util.Log.e("MockViewModel", "mock login failed", e)
                 isAuthenticated = false
                 errorMessage = "Login failed: ${e.message ?: "unknown error"}"
             } finally {
