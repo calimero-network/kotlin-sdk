@@ -1,0 +1,240 @@
+---
+title: Admin API
+description: The full AdminApi surface — every suspend method, its Kotlin signature, and the node endpoint it calls, grouped by area.
+sidebar:
+  order: 2
+---
+
+import { Aside } from '@astrojs/starlight/components';
+
+`mero.admin` (`AdminApi`) is the node's `/admin-api` REST surface — the full set
+(~106 methods) across applications, contexts, namespaces, groups, blobs, aliases,
+capabilities, metadata, upgrades, and TEE. Every method is a `suspend fun` over
+the shared [`HttpClient`](/get-started/quickstart/); most reads unwrap the node's
+`{ data }` envelope for you. Endpoints below are relative to `/admin-api`.
+
+List methods return the node's full result set — the admin API does not paginate,
+so there are no limit/offset/cursor parameters.
+
+## Health & status
+
+| Method | Endpoint |
+| --- | --- |
+| `healthCheck(): HealthStatus` | `GET /health` |
+| `isAuthed(): AdminAuthStatus` | `GET /is-authed` |
+
+## Applications
+
+| Method | Endpoint |
+| --- | --- |
+| `installApplication(request): InstallApplicationResponseData` | `POST /install-application` |
+| `installFromRegistry(registryUrl, packageName, version): InstallApplicationResponseData` | registry → `POST /install-application` |
+| `getRegistryVersions(registryUrl, packageName): List<String>` | off-node registry read |
+| `installDevApplication(request): InstallApplicationResponseData` | `POST /install-dev-application` |
+| `uninstallApplication(appId): UninstallApplicationResponseData` | `DELETE /applications/{appId}` |
+| `listApplications(): ListApplicationsResponseData` | `GET /applications` |
+| `getApplication(appId): GetApplicationResponseData` | `GET /applications/{appId}` |
+| `listApplicationVersions(applicationId): List<ApplicationVersionEntry>` | `GET /applications/{applicationId}/versions` |
+
+## Packages
+
+| Method | Endpoint |
+| --- | --- |
+| `listPackages(): ListPackagesResponseData` | `GET /packages` |
+| `listPackageVersions(packageName): ListVersionsResponseData` | `GET /packages/{packageName}/versions` |
+| `getLatestPackageVersion(packageName): GetLatestVersionResponseData` | `GET /packages/{packageName}/latest` |
+
+## Contexts
+
+| Method | Endpoint |
+| --- | --- |
+| `createContext(request): CreateContextResponseData` | `POST /contexts` |
+| `deleteContext(contextId, request? = null): DeleteContextResponseData` | `DELETE /contexts/{contextId}` |
+| `getContexts(): GetContextsResponseData` | `GET /contexts` |
+| `getContext(contextId): Context` | `GET /contexts/{contextId}` |
+| `getContextsForApplication(applicationId): GetContextsResponseData` | `GET /contexts/for-application/{applicationId}` |
+| `generateContextIdentity(): GenerateContextIdentityResponseData` | `POST /identity/context` |
+| `getContextIdentities(contextId): GetContextIdentitiesResponseData` | `GET /contexts/{contextId}/identities` |
+| `getContextIdentitiesOwned(contextId): GetContextIdentitiesResponseData` | `GET /contexts/{contextId}/identities-owned` |
+| `joinContext(contextId): JoinContextResponseData` | `POST /contexts/{contextId}/join` |
+| `getContextGroup(contextId): ContextGroupResponseData` | `GET /contexts/{contextId}/group` |
+| `getContextStorage(contextId): ContextStorageResponseData` | `GET /contexts/{contextId}/storage` |
+| `syncContext(contextId? = null)` | `POST /contexts/sync/{contextId?}` |
+| `resyncContext(contextId, request = ResyncContextRequest()): ResyncContextResponseData` | `POST /contexts/{contextId}/resync` |
+| `inviteSpecializedNode(request): InviteSpecializedNodeResponseData` | `POST /contexts/invite-specialized-node` |
+| `updateContextApplication(contextId, request)` | `POST /contexts/{contextId}/application` |
+| `getContextsWithExecutorsForApplication(applicationId): ContextsWithExecutorsResponseData` | `GET /contexts/with-executors/for-application/{applicationId}` |
+
+## Blobs
+
+| Method | Endpoint |
+| --- | --- |
+| `uploadBlob(request): UploadBlobResponseData` | `PUT /blobs` |
+| `deleteBlob(blobId): DeleteBlobResponseData` | `DELETE /blobs/{blobId}` |
+| `listBlobs(): ListBlobsResponseData` | `GET /blobs` |
+| `getBlob(blobId): ByteArray` | `GET /blobs/{blobId}` (raw bytes) |
+| `getBlobInfo(blobId): GetBlobInfoResponseData` | `HEAD /blobs/{blobId}` |
+
+## Aliases
+
+| Method | Endpoint |
+| --- | --- |
+| `createContextAlias(request): CreateAliasResponseData` | `POST /alias/create/context` |
+| `createApplicationAlias(request): CreateAliasResponseData` | `POST /alias/create/application` |
+| `lookupContextAlias(name): LookupAliasResponseData` | `POST /alias/lookup/context/{name}` |
+| `lookupApplicationAlias(name): LookupAliasResponseData` | `POST /alias/lookup/application/{name}` |
+| `deleteContextAlias(name): DeleteAliasResponseData` | `POST /alias/delete/context/{name}` |
+| `deleteApplicationAlias(name): DeleteAliasResponseData` | `POST /alias/delete/application/{name}` |
+| `listContextAliases(): ListAliasesResponseData` | `GET /alias/list/context` |
+| `listApplicationAliases(): ListAliasesResponseData` | `GET /alias/list/application` |
+| `listContextIdentityAliases(contextId): ListContextIdentityAliasesResponseData` | `GET /alias/list/identity/{contextId}` |
+| `createContextIdentityAlias(contextId, request): CreateContextIdentityAliasResponseData` | `POST /alias/create/identity/{contextId}` |
+| `lookupContextIdentityAlias(contextId, name): LookupContextIdentityAliasResponseData` | `POST /alias/lookup/identity/{contextId}/{name}` |
+| `deleteContextIdentityAlias(contextId, name): DeleteContextIdentityAliasResponseData` | `POST /alias/delete/identity/{contextId}/{name}` |
+
+## Namespaces
+
+| Method | Endpoint |
+| --- | --- |
+| `listNamespaces(): ListNamespacesResponseData` | `GET /namespaces` |
+| `getNamespace(namespaceId): Namespace` | `GET /namespaces/{namespaceId}` |
+| `getNamespaceIdentity(namespaceId): NamespaceIdentity` | `GET /namespaces/{namespaceId}/identity` |
+| `listNamespacesForApplication(applicationId): ListNamespacesResponseData` | `GET /namespaces/for-application/{applicationId}` |
+| `createNamespace(request): CreateNamespaceResponseData` | `POST /namespaces` |
+| `deleteNamespace(namespaceId, request? = null): DeleteNamespaceResponseData` | `DELETE /namespaces/{namespaceId}` |
+| `createNamespaceInvitation(namespaceId, request? = null): CreateNamespaceInvitationResult` | `POST /namespaces/{namespaceId}/invite` |
+| `joinNamespace(namespaceId, request): JoinNamespaceResponseData` | `POST /namespaces/{namespaceId}/join` |
+| `leaveNamespace(namespaceId, request? = null)` | `POST /namespaces/{namespaceId}/leave` |
+| `createGroupInNamespace(namespaceId, request? = null): CreateGroupInNamespaceResponseData` | `POST /namespaces/{namespaceId}/groups` |
+| `listNamespaceGroups(namespaceId): List<SubgroupEntry>` | `GET /namespaces/{namespaceId}/groups` |
+
+## Group management
+
+| Method | Endpoint |
+| --- | --- |
+| `createGroup(request): CreateGroupResponseData` | `POST /groups` |
+| `getGroupInfo(groupId): GroupInfoResponseData` | `GET /groups/{groupId}` |
+| `updateGroupSettings(groupId, request)` | `PATCH /groups/{groupId}` |
+| `deleteGroup(groupId, request? = null): DeleteGroupResponseData` | `DELETE /groups/{groupId}` |
+| `listGroupMembers(groupId): ListGroupMembersResponseData` | `GET /groups/{groupId}/members` |
+| `listGroupContexts(groupId): ListGroupContextsResponseData` | `GET /groups/{groupId}/contexts` |
+| `addGroupMembers(groupId, request)` | `POST /groups/{groupId}/members` |
+| `removeGroupMembers(groupId, request)` | `POST /groups/{groupId}/members/remove` |
+| `updateMemberRole(groupId, identity, request)` | `PUT /groups/{groupId}/members/{identity}/role` |
+| `setMemberAutoFollow(groupId, identity, request)` | `PUT /groups/{groupId}/members/{identity}/auto-follow` |
+| `listSubgroups(groupId): List<SubgroupEntry>` | `GET /groups/{groupId}/subgroups` |
+| `reparentGroup(childGroupId, request): ReparentGroupResponseData` | `POST /groups/{childGroupId}/reparent` |
+| `detachContextFromGroup(groupId, contextId, request? = null)` | `POST /groups/{groupId}/contexts/{contextId}/remove` |
+| `leaveGroup(groupId, request? = null)` | `POST /groups/{groupId}/leave` |
+| `leaveContext(contextId, request? = null)` | `POST /contexts/{contextId}/leave` |
+
+## Group invitations & join
+
+| Method | Endpoint |
+| --- | --- |
+| `createGroupInvitation(groupId, request? = null): CreateGroupInvitationResult` | `POST /groups/{groupId}/invite` |
+| `joinGroup(request): JoinGroupResponseData` | `POST /groups/join` |
+| `joinSubgroupInheritance(groupId): JoinSubgroupInheritanceResponseData` | `POST /groups/{groupId}/join-via-inheritance` |
+| `issueOwnershipProof(groupId, request? = null): JsonElement` | `POST /groups/{groupId}/issue-ownership-proof` |
+| `issueNamespaceOwnershipProof(groupId, request? = null): JsonElement` | `POST /groups/{groupId}/issue-namespace-ownership-proof` |
+
+## Group capabilities & settings
+
+| Method | Endpoint |
+| --- | --- |
+| `getMemberCapabilities(groupId, identity): MemberCapabilities` | `GET /groups/{groupId}/members/{identity}/capabilities` |
+| `setMemberCapabilities(groupId, identity, request)` | `PUT /groups/{groupId}/members/{identity}/capabilities` |
+| `getDefaultCapabilities(groupId): Int` | (reads `getGroupInfo`) |
+| `setDefaultCapabilities(groupId, request)` | `PUT /groups/{groupId}/settings/default-capabilities` |
+| `getSubgroupVisibility(groupId): String` | (reads `getGroupInfo`) |
+| `setSubgroupVisibility(groupId, request)` | `PUT /groups/{groupId}/settings/subgroup-visibility` |
+| `getTeeAdmissionPolicy(groupId): GetTeeAdmissionPolicyResponseData` | `GET /groups/{groupId}/settings/tee-admission-policy` |
+| `setTeeAdmissionPolicy(groupId, request)` | `PUT /groups/{groupId}/settings/tee-admission-policy` |
+
+## Metadata
+
+| Method | Endpoint |
+| --- | --- |
+| `setGroupMetadata(groupId, request)` | `PUT /groups/{groupId}/metadata` |
+| `getGroupMetadata(groupId): MetadataRecord?` | `GET /groups/{groupId}/metadata` |
+| `setMemberMetadata(groupId, identity, request)` | `PUT /groups/{groupId}/members/{identity}/metadata` |
+| `getMemberMetadata(groupId, identity): MetadataRecord?` | `GET /groups/{groupId}/members/{identity}/metadata` |
+| `setContextMetadata(groupId, contextId, request)` | `PUT /groups/{groupId}/contexts/{contextId}/metadata` |
+| `getContextMetadata(groupId, contextId): MetadataRecord?` | `GET /groups/{groupId}/contexts/{contextId}/metadata` |
+
+## Sync, signing, upgrades & migration
+
+| Method | Endpoint |
+| --- | --- |
+| `syncGroup(groupId, request? = null): SyncGroupResponseData` | `POST /groups/{groupId}/sync` |
+| `registerGroupSigningKey(groupId, request): RegisterGroupSigningKeyResponseData` | `POST /groups/{groupId}/signing-key` |
+| `upgradeGroup(groupId, request): UpgradeGroupResponseData` | `POST /groups/{groupId}/upgrade` |
+| `getGroupUpgradeStatus(groupId): GroupUpgradeStatusResponseData` | `GET /groups/{groupId}/upgrade/status` |
+| `retryGroupUpgrade(groupId, request? = null): RetryGroupUpgradeResponseData` | `POST /groups/{groupId}/upgrade/retry` |
+| `getMigrationStatus(namespaceId): MigrationStatus` | `GET /groups/{namespaceId}/migration-status` |
+| `getCascadeStatus(namespaceId): List<CascadeStatusEntry>` | `GET /groups/{namespaceId}/cascade-status` |
+| `abortMigration(namespaceId, request? = null): JsonElement` | `POST /groups/{namespaceId}/migration/abort` |
+
+## TEE
+
+| Method | Endpoint |
+| --- | --- |
+| `getTeeInfo(): TeeInfoResponseData` | `GET /tee/info` |
+| `teeAttest(request): TeeAttestResponseData` | `POST /tee/attest` |
+| `teeVerifyQuote(request): TeeVerifyQuoteResponseData` | `POST /tee/verify-quote` |
+
+## Network & node
+
+| Method | Endpoint |
+| --- | --- |
+| `getPeersCount(): PeersCountResponseData` | `GET /peers` |
+| `getNetworkStatus(): JsonElement` | `GET /network/status` |
+| `getUsage(): JsonElement` | `GET /usage` |
+| `getCertificate(): String` | `GET /certificate` |
+
+The file also exports a top-level helper `compareSemver(a: String, b: String): Int`
+for ordering dotted version strings.
+
+## Key domain types
+
+```kotlin
+data class Context(
+    val id: String,
+    val applicationId: String,
+    val serviceName: String? = null,
+    val contextStateHash: String,
+    val dagHeads: List<List<Int>>,
+    val applicationVersion: String? = null,
+)
+
+// The element type of getContexts() / getContextsForApplication().
+data class ContextWithGroup(/* Context fields … */ val groupId: String? = null)
+
+data class Namespace(
+    val namespaceId: String, val appKey: String, val targetApplicationId: String,
+    val upgradePolicy: String, val createdAt: Int, val name: String? = null,
+    val memberCount: Int, val contextCount: Int, val subgroupCount: Int,
+)
+
+data class GroupInfo(
+    val groupId: String, val appKey: String, val targetApplicationId: String,
+    val upgradePolicy: String, val memberCount: Int, val contextCount: Int,
+    val activeUpgrade: GroupUpgradeStatus? = null,
+    val defaultCapabilities: Int, val subgroupVisibility: String,
+    val metadata: MetadataRecord? = null,
+)
+
+data class BlobInfo(val blobId: String, val size: Int)   // GetBlobInfoResponseData adds hash?, mimeType?
+
+data class MetadataRecord(
+    val name: String? = null, val data: Map<String, String>,
+    val updatedAt: Int, val updatedBy: String,
+)
+
+data class MemberCapabilities(val capabilities: Int)   // see /reference/capabilities/
+
+enum class UpgradePolicy { AUTOMATIC, LAZY_ON_ACCESS }  // wire: "Automatic" / "LazyOnAccess"
+```
+
+See [`AdminTypes.kt`](https://github.com/calimero-network/kotlin-sdk/blob/master/mero-core/src/main/kotlin/com/calimero/mero/admin/AdminTypes.kt)
+for the complete set of request and response types.

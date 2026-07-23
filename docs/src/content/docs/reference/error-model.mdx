@@ -1,0 +1,107 @@
+---
+title: Error Model
+description: The exceptions the SDK throws — HttpException, AuthRevokedException, RpcException, NetworkException, MeroStateException — plus the retry and timeout policy.
+sidebar:
+  order: 7
+---
+
+import { Aside } from '@astrojs/starlight/components';
+
+Every failure is thrown as a subclass of `MeroException`
+(`com.calimero.mero.http.MeroException`), an abstract base extending `Exception`.
+Catch the specific subtypes you care about.
+
+## The exceptions
+
+```kotlin
+abstract class MeroException(message: String, cause: Throwable? = null) : Exception(message, cause)
+
+// Non-2xx HTTP response. bodyText is capped at ~64 KiB.
+open class HttpException(
+    val status: Int,
+    val bodyText: String,
+    val headers: Map<String, String>,
+    val url: String,
+) : MeroException("HTTP $status ($url)") {
+    val isAuthError: Boolean   // status == 401 || status == 403
+}
+
+// Terminal auth failure — the refresh-token family was reused or revoked.
+// Never retried; the SDK has already cleared its tokens. Prompt re-login.
+class AuthRevokedException(
+    val reason: String,        // the x-auth-error header, e.g. "token_reuse" | "token_revoked"
+    status: Int, bodyText: String, headers: Map<String, String>, url: String,
+) : HttpException(status, bodyText, headers, url)
+
+// JSON-RPC error returned by a WASM contract (from mero.rpc).
+class RpcException(
+    val code: Int, message: String, val type: String? = null, val data: JsonElement? = null,
+) : MeroException(message)
+
+// Transport failure with no HTTP response (DNS, reset, timeout).
+class NetworkException(message: String, cause: Throwable? = null) : MeroException(message, cause)
+
+// Invalid client state (no credentials to authenticate, no refresh token, …).
+class MeroStateException(message: String) : MeroException(message)
+```
+
+`AuthRevokedException` extends `HttpException`, so `catch (e: HttpException)` also
+catches it — catch `AuthRevokedException` **first** to distinguish it. Other
+cases include `EmptyResponseException`-style states surfaced via `MeroException`
+subtypes for empty bodies, failed authentication, and decode failures.
+
+## Handling pattern
+
+Catch most-specific first:
+
+```kotlin
+import com.calimero.mero.http.AuthRevokedException
+import com.calimero.mero.http.HttpException
+import com.calimero.mero.http.NetworkException
+import com.calimero.mero.rpc.RpcException
+
+try {
+    val result: MyResult = mero.rpc.execute(contextId = ctx, method = "get_value")
+    return result
+} catch (e: RpcException) {
+    // contract-level error — the WASM returned an error object
+    println("contract error ${e.code}: ${e.message}")
+} catch (e: AuthRevokedException) {
+    // refresh token reused/revoked — session is over
+    promptSignIn()
+} catch (e: HttpException) {
+    // transport-level error — 4xx/5xx
+    if (e.status == 403) println("permission denied") else println("HTTP ${e.status}")
+} catch (e: NetworkException) {
+    // offline / DNS / reset
+}
+```
+
+## How 401s are handled
+
+The SDK handles `401 token_expired` **internally**: it refreshes the token and
+retries the request once (see
+[the token lifecycle](/get-started/authentication/#the-token-lifecycle)). You
+only see a `401 HttpException` if the refresh itself fails. If the token was
+reused or revoked, you get an `AuthRevokedException` instead.
+
+## Retries & timeouts
+
+Each request has a per-request timeout of `MeroConfig.timeoutMs` (default
+**10 000 ms**), applied to connect/read/write.
+
+`com.calimero.mero.http.withRetry` is a public helper that wraps a whole logical
+operation with backoff:
+
+```kotlin
+suspend fun <T> withRetry(attempts: Int = 3, baseDelayMs: Long = 250, block: suspend () -> T): T
+```
+
+It makes up to **3** attempts with exponential backoff (base 250 ms, ±20%
+jitter). It retries transient failures only — `NetworkException` and
+`HttpException` with `status >= 500 || status == 429`. It never retries other
+`4xx` responses or an `AuthRevokedException`.
+
+```kotlin
+val contexts = withRetry { mero.admin.getContexts() }
+```

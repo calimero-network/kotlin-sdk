@@ -1,0 +1,116 @@
+---
+title: Glossary
+description: The Calimero and mero-kotlin terms used across these docs — node, context, namespace, group, application, blob, RPC, capabilities, keys, TEE, and the Kotlin-specific pieces.
+sidebar:
+  order: 2
+---
+
+Short definitions for the terms used throughout these docs. For the full
+protocol-level treatment, see the [Calimero Core docs](https://calimero-network.github.io/core/).
+
+## Node & runtime
+
+**Node / `merod`**
+: A running Calimero node — the remote process mero-kotlin talks to over
+  HTTP(S). The device is a **thin client**; it never runs a node.
+  `MeroConfig.baseUrl` points a `Mero` at one.
+
+**Application**
+: A WASM bundle installed on a node — from a URL, a dev path, or a registry
+  package. Identified by an application ID. One bundle can expose multiple
+  **services**.
+
+**Context**
+: A running instance of an application's shared state — what you execute methods
+  against. Has a `contextId`, a state hash, and DAG heads. Multi-service apps take
+  a `serviceName` at creation.
+
+**Context identity**
+: A keypair representing you within a context, generated per context and used to
+  join and sign operations.
+
+## Governance
+
+**Namespace**
+: An application-instance boundary grouping contexts and members under a shared
+  upgrade policy (`Automatic` / `LazyOnAccess`).
+
+**Group / subgroup**
+: A governance boundary within a namespace — members with roles and capabilities,
+  owning contexts. Groups can nest as subgroups.
+
+**Capabilities (bitmask)**
+: A `u32` bitmask (a `Long` in Kotlin) of what a member may do. mero-kotlin
+  exposes the `Capabilities` constants and `hasCap`/`withCap`/`withoutCap`
+  helpers. See [groups & governance](/guides/groups-and-governance/#capabilities).
+
+**Invitation**
+: A signed token letting a new member join a group or namespace; may be
+  single-target or recursive.
+
+**Metadata**
+: A small key/value record (`MetadataRecord`) attachable to a group, member, or
+  context — a name, a `Map<String, String>`, and `updatedAt`/`updatedBy`.
+
+## Data
+
+**Blob**
+: An opaque binary object on the node (`ByteArray` in Kotlin) — an app bundle or
+  app data, keyed by `blobId`. See [blobs](/guides/blobs/).
+
+**Alias**
+: A human-readable name mapped to a context, application, or context identity.
+
+## Calls
+
+**RPC / `execute`**
+: A JSON-RPC call to `/jsonrpc` that runs a WASM method in a context and decodes
+  its output into your `@Serializable` type — `mero.rpc.execute(...)`. See
+  [executing methods](/guides/executing-methods/).
+
+**`JsonObject`**
+: The kotlinx.serialization JSON type used for RPC arguments. Build one with
+  `buildJsonObject { put("id", "42") }`; untyped output comes back as a
+  `JsonElement`.
+
+**Events / SSE**
+: A live stream of a context's node events, exposed as a `Flow<ContextEvent>`
+  from `mero.events(contextIds)`. See [live events](/guides/events/).
+
+## Identity & security
+
+**Access token / refresh token**
+: The JWT pair (`TokenData`) from login. The access token rides every request; the
+  single-use refresh token mints a new pair when it expires. See
+  [the token lifecycle](/get-started/authentication/#the-token-lifecycle).
+
+**Bootstrap secret**
+: A one-time setup code (`Credentials.bootstrapSecret`) required only for the very
+  first login on a fresh node.
+
+**Root key / client key**
+: A top-level auth key registered on the node, and a scoped credential derived
+  under it. Managed via `mero.auth`.
+
+**TEE (Trusted Execution Environment)**
+: Hardware-isolated execution. A group can carry a **TEE admission policy**
+  (allowed MRTD/RTMR measurements, TCB statuses, `acceptMock`) gating which nodes
+  may join. mero-kotlin reads/sets it and can attest/verify quotes. See
+  [groups & governance](/guides/groups-and-governance/#tee-admission-policy).
+
+## Kotlin specifics
+
+**`Mero`**
+: The SDK facade — a plain class constructed from a `MeroConfig`. A single-flight
+  `RefreshCoordinator` inside it serialises token refresh, so concurrent `401`s
+  share one refresh. Every call is a `suspend` function (except the `isAuthenticated`
+  property).
+
+**`mero-core` vs `mero-compose`**
+: `mero-core` is the core SDK (`com.calimero.mero`); `mero-compose` is the optional
+  Jetpack Compose frontend (`MeroProvider`/`useMero` + `MeroClient`), the analog
+  of mero-react.
+
+**`TokenStore`**
+: The persistence interface — `EncryptedPrefsTokenStore` (secure default) or
+  `MemoryTokenStore` (ephemeral).

@@ -1,0 +1,67 @@
+---
+title: Blobs
+description: Upload, list, download, inspect, and delete binary blobs on a node through the admin API in Kotlin.
+sidebar:
+  order: 4
+---
+
+import { Aside } from '@astrojs/starlight/components';
+
+A **blob** is an opaque binary object stored on the node — an application bundle
+or arbitrary app data. `mero.admin` covers the full lifecycle; blob bytes are a
+plain `ByteArray`.
+
+## Upload
+
+```kotlin
+val bytes: ByteArray = file.readBytes()
+
+val info = mero.admin.uploadBlob(
+    UploadBlobRequest(data = bytes, contextId = contextId)  // hash & contextId optional
+)
+val blobId = info.blobId
+```
+
+The body is sent as raw `application/octet-stream` to `PUT /admin-api/blobs`.
+
+## List
+
+```kotlin
+val blobs = mero.admin.listBlobs().blobs   // List<BlobInfo> — blobId, size
+```
+
+## Inspect without downloading
+
+`getBlobInfo` issues a `HEAD` request — size, hash, and MIME type come from the
+response headers without transferring the body:
+
+```kotlin
+val meta = mero.admin.getBlobInfo(blobId)
+// meta.blobId, meta.size, meta.hash, meta.mimeType
+```
+
+## Download
+
+`getBlob` returns the raw bytes as a `ByteArray` (the endpoint streams the
+content, not JSON):
+
+```kotlin
+val data: ByteArray = mero.admin.getBlob(blobId)
+```
+
+<Aside type="tip">
+  Use `listBlobs()` / `getBlobInfo()` when you only need `{ blobId, size }`
+  metadata; reserve `getBlob()` for when you actually need the bytes.
+</Aside>
+
+<Aside type="caution">
+  `getBlob()` reads the **entire** blob into memory as a `ByteArray`. For very
+  large objects, prefer inspecting with `getBlobInfo()` and only fetching what you
+  need — a single call materialises the whole payload on the JVM heap.
+</Aside>
+
+## Delete
+
+```kotlin
+val result = mero.admin.deleteBlob(blobId)   // result.deleted
+```
