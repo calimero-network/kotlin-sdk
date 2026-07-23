@@ -1,5 +1,6 @@
 package com.calimero.mero
 
+import com.calimero.mero.admin.AdminApi
 import com.calimero.mero.auth.AuthApi
 import com.calimero.mero.auth.AuthCallbackResult
 import com.calimero.mero.auth.AuthLoginOptions
@@ -13,8 +14,11 @@ import com.calimero.mero.http.MeroStateException
 import com.calimero.mero.http.OkHttpTransport
 import com.calimero.mero.http.TokenAuthenticator
 import com.calimero.mero.rpc.RpcClient
+import com.calimero.mero.sse.ContextEvent
+import com.calimero.mero.sse.SseClient
 import com.calimero.mero.storage.MemoryTokenStore
 import com.calimero.mero.storage.TokenStore
+import kotlinx.coroutines.flow.Flow
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
@@ -64,6 +68,13 @@ class Mero(private val config: MeroConfig) {
         .authenticator(TokenAuthenticator { triggering -> coordinator.refresh(triggering).accessToken })
         .build()
 
+    /** Long-lived streaming client for SSE: no read timeout, no auth interceptor/authenticator. */
+    private val sseHttpClient: OkHttpClient = OkHttpClient.Builder()
+        .connectTimeout(config.timeoutMs, TimeUnit.MILLISECONDS)
+        .readTimeout(0, TimeUnit.MILLISECONDS)
+        .retryOnConnectionFailure(true)
+        .build()
+
     private val transport: HttpClient =
         OkHttpTransport(
             baseUrl = config.baseUrl,
@@ -79,8 +90,27 @@ class Mero(private val config: MeroConfig) {
     /** JSON-RPC 2.0 client (`/jsonrpc`). */
     val rpc: RpcClient = RpcClient(transport)
 
+    /** Typed `/admin-api/…` client — contexts, groups, namespaces, invitations, registry install. */
+    val admin: AdminApi = AdminApi(transport)
+
     /** The underlying transport, exposed for building higher-level clients (admin, events). */
     val http: HttpClient get() = transport
+
+    /**
+     * Live node events for the given [contextIds], over auto-reconnecting SSE. Cancel the collecting
+     * coroutine to close the stream. Powers push updates (new messages, etc.) without polling.
+     *
+     * Uses a dedicated OkHttp client with no read timeout (the stream is long-lived) and the token
+     * in the query string, so it does not share the reactive-refresh authenticator on [okHttpClient].
+     * (== mero-swift-sdk `Mero.events`.)
+     */
+    fun events(contextIds: List<String>): Flow<ContextEvent> =
+        SseClient(
+            baseUrl = config.baseUrl,
+            token = { store.getTokens()?.accessToken },
+            client = sseHttpClient,
+            json = json,
+        ).events(contextIds)
 
     /**
      * Authenticate with credentials (creates the root key on first use). Builds the exact mero-js

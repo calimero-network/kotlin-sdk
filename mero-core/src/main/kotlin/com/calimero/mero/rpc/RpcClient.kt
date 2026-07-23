@@ -59,9 +59,10 @@ class RpcClient(
         contextId: String,
         method: String,
         argsJson: JsonObject = JsonObject(emptyMap()),
+        executorPublicKey: String? = null,
         deserializer: DeserializationStrategy<T>,
     ): T {
-        val output = executeRaw(contextId, method, argsJson)
+        val output = executeRaw(contextId, method, argsJson, executorPublicKey)
         return http.json.decodeFromJsonElement(deserializer, output)
     }
 
@@ -70,13 +71,21 @@ class RpcClient(
         contextId: String,
         method: String,
         argsJson: JsonObject = JsonObject(emptyMap()),
-    ): T = http.json.decodeFromJsonElement(executeRaw(contextId, method, argsJson))
+        executorPublicKey: String? = null,
+    ): T = http.json.decodeFromJsonElement(executeRaw(contextId, method, argsJson, executorPublicKey))
 
-    /** Execute and return the raw `result.output` [JsonElement] without decoding. */
+    /**
+     * Execute and return the raw `result.output` [JsonElement] without decoding.
+     *
+     * [executorPublicKey] is the context identity executing the call; omitted from the request when
+     * null (the node then uses the context's default/owning identity). Apps like curb key their
+     * state on the caller identity and require it. (== mero-swift-sdk `RpcClient.execute`.)
+     */
     suspend fun executeRaw(
         contextId: String,
         method: String,
         argsJson: JsonObject = JsonObject(emptyMap()),
+        executorPublicKey: String? = null,
     ): JsonElement {
         val body = buildJsonObject {
             put("jsonrpc", "2.0")
@@ -88,6 +97,7 @@ class RpcClient(
                     put("contextId", contextId)
                     put("method", method)
                     put("argsJson", argsJson)
+                    if (executorPublicKey != null) put("executorPublicKey", executorPublicKey)
                 },
             )
         }

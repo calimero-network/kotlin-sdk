@@ -17,3 +17,6 @@ local.properties
 
 # Kotlin
 .kotlin/
+
+# Local dev helpers
+.build-env.sh

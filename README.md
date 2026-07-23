@@ -8,18 +8,20 @@ It is a faithful port of the mero-js v7.0.1 wire contract (and the mero-react v4
 the Android mirror of [`calimero-network/swift-sdk`](https://github.com/calimero-network/swift-sdk).
 See [`ROADMAP-TASKS/task-2-android-sdk.md`] in the planning repo for the full design.
 
-> **Status: M1 (transport + auth core) + login UI.** This first drop covers the pieces apps need to
-> sign in and call contracts: HTTP transport, the auth/refresh state machine, token storage, JSON-RPC,
-> SSO deep-link parsing, and Compose login components. The full ~70-method Admin API, streaming blobs,
-> and the SSE event client are scaffolded follow-ups (M2–M3) — see [Roadmap](#roadmap).
+> **Status: transport + auth core, full Admin API, JSON-RPC, and the SSE event client — with a
+> full-feature sample app.** Apps can sign in (credentials or hosted SSO), drive the whole
+> ~106-method Admin API (contexts, groups, namespaces, invitations, registry install), call
+> contracts over JSON-RPC, and subscribe to live node events over SSE. The sample app is a native
+> Calimero chat client (the Android mirror of the Swift SDK's sample). See [Roadmap](#roadmap).
 
 ## Modules
 
 | Module         | What it is                                                                 |
 |----------------|-----------------------------------------------------------------------------|
-| `mero-core`    | The SDK: `Mero`, HTTP transport (OkHttp), `AuthApi`, `RefreshCoordinator`, `TokenStore`, `RpcClient`, SSO utils, `Capabilities`. |
+| `mero-core`    | The SDK: `Mero`, HTTP transport (OkHttp), `AuthApi`, `AdminApi` (~106 methods), `RefreshCoordinator`, `TokenStore`, `RpcClient`, `SseClient`/`events()`, SSO utils, `Capabilities`. |
 | `mero-compose` | Optional Jetpack Compose UI kit: `MeroProvider`/`useMero`, `LoginSheet`, `ConnectButton`, `MeroClient`. |
-| `sample-app`   | A Compose sample that connects to a node, logs in, and logs out.            |
+| `mero-testkit` | Test-support: `FakeNode`, a stateful in-memory node on OkHttp MockWebServer, for driving a whole login → call → refresh → logout journey with no live node. |
+| `sample-app`   | A Compose sample with two modes: a deterministic mock login→home→RPC→logout flow (drives the instrumented UI test), and an **SDK Explorer + native chat client** that signs in to a real node and exercises the Admin API, RPC, and live SSE. |
 
 ## Install
 
@@ -57,6 +59,14 @@ mero.authenticate(Credentials("alice", "s3cret", bootstrapSecret = "setup-code")
 // Call a contract method — result decoded with kotlinx.serialization.
 val summary: MigrateMyEntriesSummary = mero.rpc.migrateMyEntries(contextId)
 
+// Drive the node's admin surface (contexts, groups, namespaces, invitations, registry install).
+val contexts = mero.admin.getContexts()
+
+// Subscribe to live node events (auto-reconnecting SSE); cancel the coroutine to close the stream.
+scope.launch {
+    mero.events(listOf(contextId)).collect { event -> /* e.g. re-fetch messages */ }
+}
+
 // Logout (best-effort server revoke + local clear).
 mero.logout(clientId = null)
 ```
@@ -87,21 +97,33 @@ callback's `node_url` before storing any token.
 ## Build & test
 
 ```bash
-./gradlew ktlintCheck detekt   # lint (ktlint 1.x + detekt)
-./gradlew testDebugUnitTest    # JVM unit tests (MockWebServer)
-./gradlew lint                 # Android Lint
-./gradlew assembleDebug        # build all modules + sample
+./gradlew ktlintCheck detekt              # lint (ktlint 1.x + detekt)
+./gradlew testDebugUnitTest               # JVM unit + mock tests (FakeNode / MockWebServer)
+./gradlew lint                            # Android Lint
+./gradlew assembleDebug                   # build all modules + sample
+./gradlew :sample-app:connectedDebugAndroidTest  # instrumented UI test (needs an emulator)
 ```
 
-Unit tests cover the highest-risk logic: single-flight/cross-process refresh, the terminal
-`x-auth-error` path, JSON-RPC unwrap/error mapping, JWT `exp` parsing, and SSO callback parsing.
+Or run everything (build → unit → lint → live-node e2e → instrumented UI) with a PASS/FAIL summary:
+
+```bash
+./test-all.sh                # add --skip-e2e / --skip-ui to skip the node/emulator sections
+./run-app.sh                 # build, boot a local node, install & launch the sample on an emulator
+./android-e2e.sh             # full-feature app e2e against a live merod
+```
+
+See **[TESTING.md](TESTING.md)** for the full matrix (mock vs live node, env vars, emulator setup).
+Unit + mock tests cover the highest-risk logic: single-flight/cross-process refresh, the terminal
+`x-auth-error` path, the full login→call→refresh→logout journey via `FakeNode`, Admin API request
+shaping, JSON-RPC unwrap/error mapping, JWT `exp` parsing, and SSO callback parsing. A live-node
+`RealNodeE2ETest` runs in CI's `e2e.yml` (and self-skips locally unless `MERO_E2E_NODE_URL` is set).
 
 ## Roadmap
 
 - [x] **M1** — Transport + auth core, RpcClient, token store, SSO parse/build, Compose login UI.
-- [ ] **M2** — Full Admin API (~70 methods) + streaming blob up/download.
-- [ ] **M3** — SSE event client (`okhttp-sse`) with reconnect + backgrounding.
-- [ ] **M4** — SSO in-app flow polish (Custom Tabs + callback Activity helper).
+- [x] **M2** — Full Admin API (~106 methods): contexts, groups, namespaces, invitations, registry install.
+- [x] **M3** — SSE event client (`okhttp-sse`) with auto-reconnect via `Mero.events(...)`.
+- [x] **M4** — SSO in-app flow (Custom Tabs + deep-link callback) in the sample app.
 - [ ] **M5** — More Compose hooks (`useSubscription`, `useMigrationStatus`, …).
 - [ ] **M6** — Maven Central publishing, version-aligned to the mero-js contract.
 

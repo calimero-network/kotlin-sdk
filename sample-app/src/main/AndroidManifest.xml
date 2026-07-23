@@ -7,6 +7,7 @@
         android:allowBackup="true"
         android:label="Mero Sample"
         android:supportsRtl="true"
+        android:usesCleartextTraffic="true"
         android:theme="@style/Theme.MeroSample">
 
         <activity

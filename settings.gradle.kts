@@ -24,4 +24,5 @@ rootProject.name = "kotlin-sdk"
 
 include(":mero-core")
 include(":mero-compose")
+include(":mero-testkit")
 include(":sample-app")
