@@ -9,6 +9,16 @@ Gradle from a Maven repository. This repo publishes to two possible targets:
 | **GitHub Packages** | a private/org npm registry | the built-in `GITHUB_TOKEN` | **wired now** |
 | **Maven Central** | the public npm registry | Sonatype account + GPG signing | documented below (next step) |
 
+## Testing before release
+
+Before tagging, make sure the suite is green — see [TESTING.md](TESTING.md). At a
+minimum run what CI enforces plus the live-node e2e:
+
+```bash
+./gradlew ktlintCheck detekt testDebugUnitTest lint assembleDebug   # ci.yml (§1–§3)
+./test-all.sh                                                       # all of §0–§6, incl. live-node e2e
+```
+
 ## How a release happens
 
 Tag-driven, mirroring the JS repos' semantic-release cadence:

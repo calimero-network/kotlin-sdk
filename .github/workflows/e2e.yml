@@ -1,0 +1,105 @@
+name: E2E (vs released merod)
+
+# Real end-to-end run against a live node. Manual (workflow_dispatch) so it does
+# NOT gate PRs — booting merod is heavier and slower than the unit/mock suite,
+# which already covers the full auth journey via MockWebServer. The RealNodeE2ETest
+# class in :mero-core self-skips (JUnit assume) unless MERO_E2E_NODE_URL is set.
+#
+# This job runs the JVM (local unit-test) e2e against a merod on the runner host —
+# no Android emulator is needed here, so it stays cheap. The instrumented,
+# emulator-backed app e2e lives in android-e2e.yml.
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '0 6 * * 1'  # weekly smoke, Mondays 06:00 UTC
+
+permissions:
+  contents: read
+
+jobs:
+  e2e:
+    name: E2E (single node)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      # First-login setup code (core#3221). merod below inherits it and the SDK
+      # test passes it explicitly, so the first login mints the root key.
+      MERO_AUTH_BOOTSTRAP_SECRET: kotlin-sdk-e2e-bootstrap
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Download released merod (x86_64-unknown-linux-gnu)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG=$(gh release list --repo calimero-network/core --limit 1 --json tagName -q '.[0].tagName')
+          echo "Using core release $TAG"
+          URL=$(gh release view "$TAG" --repo calimero-network/core --json assets \
+            -q '.assets[] | select(.name | test("merod_x86_64-unknown-linux-gnu\\.tar\\.gz$")) | .url')
+          test -n "$URL" || { echo "no merod linux asset on release $TAG"; exit 1; }
+          curl -sL "$URL" | tar xz
+          chmod +x ./merod
+          ./merod --version
+
+      - name: Boot merod (embedded auth, init-time admin creds, single node)
+        run: |
+          # rc.17+ creates the admin AT INIT — pass the password via stdin, never a
+          # plain flag. --auth-storage persistent keeps the init-time admin into `run`.
+          printf 'dev-password' | ./merod --home ./e2e-node --node e2e init \
+            --server-port 4001 --swarm-port 4002 \
+            --auth-mode embedded --auth-storage persistent \
+            --admin-user dev --admin-password-stdin
+          ./merod --home ./e2e-node --node e2e run > merod.log 2>&1 &
+          echo $! > merod.pid
+          for i in $(seq 1 30); do
+            curl -sf http://localhost:4001/admin-api/health >/dev/null 2>&1 && { echo "merod healthy"; break; }
+            sleep 2
+            [ "$i" = "30" ] && { echo "merod did not become healthy"; cat merod.log; exit 1; }
+          done
+
+      - name: Run e2e tests
+        env:
+          MERO_E2E_NODE_URL: http://localhost:4001
+          MERO_E2E_USER: dev
+          MERO_E2E_PASS: dev-password
+        run: |
+          set -o pipefail
+          ./gradlew :mero-core:testDebugUnitTest --tests '*RealNodeE2ETest*' --stacktrace 2>&1 | tee e2e.log
+          # Guard against a vacuous/all-skipped green. A JUnit `assume` skip still
+          # reports the suite as passing, so inspect the JUnit XML: require at least
+          # one testcase that ACTUALLY executed (tests > skipped across all suites).
+          REPORT_DIR=mero-core/build/test-results/testDebugUnitTest
+          ls "$REPORT_DIR"/*.xml >/dev/null 2>&1 \
+            || { echo "::error::no test-result XML produced — refusing a vacuous pass"; exit 1; }
+          totals=$(grep -ho 'tests="[0-9]*" skipped="[0-9]*"' "$REPORT_DIR"/*.xml \
+            | sed -E 's/tests="([0-9]*)" skipped="([0-9]*)"/\1 \2/' \
+            | awk '{t+=$1; s+=$2} END {print t, s}')
+          tests=$(echo "$totals" | awk '{print $1}')
+          skipped=$(echo "$totals" | awk '{print $2}')
+          echo "executed=$tests skipped=$skipped"
+          [ "${tests:-0}" -gt "${skipped:-0}" ] \
+            || { echo "::error::e2e produced no executed (non-skipped) tests — refusing a vacuous pass"; exit 1; }
+
+      - name: Upload logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-logs
+          path: |
+            e2e.log
+            merod.log
+            mero-core/build/reports/tests/
+          if-no-files-found: warn
+
+      - name: Stop merod
+        if: always()
+        run: kill "$(cat merod.pid 2>/dev/null)" 2>/dev/null || true

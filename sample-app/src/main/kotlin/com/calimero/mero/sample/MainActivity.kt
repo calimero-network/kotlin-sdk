@@ -1,100 +1,65 @@
 package com.calimero.mero.sample
 
+import android.content.Intent
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.padding
-import androidx.compose.material3.Button
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Surface
-import androidx.compose.material3.Text
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
-import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.unit.dp
-import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import com.calimero.mero.compose.ConnectButton
-import com.calimero.mero.compose.LoginSheet
-import com.calimero.mero.compose.MeroClient
-import com.calimero.mero.compose.MeroProvider
+import androidx.compose.runtime.LaunchedEffect
+import androidx.lifecycle.viewmodel.compose.viewModel
+import com.calimero.mero.sample.explorer.ExplorerApp
+import com.calimero.mero.sample.explorer.MeroSession
+import com.calimero.mero.sample.mock.MockRoot
+import kotlinx.coroutines.flow.MutableStateFlow
 
 /**
- * Minimal Compose sample: enter a node URL, log in with credentials, then the authed screen shows a
- * [ConnectButton] (logout). Also consumes an SSO deep-link callback if the app was opened by one.
+ * Entry point. Two run modes, selected by intent extras:
+ *  - `mock = true` → the deterministic mock flow (in-app FakeNode, no live node). Drives the CI
+ *    instrumented `LoginFlowTest`.
+ *  - `mock = false` (default) → the real-node Explorer.
+ *
+ * Also consumes SSO callback deep links (`mero-sample://auth-callback#...`), delivered on the launch
+ * intent or via [onNewIntent], and forwards them into the explorer's [MeroSession].
  */
 class MainActivity : ComponentActivity() {
 
-    private var pendingCallbackUrl: String? = null
+    private val ssoCallbacks = MutableStateFlow<String?>(null)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        pendingCallbackUrl = intent?.data?.toString()
+
+        val mock = intent?.getBooleanExtra(EXTRA_MOCK, false) ?: false
+        val nodeUrl = intent?.getStringExtra(EXTRA_NODE_URL)
+        consumeCallbackIntent(intent)
+
         setContent {
-            MaterialTheme {
-                Surface(modifier = Modifier.fillMaxSize()) {
-                    SampleApp(initialCallbackUrl = pendingCallbackUrl)
+            if (mock) {
+                MockRoot(initialNodeUrl = nodeUrl ?: DEFAULT_NODE_URL)
+            } else {
+                val session: MeroSession = viewModel()
+                LaunchedEffect(nodeUrl) { if (!nodeUrl.isNullOrBlank()) session.nodeUrl = nodeUrl }
+                LaunchedEffect(Unit) {
+                    ssoCallbacks.collect { url -> url?.let { session.consumeSsoCallback(it) } }
                 }
+                ExplorerApp(session)
             }
         }
     }
-}
 
-@Composable
-private fun SampleApp(initialCallbackUrl: String?) {
-    val context = LocalContext.current
-    var nodeUrl by remember { mutableStateOf("http://10.0.2.2:2528") }
-    var client by remember { mutableStateOf<MeroClient?>(null) }
-
-    val activeClient = client
-    if (activeClient == null) {
-        Column(
-            modifier = Modifier.fillMaxSize().padding(24.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
-        ) {
-            Text("Connect to a Calimero node", style = MaterialTheme.typography.titleLarge)
-            OutlinedTextField(
-                value = nodeUrl,
-                onValueChange = { nodeUrl = it },
-                label = { Text("Node URL") },
-                singleLine = true,
-                modifier = Modifier.fillMaxWidth(),
-            )
-            Button(
-                onClick = {
-                    val created = MeroClient.create(context, nodeUrl.trim())
-                    initialCallbackUrl?.let { created.handleAuthCallback(it) }
-                    client = created
-                },
-                enabled = nodeUrl.isNotBlank(),
-                modifier = Modifier.fillMaxWidth(),
-            ) { Text("Continue") }
-        }
-        return
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        consumeCallbackIntent(intent)
     }
 
-    MeroProvider(activeClient) {
-        val state by activeClient.state.collectAsStateWithLifecycle()
-        if (state.isAuthenticated) {
-            Column(
-                modifier = Modifier.fillMaxSize().padding(24.dp),
-                verticalArrangement = Arrangement.spacedBy(16.dp),
-            ) {
-                Text("Authenticated", style = MaterialTheme.typography.titleLarge)
-                state.nodeUrl?.let { Text("Node: $it") }
-                state.applicationId?.let { Text("App: $it") }
-                ConnectButton()
-            }
-        } else {
-            LoginSheet(showBootstrapSecret = true)
-        }
+    private fun consumeCallbackIntent(intent: Intent?) {
+        val data = intent?.data?.toString() ?: return
+        if (data.startsWith("$CALLBACK_SCHEME://")) ssoCallbacks.value = data
+    }
+
+    private companion object {
+        const val EXTRA_MOCK = "mock"
+        const val EXTRA_NODE_URL = "nodeUrl"
+        const val DEFAULT_NODE_URL = "http://localhost:4001"
+        const val CALLBACK_SCHEME = "mero-sample"
     }
 }

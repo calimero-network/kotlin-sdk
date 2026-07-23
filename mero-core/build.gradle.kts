@@ -58,6 +58,7 @@ dependencies {
     testImplementation(libs.junit)
     testImplementation(libs.kotlinx.coroutines.test)
     testImplementation(libs.okhttp.mockwebserver)
+    testImplementation(project(":mero-testkit"))
 }
 
 group = providers.gradleProperty("GROUP").getOrElse("com.calimero.mero")
