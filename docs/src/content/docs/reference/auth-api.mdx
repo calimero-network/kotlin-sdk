@@ -1,0 +1,75 @@
+---
+title: Auth API
+description: The AuthApi surface — health, identity, providers, token generation/refresh/validation, revocation, and root/client key listing.
+sidebar:
+  order: 3
+---
+
+import { Aside } from '@astrojs/starlight/components';
+
+`mero.auth` (`AuthApi`) wraps the node's `/auth` and `/admin` identity/key
+endpoints. Most apps don't call it directly — `mero.authenticate()` and
+`mero.logout()` drive token generation and revocation, and the transport handles
+refresh reactively. Reach for `mero.auth` for **providers** and **key
+management**. Every method is a `suspend fun`.
+
+## Methods
+
+| Method | Endpoint |
+| --- | --- |
+| `getHealth(): HealthResponse` | `GET /auth/health` |
+| `getIdentity(): IdentityResponse` | `GET /admin/identity` |
+| `getProviders(): ProvidersResponse` | `GET /auth/providers` |
+| `generateTokens(request: TokenRequest): TokenResponse` | `POST /auth/token` |
+| `refreshToken(request: RefreshTokenRequest): TokenResponse` | `POST /auth/refresh` |
+| `validateToken(token: String): ValidationResult` | `HEAD /auth/validate` |
+| `revokeTokens(request: RevokeTokenRequest): RevokeTokenResponse` | `POST /admin/revoke` |
+| `listRootKeys(): List<RootKey>` | `GET /admin/keys` |
+| `listClientKeys(): List<ClientKey>` | `GET /admin/keys/clients` |
+
+<Aside type="note">
+  `validateToken` sends `Authorization: Bearer <token>` and never throws on a
+  `401` — inspect the returned `ValidationResult.valid` / `status`.
+</Aside>
+
+## Types
+
+Wire is snake_case; Kotlin properties are camelCase via `@SerialName`.
+
+```kotlin
+data class HealthResponse(val status: String, val storage: Boolean, val uptimeSeconds: Long)
+
+data class IdentityResponse(
+    val service: String, val version: String,
+    val authenticationMode: String, val providers: List<String> = emptyList(),
+)
+
+data class Provider(
+    val name: String, val type: String, val description: String = "",
+    val configured: Boolean = false, val config: JsonObject = JsonObject(emptyMap()),
+)
+data class ProvidersResponse(val providers: List<Provider> = emptyList(), val count: Int = 0)
+
+data class TokenRequest(
+    val authMethod: String, val publicKey: String, val clientName: String,
+    val permissions: List<String>? = null, val timestamp: Long, val providerData: JsonObject,
+)
+data class TokenPayload(val accessToken: String, val refreshToken: String, val error: String? = null)
+data class TokenResponse(val data: TokenPayload, val error: String? = null)
+data class RefreshTokenRequest(val accessToken: String, val refreshToken: String)
+
+data class RevokeTokenRequest(val clientId: String)       // core revokes by client_id
+data class RevokeTokenResponse(val success: Boolean, val message: String)
+
+data class RootKey(
+    val keyId: String, val publicKey: String, val authMethod: String,
+    val createdAt: Long = 0, val revokedAt: Long? = null, val permissions: List<String> = emptyList(),
+)
+data class ClientKey(
+    val clientId: String, val rootKeyId: String, val name: String = "",
+    val permissions: List<String> = emptyList(),
+    val createdAt: Long = 0, val revokedAt: Long? = null, val isValid: Boolean = true,
+)
+
+data class ValidationResult(val valid: Boolean, val status: Int, val headers: Map<String, String>)
+```

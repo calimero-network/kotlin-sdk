@@ -1,0 +1,70 @@
+---
+title: Capabilities
+description: The Capabilities object — the member-capability bitmask constants and the hasCap / withCap / withoutCap helpers for reading and building capability masks.
+sidebar:
+  order: 6
+---
+
+import { Aside } from '@astrojs/starlight/components';
+
+A group member's capabilities are a u32 **bitmask**, carried as a `Long` in
+Kotlin (so the full unsigned range stays a positive value). `Capabilities` exposes
+the bit constants core assigns, plus helpers for reading and editing a mask. Use
+them with the group capability methods on
+[`mero.admin`](/reference/admin-api/#group-capabilities--settings)
+(`getMemberCapabilities`, `setMemberCapabilities`, `getDefaultCapabilities`,
+`setDefaultCapabilities`). The
+[groups & governance guide](/guides/groups-and-governance/#capabilities) shows a
+full flow.
+
+## Constants
+
+Core `MemberCapabilities`, bits 0–8 (all `const val … : Long`):
+
+```kotlin
+object Capabilities {
+    const val CAN_CREATE_CONTEXT     = 1L       // 1 shl 0
+    const val CAN_INVITE_MEMBERS      = 2L       // 1 shl 1
+    const val CAN_JOIN_OPEN_SUBGROUPS = 4L       // 1 shl 2
+    const val MANAGE_MEMBERS          = 8L       // 1 shl 3
+    const val MANAGE_APPLICATION      = 16L      // 1 shl 4
+    const val CAN_CREATE_SUBGROUP     = 32L      // 1 shl 5
+    const val CAN_DELETE_SUBGROUP     = 64L      // 1 shl 6
+    const val CAN_MANAGE_VISIBILITY   = 128L     // 1 shl 7
+    const val CAN_MANAGE_METADATA     = 256L     // 1 shl 8
+}
+```
+
+<Aside type="caution">
+  Bits 9 and above are unassigned and reserved for future core releases — do
+  **not** repurpose them for application data.
+</Aside>
+
+## Helpers
+
+All normalize to the unsigned 32-bit range.
+
+```kotlin
+fun hasCap(mask: Long, cap: Long): Boolean   // every bit of cap set?
+fun withCap(mask: Long, cap: Long): Long     // mask with cap set
+fun withoutCap(mask: Long, cap: Long): Long  // mask with cap cleared
+```
+
+## Example
+
+```kotlin
+import com.calimero.mero.Capabilities
+
+// MemberCapabilities.capabilities is an Int; the helpers work on Long.
+val current = mero.admin.getMemberCapabilities(groupId, identity = id).capabilities
+var mask = current.toLong()
+
+if (!Capabilities.hasCap(mask, Capabilities.CAN_INVITE_MEMBERS)) {
+    mask = Capabilities.withCap(mask, Capabilities.CAN_INVITE_MEMBERS)
+    mask = Capabilities.withCap(mask, Capabilities.CAN_CREATE_SUBGROUP)
+    mask = Capabilities.withoutCap(mask, Capabilities.CAN_MANAGE_METADATA)
+    mero.admin.setMemberCapabilities(
+        groupId, identity = id, SetMemberCapabilitiesRequest(capabilities = mask.toInt())
+    )
+}
+```

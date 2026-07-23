@@ -1,0 +1,126 @@
+---
+title: Executing Methods
+description: Run WASM contract methods with the RPC client — JsonObject arguments, serializable return types, error handling, and the migration helpers.
+sidebar:
+  order: 2
+---
+
+import { Aside } from '@astrojs/starlight/components';
+import SeqDiagram from '../../../components/SeqDiagram.astro';
+
+`mero.rpc` executes methods on the WASM application inside a context. It speaks
+JSON-RPC 2.0 to the node's `/jsonrpc` endpoint and decodes the method's return
+value straight into your `@Serializable` type with kotlinx.serialization.
+
+## Execute a method
+
+```kotlin
+import kotlinx.serialization.Serializable
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.put
+
+@Serializable data class Post(val id: String, val title: String)
+
+val post: Post = mero.rpc.execute(
+    contextId = "…",
+    method = "get_post",
+    argsJson = buildJsonObject { put("id", "42") },
+)
+```
+
+- `contextId` — the context to run in.
+- `method` — the contract method name.
+- `argsJson` — a `JsonObject` of named arguments (defaults to an empty object).
+- The return type is inferred from the call site; the `reified` overload of
+  `execute` decodes `result.output` into it.
+
+<SeqDiagram
+  id="d-rpc-execute"
+  title="execute() → JSON-RPC → WASM → deserialized"
+  lanes={[
+    { label: 'Your app', color: '#3fb950' },
+    { label: 'mero.rpc', color: '#a5ff11' },
+    { label: 'Node', color: '#58a6ff' },
+    { label: 'WASM app', color: '#a371f7' },
+  ]}
+  steps={[
+    { from: 0, to: 1, label: 'execute(contextId, method, argsJson)' },
+    { from: 1, to: 2, label: 'POST /jsonrpc { method: "execute", … }' },
+    { from: 2, to: 3, label: 'run method in context' },
+    { from: 3, to: 2, label: 'return value / error', dashed: true },
+    { from: 2, to: 1, label: 'JSON-RPC { result | error }', dashed: true },
+    { from: 1, to: 0, label: 'decode result.output → T  (or throw)', dashed: true, color: '#a5ff11' },
+  ]}
+/>
+
+<Aside type="note">
+  There's a single entry point — `execute`. Reads and writes both go through it;
+  whether a call mutates state is up to the contract method, not the SDK.
+</Aside>
+
+## Arguments with `JsonObject`
+
+`argsJson` is a kotlinx.serialization `JsonObject`. Build it with `buildJsonObject`,
+nesting objects and arrays as needed:
+
+```kotlin
+import kotlinx.serialization.json.*
+
+val args = buildJsonObject {
+    put("id", "42")
+    put("limit", 10)
+    put("verbose", true)
+    putJsonArray("tags") { add("a"); add("b") }
+    putJsonObject("filter") { put("author", "alice") }
+}
+
+val result: MyResult = mero.rpc.execute(
+    contextId = contextId, method = "search", argsJson = args
+)
+```
+
+If you don't need a typed result, use `executeRaw` and work with the
+`JsonElement`:
+
+```kotlin
+val raw = mero.rpc.executeRaw(contextId = contextId, method = "get_state")
+val name = raw.jsonObject["name"]?.jsonPrimitive?.content
+```
+
+<Aside type="note">
+  `execute` takes an optional `executorPublicKey` — the context identity making
+  the call. Leave it out to use the context's default identity; set it for apps
+  that key state on the caller identity.
+</Aside>
+
+## Handling contract errors
+
+A JSON-RPC error from the contract throws `RpcException`:
+
+```kotlin
+import com.calimero.mero.rpc.RpcException
+
+try {
+    val r: Receipt = mero.rpc.execute(
+        contextId = contextId, method = "transfer",
+        argsJson = buildJsonObject { put("to", to); put("amount", 10) },
+    )
+} catch (e: RpcException) {
+    println("contract error ${e.code}: ${e.message}")  // e.type, e.data also available
+    throw e
+}
+```
+
+`RpcException` carries `code`, `message`, an optional `type`, and optional `data`
+(`JsonElement?`). Transport failures (HTTP 4xx/5xx, network) are `HttpException` /
+`NetworkException`, not `RpcException` — see the [error model](/reference/error-model/).
+
+## Migration helpers
+
+Two convenience wrappers over `execute` support the entry-migration flow used
+when an application upgrades its state schema:
+
+```kotlin
+val summary = mero.rpc.migrateMyEntries(contextId)  // .converted, .remaining
+val pending = mero.rpc.countMyPending(contextId)    // Int
+```

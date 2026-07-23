@@ -1,0 +1,169 @@
+---
+title: Groups & Governance
+description: Namespaces, groups, members and roles, the u32 capability bitmask, metadata, and the TEE admission policy — driven from the admin API in Kotlin.
+sidebar:
+  order: 4
+---
+
+import { Aside } from '@astrojs/starlight/components';
+
+Governance is layered: a **namespace** scopes an application instance; **groups**
+(and **subgroups**) within it hold members with roles and capabilities and own
+contexts. This guide covers the pieces you'll touch most; the exhaustive list is
+in the [admin API reference](/reference/admin-api/#group-management).
+
+## Namespaces
+
+```kotlin
+val ns = mero.admin.createNamespace(
+    CreateNamespaceRequest(
+        applicationId = applicationId,
+        upgradePolicy = UpgradePolicy.AUTOMATIC,
+        name = "production",
+    )
+)
+val namespaceId = ns.namespaceId
+
+val all      = mero.admin.listNamespaces()             // List<Namespace>
+val one      = mero.admin.getNamespace(namespaceId)
+val identity = mero.admin.getNamespaceIdentity(namespaceId)
+```
+
+Invite and join:
+
+```kotlin
+val invite = mero.admin.createNamespaceInvitation(namespaceId)
+// CreateNamespaceInvitationResult — .Single(...) or .Recursive(...)
+
+// on the joining node, with a SignedGroupOpenInvitation:
+val joined = mero.admin.joinNamespace(
+    namespaceId, JoinNamespaceRequest(invitation = signed)
+)
+// joined.groupId, joined.memberIdentity
+```
+
+## Groups, members & roles
+
+```kotlin
+val info     = mero.admin.getGroupInfo(groupId)
+val members  = mero.admin.listGroupMembers(groupId).members
+val contexts = mero.admin.listGroupContexts(groupId)
+
+mero.admin.addGroupMembers(
+    groupId, AddGroupMembersRequest(members = listOf(GroupMemberInput(identity = id, role = "member")))
+)
+mero.admin.updateMemberRole(groupId, identity = id, UpdateMemberRoleRequest(role = "admin"))
+mero.admin.removeGroupMembers(groupId, RemoveGroupMembersRequest(members = listOf(id)))
+
+val subgroups = mero.admin.listSubgroups(groupId)
+```
+
+## Capabilities
+
+A member's permissions are a **u32 bitmask**, carried as a `Long` in Kotlin.
+`Capabilities` provides the bit constants and pure helpers so you never write raw
+bitwise operators.
+
+```kotlin
+import com.calimero.mero.Capabilities
+
+// Read the current mask (MemberCapabilities.capabilities is an Int)
+val current = mero.admin.getMemberCapabilities(groupId, identity = id).capabilities
+val mask = current.toLong()
+
+// Test / add / remove bits
+val canInvite = Capabilities.hasCap(mask, Capabilities.CAN_INVITE_MEMBERS)
+val next      = Capabilities.withCap(mask, Capabilities.MANAGE_MEMBERS)
+val revoked   = Capabilities.withoutCap(next, Capabilities.MANAGE_APPLICATION)
+
+// Persist (the request takes an Int)
+mero.admin.setMemberCapabilities(
+    groupId, identity = id, SetMemberCapabilitiesRequest(capabilities = next.toInt())
+)
+```
+
+The bits (mirroring core's `MemberCapabilities`):
+
+| Constant | Bit | Grants |
+| --- | --- | --- |
+| `Capabilities.CAN_CREATE_CONTEXT` | `1 shl 0` | create contexts in the group |
+| `Capabilities.CAN_INVITE_MEMBERS` | `1 shl 1` | invite new members |
+| `Capabilities.CAN_JOIN_OPEN_SUBGROUPS` | `1 shl 2` | join open subgroups |
+| `Capabilities.MANAGE_MEMBERS` | `1 shl 3` | add/remove members, change roles |
+| `Capabilities.MANAGE_APPLICATION` | `1 shl 4` | manage the group's application |
+| `Capabilities.CAN_CREATE_SUBGROUP` | `1 shl 5` | create subgroups |
+| `Capabilities.CAN_DELETE_SUBGROUP` | `1 shl 6` | delete subgroups |
+| `Capabilities.CAN_MANAGE_VISIBILITY` | `1 shl 7` | change subgroup visibility |
+| `Capabilities.CAN_MANAGE_METADATA` | `1 shl 8` | edit group/member/context metadata |
+
+<Aside type="note">
+  `hasCap(mask, cap)` is true only when every bit of `cap` is set, so composite
+  masks test correctly. The `AdminApi` capability methods take/return `Int`;
+  convert with `.toLong()` / `.toInt()` at the boundary as above.
+</Aside>
+
+Group defaults and subgroup visibility:
+
+```kotlin
+mero.admin.setDefaultCapabilities(
+    groupId, SetDefaultCapabilitiesRequest(defaultCapabilities = Capabilities.CAN_CREATE_CONTEXT.toInt())
+)
+val defaults   = mero.admin.getDefaultCapabilities(groupId)   // Int
+val visibility = mero.admin.getSubgroupVisibility(groupId)    // String
+```
+
+## Metadata
+
+Attach a small named key/value record to a group, member, or context:
+
+```kotlin
+mero.admin.setGroupMetadata(
+    groupId, SetGroupMetadataRequest(name = "Production", data = mapOf("region" to "eu", "tier" to "gold"))
+)
+
+val meta = mero.admin.getGroupMetadata(groupId)   // MetadataRecord?
+// meta?.name, meta?.data, meta?.updatedAt, meta?.updatedBy
+```
+
+The same pair exists for members (`set/getMemberMetadata`) and contexts
+(`set/getContextMetadata`). Setting a record replaces it wholesale (server limits:
+name ≤64 B, ≤64 entries, key ≤64 B, value ≤4096 B).
+
+## TEE admission policy
+
+Restrict which nodes may join a group to those in an approved Trusted Execution
+Environment:
+
+```kotlin
+mero.admin.setTeeAdmissionPolicy(
+    groupId,
+    SetTeeAdmissionPolicyRequest(
+        allowedMrtd = listOf("<mrtd-hex>"),
+        allowedRtmr0 = emptyList(), allowedRtmr1 = emptyList(),
+        allowedRtmr2 = emptyList(), allowedRtmr3 = emptyList(),
+        allowedTcbStatuses = listOf("UpToDate"),
+        acceptMock = false,           // true only for local/dev
+    )
+)
+
+val policy = mero.admin.getTeeAdmissionPolicy(groupId)
+```
+
+Nodes can attest and verify quotes directly:
+
+```kotlin
+val teeInfo = mero.admin.getTeeInfo()
+val attest  = mero.admin.teeAttest(TeeAttestRequest(nonce = nonce))
+val verdict = mero.admin.teeVerifyQuote(
+    TeeVerifyQuoteRequest(quoteB64 = attest.quoteB64, nonce = nonce)
+)
+```
+
+## Upgrades & migration
+
+```kotlin
+mero.admin.upgradeGroup(groupId, UpgradeGroupRequest(targetApplicationId = newAppId, cascade = true))
+val status    = mero.admin.getGroupUpgradeStatus(groupId)
+val migration = mero.admin.getMigrationStatus(namespaceId)
+// migration.rollup.allMigrated == true when done
+```

@@ -1,0 +1,160 @@
+---
+title: Mero
+description: The Mero class — configuration, sub-client accessors, authentication and token methods, SSO statics, and the token types and stores.
+sidebar:
+  order: 1
+---
+
+import { Aside } from '@astrojs/starlight/components';
+
+`Mero` is the SDK facade — a plain class constructed from a `MeroConfig`. It owns
+the OkHttp transport, the token state, and a single-flight `RefreshCoordinator`,
+and exposes the API clients. Every call is a `suspend` function except the
+`isAuthenticated` property.
+
+## Constructor
+
+```kotlin
+class Mero(config: MeroConfig)
+
+val mero = Mero(MeroConfig(baseUrl = "https://your-node.example"))
+```
+
+## Sub-client accessors
+
+Properties that expose the API clients over the shared transport:
+
+| Accessor | Type | Description |
+| --- | --- | --- |
+| `mero.auth` | `AuthApi` | login, tokens, key management — [reference](/reference/auth-api/) |
+| `mero.admin` | `AdminApi` | contexts, apps, namespaces, groups, blobs, TEE — [reference](/reference/admin-api/) |
+| `mero.rpc` | `RpcClient` | execute WASM methods — [reference](/reference/rpc/) |
+| `mero.http` | `HttpClient` | the transport in use (advanced) |
+
+Plus one method, not an accessor:
+
+| Method | Returns | Description |
+| --- | --- | --- |
+| `mero.events(contextIds)` | `Flow<ContextEvent>` | live SSE events — [reference](/reference/events/) |
+
+## Authentication
+
+```kotlin
+suspend fun authenticate(credentials: Credentials? = null): TokenData
+```
+
+Authenticate with credentials (falls back to `config.credentials`; throws
+`MeroStateException` if neither is set). Sends a `user_password` token request
+with client name `mero-kotlin-sdk` and permissions `["admin"]`, includes
+`bootstrap_secret` (from the credentials or the `MERO_AUTH_BOOTSTRAP_SECRET` env
+var) when present, then persists and returns the bundle.
+
+## Token state
+
+```kotlin
+val isAuthenticated: Boolean               // is a bundle present?
+fun getTokenData(): TokenData?             // current bundle (debug / handoff)
+fun setTokenData(data: TokenData)          // set directly; derives expiresAt from the JWT when 0
+suspend fun logout(clientId: String? = null)  // clear locally + best-effort server revoke
+fun clearToken()                           // drop the bundle + clear the store (local only)
+```
+
+<Aside type="note">
+  There is no `close()` — a `Mero` holds no long-lived resources of its own. To
+  stop a live [`events(...)`](/reference/events/) stream, cancel the coroutine
+  collecting it.
+</Aside>
+
+## SSO statics
+
+On `Mero`'s companion (also available as top-level functions in
+`com.calimero.mero.auth`):
+
+```kotlin
+fun parseAuthCallback(url: String): AuthCallbackResult?
+fun buildAuthLoginUrl(nodeUrl: String, options: AuthLoginOptions): String
+```
+
+```kotlin
+data class AuthCallbackResult(
+    val accessToken: String, val refreshToken: String, val applicationId: String,
+    val contextId: String, val contextIdentity: String, val nodeUrl: String,
+)
+
+data class AuthLoginOptions(
+    val callbackUrl: String, val mode: String,
+    val permissions: List<String>? = null,
+    val packageName: String? = null, val packageVersion: String? = null, val registryUrl: String? = null,
+)
+```
+
+On Android, `SsoLauncher.launch(context, nodeUrl, options)` opens the login URL in
+a Chrome Custom Tab. See [authentication](/get-started/authentication/#hosted-sso-deep-link).
+
+## Configuration types
+
+### `MeroConfig`
+
+```kotlin
+data class MeroConfig(
+    val baseUrl: String,
+    val credentials: Credentials? = null,
+    val timeoutMs: Long = 10_000,        // connect/read/write; default 10s
+    val tokenStore: TokenStore? = null,  // defaults to in-memory when null
+    val refreshLockFile: File? = null,   // cross-process refresh lock; null = in-process only
+)
+```
+
+### `Credentials`
+
+```kotlin
+data class Credentials(
+    val username: String,
+    val password: String,
+    val bootstrapSecret: String? = null,  // only for a fresh node's first login
+)
+```
+
+### `TokenData`
+
+```kotlin
+data class TokenData(
+    val accessToken: String,   // wire: access_token
+    val refreshToken: String,  // wire: refresh_token
+    val expiresAt: Long,       // wire: expires_at (epoch ms; derived from the JWT `exp`)
+)
+```
+
+Wire/storage keys are snake_case, portable with the mero-js token bundle. Pass
+`expiresAt = 0L` to `setTokenData` to have the SDK derive the real expiry from the
+access token's JWT.
+
+## Token stores
+
+```kotlin
+interface TokenStore {          // synchronous; implementations must be thread-safe
+    fun getTokens(): TokenData?
+    fun setTokens(data: TokenData)
+    fun clear()
+}
+
+class MemoryTokenStore : TokenStore   // ephemeral (default when config.tokenStore is null)
+
+class EncryptedPrefsTokenStore(       // AndroidX EncryptedSharedPreferences, hardware-backed key
+    context: Context,
+    fileName: String = "mero_tokens", // distinct names isolate multiple nodes
+) : TokenStore
+```
+
+`EncryptedPrefsTokenStore` requires an Android `Context`. The `TokenStore`
+interface is **synchronous** — an async backend must be wrapped in a
+synchronous in-memory cache primed at startup.
+
+## Sub-client references
+
+- [`RpcClient`](/reference/rpc/) — `execute`, `migrateMyEntries`, `countMyPending`.
+- [`AdminApi`](/reference/admin-api/) — the full admin surface.
+- [`AuthApi`](/reference/auth-api/) — the full auth surface.
+- [SSE events](/reference/events/) — `SseClient`, `ContextEvent`, `mero.events(contextIds)`.
+- [Capabilities](/reference/capabilities/) — the member-capability bitmask helpers.
+- [`MeroClient`](/guides/compose-frontend/) — the Compose view-model (`mero-compose`).

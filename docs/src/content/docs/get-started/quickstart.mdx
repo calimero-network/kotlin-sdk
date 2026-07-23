@@ -1,0 +1,156 @@
+---
+title: Quickstart
+description: Add mero-kotlin to an Android app, create a client, authenticate, call a contract, and log out — in a few minutes.
+sidebar:
+  order: 1
+---
+
+import { Steps, Tabs, TabItem, Aside } from '@astrojs/starlight/components';
+
+mero-kotlin (`com.calimero.mero`) is the native Kotlin SDK for a remote
+[Calimero](https://calimero-network.github.io/core/) node. This page takes you
+from adding the dependency to your first authenticated contract call.
+
+## Requirements
+
+- **Kotlin 2.x**, coroutines + `Flow` throughout.
+- **Android minSdk 24**, compileSdk 34.
+- Dependencies (pulled in transitively): OkHttp (+ `okhttp-sse`),
+  kotlinx.serialization, AndroidX Security, AndroidX Browser.
+
+## Install
+
+Published to **GitHub Packages** on each `v*` tag. Add the repository (see
+[PUBLISHING.md](https://github.com/calimero-network/kotlin-sdk/blob/master/PUBLISHING.md)
+for the credentials snippet), then the dependency:
+
+<Tabs syncKey="buildtool">
+  <TabItem label="Kotlin DSL">
+    ```kotlin
+    // build.gradle.kts
+    dependencies {
+        implementation("com.calimero.mero:mero-core:0.1.0")
+        implementation("com.calimero.mero:mero-compose:0.1.0") // optional Compose UI
+    }
+    ```
+  </TabItem>
+  <TabItem label="Groovy DSL">
+    ```groovy
+    // build.gradle
+    dependencies {
+        implementation 'com.calimero.mero:mero-core:0.1.0'
+        implementation 'com.calimero.mero:mero-compose:0.1.0' // optional Compose UI
+    }
+    ```
+  </TabItem>
+</Tabs>
+
+Coordinates are `com.calimero.mero:{mero-core,mero-compose}:<version>`.
+
+## Your first calls
+
+Every SDK call is a `suspend` function — call them from a coroutine (a
+`lifecycleScope`/`viewModelScope` launch, or another `suspend` function).
+
+<Steps>
+
+1. **Create the client.** Point it at your node; persist tokens in encrypted
+   storage and give the cross-process refresh lock a file.
+
+   ```kotlin
+   import com.calimero.mero.Mero
+   import com.calimero.mero.MeroConfig
+   import com.calimero.mero.storage.EncryptedPrefsTokenStore
+   import java.io.File
+
+   val mero = Mero(
+       MeroConfig(
+           baseUrl = "https://your-node.example",
+           tokenStore = EncryptedPrefsTokenStore(context),        // in-memory otherwise
+           refreshLockFile = File(context.filesDir, "mero-refresh.lock"),
+       )
+   )
+   ```
+
+2. **Authenticate** with a username and password. `bootstrapSecret` is only
+   needed for the very first login on a fresh node.
+
+   ```kotlin
+   import com.calimero.mero.Credentials
+
+   mero.authenticate(Credentials(username = "alice", password = "s3cr3t"))
+   val authed = mero.isAuthenticated   // true
+   ```
+
+3. **Call a contract** over JSON-RPC. The result is decoded with
+   kotlinx.serialization into your `@Serializable` type; arguments are a
+   `JsonObject`.
+
+   ```kotlin
+   import kotlinx.serialization.Serializable
+   import kotlinx.serialization.json.buildJsonObject
+   import kotlinx.serialization.json.put
+
+   @Serializable data class Post(val id: String, val title: String)
+
+   val post: Post = mero.rpc.execute(
+       contextId = "…",
+       method = "get_post",
+       argsJson = buildJsonObject { put("id", "42") },
+   )
+   ```
+
+4. **Use the admin & auth APIs** for everything else.
+
+   ```kotlin
+   val contexts = mero.admin.getContexts()
+   val providers = mero.auth.getProviders()
+   ```
+
+5. **Log out** — clears the token bundle from memory and the store (and, when a
+   `clientId` is supplied, best-effort revokes it server-side).
+
+   ```kotlin
+   mero.logout()
+   ```
+
+</Steps>
+
+<Aside type="note">
+  A single-flight `RefreshCoordinator` inside `Mero` serialises token refresh, so
+  concurrent `401`s share one refresh and a single-use refresh token is never
+  replayed — see [the token lifecycle](/get-started/authentication/#the-token-lifecycle).
+</Aside>
+
+## Handle errors
+
+Failures are thrown as subclasses of `MeroException`. Catch the ones you care
+about:
+
+```kotlin
+import com.calimero.mero.http.AuthRevokedException
+import com.calimero.mero.http.HttpException
+import com.calimero.mero.rpc.RpcException
+
+try {
+    val post: Post = mero.rpc.execute(
+        contextId = "…", method = "get_post",
+        argsJson = buildJsonObject { put("id", "42") },
+    )
+} catch (e: AuthRevokedException) {
+    // refresh token reused/revoked — prompt re-login
+} catch (e: RpcException) {
+    println("contract error ${e.code}: ${e.message}")
+} catch (e: HttpException) {
+    println("HTTP ${e.status}")
+}
+```
+
+See the [error model](/reference/error-model/) for every type.
+
+## Next steps
+
+- **[Authentication](/get-started/authentication/)** — direct login, SSO, and the token lifecycle.
+- **[System overview](/understand/system-overview/)** — how the SDK is layered.
+- **[Executing methods](/guides/executing-methods/)** — the RPC client and `JsonObject` args.
+- **[Compose frontend](/guides/compose-frontend/)** — drop-in `MeroClient` + composables.

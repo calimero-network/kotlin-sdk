@@ -1,0 +1,90 @@
+---
+title: Live events
+description: Stream a node's real-time context events over SSE with mero.events(contextIds) — collect the Flow, handle reconnection, and cancel cleanly.
+sidebar:
+  order: 3
+---
+
+import { Aside } from '@astrojs/starlight/components';
+
+Instead of polling, subscribe to a context's real-time events. `mero.events(contextIds)`
+opens a Server-Sent-Events stream and emits a `ContextEvent` for each node
+emission — new messages, application-version flips, and other context activity —
+so a screen can react as changes arrive.
+
+## Subscribe
+
+`events(contextIds)` returns a cold `Flow<ContextEvent>`. Collect it inside a
+coroutine you can cancel:
+
+```kotlin
+val job = scope.launch {
+    mero.events(contextIds = listOf(contextId)).collect { event ->
+        when (event.kind) {
+            "ExecutionEvent" -> reloadMessages()
+            else -> println("event on ${event.contextId}: ${event.kind}")
+        }
+    }
+}
+```
+
+Each event is:
+
+```kotlin
+data class ContextEvent(
+    val contextId: String,
+    val kind: String,          // e.g. "ExecutionEvent"
+    val payload: JsonElement,  // raw event JSON
+)
+```
+
+For a contract emission (`kind == "ExecutionEvent"`) the encoded contract events
+are nested under `payload`'s `data.events[].data`.
+
+## Reconnection
+
+The stream reconnects automatically ~3 seconds after a drop and re-subscribes to
+your context ids (the node persists the session's subscriptions). You don't need
+to rebuild the flow on a transient network blip — the collector keeps delivering
+events across reconnects.
+
+## Closing the stream
+
+The stream lives for as long as its collecting coroutine — **cancel that job** (or
+the enclosing scope) to close the SSE connection:
+
+```kotlin
+job.cancel()   // closes the connection
+```
+
+<Aside type="caution">
+  `mero.logout()` does **not** stop an in-flight event stream. Tie the collector
+  to a lifecycle-aware scope (`viewModelScope`, or a Compose `LaunchedEffect`) so
+  it's cancelled when the screen goes away.
+</Aside>
+
+## In Compose
+
+`LaunchedEffect(contextId)` ties collection to a composable's lifetime — it starts
+when the composable enters composition and is cancelled when `contextId` changes
+or it leaves:
+
+```kotlin
+@Composable
+fun MessagesScreen(mero: Mero, contextId: String) {
+    var messages by remember { mutableStateOf(emptyList<Message>()) }
+
+    LaunchedEffect(contextId) {
+        mero.events(contextIds = listOf(contextId)).collect {
+            messages = loadMessages()
+        }
+    }
+
+    MessageList(messages)
+}
+```
+
+## See also
+
+- [RPC client](/reference/rpc/) — trigger the state changes you're observing.
+- [Events reference](/reference/events/) — `SseClient` and the full API surface.

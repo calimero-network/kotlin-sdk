@@ -1,0 +1,83 @@
+---
+title: RPC client
+description: mero.rpc (RpcClient) — execute a context's WASM methods over JSON-RPC, plus the owner-driven migration helpers.
+sidebar:
+  order: 4
+---
+
+import { Aside } from '@astrojs/starlight/components';
+
+`mero.rpc` (`RpcClient`) calls the methods a context's WASM application exposes,
+over the node's `/jsonrpc` endpoint. It shares the SDK's transport, so
+authentication, refresh, and the [error model](/reference/error-model/) apply. A
+contract-level failure throws `RpcException`. See the
+[executing methods guide](/guides/executing-methods/) for task-oriented examples.
+
+## `execute`
+
+```kotlin
+suspend inline fun <reified T> execute(
+    contextId: String,
+    method: String,
+    argsJson: JsonObject = JsonObject(emptyMap()),
+    executorPublicKey: String? = null,
+): T
+```
+
+Calls `method` on the application in `contextId` and decodes `result.output` into
+`T` with kotlinx.serialization. A non-reified overload taking an explicit
+`DeserializationStrategy<T>` is also available.
+
+```kotlin
+@Serializable data class Post(val id: String, val title: String)
+
+val post: Post = mero.rpc.execute(
+    contextId = contextId,
+    method = "get_post",
+    argsJson = buildJsonObject { put("id", "42") },
+)
+```
+
+<Aside type="note">
+  `executorPublicKey` names the context identity executing the call. Leave it
+  `null` to use the context's default identity; set it for apps that key state on
+  the caller identity. (It is honored here — not deprecated.)
+</Aside>
+
+## `executeRaw`
+
+```kotlin
+suspend fun executeRaw(
+    contextId: String, method: String,
+    argsJson: JsonObject = JsonObject(emptyMap()), executorPublicKey: String? = null,
+): JsonElement
+```
+
+Returns the undecoded `result.output` as a `JsonElement` — use it when you don't
+have (or don't want) a typed result.
+
+## `migrateMyEntries`
+
+```kotlin
+suspend fun migrateMyEntries(contextId: String): MigrateMyEntriesSummary
+
+@Serializable data class MigrateMyEntriesSummary(
+    val converted: Int,   // entries re-signed this call
+    val remaining: Int,   // still below the target schema
+)
+```
+
+Owner-driven migration: re-signs the caller's identity-gated entries to the
+current schema in a single sweep (it does not loop).
+
+## `countMyPending`
+
+```kotlin
+suspend fun countMyPending(contextId: String): Int
+```
+
+Read-only count of the caller's entries still below the target schema.
+
+```kotlin
+if (mero.rpc.countMyPending(contextId) > 0) mero.rpc.migrateMyEntries(contextId)
+```
