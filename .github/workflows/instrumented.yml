@@ -82,12 +82,11 @@ jobs:
           # NOTE: android-emulator-runner runs this script with /usr/bin/sh (dash), which does
           # NOT support `set -o pipefail`. Redirect to a log file (instead of piping through tee)
           # so the gradle exit code propagates and a real test failure fails the job.
+          # Single-line gradle invocation: the action runs this under sh and backslash line
+          # continuations don't survive (the `\` gets passed to gradle as a task name).
+          # In-app mock only — node/multi-user e2e classes run in android-e2e.yml; filter them out.
           script: |
-            # In-app mock only — the node/multi-user e2e classes run in android-e2e.yml
-            # against a live merod. Filter them out here so no node is required.
-            ./gradlew :sample-app:connectedDebugAndroidTest \
-              -Pandroid.testInstrumentationRunnerArguments.notClass=com.calimero.mero.sample.AppE2ETest,com.calimero.mero.sample.ChatMultiUserTest \
-              --stacktrace > instrumented.log 2>&1 || { cat instrumented.log; exit 1; }
+            ./gradlew :sample-app:connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.notClass=com.calimero.mero.sample.AppE2ETest,com.calimero.mero.sample.ChatMultiUserTest --stacktrace > instrumented.log 2>&1 || { cat instrumented.log; exit 1; }
             cat instrumented.log
 
       - name: Upload logs
