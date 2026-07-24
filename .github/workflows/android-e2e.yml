@@ -19,6 +19,11 @@ on:
 permissions:
   contents: read
 
+# Two emulators per run — don't let a dispatch pile on top of a push for the same ref.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.head_ref || github.ref_name }}
+  cancel-in-progress: true
+
 jobs:
   single-node-e2e:
     name: Full-feature e2e (1 node / 1 emulator)
@@ -103,7 +108,10 @@ jobs:
   multi-node-e2e:
     name: Multi-user chat e2e (2 nodes / 2 emulators)
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    # Two emulators + two nodes + three test roles: this job hit the old 60m ceiling on every run
+    # (a timed-out job is reported as "cancelled", which read as a mystery rather than a timeout),
+    # so it never actually reported a result. Same headroom the iOS multi-node job needed.
+    timeout-minutes: 90
     # Informational: cross-node sync between co-located merods is flaky on one host.
     continue-on-error: true
     steps:
