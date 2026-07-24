@@ -57,7 +57,10 @@ fun MockLoginScreen(vm: MockViewModel) {
             color = Cal.text,
             modifier = Modifier.testTag("loginTitle"),
         )
-        CalTextField(node, { node = it; vm.nodeUrl = it }, "Node URL", Modifier.testTag("nodeURLField"))
+        CalTextField(node, {
+            node = it
+            vm.nodeUrl = it
+        }, "Node URL", Modifier.testTag("nodeURLField"))
         CalTextField(username, { username = it }, "Username", Modifier.testTag("usernameField"))
         CalTextField(password, { password = it }, "Password", Modifier.testTag("passwordField"), secure = true)
 

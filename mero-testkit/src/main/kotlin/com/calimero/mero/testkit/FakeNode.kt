@@ -30,7 +30,6 @@ import okhttp3.mockwebserver.RecordedRequest
  * Thread-safe: the dispatcher is invoked on MockWebServer's worker threads.
  */
 class FakeNode {
-
     private val lock = Any()
     private val json = Json { ignoreUnknownKeys = true }
 
@@ -67,9 +66,10 @@ class FakeNode {
         }
 
     /** A [Dispatcher] serving this node — attach it to an existing [MockWebServer]. */
-    fun dispatcher(): Dispatcher = object : Dispatcher() {
-        override fun dispatch(request: RecordedRequest): MockResponse = handle(request)
-    }
+    fun dispatcher(): Dispatcher =
+        object : Dispatcher() {
+            override fun dispatch(request: RecordedRequest): MockResponse = handle(request)
+        }
 
     // ---- Test controls ---------------------------------------------------------------------
 
@@ -92,7 +92,18 @@ class FakeNode {
             "POST" to "/auth/refresh" -> refresh(request)
             "HEAD" to "/auth/validate" -> validate(request)
             "GET" to "/auth/health" ->
-                ok(buildJsonObject { put("data", buildJsonObject { put("status", "alive"); put("storage", true); put("uptime_seconds", 1) }) })
+                ok(
+                    buildJsonObject {
+                        put(
+                            "data",
+                            buildJsonObject {
+                                put("status", "alive")
+                                put("storage", true)
+                                put("uptime_seconds", 1)
+                            },
+                        )
+                    },
+                )
             "GET" to "/auth/providers" -> ok(providersBody())
             "GET" to "/admin/identity" -> ok(identityBody())
             "GET" to "/admin-api/contexts" -> guarded(request) { ok(buildJsonObject { put("data", buildJsonObject { put("contexts", buildJsonArray { }) }) }) }
@@ -103,20 +114,26 @@ class FakeNode {
 
     // ---- Handlers --------------------------------------------------------------------------
 
-    private fun issueTokens(): MockResponse = synchronized(lock) {
-        tokenCalls++
-        version++
-        accessToken = "access-$version"
-        refreshToken = "refresh-$version"
-        accessExpired = false
-        familyRevoked = false
-        tokenResponse(accessToken, refreshToken)
-    }
+    private fun issueTokens(): MockResponse =
+        synchronized(lock) {
+            tokenCalls++
+            version++
+            accessToken = "access-$version"
+            refreshToken = "refresh-$version"
+            accessExpired = false
+            familyRevoked = false
+            tokenResponse(accessToken, refreshToken)
+        }
 
     private fun refresh(request: RecordedRequest): MockResponse {
-        val presented = runCatching {
-            json.parseToJsonElement(request.body.readUtf8()).jsonObject["refresh_token"]?.jsonPrimitive?.content
-        }.getOrNull() ?: ""
+        val presented =
+            runCatching {
+                json
+                    .parseToJsonElement(request.body.readUtf8())
+                    .jsonObject["refresh_token"]
+                    ?.jsonPrimitive
+                    ?.content
+            }.getOrNull() ?: ""
         synchronized(lock) {
             refreshCalls++
             // Single-use: replaying a consumed refresh token revokes the family.
@@ -138,10 +155,16 @@ class FakeNode {
 
     private fun jsonrpc(request: RecordedRequest): MockResponse {
         synchronized(lock) { rpcCalls++ }
-        val methodName = runCatching {
-            json.parseToJsonElement(request.body.readUtf8())
-                .jsonObject["params"]?.jsonObject?.get("method")?.jsonPrimitive?.content
-        }.getOrNull() ?: ""
+        val methodName =
+            runCatching {
+                json
+                    .parseToJsonElement(request.body.readUtf8())
+                    .jsonObject["params"]
+                    ?.jsonObject
+                    ?.get("method")
+                    ?.jsonPrimitive
+                    ?.content
+            }.getOrNull() ?: ""
         val output = rpcOutputs[methodName] ?: rpcOutputs["get"] ?: JsonPrimitive(0)
         return ok(
             buildJsonObject {
@@ -155,20 +178,24 @@ class FakeNode {
     // ---- Auth guard ------------------------------------------------------------------------
 
     /** Run [handler] only if the bearer token is currently valid; otherwise a 401. */
-    private inline fun guarded(request: RecordedRequest, handler: () -> MockResponse): MockResponse {
+    private inline fun guarded(
+        request: RecordedRequest,
+        handler: () -> MockResponse,
+    ): MockResponse {
         synchronized(lock) { protectedCalls++ }
         val reason = authError(request)
         return if (reason != null) unauthorized(reason) else handler()
     }
 
     /** Returns the `x-auth-error` reason if the request's bearer is not valid, else null. */
-    private fun authError(request: RecordedRequest): String? = synchronized(lock) {
-        if (familyRevoked) return "token_reuse"
-        val bearer = request.getHeader("Authorization") ?: ""
-        if (bearer != "Bearer $accessToken") return "token_expired"
-        if (accessExpired) return "token_expired"
-        null
-    }
+    private fun authError(request: RecordedRequest): String? =
+        synchronized(lock) {
+            if (familyRevoked) return "token_reuse"
+            val bearer = request.getHeader("Authorization") ?: ""
+            if (bearer != "Bearer $accessToken") return "token_expired"
+            if (accessExpired) return "token_expired"
+            null
+        }
 
     // ---- Response helpers ------------------------------------------------------------------
 
@@ -181,45 +208,56 @@ class FakeNode {
     private fun unauthorized(reason: String): MockResponse =
         MockResponse().setResponseCode(401).setHeader("x-auth-error", reason)
 
-    private fun tokenResponse(access: String, refresh: String): MockResponse =
+    private fun tokenResponse(
+        access: String,
+        refresh: String,
+    ): MockResponse =
         ok(
             buildJsonObject {
-                put("data", buildJsonObject { put("access_token", access); put("refresh_token", refresh) })
-            },
-        )
-
-    private fun providersBody(): JsonElement = buildJsonObject {
-        put(
-            "data",
-            buildJsonObject {
                 put(
-                    "providers",
-                    buildJsonArray {
-                        add(
-                            buildJsonObject {
-                                put("name", "user_password")
-                                put("type", "password")
-                                put("description", "dev")
-                                put("configured", true)
-                                put("config", buildJsonObject { })
-                            },
-                        )
+                    "data",
+                    buildJsonObject {
+                        put("access_token", access)
+                        put("refresh_token", refresh)
                     },
                 )
-                put("count", 1)
             },
         )
-    }
 
-    private fun identityBody(): JsonElement = buildJsonObject {
-        put(
-            "data",
-            buildJsonObject {
-                put("service", "mero-auth")
-                put("version", "test")
-                put("authentication_mode", "embedded")
-                put("providers", buildJsonArray { add(JsonPrimitive("user_password")) })
-            },
-        )
-    }
+    private fun providersBody(): JsonElement =
+        buildJsonObject {
+            put(
+                "data",
+                buildJsonObject {
+                    put(
+                        "providers",
+                        buildJsonArray {
+                            add(
+                                buildJsonObject {
+                                    put("name", "user_password")
+                                    put("type", "password")
+                                    put("description", "dev")
+                                    put("configured", true)
+                                    put("config", buildJsonObject { })
+                                },
+                            )
+                        },
+                    )
+                    put("count", 1)
+                },
+            )
+        }
+
+    private fun identityBody(): JsonElement =
+        buildJsonObject {
+            put(
+                "data",
+                buildJsonObject {
+                    put("service", "mero-auth")
+                    put("version", "test")
+                    put("authentication_mode", "embedded")
+                    put("providers", buildJsonArray { add(JsonPrimitive("user_password")) })
+                },
+            )
+        }
 }

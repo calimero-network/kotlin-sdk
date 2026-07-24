@@ -22,12 +22,16 @@ class EncryptedPrefsTokenStore(
     context: Context,
     fileName: String = DEFAULT_FILE_NAME,
 ) : TokenStore {
-
-    private val json = Json { ignoreUnknownKeys = true; encodeDefaults = true }
+    private val json =
+        Json {
+            ignoreUnknownKeys = true
+            encodeDefaults = true
+        }
 
     private val prefs by lazy {
         val masterKey =
-            MasterKey.Builder(context.applicationContext)
+            MasterKey
+                .Builder(context.applicationContext)
                 .setKeyScheme(MasterKey.KeyScheme.AES256_GCM)
                 .build()
         EncryptedSharedPreferences.create(

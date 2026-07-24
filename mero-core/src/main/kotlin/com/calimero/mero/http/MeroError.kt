@@ -2,13 +2,21 @@ package com.calimero.mero.http
 
 /** Base type for every error surfaced by the SDK. Abstract (not sealed) so subtypes can live in
  * sibling packages such as `com.calimero.mero.rpc`. */
-abstract class MeroException(message: String, cause: Throwable? = null) : Exception(message, cause)
+abstract class MeroException(
+    message: String,
+    cause: Throwable? = null,
+) : Exception(message, cause)
 
 /** A transport-level failure with no HTTP response (DNS, connection reset, timeout, …). */
-class NetworkException(message: String, cause: Throwable? = null) : MeroException(message, cause)
+class NetworkException(
+    message: String,
+    cause: Throwable? = null,
+) : MeroException(message, cause)
 
 /** An invalid-state error (e.g. refresh requested with no refresh token, no credentials to log in). */
-class MeroStateException(message: String) : MeroException(message)
+class MeroStateException(
+    message: String,
+) : MeroException(message)
 
 /**
  * A non-2xx HTTP response.

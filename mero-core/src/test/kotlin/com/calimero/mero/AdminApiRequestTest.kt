@@ -29,7 +29,6 @@ import java.util.concurrent.TimeUnit
  * *request*, not the response, so the decode error is swallowed and the recorded request inspected.
  */
 class AdminApiRequestTest {
-
     private lateinit var server: MockWebServer
     private lateinit var mero: Mero
 
@@ -37,13 +36,14 @@ class AdminApiRequestTest {
     fun setUp() {
         server = MockWebServer()
         server.start()
-        mero = Mero(
-            MeroConfig(
-                baseUrl = server.url("/").toString().trimEnd('/'),
-                tokenStore = MemoryTokenStore(),
-                timeoutMs = 5_000,
-            ),
-        )
+        mero =
+            Mero(
+                MeroConfig(
+                    baseUrl = server.url("/").toString().trimEnd('/'),
+                    tokenStore = MemoryTokenStore(),
+                    timeoutMs = 5_000,
+                ),
+            )
     }
 
     @After
@@ -52,7 +52,10 @@ class AdminApiRequestTest {
     }
 
     /** Enqueue a benign response, run the admin call (ignoring any decode error), return the request. */
-    private fun capture(response: String = "{}", block: suspend () -> Unit): RecordedRequest {
+    private fun capture(
+        response: String = "{}",
+        block: suspend () -> Unit,
+    ): RecordedRequest {
         server.enqueue(MockResponse().setBody(response).setHeader("Content-Type", "application/json"))
         runCatching { runBlocking { block() } }
         return server.takeRequest(2, TimeUnit.SECONDS) ?: error("no request captured")
@@ -121,11 +124,12 @@ class AdminApiRequestTest {
         assertEquals("GET", req.method)
         assertEquals("/admin-api/namespaces", req.path)
 
-        req = capture {
-            mero.admin.createNamespace(
-                CreateNamespaceRequest(applicationId = "app-1", upgradePolicy = UpgradePolicy.AUTOMATIC, name = "ns"),
-            )
-        }
+        req =
+            capture {
+                mero.admin.createNamespace(
+                    CreateNamespaceRequest(applicationId = "app-1", upgradePolicy = UpgradePolicy.AUTOMATIC, name = "ns"),
+                )
+            }
         assertEquals("POST", req.method)
         assertEquals("/admin-api/namespaces", req.path)
         val body = req.body.readUtf8()
@@ -135,9 +139,10 @@ class AdminApiRequestTest {
 
     @Test
     fun `createGroupInNamespace posts under the namespace`() {
-        val req = capture {
-            mero.admin.createGroupInNamespace("ns-1", CreateGroupInNamespaceRequest(name = "grp"))
-        }
+        val req =
+            capture {
+                mero.admin.createGroupInNamespace("ns-1", CreateGroupInNamespaceRequest(name = "grp"))
+            }
         assertEquals("POST", req.method)
         assertEquals("/admin-api/namespaces/ns-1/groups", req.path)
         assertTrue(req.body.readUtf8().contains("\"name\":\"grp\""))
@@ -145,9 +150,10 @@ class AdminApiRequestTest {
 
     @Test
     fun `setSubgroupVisibility puts the settings body`() {
-        val req = capture {
-            mero.admin.setSubgroupVisibility("grp-1", SetSubgroupVisibilityRequest(subgroupVisibility = "visible"))
-        }
+        val req =
+            capture {
+                mero.admin.setSubgroupVisibility("grp-1", SetSubgroupVisibilityRequest(subgroupVisibility = "visible"))
+            }
         assertEquals("PUT", req.method)
         assertEquals("/admin-api/groups/grp-1/settings/subgroup-visibility", req.path)
         assertTrue(req.body.readUtf8().contains("\"subgroupVisibility\":\"visible\""))
@@ -155,18 +161,21 @@ class AdminApiRequestTest {
 
     @Test
     fun `joinNamespace posts the invitation to the namespace join path`() {
-        val invitation = SignedGroupOpenInvitation(
-            invitation = GroupInvitationFromAdmin(
-                inviterIdentity = emptyList(),
-                groupId = emptyList(),
-                expirationTimestamp = 0,
-                secretSalt = emptyList(),
-            ),
-            inviterSignature = "sig",
-        )
-        val req = capture {
-            mero.admin.joinNamespace("ns-1", JoinNamespaceRequest(invitation = invitation, groupName = "g"))
-        }
+        val invitation =
+            SignedGroupOpenInvitation(
+                invitation =
+                    GroupInvitationFromAdmin(
+                        inviterIdentity = emptyList(),
+                        groupId = emptyList(),
+                        expirationTimestamp = 0,
+                        secretSalt = emptyList(),
+                    ),
+                inviterSignature = "sig",
+            )
+        val req =
+            capture {
+                mero.admin.joinNamespace("ns-1", JoinNamespaceRequest(invitation = invitation, groupName = "g"))
+            }
         assertEquals("POST", req.method)
         assertEquals("/admin-api/namespaces/ns-1/join", req.path)
         val body = req.body.readUtf8()

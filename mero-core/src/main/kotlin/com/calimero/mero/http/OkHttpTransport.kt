@@ -24,51 +24,51 @@ class OkHttpTransport(
     /** Invoked when the server reports the token family is gone (terminal). Must clear the store. */
     private val onAuthRevoked: (() -> Unit)? = null,
 ) : HttpClient {
-
     override suspend fun execute(
         method: String,
         path: String,
         body: String?,
         headers: Map<String, String>,
         contentType: String,
-    ): HttpResponse = withContext(Dispatchers.IO) {
-        val url = buildUrl(path)
-        val requestBody: RequestBody? = body?.toRequestBody(contentType.toMediaType())
+    ): HttpResponse =
+        withContext(Dispatchers.IO) {
+            val url = buildUrl(path)
+            val requestBody: RequestBody? = body?.toRequestBody(contentType.toMediaType())
 
-        val builder = Request.Builder().url(url)
-        when (method.uppercase()) {
-            "GET" -> builder.get()
-            "HEAD" -> builder.head()
-            "DELETE" -> if (requestBody != null) builder.delete(requestBody) else builder.delete()
-            "POST" -> builder.post(requestBody ?: EMPTY_BODY)
-            "PUT" -> builder.put(requestBody ?: EMPTY_BODY)
-            "PATCH" -> builder.patch(requestBody ?: EMPTY_BODY)
-            else -> error("Unsupported HTTP method: $method")
-        }
-        headers.forEach { (key, value) -> builder.header(key, value) }
-
-        val response =
-            try {
-                client.newCall(builder.build()).execute()
-            } catch (e: IOException) {
-                throw NetworkException(e.message ?: "Network error", e)
+            val builder = Request.Builder().url(url)
+            when (method.uppercase()) {
+                "GET" -> builder.get()
+                "HEAD" -> builder.head()
+                "DELETE" -> if (requestBody != null) builder.delete(requestBody) else builder.delete()
+                "POST" -> builder.post(requestBody ?: EMPTY_BODY)
+                "PUT" -> builder.put(requestBody ?: EMPTY_BODY)
+                "PATCH" -> builder.patch(requestBody ?: EMPTY_BODY)
+                else -> error("Unsupported HTTP method: $method")
             }
+            headers.forEach { (key, value) -> builder.header(key, value) }
 
-        response.use { resp ->
-            val bodyText = resp.body?.string() ?: ""
-            val responseHeaders = resp.headers.names().associateWith { resp.header(it) ?: "" }
-            val authError = resp.header("x-auth-error")
+            val response =
+                try {
+                    client.newCall(builder.build()).execute()
+                } catch (e: IOException) {
+                    throw NetworkException(e.message ?: "Network error", e)
+                }
 
-            // Terminal auth: the family is revoked. Do not refresh/retry — clear tokens and surface
-            // a distinguishable error. (mero-js §4.3 / overview §4.3.)
-            if ((resp.code == 401 || resp.code == 403) && authError != null && authError in TERMINAL_AUTH_ERRORS) {
-                onAuthRevoked?.invoke()
-                throw AuthRevokedException(authError, resp.code, bodyText, responseHeaders, url)
+            response.use { resp ->
+                val bodyText = resp.body?.string() ?: ""
+                val responseHeaders = resp.headers.names().associateWith { resp.header(it) ?: "" }
+                val authError = resp.header("x-auth-error")
+
+                // Terminal auth: the family is revoked. Do not refresh/retry — clear tokens and surface
+                // a distinguishable error. (mero-js §4.3 / overview §4.3.)
+                if ((resp.code == 401 || resp.code == 403) && authError != null && authError in TERMINAL_AUTH_ERRORS) {
+                    onAuthRevoked?.invoke()
+                    throw AuthRevokedException(authError, resp.code, bodyText, responseHeaders, url)
+                }
+
+                HttpResponse(resp.code, responseHeaders, bodyText, url)
             }
-
-            HttpResponse(resp.code, responseHeaders, bodyText, url)
         }
-    }
 
     private fun buildUrl(path: String): String {
         if (path.startsWith("http://") || path.startsWith("https://")) return path

@@ -12,7 +12,10 @@ import androidx.compose.runtime.staticCompositionLocalOf
 val LocalMeroClient: ProvidableCompositionLocal<MeroClient?> = staticCompositionLocalOf { null }
 
 @Composable
-fun MeroProvider(client: MeroClient, content: @Composable () -> Unit) {
+fun MeroProvider(
+    client: MeroClient,
+    content: @Composable () -> Unit,
+) {
     CompositionLocalProvider(LocalMeroClient provides client, content = content)
 }
 

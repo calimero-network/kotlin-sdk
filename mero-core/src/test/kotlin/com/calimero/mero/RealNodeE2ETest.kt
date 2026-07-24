@@ -21,7 +21,6 @@ import org.junit.Test
  *   MERO_AUTH_BOOTSTRAP_SECRET first-login setup code (core#3221), optional
  */
 class RealNodeE2ETest {
-
     private fun env(key: String): String? = System.getenv(key)?.takeIf { it.isNotBlank() }
 
     private fun makeClient(): Mero {
@@ -30,39 +29,46 @@ class RealNodeE2ETest {
     }
 
     @Test
-    fun `node is healthy`() = runBlocking {
-        assumeTrue("MERO_E2E_NODE_URL not set — skipping live-node e2e", env("MERO_E2E_NODE_URL") != null)
-        val mero = makeClient()
-        assertEquals("alive", mero.auth.getHealth().status)
-    }
+    fun `node is healthy`() =
+        runBlocking {
+            assumeTrue("MERO_E2E_NODE_URL not set — skipping live-node e2e", env("MERO_E2E_NODE_URL") != null)
+            val mero = makeClient()
+            assertEquals("alive", mero.auth.getHealth().status)
+        }
 
     @Test
-    fun `full auth journey`() = runBlocking {
-        assumeTrue("MERO_E2E_NODE_URL not set — skipping live-node e2e", env("MERO_E2E_NODE_URL") != null)
-        val mero = makeClient()
+    fun `full auth journey`() =
+        runBlocking {
+            assumeTrue("MERO_E2E_NODE_URL not set — skipping live-node e2e", env("MERO_E2E_NODE_URL") != null)
+            val mero = makeClient()
 
-        // Providers advertise the password auth method.
-        assertTrue(mero.auth.getProviders().count > 0)
+            // Providers advertise the password auth method.
+            assertTrue(mero.auth.getProviders().count > 0)
 
-        // Authenticate (bootstrap secret only matters on a fresh node's first login).
-        val creds = Credentials(
-            username = env("MERO_E2E_USER") ?: "dev",
-            password = env("MERO_E2E_PASS") ?: "dev-password",
-            bootstrapSecret = env("MERO_AUTH_BOOTSTRAP_SECRET"),
-        )
-        val tokens = mero.authenticate(creds)
-        assertTrue(tokens.accessToken.isNotEmpty())
-        assertTrue(tokens.refreshToken.isNotEmpty())
-        assertTrue(mero.isAuthenticated)
+            // Authenticate (bootstrap secret only matters on a fresh node's first login).
+            val creds =
+                Credentials(
+                    username = env("MERO_E2E_USER") ?: "dev",
+                    password = env("MERO_E2E_PASS") ?: "dev-password",
+                    bootstrapSecret = env("MERO_AUTH_BOOTSTRAP_SECRET"),
+                )
+            val tokens = mero.authenticate(creds)
+            assertTrue(tokens.accessToken.isNotEmpty())
+            assertTrue(tokens.refreshToken.isNotEmpty())
+            assertTrue(mero.isAuthenticated)
 
-        // The freshly minted token validates.
-        assertTrue(mero.auth.validateToken(tokens.accessToken).valid)
+            // The freshly minted token validates.
+            assertTrue(mero.auth.validateToken(tokens.accessToken).valid)
 
-        // A protected admin read succeeds with the bearer token.
-        assertTrue(mero.admin.getContexts().contexts.size >= 0)
+            // A protected admin read succeeds with the bearer token.
+            assertTrue(
+                mero.admin
+                    .getContexts()
+                    .contexts.size >= 0,
+            )
 
-        // Logout clears local state.
-        mero.logout()
-        assertFalse(mero.isAuthenticated)
-    }
+            // Logout clears local state.
+            mero.logout()
+            assertFalse(mero.isAuthenticated)
+        }
 }

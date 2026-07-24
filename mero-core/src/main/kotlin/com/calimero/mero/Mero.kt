@@ -33,47 +33,55 @@ import java.util.concurrent.TimeUnit
  * every read/write of tokens goes through it, so the reactive 401→refresh path re-reads the store
  * inside its lock and never replays a consumed refresh token.
  */
-class Mero(private val config: MeroConfig) {
-
-    private val json = Json {
-        ignoreUnknownKeys = true
-        explicitNulls = false
-        encodeDefaults = false
-    }
+class Mero(
+    private val config: MeroConfig,
+) {
+    private val json =
+        Json {
+            ignoreUnknownKeys = true
+            explicitNulls = false
+            encodeDefaults = false
+        }
 
     private val store: TokenStore = config.tokenStore ?: MemoryTokenStore()
 
-    private val coordinator = RefreshCoordinator(
-        tokenStore = store,
-        refreshCall = { bundle ->
-            val response = auth.refreshToken(
-                RefreshTokenRequest(accessToken = bundle.accessToken, refreshToken = bundle.refreshToken),
-            )
-            val access = response.data.accessToken
-            TokenData(
-                accessToken = access,
-                refreshToken = response.data.refreshToken,
-                expiresAt = expiresAtFromJwt(access, System.currentTimeMillis() + ONE_HOUR_MS),
-            )
-        },
-        lockFile = config.refreshLockFile,
-    )
+    private val coordinator =
+        RefreshCoordinator(
+            tokenStore = store,
+            refreshCall = { bundle ->
+                val response =
+                    auth.refreshToken(
+                        RefreshTokenRequest(accessToken = bundle.accessToken, refreshToken = bundle.refreshToken),
+                    )
+                val access = response.data.accessToken
+                TokenData(
+                    accessToken = access,
+                    refreshToken = response.data.refreshToken,
+                    expiresAt = expiresAtFromJwt(access, System.currentTimeMillis() + ONE_HOUR_MS),
+                )
+            },
+            lockFile = config.refreshLockFile,
+        )
 
-    private val okHttpClient: OkHttpClient = OkHttpClient.Builder()
-        .connectTimeout(config.timeoutMs, TimeUnit.MILLISECONDS)
-        .readTimeout(config.timeoutMs, TimeUnit.MILLISECONDS)
-        .writeTimeout(config.timeoutMs, TimeUnit.MILLISECONDS)
-        .retryOnConnectionFailure(true)
-        .addInterceptor(AuthInterceptor { store.getTokens()?.accessToken })
-        .authenticator(TokenAuthenticator { triggering -> coordinator.refresh(triggering).accessToken })
-        .build()
+    private val okHttpClient: OkHttpClient =
+        OkHttpClient
+            .Builder()
+            .connectTimeout(config.timeoutMs, TimeUnit.MILLISECONDS)
+            .readTimeout(config.timeoutMs, TimeUnit.MILLISECONDS)
+            .writeTimeout(config.timeoutMs, TimeUnit.MILLISECONDS)
+            .retryOnConnectionFailure(true)
+            .addInterceptor(AuthInterceptor { store.getTokens()?.accessToken })
+            .authenticator(TokenAuthenticator { triggering -> coordinator.refresh(triggering).accessToken })
+            .build()
 
     /** Long-lived streaming client for SSE: no read timeout, no auth interceptor/authenticator. */
-    private val sseHttpClient: OkHttpClient = OkHttpClient.Builder()
-        .connectTimeout(config.timeoutMs, TimeUnit.MILLISECONDS)
-        .readTimeout(0, TimeUnit.MILLISECONDS)
-        .retryOnConnectionFailure(true)
-        .build()
+    private val sseHttpClient: OkHttpClient =
+        OkHttpClient
+            .Builder()
+            .connectTimeout(config.timeoutMs, TimeUnit.MILLISECONDS)
+            .readTimeout(0, TimeUnit.MILLISECONDS)
+            .retryOnConnectionFailure(true)
+            .build()
 
     private val transport: HttpClient =
         OkHttpTransport(
@@ -119,36 +127,40 @@ class Mero(private val config: MeroConfig) {
      * `MERO_AUTH_BOOTSTRAP_SECRET` env var (test harnesses), and omitted otherwise.
      */
     suspend fun authenticate(credentials: Credentials? = null): TokenData {
-        val creds = credentials
-            ?: config.credentials
-            ?: throw MeroStateException("No credentials provided for authentication")
+        val creds =
+            credentials
+                ?: config.credentials
+                ?: throw MeroStateException("No credentials provided for authentication")
 
         val bootstrapSecret =
             creds.bootstrapSecret?.takeIf { it.isNotBlank() }
                 ?: System.getenv("MERO_AUTH_BOOTSTRAP_SECRET")?.takeIf { it.isNotBlank() }
 
-        val providerData = buildJsonObject {
-            put("username", creds.username)
-            put("password", creds.password)
-            if (bootstrapSecret != null) put("bootstrap_secret", bootstrapSecret)
-        }
+        val providerData =
+            buildJsonObject {
+                put("username", creds.username)
+                put("password", creds.password)
+                if (bootstrapSecret != null) put("bootstrap_secret", bootstrapSecret)
+            }
 
-        val request = TokenRequest(
-            authMethod = "user_password",
-            publicKey = creds.username,
-            clientName = "mero-kotlin-sdk",
-            permissions = listOf("admin"),
-            timestamp = System.currentTimeMillis() / 1000,
-            providerData = providerData,
-        )
+        val request =
+            TokenRequest(
+                authMethod = "user_password",
+                publicKey = creds.username,
+                clientName = "mero-kotlin-sdk",
+                permissions = listOf("admin"),
+                timestamp = System.currentTimeMillis() / 1000,
+                providerData = providerData,
+            )
 
         val response = auth.generateTokens(request)
         val access = response.data.accessToken
-        val data = TokenData(
-            accessToken = access,
-            refreshToken = response.data.refreshToken,
-            expiresAt = expiresAtFromJwt(access, System.currentTimeMillis() + ONE_HOUR_MS),
-        )
+        val data =
+            TokenData(
+                accessToken = access,
+                refreshToken = response.data.refreshToken,
+                expiresAt = expiresAtFromJwt(access, System.currentTimeMillis() + ONE_HOUR_MS),
+            )
         store.setTokens(data)
         return data
     }
@@ -200,11 +212,16 @@ class Mero(private val config: MeroConfig) {
         /** Parse an SSO callback URL's hash fragment. */
         @JvmStatic
         fun parseAuthCallback(url: String): AuthCallbackResult? =
-            com.calimero.mero.auth.parseAuthCallback(url)
+            com.calimero.mero.auth
+                .parseAuthCallback(url)
 
         /** Build the node's SSO login URL. */
         @JvmStatic
-        fun buildAuthLoginUrl(nodeUrl: String, options: AuthLoginOptions): String =
-            com.calimero.mero.auth.buildAuthLoginUrl(nodeUrl, options)
+        fun buildAuthLoginUrl(
+            nodeUrl: String,
+            options: AuthLoginOptions,
+        ): String =
+            com.calimero.mero.auth
+                .buildAuthLoginUrl(nodeUrl, options)
     }
 }

@@ -25,17 +25,20 @@ import org.junit.runner.RunWith
  */
 @RunWith(AndroidJUnit4::class)
 class LoginFlowTest {
-
     @get:Rule
     val composeRule = createEmptyComposeRule()
 
     private fun launchMock() {
-        val intent = Intent(ApplicationProvider.getApplicationContext(), MainActivity::class.java)
-            .putExtra("mock", true)
+        val intent =
+            Intent(ApplicationProvider.getApplicationContext(), MainActivity::class.java)
+                .putExtra("mock", true)
         ActivityScenario.launch<MainActivity>(intent)
     }
 
-    private fun waitForTag(tag: String, timeoutMs: Long = 10_000) {
+    private fun waitForTag(
+        tag: String,
+        timeoutMs: Long = 10_000,
+    ) {
         composeRule.waitUntil(timeoutMs) {
             composeRule.onAllNodesWithTag(tag).fetchSemanticsNodes().isNotEmpty()
         }

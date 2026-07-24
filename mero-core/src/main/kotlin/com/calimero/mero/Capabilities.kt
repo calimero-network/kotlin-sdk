@@ -24,14 +24,23 @@ object Capabilities {
     private const val U32_MASK = 0xFFFF_FFFFL
 
     /** True if [mask] has every bit of [cap] set. */
-    fun hasCap(mask: Long, cap: Long): Boolean {
+    fun hasCap(
+        mask: Long,
+        cap: Long,
+    ): Boolean {
         val capU32 = cap and U32_MASK
         return (mask and capU32) == capU32
     }
 
     /** [mask] with every bit of [cap] set (u32-normalized). */
-    fun withCap(mask: Long, cap: Long): Long = (mask or cap) and U32_MASK
+    fun withCap(
+        mask: Long,
+        cap: Long,
+    ): Long = (mask or cap) and U32_MASK
 
     /** [mask] with every bit of [cap] cleared (u32-normalized). */
-    fun withoutCap(mask: Long, cap: Long): Long = (mask and cap.inv()) and U32_MASK
+    fun withoutCap(
+        mask: Long,
+        cap: Long,
+    ): Long = (mask and cap.inv()) and U32_MASK
 }

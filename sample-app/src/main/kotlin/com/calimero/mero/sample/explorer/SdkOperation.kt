@@ -14,10 +14,18 @@ data class OpField(
     val kind: OpFieldKind,
 ) {
     companion object {
-        fun line(id: String, label: String, placeholder: String = ""): OpField =
+        fun line(
+            id: String,
+            label: String,
+            placeholder: String = "",
+        ): OpField =
             OpField(id, label, placeholder, OpFieldKind.LINE)
 
-        fun json(id: String = "body", label: String = "Request JSON", placeholder: String = "{}"): OpField =
+        fun json(
+            id: String = "body",
+            label: String = "Request JSON",
+            placeholder: String = "{}",
+        ): OpField =
             OpField(id, label, placeholder, OpFieldKind.MULTILINE)
     }
 }
@@ -37,12 +45,13 @@ class SDKOperation(
 
 /** Rendering / decoding helpers shared by the operation catalog. */
 object Fmt {
-    val pretty: Json = Json {
-        prettyPrint = true
-        ignoreUnknownKeys = true
-        encodeDefaults = false
-        explicitNulls = false
-    }
+    val pretty: Json =
+        Json {
+            prettyPrint = true
+            ignoreUnknownKeys = true
+            encodeDefaults = false
+            explicitNulls = false
+        }
 
     /** Pretty-print any serializable value. */
     inline fun <reified T> json(value: T): String = pretty.encodeToString(value)

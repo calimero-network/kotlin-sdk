@@ -22,8 +22,10 @@ class TokenAuthenticator(
      * access token, or null if refresh is impossible/failed. */
     private val refresh: suspend (triggeringAccessToken: String?) -> String?,
 ) : Authenticator {
-
-    override fun authenticate(route: Route?, response: Response): Request? {
+    override fun authenticate(
+        route: Route?,
+        response: Response,
+    ): Request? {
         // Give up after one retry to avoid an infinite 401→refresh→401 loop.
         if (responseCount(response) >= MAX_ATTEMPTS) return null
 
@@ -32,7 +34,8 @@ class TokenAuthenticator(
         if (response.header("x-auth-error") != AUTH_ERROR_TOKEN_EXPIRED) return null
 
         val triggering =
-            response.request.header("Authorization")
+            response.request
+                .header("Authorization")
                 ?.removePrefix("Bearer ")
                 ?.trim()
                 ?.ifBlank { null }
@@ -48,7 +51,8 @@ class TokenAuthenticator(
 
         if (newToken.isNullOrBlank()) return null
 
-        return response.request.newBuilder()
+        return response.request
+            .newBuilder()
             .header("Authorization", "Bearer $newToken")
             .build()
     }

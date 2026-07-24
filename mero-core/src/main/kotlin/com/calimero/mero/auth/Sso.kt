@@ -56,7 +56,10 @@ fun parseAuthCallback(url: String): AuthCallbackResult? {
  * Build the node's auth-login URL to open in a browser / Custom Tab. Port of
  * mero-js `buildAuthLoginUrl`.
  */
-fun buildAuthLoginUrl(nodeUrl: String, opts: AuthLoginOptions): String {
+fun buildAuthLoginUrl(
+    nodeUrl: String,
+    opts: AuthLoginOptions,
+): String {
     val params = LinkedHashMap<String, String>()
     params["callback-url"] = opts.callbackUrl
     opts.permissions?.takeIf { it.isNotEmpty() }?.let { params["permissions"] = it.joinToString(",") }
@@ -72,7 +75,8 @@ fun buildAuthLoginUrl(nodeUrl: String, opts: AuthLoginOptions): String {
 }
 
 private fun parseQuery(query: String): Map<String, String> =
-    query.split("&")
+    query
+        .split("&")
         .filter { it.isNotEmpty() }
         .associate { pair ->
             val idx = pair.indexOf('=')

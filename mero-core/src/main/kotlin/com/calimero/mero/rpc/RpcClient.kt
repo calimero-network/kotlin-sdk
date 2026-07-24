@@ -53,7 +53,6 @@ private data class JsonRpcResponse(
 class RpcClient(
     @PublishedApi internal val http: HttpClient,
 ) {
-
     /** Execute a contract method and decode `result.output` with [deserializer] (dynamic types). */
     suspend fun <T> execute(
         contextId: String,
@@ -87,23 +86,26 @@ class RpcClient(
         argsJson: JsonObject = JsonObject(emptyMap()),
         executorPublicKey: String? = null,
     ): JsonElement {
-        val body = buildJsonObject {
-            put("jsonrpc", "2.0")
-            put("id", 1)
-            put("method", "execute")
-            put(
-                "params",
-                buildJsonObject {
-                    put("contextId", contextId)
-                    put("method", method)
-                    put("argsJson", argsJson)
-                    if (executorPublicKey != null) put("executorPublicKey", executorPublicKey)
-                },
-            )
-        }
+        val body =
+            buildJsonObject {
+                put("jsonrpc", "2.0")
+                put("id", 1)
+                put("method", "execute")
+                put(
+                    "params",
+                    buildJsonObject {
+                        put("contextId", contextId)
+                        put("method", method)
+                        put("argsJson", argsJson)
+                        if (executorPublicKey != null) put("executorPublicKey", executorPublicKey)
+                    },
+                )
+            }
 
-        val res = http.execute("POST", "/jsonrpc", http.json.encodeToString(JsonObject.serializer(), body))
-            .ensureSuccessful()
+        val res =
+            http
+                .execute("POST", "/jsonrpc", http.json.encodeToString(JsonObject.serializer(), body))
+                .ensureSuccessful()
         val parsed = http.json.decodeFromString<JsonRpcResponse>(res.body)
 
         parsed.error?.let { err ->

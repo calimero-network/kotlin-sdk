@@ -42,15 +42,20 @@ internal fun base64UrlDecode(input: String): ByteArray {
  *
  * Port of `expiresAtFromJwt` in mero-js.
  */
-fun expiresAtFromJwt(token: String, fallbackMs: Long): Long {
-    return try {
+fun expiresAtFromJwt(
+    token: String,
+    fallbackMs: Long,
+): Long =
+    try {
         val parts = token.split(".")
         if (parts.size == 3) {
             val payloadJson = base64UrlDecode(parts[1]).decodeToString()
-            val exp = jwtJson.parseToJsonElement(payloadJson)
-                .jsonObject["exp"]
-                ?.jsonPrimitive
-                ?.longOrNull
+            val exp =
+                jwtJson
+                    .parseToJsonElement(payloadJson)
+                    .jsonObject["exp"]
+                    ?.jsonPrimitive
+                    ?.longOrNull
             if (exp != null) exp * 1000 else fallbackMs
         } else {
             fallbackMs
@@ -58,4 +63,3 @@ fun expiresAtFromJwt(token: String, fallbackMs: Long): Long {
     } catch (_: Exception) {
         fallbackMs
     }
-}

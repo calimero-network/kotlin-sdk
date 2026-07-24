@@ -39,15 +39,20 @@ class MeroClient(
     private val baseUrl: String,
     private val allowedNodeUrls: List<String> = emptyList(),
 ) {
-    private val _state = MutableStateFlow(
-        MeroAuthState(isAuthenticated = mero.isAuthenticated, nodeUrl = baseUrl),
-    )
+    private val _state =
+        MutableStateFlow(
+            MeroAuthState(isAuthenticated = mero.isAuthenticated, nodeUrl = baseUrl),
+        )
     val state: StateFlow<MeroAuthState> = _state.asStateFlow()
 
     val rpc: RpcClient get() = mero.rpc
 
     /** Direct credential login. */
-    suspend fun login(username: String, password: String, bootstrapSecret: String? = null) {
+    suspend fun login(
+        username: String,
+        password: String,
+        bootstrapSecret: String? = null,
+    ) {
         _state.update { it.copy(isLoading = true, error = null) }
         try {
             mero.authenticate(Credentials(username, password, bootstrapSecret))
@@ -58,7 +63,10 @@ class MeroClient(
     }
 
     /** Open the node's hosted SSO login in a Custom Tab; the result arrives via [handleAuthCallback]. */
-    fun startSsoLogin(context: Context, options: AuthLoginOptions) {
+    fun startSsoLogin(
+        context: Context,
+        options: AuthLoginOptions,
+    ) {
         SsoLauncher.launch(context, baseUrl, options)
     }
 
@@ -108,13 +116,14 @@ class MeroClient(
             allowedNodeUrls: List<String> = emptyList(),
         ): MeroClient {
             val appContext = context.applicationContext
-            val mero = Mero(
-                MeroConfig(
-                    baseUrl = baseUrl,
-                    tokenStore = EncryptedPrefsTokenStore(appContext),
-                    refreshLockFile = File(appContext.filesDir, "mero-refresh.lock"),
-                ),
-            )
+            val mero =
+                Mero(
+                    MeroConfig(
+                        baseUrl = baseUrl,
+                        tokenStore = EncryptedPrefsTokenStore(appContext),
+                        refreshLockFile = File(appContext.filesDir, "mero-refresh.lock"),
+                    ),
+                )
             return MeroClient(mero, baseUrl, allowedNodeUrls)
         }
     }

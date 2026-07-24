@@ -11,9 +11,14 @@ import androidx.browser.customtabs.CustomTabsIntent
  * [parseAuthCallback], then [com.calimero.mero.Mero.setTokenData].
  */
 object SsoLauncher {
-    fun launch(context: Context, nodeUrl: String, options: AuthLoginOptions) {
+    fun launch(
+        context: Context,
+        nodeUrl: String,
+        options: AuthLoginOptions,
+    ) {
         val url = buildAuthLoginUrl(nodeUrl, options)
-        CustomTabsIntent.Builder()
+        CustomTabsIntent
+            .Builder()
             .setShowTitle(true)
             .build()
             .launchUrl(context, Uri.parse(url))

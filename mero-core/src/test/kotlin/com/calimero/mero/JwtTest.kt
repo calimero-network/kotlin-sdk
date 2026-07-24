@@ -5,7 +5,6 @@ import org.junit.Test
 import java.util.Base64
 
 class JwtTest {
-
     private fun jwt(payloadJson: String): String {
         val enc = Base64.getUrlEncoder().withoutPadding()
         val header = enc.encodeToString("""{"alg":"HS256","typ":"JWT"}""".toByteArray())

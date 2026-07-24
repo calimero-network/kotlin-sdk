@@ -11,6 +11,8 @@ import com.calimero.mero.TokenData
  */
 interface TokenStore {
     fun getTokens(): TokenData?
+
     fun setTokens(data: TokenData)
+
     fun clear()
 }

@@ -15,7 +15,6 @@ import org.junit.Before
 import org.junit.Test
 
 class MeroClientTest {
-
     private lateinit var server: MockWebServer
     private lateinit var client: MeroClient
     private lateinit var baseUrl: String
@@ -33,23 +32,25 @@ class MeroClientTest {
     fun tearDown() = server.shutdown()
 
     @Test
-    fun `login flips authenticated state`() = runBlocking {
-        server.enqueue(MockResponse().setBody("""{"data":{"access_token":"a","refresh_token":"r"}}"""))
-        client.login("alice", "pw")
-        val state = client.state.value
-        assertTrue(state.isAuthenticated)
-        assertFalse(state.isLoading)
-        assertNull(state.error)
-    }
+    fun `login flips authenticated state`() =
+        runBlocking {
+            server.enqueue(MockResponse().setBody("""{"data":{"access_token":"a","refresh_token":"r"}}"""))
+            client.login("alice", "pw")
+            val state = client.state.value
+            assertTrue(state.isAuthenticated)
+            assertFalse(state.isLoading)
+            assertNull(state.error)
+        }
 
     @Test
-    fun `login failure surfaces an error and stays logged out`() = runBlocking {
-        server.enqueue(MockResponse().setResponseCode(401).setBody("nope"))
-        client.login("alice", "wrong")
-        val state = client.state.value
-        assertFalse(state.isAuthenticated)
-        assertTrue(state.error != null)
-    }
+    fun `login failure surfaces an error and stays logged out`() =
+        runBlocking {
+            server.enqueue(MockResponse().setResponseCode(401).setBody("nope"))
+            client.login("alice", "wrong")
+            val state = client.state.value
+            assertFalse(state.isAuthenticated)
+            assertTrue(state.error != null)
+        }
 
     @Test
     fun `handleAuthCallback adopts tokens from a trusted node`() {
@@ -70,13 +71,14 @@ class MeroClientTest {
     }
 
     @Test
-    fun `logout resets state`() = runBlocking {
-        server.enqueue(MockResponse().setBody("""{"data":{"access_token":"a","refresh_token":"r"}}"""))
-        client.login("alice", "pw")
-        assertTrue(client.state.value.isAuthenticated)
+    fun `logout resets state`() =
+        runBlocking {
+            server.enqueue(MockResponse().setBody("""{"data":{"access_token":"a","refresh_token":"r"}}"""))
+            client.login("alice", "pw")
+            assertTrue(client.state.value.isAuthenticated)
 
-        client.logout()
-        assertFalse(client.state.value.isAuthenticated)
-        assertNull(client.mero.getTokenData())
-    }
+            client.logout()
+            assertFalse(client.state.value.isAuthenticated)
+            assertNull(client.mero.getTokenData())
+        }
 }

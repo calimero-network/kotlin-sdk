@@ -9,11 +9,11 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class SsoTest {
-
     @Test
     fun `parses tokens and ids from the hash fragment`() {
-        val url = "myapp://auth-callback#access_token=aaa&refresh_token=bbb&application_id=app1" +
-            "&context_id=ctx1&context_identity=id1&node_url=https%3A%2F%2Fnode.example.com"
+        val url =
+            "myapp://auth-callback#access_token=aaa&refresh_token=bbb&application_id=app1" +
+                "&context_id=ctx1&context_identity=id1&node_url=https%3A%2F%2Fnode.example.com"
         val result = parseAuthCallback(url)!!
         assertEquals("aaa", result.accessToken)
         assertEquals("bbb", result.refreshToken)
@@ -35,14 +35,15 @@ class SsoTest {
 
     @Test
     fun `builds a login url with callback, mode and permissions`() {
-        val url = buildAuthLoginUrl(
-            "https://node.example.com/",
-            AuthLoginOptions(
-                callbackUrl = "myapp://auth-callback",
-                mode = "login",
-                permissions = listOf("admin", "context"),
-            ),
-        )
+        val url =
+            buildAuthLoginUrl(
+                "https://node.example.com/",
+                AuthLoginOptions(
+                    callbackUrl = "myapp://auth-callback",
+                    mode = "login",
+                    permissions = listOf("admin", "context"),
+                ),
+            )
         assertTrue(url.startsWith("https://node.example.com/auth/login?"))
         assertTrue(url.contains("callback-url=myapp"))
         assertTrue(url.contains("mode=login"))
@@ -51,16 +52,17 @@ class SsoTest {
 
     @Test
     fun `includes package metadata when provided`() {
-        val url = buildAuthLoginUrl(
-            "https://node.example.com",
-            AuthLoginOptions(
-                callbackUrl = "myapp://cb",
-                mode = "install",
-                packageName = "com.calimero.demo",
-                packageVersion = "1.2.3",
-                registryUrl = "https://registry.example.com",
-            ),
-        )
+        val url =
+            buildAuthLoginUrl(
+                "https://node.example.com",
+                AuthLoginOptions(
+                    callbackUrl = "myapp://cb",
+                    mode = "install",
+                    packageName = "com.calimero.demo",
+                    packageVersion = "1.2.3",
+                    registryUrl = "https://registry.example.com",
+                ),
+            )
         assertTrue(url.contains("package-name=com.calimero.demo"))
         assertTrue(url.contains("package-version=1.2.3"))
         assertTrue(url.contains("registry-url=https%3A%2F%2Fregistry.example.com"))

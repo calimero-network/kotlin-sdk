@@ -10,7 +10,9 @@ import okhttp3.Response
  *
  * Analogous to mero-js's `getAuthToken` transport hook.
  */
-class AuthInterceptor(private val tokenProvider: () -> String?) : Interceptor {
+class AuthInterceptor(
+    private val tokenProvider: () -> String?,
+) : Interceptor {
     override fun intercept(chain: Interceptor.Chain): Response {
         val request = chain.request()
         if (request.header("Authorization") != null) {

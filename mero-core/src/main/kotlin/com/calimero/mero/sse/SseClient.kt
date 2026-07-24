@@ -57,35 +57,40 @@ class SseClient(
     private val client: OkHttpClient = OkHttpClient(),
     private val json: Json = Json { ignoreUnknownKeys = true },
 ) {
-
     /**
      * Cold stream of events for the given [contextIds]. Cancelling the collecting coroutine closes
      * the connection. Each connection attempt subscribes on the `connect` frame; a `close` frame or
      * any drop triggers a reconnect after [RECONNECT_DELAY_MS].
      */
-    fun events(contextIds: List<String>): Flow<ContextEvent> = channelFlow {
-        while (isActive) {
-            val accessToken = token()
-            if (accessToken != null) {
-                runConnection(contextIds, accessToken)
+    fun events(contextIds: List<String>): Flow<ContextEvent> =
+        channelFlow {
+            while (isActive) {
+                val accessToken = token()
+                if (accessToken != null) {
+                    runConnection(contextIds, accessToken)
+                }
+                // Wait before reconnecting (or before retrying when no token was available yet). The
+                // cancellable delay exits the loop when the collector is cancelled.
+                delay(RECONNECT_DELAY_MS)
             }
-            // Wait before reconnecting (or before retrying when no token was available yet). The
-            // cancellable delay exits the loop when the collector is cancelled.
-            delay(RECONNECT_DELAY_MS)
+            awaitClose { }
         }
-        awaitClose { }
-    }
 
     /**
      * One connection attempt: open the SSE stream, subscribe on `connect`, forward events into
      * [scope] until the stream ends (server `close`, a drop, or failure). Suspends until then.
      */
-    private suspend fun ProducerScope<ContextEvent>.runConnection(contextIds: List<String>, accessToken: String) {
+    private suspend fun ProducerScope<ContextEvent>.runConnection(
+        contextIds: List<String>,
+        accessToken: String,
+    ) {
         val base = baseUrl.trimEnd('/')
-        val request = Request.Builder()
-            .url("$base/sse?token=$accessToken")
-            .header("Accept", "text/event-stream")
-            .build()
+        val request =
+            Request
+                .Builder()
+                .url("$base/sse?token=$accessToken")
+                .header("Accept", "text/event-stream")
+                .build()
 
         // Bridges the EventSource callback into structured concurrency: completes when the stream
         // ends (server `close`, drop, or failure) so the caller can reconnect.
@@ -106,14 +111,22 @@ class SseClient(
         accessToken: String,
         done: CompletableDeferred<Unit>,
     ) = object : EventSourceListener() {
-        override fun onEvent(eventSource: EventSource, id: String?, type: String?, data: String) {
+        override fun onEvent(
+            eventSource: EventSource,
+            id: String?,
+            type: String?,
+            data: String,
+        ) {
             val obj = runCatching { json.parseToJsonElement(data).jsonObject }.getOrNull() ?: return
 
             val frameType = obj["type"]?.jsonPrimitive?.contentOrNull
             if (frameType != null) {
                 when (frameType) {
-                    "connect" -> obj["session_id"]?.jsonPrimitive?.contentOrNull
-                        ?.let { subscribe(base, contextIds, it, accessToken) }
+                    "connect" ->
+                        obj["session_id"]
+                            ?.jsonPrimitive
+                            ?.contentOrNull
+                            ?.let { subscribe(base, contextIds, it, accessToken) }
                     "close" -> {
                         eventSource.cancel()
                         if (!done.isCompleted) done.complete(Unit) // reconnect
@@ -132,7 +145,11 @@ class SseClient(
             if (!done.isCompleted) done.complete(Unit)
         }
 
-        override fun onFailure(eventSource: EventSource, t: Throwable?, response: okhttp3.Response?) {
+        override fun onFailure(
+            eventSource: EventSource,
+            t: Throwable?,
+            response: okhttp3.Response?,
+        ) {
             if (!done.isCompleted) done.complete(Unit)
         }
     }
@@ -142,25 +159,33 @@ class SseClient(
      * open — the reason mero-chat moved to SSE). Fire-and-forget; failures just mean the next
      * `connect` re-subscribes.
      */
-    private fun subscribe(base: String, contextIds: List<String>, sessionId: String, accessToken: String) {
-        val payload = buildJsonObject {
-            put("id", sessionId)
-            put("method", "subscribe")
-            put(
-                "params",
-                buildJsonObject {
-                    put(
-                        "contextIds",
-                        buildJsonArray { contextIds.forEach { add(it) } },
-                    )
-                },
-            )
-        }
-        val request = Request.Builder()
-            .url("$base/sse/subscription")
-            .header("Authorization", "Bearer $accessToken")
-            .post(json.encodeToString(JsonObject.serializer(), payload).toRequestBody(JSON_MEDIA))
-            .build()
+    private fun subscribe(
+        base: String,
+        contextIds: List<String>,
+        sessionId: String,
+        accessToken: String,
+    ) {
+        val payload =
+            buildJsonObject {
+                put("id", sessionId)
+                put("method", "subscribe")
+                put(
+                    "params",
+                    buildJsonObject {
+                        put(
+                            "contextIds",
+                            buildJsonArray { contextIds.forEach { add(it) } },
+                        )
+                    },
+                )
+            }
+        val request =
+            Request
+                .Builder()
+                .url("$base/sse/subscription")
+                .header("Authorization", "Bearer $accessToken")
+                .post(json.encodeToString(JsonObject.serializer(), payload).toRequestBody(JSON_MEDIA))
+                .build()
         runCatching { client.newCall(request).execute().use { } }
     }
 

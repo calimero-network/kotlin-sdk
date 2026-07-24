@@ -23,7 +23,6 @@ import okhttp3.mockwebserver.MockWebServer
  * [com.calimero.mero.sample.mock.MockHomeScreen] and the CI instrumented `LoginFlowTest`.
  */
 class MockViewModel : ViewModel() {
-
     var isAuthenticated by mutableStateOf(false)
         private set
     var isLoading by mutableStateOf(false)
@@ -44,7 +43,11 @@ class MockViewModel : ViewModel() {
      * Empty username/password surfaces an inline error and performs no network work — matching the
      * Swift `MeroClient.login` guard the UI test asserts.
      */
-    fun login(node: String, user: String, password: String) {
+    fun login(
+        node: String,
+        user: String,
+        password: String,
+    ) {
         errorMessage = null
         if (user.isBlank() || password.isBlank()) {
             errorMessage = "Username and password are required."
@@ -56,10 +59,11 @@ class MockViewModel : ViewModel() {
                 // Start the server AND build the base URL on IO: MockWebServer.url() calls
                 // getCanonicalHostName(), a reverse-DNS lookup that throws
                 // NetworkOnMainThreadException if resumed on the main dispatcher.
-                val client = withContext(Dispatchers.IO) {
-                    val srv = server ?: FakeNode().start().also { server = it }
-                    Mero(MeroConfig(baseUrl = srv.url("/").toString(), tokenStore = MemoryTokenStore()))
-                }
+                val client =
+                    withContext(Dispatchers.IO) {
+                        val srv = server ?: FakeNode().start().also { server = it }
+                        Mero(MeroConfig(baseUrl = srv.url("/").toString(), tokenStore = MemoryTokenStore()))
+                    }
                 client.authenticate(Credentials(username = user, password = password))
                 mero = client
                 nodeUrl = node

@@ -6,7 +6,6 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class CapabilitiesTest {
-
     @Test
     fun `hasCap detects a set bit`() {
         val mask = Capabilities.CAN_INVITE_MEMBERS or Capabilities.MANAGE_MEMBERS
