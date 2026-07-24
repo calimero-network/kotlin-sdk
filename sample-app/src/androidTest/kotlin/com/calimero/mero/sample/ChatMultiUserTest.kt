@@ -4,6 +4,9 @@ import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
 import android.util.Log
+import androidx.compose.ui.semantics.SemanticsProperties
+import androidx.compose.ui.semantics.getOrNull
+import androidx.compose.ui.test.ComposeTimeoutException
 import androidx.compose.ui.test.junit4.createEmptyComposeRule
 import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onAllNodesWithText
@@ -68,7 +71,17 @@ class ChatMultiUserTest {
         composeRule.onNodeWithTag("usernameField").performTextInput(user)
         composeRule.onNodeWithTag("passwordField").performTextInput(pass)
         composeRule.onNodeWithTag("loginButton").performClick()
-        waitForTag("openChat")
+        // A first login on a fresh node is slow; on timeout report the on-screen error.
+        try {
+            waitForTag("openChat", timeoutMs = 60_000)
+        } catch (e: ComposeTimeoutException) {
+            val nodes = composeRule.onAllNodesWithTag("loginError").fetchSemanticsNodes()
+            val texts = nodes.mapNotNull { it.config.getOrNull(SemanticsProperties.Text)?.joinToString() }
+            throw AssertionError(
+                "login did not reach the explorer: ${texts.ifEmpty { listOf("no error shown (node $nodeUrl reachable?)") }}",
+                e,
+            )
+        }
     }
 
     private fun openChat() {
