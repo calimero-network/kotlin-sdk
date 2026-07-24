@@ -24,13 +24,33 @@ management**. Every method is a `suspend fun`.
 | `refreshToken(request: RefreshTokenRequest): TokenResponse` | `POST /auth/refresh` |
 | `validateToken(token: String): ValidationResult` | `HEAD /auth/validate` |
 | `revokeTokens(request: RevokeTokenRequest): RevokeTokenResponse` | `POST /admin/revoke` |
+| `generateMockTokens(request: MockTokenRequest): TokenResponse` | `POST /auth/mock-token` |
 | `listRootKeys(): List<RootKey>` | `GET /admin/keys` |
+| `createRootKey(request: CreateKeyRequest): CreateKeyResponse` | `POST /admin/keys` |
+| `deleteRootKey(keyId: String): DeleteKeyResponse` | `DELETE /admin/keys/{keyId}` |
 | `listClientKeys(): List<ClientKey>` | `GET /admin/keys/clients` |
+| `generateClientKey(request: GenerateClientKeyRequest): TokenResponse` | `POST /admin/client-key` |
+| `deleteClientKey(keyId, clientId): DeleteClientResponse` | `DELETE /admin/keys/{keyId}/clients/{clientId}` |
+| `getKeyPermissions(keyId: String): PermissionResponse` | `GET /admin/keys/{keyId}/permissions` |
+| `updateKeyPermissions(keyId, changes: UpdateKeyPermissionsRequest): PermissionResponse` | `PUT /admin/keys/{keyId}/permissions` |
 
 <Aside type="note">
   `validateToken` sends `Authorization: Bearer <token>` and never throws on a
   `401` — inspect the returned `ValidationResult.valid` / `status`.
 </Aside>
+
+<Aside type="caution">
+  `updateKeyPermissions` applies a **delta**, not a replacement: core removes
+  `remove` first, then adds `add`. A `permissions` field is ignored, so sending
+  the full desired set silently does nothing.
+
+  ```kotlin
+  mero.auth.updateKeyPermissions(keyId, UpdateKeyPermissionsRequest(add = listOf("admin")))
+  ```
+</Aside>
+
+`generateMockTokens` mints a token pair with no provider handshake — dev nodes and
+CI only; production nodes reject it.
 
 ## Types
 

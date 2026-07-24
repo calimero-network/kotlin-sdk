@@ -167,6 +167,7 @@ so there are no limit/offset/cursor parameters.
 | Method | Endpoint |
 | --- | --- |
 | `syncGroup(groupId, request? = null): SyncGroupResponseData` | `POST /groups/{groupId}/sync` |
+| `syncGroupContexts(groupId): ListGroupContextsResponseData` | *composite — see below* |
 | `registerGroupSigningKey(groupId, request): RegisterGroupSigningKeyResponseData` | `POST /groups/{groupId}/signing-key` |
 | `upgradeGroup(groupId, request): UpgradeGroupResponseData` | `POST /groups/{groupId}/upgrade` |
 | `getGroupUpgradeStatus(groupId): GroupUpgradeStatusResponseData` | `GET /groups/{groupId}/upgrade/status` |
@@ -174,6 +175,23 @@ so there are no limit/offset/cursor parameters.
 | `getMigrationStatus(namespaceId): MigrationStatus` | `GET /groups/{namespaceId}/migration-status` |
 | `getCascadeStatus(namespaceId): List<CascadeStatusEntry>` | `GET /groups/{namespaceId}/cascade-status` |
 | `abortMigration(namespaceId, request? = null): JsonElement` | `POST /groups/{namespaceId}/migration/abort` |
+
+### `syncGroupContexts` — the anti-"uninitialized context" helper
+
+Joining a group does not initialize its contexts on your node: cross-node sync is
+asynchronous, and until a context is joined **and** state-pulled it sits on the
+all-ones (`1111…`) uninitialized hash, so every read looks empty.
+`syncGroupContexts` does the whole dance for you:
+
+```kotlin
+// sync the group, then join + state-pull every context in it
+val contexts = mero.admin.syncGroupContexts(groupId)
+```
+
+It runs `syncGroup`, lists the group's contexts, then `joinContext` +
+`syncContext` for each, tolerating per-context failures (sync is async — call it
+again). The sample app's chat calls it in a short retry loop right after
+`joinNamespace`, which is what makes an invited space's channels appear.
 
 ## TEE
 

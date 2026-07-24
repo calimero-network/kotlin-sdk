@@ -42,6 +42,25 @@ val joined = mero.admin.joinNamespace(
 // joined.groupId, joined.memberIdentity
 ```
 
+Joining is only half the story: the group's **contexts** are not initialized on
+your node until each is joined and state-pulled, and cross-node sync is
+asynchronous. Until then a context sits on the all-ones (`1111…`) uninitialized
+hash and reads come back empty. Follow the join with
+[`syncGroupContexts`](/reference/admin-api/#syncgroupcontexts--the-anti-uninitialized-context-helper),
+retrying while the peer catches up:
+
+```kotlin
+repeat(6) {
+    val contexts = runCatching { mero.admin.syncGroupContexts(joined.groupId) }
+        .getOrNull().orEmpty()
+    if (contexts.isNotEmpty()) return@repeat
+    delay(2_000)
+}
+```
+
+If it stays empty, check `getPeersCount()` — 0 peers means this node has no one
+to sync from, which is a networking problem, not an app-id mismatch.
+
 ## Groups, members & roles
 
 ```kotlin
