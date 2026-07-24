@@ -95,6 +95,7 @@ jobs:
           name: android-e2e-single-node
           path: |
             .e2e-android.log
+            .e2e-logcat.log
             .mero-e2e-node.log
             sample-app/build/reports/androidTests/
           if-no-files-found: warn

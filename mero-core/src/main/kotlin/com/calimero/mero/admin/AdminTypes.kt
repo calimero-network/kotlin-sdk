@@ -412,19 +412,26 @@ typealias DeleteContextIdentityAliasResponseData = Empty
 
 // ---- Shared invitation types -----------------------------------------------
 
+/*
+ * Unlike the camelCase admin DTOs, the invitation types are serialized **snake_case** by core: they
+ * live in `calimero_context_config`, which has no `#[serde(rename_all = "camelCase")]`. Decoding
+ * them as camelCase fails with "Fields [inviterIdentity, groupId, …] are required", which is how
+ * "Invite people" used to break.
+ */
+
 @Serializable
 data class GroupInvitationFromAdmin(
-    val inviterIdentity: List<Int>,
-    val groupId: List<Int>,
-    val expirationTimestamp: Int,
-    val secretSalt: List<Int>,
-    val invitedRole: Int? = null,
+    @SerialName("inviter_identity") val inviterIdentity: List<Int>,
+    @SerialName("group_id") val groupId: List<Int>,
+    @SerialName("expiration_timestamp") val expirationTimestamp: Long,
+    @SerialName("secret_salt") val secretSalt: List<Int>,
+    @SerialName("invited_role") val invitedRole: Int? = null,
 )
 
 @Serializable
 data class SignedGroupOpenInvitation(
     val invitation: GroupInvitationFromAdmin,
-    val inviterSignature: String,
+    @SerialName("inviter_signature") val inviterSignature: String,
 )
 
 @Serializable
