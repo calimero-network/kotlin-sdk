@@ -4,7 +4,7 @@ import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.JsonElement
 
-/**
+/*
  * Admin API wire types — ported 1:1 from the Swift MeroKit `AdminTypes.swift`
  * (itself a 1:1 port of mero-js `admin-types.ts`).
  *
@@ -21,8 +21,6 @@ import kotlinx.serialization.json.JsonElement
  *     `package` is a reserved keyword; the wire name is preserved via `@SerialName("package")`.
  */
 
-// ---- Shared ----------------------------------------------------------------
-
 /** Serializes to/decodes from an empty JSON object `{}` (`Record<string, never>`). */
 @Serializable
 class Empty
@@ -30,16 +28,22 @@ class Empty
 // ---- Health and Status -----------------------------------------------------
 
 @Serializable
-data class HealthStatus(val status: String)
+data class HealthStatus(
+    val status: String,
+)
 
 /**
  * NOTE: unlike most reads this is NOT unwrapped — `isAuthed` returns the whole
  * envelope, which core shapes as `{ data: { status } }`.
  */
 @Serializable
-data class AdminAuthStatus(val data: StatusInner) {
+data class AdminAuthStatus(
+    val data: StatusInner,
+) {
     @Serializable
-    data class StatusInner(val status: String)
+    data class StatusInner(
+        val status: String,
+    )
 }
 
 // ---- Applications ----------------------------------------------------------
@@ -62,13 +66,20 @@ data class InstallDevApplicationRequest(
 )
 
 @Serializable
-data class InstallApplicationResponseData(val applicationId: String)
+data class InstallApplicationResponseData(
+    val applicationId: String,
+)
 
 @Serializable
-data class UninstallApplicationResponseData(val applicationId: String)
+data class UninstallApplicationResponseData(
+    val applicationId: String,
+)
 
 @Serializable
-data class ApplicationBlob(val bytecode: String, val compiled: String)
+data class ApplicationBlob(
+    val bytecode: String,
+    val compiled: String,
+)
 
 @Serializable
 data class Application(
@@ -84,10 +95,14 @@ data class Application(
 )
 
 @Serializable
-data class ListApplicationsResponseData(val apps: List<Application>)
+data class ListApplicationsResponseData(
+    val apps: List<Application>,
+)
 
 @Serializable
-data class GetApplicationResponseData(val application: Application? = null)
+data class GetApplicationResponseData(
+    val application: Application? = null,
+)
 
 /** One installed blob for an application (distinct from the package registry). */
 @Serializable
@@ -99,7 +114,9 @@ data class ApplicationVersionEntry(
 )
 
 @Serializable
-data class ListApplicationVersionsResponseData(val data: List<ApplicationVersionEntry>)
+data class ListApplicationVersionsResponseData(
+    val data: List<ApplicationVersionEntry>,
+)
 
 // ---- Packages --------------------------------------------------------------
 
@@ -110,10 +127,14 @@ data class GetLatestVersionResponseData(
 )
 
 @Serializable
-data class ListPackagesResponseData(val packages: List<String>)
+data class ListPackagesResponseData(
+    val packages: List<String>,
+)
 
 @Serializable
-data class ListVersionsResponseData(val versions: List<String>)
+data class ListVersionsResponseData(
+    val versions: List<String>,
+)
 
 // ---- Bundle migration metadata ---------------------------------------------
 
@@ -164,10 +185,14 @@ data class CreateContextResponseData(
 )
 
 @Serializable
-data class DeleteContextRequest(val requester: String? = null)
+data class DeleteContextRequest(
+    val requester: String? = null,
+)
 
 @Serializable
-data class DeleteContextResponseData(val isDeleted: Boolean)
+data class DeleteContextResponseData(
+    val isDeleted: Boolean,
+)
 
 @Serializable
 data class Context(
@@ -194,15 +219,21 @@ data class ContextWithGroup(
 )
 
 @Serializable
-data class GetContextsResponseData(val contexts: List<ContextWithGroup>)
+data class GetContextsResponseData(
+    val contexts: List<ContextWithGroup>,
+)
 
 // ---- Context Identity ------------------------------------------------------
 
 @Serializable
-data class GenerateContextIdentityResponseData(val publicKey: String)
+data class GenerateContextIdentityResponseData(
+    val publicKey: String,
+)
 
 @Serializable
-data class GetContextIdentitiesResponseData(val identities: List<String>)
+data class GetContextIdentitiesResponseData(
+    val identities: List<String>,
+)
 
 // ---- Context join ----------------------------------------------------------
 
@@ -229,7 +260,9 @@ data class JoinSubgroupInheritanceResponseData(
 typealias ContextGroupResponseData = String?
 
 @Serializable
-data class ContextStorageResponseData(val sizeInBytes: Int)
+data class ContextStorageResponseData(
+    val sizeInBytes: Int,
+)
 
 // ---- Specialized Node Invite -----------------------------------------------
 
@@ -240,7 +273,9 @@ data class InviteSpecializedNodeRequest(
 )
 
 @Serializable
-data class InviteSpecializedNodeResponseData(val nonce: String)
+data class InviteSpecializedNodeResponseData(
+    val nonce: String,
+)
 
 // ---- Update Context Application --------------------------------------------
 
@@ -291,7 +326,10 @@ class UploadBlobRequest(
 )
 
 @Serializable
-data class BlobInfo(val blobId: String, val size: Int)
+data class BlobInfo(
+    val blobId: String,
+    val size: Int,
+)
 
 typealias UploadBlobResponseData = BlobInfo
 
@@ -300,10 +338,15 @@ typealias UploadBlobResponseData = BlobInfo
  * AdminApi decodes it via an internal wire struct and maps to this clean camelCase shape.
  */
 @Serializable
-data class DeleteBlobResponseData(val blobId: String, val deleted: Boolean)
+data class DeleteBlobResponseData(
+    val blobId: String,
+    val deleted: Boolean,
+)
 
 @Serializable
-data class ListBlobsResponseData(val blobs: List<BlobInfo>)
+data class ListBlobsResponseData(
+    val blobs: List<BlobInfo>,
+)
 
 typealias GetBlobResponseData = BlobInfo
 
@@ -319,25 +362,41 @@ data class GetBlobInfoResponseData(
 // ---- Aliases ---------------------------------------------------------------
 
 @Serializable
-data class CreateContextAliasRequest(val alias: String, val contextId: String)
+data class CreateContextAliasRequest(
+    val alias: String,
+    val contextId: String,
+)
 
 @Serializable
-data class CreateApplicationAliasRequest(val alias: String, val applicationId: String)
+data class CreateApplicationAliasRequest(
+    val alias: String,
+    val applicationId: String,
+)
 
 @Serializable
-data class CreateContextIdentityAliasRequest(val alias: String, val identity: String)
+data class CreateContextIdentityAliasRequest(
+    val alias: String,
+    val identity: String,
+)
 
 @Serializable
-data class AliasEntry(val name: String, val value: String)
+data class AliasEntry(
+    val name: String,
+    val value: String,
+)
 
 @Serializable
-data class ListAliasesResponseData(val aliases: List<AliasEntry>)
+data class ListAliasesResponseData(
+    val aliases: List<AliasEntry>,
+)
 
 typealias CreateAliasResponseData = Empty
 typealias DeleteAliasResponseData = Empty
 
 @Serializable
-data class LookupAliasResponseData(val value: String? = null)
+data class LookupAliasResponseData(
+    val value: String? = null,
+)
 
 // ---- Context identity aliases ----------------------------------------------
 
@@ -345,7 +404,9 @@ typealias ListContextIdentityAliasesResponseData = ListAliasesResponseData
 typealias CreateContextIdentityAliasResponseData = Empty
 
 @Serializable
-data class LookupContextIdentityAliasResponseData(val value: String? = null)
+data class LookupContextIdentityAliasResponseData(
+    val value: String? = null,
+)
 
 typealias DeleteContextIdentityAliasResponseData = Empty
 
@@ -391,7 +452,10 @@ data class Namespace(
 typealias ListNamespacesResponseData = List<Namespace>
 
 @Serializable
-data class NamespaceIdentity(val namespaceId: String, val publicKey: String)
+data class NamespaceIdentity(
+    val namespaceId: String,
+    val publicKey: String,
+)
 
 /** Core's `UpgradePolicy` enum — how a namespace/group adopts new app versions. */
 @Serializable
@@ -413,13 +477,19 @@ data class CreateNamespaceRequest(
 )
 
 @Serializable
-data class CreateNamespaceResponseData(val namespaceId: String)
+data class CreateNamespaceResponseData(
+    val namespaceId: String,
+)
 
 @Serializable
-data class DeleteNamespaceRequest(val requester: String? = null)
+data class DeleteNamespaceRequest(
+    val requester: String? = null,
+)
 
 @Serializable
-data class DeleteNamespaceResponseData(val isDeleted: Boolean)
+data class DeleteNamespaceResponseData(
+    val isDeleted: Boolean,
+)
 
 @Serializable
 data class CreateNamespaceInvitationRequest(
@@ -435,7 +505,9 @@ data class CreateNamespaceInvitationResponseData(
 )
 
 @Serializable
-data class CreateRecursiveInvitationResponseData(val invitations: List<RecursiveInvitationEntry>)
+data class CreateRecursiveInvitationResponseData(
+    val invitations: List<RecursiveInvitationEntry>,
+)
 
 /**
  * `createNamespaceInvitation` returns one of two shapes depending on whether the
@@ -446,8 +518,13 @@ data class CreateRecursiveInvitationResponseData(val invitations: List<Recursive
  * for an `invitations` key in AdminApi rather than a fragile custom serializer.
  */
 sealed interface CreateNamespaceInvitationResult {
-    data class Single(val data: CreateNamespaceInvitationResponseData) : CreateNamespaceInvitationResult
-    data class Recursive(val data: CreateRecursiveInvitationResponseData) : CreateNamespaceInvitationResult
+    data class Single(
+        val data: CreateNamespaceInvitationResponseData,
+    ) : CreateNamespaceInvitationResult
+
+    data class Recursive(
+        val data: CreateRecursiveInvitationResponseData,
+    ) : CreateNamespaceInvitationResult
 }
 
 @Serializable
@@ -470,10 +547,15 @@ data class CreateGroupInNamespaceRequest(
 )
 
 @Serializable
-data class CreateGroupInNamespaceResponseData(val groupId: String)
+data class CreateGroupInNamespaceResponseData(
+    val groupId: String,
+)
 
 @Serializable
-data class SubgroupEntry(val groupId: String, val name: String? = null)
+data class SubgroupEntry(
+    val groupId: String,
+    val name: String? = null,
+)
 
 // ---- Groups ----------------------------------------------------------------
 
@@ -488,7 +570,9 @@ data class CreateGroupRequest(
 )
 
 @Serializable
-data class CreateGroupResponseData(val groupId: String)
+data class CreateGroupResponseData(
+    val groupId: String,
+)
 
 @Serializable
 data class GroupUpgradeStatus(
@@ -618,20 +702,30 @@ data class ListGroupMembersResponseData(
 )
 
 @Serializable
-data class GroupContextEntry(val contextId: String, val name: String? = null)
+data class GroupContextEntry(
+    val contextId: String,
+    val name: String? = null,
+)
 
 typealias ListGroupContextsResponseData = List<GroupContextEntry>
 
 @Serializable
-data class DeleteGroupRequest(val requester: String? = null)
+data class DeleteGroupRequest(
+    val requester: String? = null,
+)
 
 @Serializable
-data class DeleteGroupResponseData(val isDeleted: Boolean)
+data class DeleteGroupResponseData(
+    val isDeleted: Boolean,
+)
 
 // ---- Group Members ---------------------------------------------------------
 
 @Serializable
-data class GroupMemberInput(val identity: String, val role: String)
+data class GroupMemberInput(
+    val identity: String,
+    val role: String,
+)
 
 @Serializable
 data class AddGroupMembersRequest(
@@ -654,7 +748,9 @@ data class UpdateMemberRoleRequest(
 // ---- Group Capabilities & Settings -----------------------------------------
 
 @Serializable
-data class MemberCapabilities(val capabilities: Int)
+data class MemberCapabilities(
+    val capabilities: Int,
+)
 
 @Serializable
 data class SetMemberCapabilitiesRequest(
@@ -737,12 +833,16 @@ typealias SetContextMetadataRequest = SetMetadataRequest
 
 /** Inner payload of a GET metadata response. `data` is `null` if never set. */
 @Serializable
-data class GetMetadataResponseData(val data: MetadataRecord? = null)
+data class GetMetadataResponseData(
+    val data: MetadataRecord? = null,
+)
 
 // ---- Group Sync, Signing & Upgrades ----------------------------------------
 
 @Serializable
-data class SyncGroupRequest(val requester: String? = null)
+data class SyncGroupRequest(
+    val requester: String? = null,
+)
 
 @Serializable
 data class SyncGroupResponseData(
@@ -754,10 +854,14 @@ data class SyncGroupResponseData(
 )
 
 @Serializable
-data class RegisterGroupSigningKeyRequest(val signingKey: String)
+data class RegisterGroupSigningKeyRequest(
+    val signingKey: String,
+)
 
 @Serializable
-data class RegisterGroupSigningKeyResponseData(val publicKey: String)
+data class RegisterGroupSigningKeyResponseData(
+    val publicKey: String,
+)
 
 @Serializable
 data class UpgradeGroupRequest(
@@ -784,7 +888,9 @@ data class UpgradeGroupResponseData(
 typealias GroupUpgradeStatusResponseData = GroupUpgradeStatus?
 
 @Serializable
-data class RetryGroupUpgradeRequest(val requester: String? = null)
+data class RetryGroupUpgradeRequest(
+    val requester: String? = null,
+)
 
 /** Retry returns the same shape as upgrade. */
 typealias RetryGroupUpgradeResponseData = UpgradeGroupResponseData
@@ -799,10 +905,14 @@ data class ReparentGroupRequest(
 )
 
 @Serializable
-data class ReparentGroupResponseData(val reparented: Boolean)
+data class ReparentGroupResponseData(
+    val reparented: Boolean,
+)
 
 @Serializable
-data class DetachContextFromGroupRequest(val requester: String? = null)
+data class DetachContextFromGroupRequest(
+    val requester: String? = null,
+)
 
 // ---- Group Invitation & Join -----------------------------------------------
 
@@ -820,15 +930,22 @@ data class CreateGroupInvitationResponseData(
 )
 
 @Serializable
-data class CreateRecursiveGroupInvitationResponseData(val invitations: List<RecursiveInvitationEntry>)
+data class CreateRecursiveGroupInvitationResponseData(
+    val invitations: List<RecursiveInvitationEntry>,
+)
 
 /**
  * `createGroupInvitation` returns one of two shapes (single vs recursive). Same
  * tagged-union treatment as [CreateNamespaceInvitationResult].
  */
 sealed interface CreateGroupInvitationResult {
-    data class Single(val data: CreateGroupInvitationResponseData) : CreateGroupInvitationResult
-    data class Recursive(val data: CreateRecursiveGroupInvitationResponseData) : CreateGroupInvitationResult
+    data class Single(
+        val data: CreateGroupInvitationResponseData,
+    ) : CreateGroupInvitationResult
+
+    data class Recursive(
+        val data: CreateRecursiveGroupInvitationResponseData,
+    ) : CreateGroupInvitationResult
 }
 
 @Serializable
@@ -924,4 +1041,6 @@ data class TeeVerifyQuoteResponseData(
 // ---- Network ---------------------------------------------------------------
 
 @Serializable
-data class PeersCountResponseData(val count: Int)
+data class PeersCountResponseData(
+    val count: Int,
+)

@@ -27,7 +27,6 @@ import org.junit.runner.RunWith
  */
 @RunWith(AndroidJUnit4::class)
 class ChatMultiUserTest {
-
     @get:Rule
     val composeRule = createEmptyComposeRule()
 
@@ -37,18 +36,31 @@ class ChatMultiUserTest {
     private val pass = args.getString("pass") ?: "dev-password"
     private val invite = args.getString("invite") ?: ""
 
+    /** Chat display name for this emulator (dev1/dev2) — the login user is always the admin. */
+    private val chatUser = args.getString("chatUser") ?: ""
+
     private fun launch(joinInvite: String? = null) {
-        val intent = Intent(ApplicationProvider.getApplicationContext(), MainActivity::class.java)
-            .putExtra("mock", false)
-            .putExtra("nodeUrl", nodeUrl)
-        if (joinInvite != null) intent.putExtra("invite", joinInvite)
+        val intent =
+            Intent(ApplicationProvider.getApplicationContext(), MainActivity::class.java)
+                .putExtra("mock", false)
+                .putExtra("nodeUrl", nodeUrl)
+        if (chatUser.isNotEmpty()) intent.putExtra("chatUser", chatUser)
+        // Handing the invite in as an extra makes the chat screen install curb and join on open —
+        // the Android analog of the Swift harness's TEST_RUNNER_E2E_JOIN.
+        if (!joinInvite.isNullOrEmpty()) intent.putExtra("invite", joinInvite)
         ActivityScenario.launch<MainActivity>(intent)
     }
 
-    private fun waitForTag(tag: String, timeoutMs: Long = 20_000) =
+    private fun waitForTag(
+        tag: String,
+        timeoutMs: Long = 20_000,
+    ) =
         composeRule.waitUntil(timeoutMs) { composeRule.onAllNodesWithTag(tag).fetchSemanticsNodes().isNotEmpty() }
 
-    private fun waitForText(text: String, timeoutMs: Long = 20_000) =
+    private fun waitForText(
+        text: String,
+        timeoutMs: Long = 20_000,
+    ) =
         composeRule.waitUntil(timeoutMs) { composeRule.onAllNodesWithText(text).fetchSemanticsNodes().isNotEmpty() }
 
     private fun login() {
@@ -56,15 +68,33 @@ class ChatMultiUserTest {
         composeRule.onNodeWithTag("usernameField").performTextInput(user)
         composeRule.onNodeWithTag("passwordField").performTextInput(pass)
         composeRule.onNodeWithTag("loginButton").performClick()
-        waitForText("Open Chat")
+        waitForTag("openChat")
     }
+
+    private fun openChat() {
+        composeRule.onNodeWithTag("openChat").performClick()
+    }
+
+    /** Non-fatal presence check — the install gate is skipped when curb is already installed. */
+    private fun hasTag(
+        tag: String,
+        timeoutMs: Long,
+    ): Boolean =
+        runCatching {
+            composeRule.waitUntil(timeoutMs) { composeRule.onAllNodesWithTag(tag).fetchSemanticsNodes().isNotEmpty() }
+            true
+        }.getOrDefault(false)
 
     private fun send(text: String) {
         composeRule.onNodeWithTag("messageField").performTextInput(text)
         composeRule.onNodeWithTag("sendMessage").performClick()
     }
 
-    private fun openChannel(space: String, channel: String, timeoutMs: Long) {
+    private fun openChannel(
+        space: String,
+        channel: String,
+        timeoutMs: Long,
+    ) {
         waitForText(space, timeoutMs)
         composeRule.onNodeWithText(space).performClick()
         waitForText(channel, timeoutMs)
@@ -77,7 +107,12 @@ class ChatMultiUserTest {
         var token = ""
         InstrumentationRegistry.getInstrumentation().runOnMainSync {
             val cm = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-            token = cm.primaryClip?.getItemAt(0)?.text?.toString().orEmpty()
+            token =
+                cm.primaryClip
+                    ?.getItemAt(0)
+                    ?.text
+                    ?.toString()
+                    .orEmpty()
         }
         return token
     }
@@ -87,10 +122,11 @@ class ChatMultiUserTest {
     fun testHostCreateInviteAndPost() {
         launch()
         login()
-        composeRule.onNodeWithText("Open Chat").performClick()
-        waitForTag("installChat")
-        composeRule.onNodeWithTag("installChat").performClick()
-        waitForTag("chatAdd", timeoutMs = 90_000)
+        openChat()
+        if (hasTag("installChat", timeoutMs = 8_000)) {
+            composeRule.onNodeWithTag("installChat").performClick()
+        }
+        waitForTag("chatAdd", timeoutMs = 240_000)
 
         composeRule.onNodeWithTag("chatAdd").performClick()
         composeRule.onNodeWithText("New space").performClick()
@@ -122,20 +158,24 @@ class ChatMultiUserTest {
     // 2. Guest: join via the invite, see the host's message, reply.
     @Test
     fun testGuestJoinAndReply() {
+        // The invite arrives as a launch extra, so the chat screen installs curb and joins on open
+        // (no typing a 1 KB code into a text field).
         launch(joinInvite = invite)
         login()
-        composeRule.onNodeWithText("Open Chat").performClick()
-        waitForTag("installChat")
-        composeRule.onNodeWithTag("installChat").performClick()
-        waitForTag("chatAdd", timeoutMs = 90_000)
+        openChat()
+        waitForTag("chatAdd", timeoutMs = 240_000)
 
-        // join with the invite handed in via the runner arg
-        composeRule.onNodeWithTag("chatAdd").performClick()
-        composeRule.onNodeWithText("Join with invite").performClick()
-        composeRule.onNodeWithTag("joinField").performTextInput(invite)
-        composeRule.onNodeWithText("Join space").performClick()
+        // Fall back to pasting it by hand if the auto-join hook didn't fire.
+        if (!hasTag("channelAdd", timeoutMs = 5_000) &&
+            composeRule.onAllNodesWithText("shared").fetchSemanticsNodes().isEmpty()
+        ) {
+            composeRule.onNodeWithTag("chatAdd").performClick()
+            composeRule.onNodeWithText("Join existing space").performClick()
+            composeRule.onNodeWithTag("joinField").performTextInput(invite)
+            composeRule.onNodeWithText("Join space").performClick()
+        }
 
-        openChannel(space = "shared", channel = "general", timeoutMs = 90_000)
+        openChannel(space = "shared", channel = "general", timeoutMs = 120_000)
         waitForText("hi from host", timeoutMs = 60_000)
         send("hi from guest")
         waitForText("hi from guest")
@@ -146,8 +186,8 @@ class ChatMultiUserTest {
     fun testHostSeesReply() {
         launch()
         login()
-        composeRule.onNodeWithText("Open Chat").performClick()
-        openChannel(space = "shared", channel = "general", timeoutMs = 30_000)
+        openChat()
+        openChannel(space = "shared", channel = "general", timeoutMs = 60_000)
         waitForText("hi from guest", timeoutMs = 60_000)
     }
 }

@@ -198,6 +198,39 @@ Expected: `BUILD SUCCESSFUL` with the instrumented suite green. CI runs this in
 `chat-multi-e2e.sh` is **informational** (its CI job is `continue-on-error`):
 cross-node gossipsub between two co-located merods is unreliable on a single host.
 
+The host role logs the invite as `MERO_E2E_INVITE=<token>`; the script scrapes it from logcat and
+hands it to the guest as the `invite` runner arg, which the test passes on as a launch extra so the
+chat screen installs curb and joins on open (no typing a 1 KB code). `chatUser=dev1|dev2` keeps the
+two emulators' chat display names apart — the login user is the admin on both nodes.
+
+---
+
+## 7. Backend sync checks without the app (merobox, Docker)
+
+Two-node protocol-level checks that isolate node + WASM + sync from the app and emulator. They boot
+real `merod` containers, so they need Docker:
+
+```bash
+pip install merobox
+merobox bootstrap validate ci/merobox/sync-two-node.yml       # schema only, no Docker
+merobox bootstrap run      ci/merobox/sync-two-node.yml       # kv_store, node 1 → node 2
+merobox bootstrap run      ci/merobox/sync-two-node-bidi.yml  # both directions
+```
+
+`merobox-sync.yml` runs both kv_store scenarios as a **gating** job; `merobox-chat-sync.yml`
+downloads the real published curb app and asserts a chat message syncs node 1 → node 2
+(**informational** — it depends on the registry and the moving `edge` node image). Details and the
+"`1111…` = wasm/node mismatch" history are in [ci/merobox/README.md](ci/merobox/README.md).
+
+## 8. SDK ↔ sample parity
+
+```bash
+./ci/check-registry-parity.sh   # fails if a public SDK method has no SDK Explorer entry
+```
+
+The sample doubles as the SDK's living documentation, so CI enforces this. Intentional omissions
+(internal plumbing, flows the UI drives) are listed with reasons in the script's `EXCLUDED`.
+
 ---
 
 ## Environment variables
@@ -221,9 +254,11 @@ export PATH="$ANDROID_HOME/platform-tools:$ANDROID_HOME/emulator:$PATH"
 ./gradlew assembleDebug                                          # §1
 ./gradlew ktlintCheck detekt testDebugUnitTest                   # §2
 ./gradlew lint                                                   # §3
+./ci/check-registry-parity.sh                                    # §8
 # §4 live e2e and §6 instrumented tests are optional / heavier — run as needed:
 ./test-all.sh                                                    # all of §0–§6
 ```
 
-CI mirrors these: `ci.yml` (§1–§3), `instrumented.yml` (§6 mock),
-`e2e.yml` (§4), `android-e2e.yml` (§6 live node + multi-user).
+CI mirrors these: `ci.yml` (§1–§3, §8 + instrumented-test compile + merobox scenario validation),
+`instrumented.yml` (§6 mock), `e2e.yml` (§4), `android-e2e.yml` (§6 live node + multi-user),
+`merobox-sync.yml` / `merobox-chat-sync.yml` (§7).

@@ -1,14 +1,12 @@
 package com.calimero.mero.sample
 
 import android.content.Intent
-import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.createEmptyComposeRule
 import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
-import androidx.compose.ui.test.performScrollToNode
 import androidx.compose.ui.test.performTextInput
 import androidx.test.core.app.ActivityScenario
 import androidx.test.core.app.ApplicationProvider
@@ -25,7 +23,6 @@ import org.junit.runner.RunWith
  */
 @RunWith(AndroidJUnit4::class)
 class AppE2ETest {
-
     @get:Rule
     val composeRule = createEmptyComposeRule()
 
@@ -35,33 +32,57 @@ class AppE2ETest {
     private val pass = args.getString("pass") ?: "dev-password"
 
     private fun launchExplorer() {
-        val intent = Intent(ApplicationProvider.getApplicationContext(), MainActivity::class.java)
-            .putExtra("mock", false)
-            .putExtra("nodeUrl", nodeUrl)
+        val intent =
+            Intent(ApplicationProvider.getApplicationContext(), MainActivity::class.java)
+                .putExtra("mock", false)
+                .putExtra("nodeUrl", nodeUrl)
         ActivityScenario.launch<MainActivity>(intent)
     }
 
-    private fun waitForTag(tag: String, timeoutMs: Long = 20_000) =
+    private fun waitForTag(
+        tag: String,
+        timeoutMs: Long = 20_000,
+    ) =
         composeRule.waitUntil(timeoutMs) { composeRule.onAllNodesWithTag(tag).fetchSemanticsNodes().isNotEmpty() }
 
-    private fun waitForText(text: String, timeoutMs: Long = 20_000) =
+    private fun waitForText(
+        text: String,
+        timeoutMs: Long = 20_000,
+    ) =
         composeRule.waitUntil(timeoutMs) { composeRule.onAllNodesWithText(text).fetchSemanticsNodes().isNotEmpty() }
+
+    /** Non-fatal presence check — for steps that may legitimately be skipped (e.g. the install gate). */
+    private fun hasTag(
+        tag: String,
+        timeoutMs: Long,
+    ): Boolean =
+        runCatching {
+            composeRule.waitUntil(timeoutMs) { composeRule.onAllNodesWithTag(tag).fetchSemanticsNodes().isNotEmpty() }
+            true
+        }.getOrDefault(false)
 
     private fun login() {
         waitForTag("loginTitle")
         composeRule.onNodeWithTag("usernameField").performTextInput(user)
         composeRule.onNodeWithTag("passwordField").performTextInput(pass)
         composeRule.onNodeWithTag("loginButton").performClick()
-        waitForText("Open Chat")
+        // The landing shows the two big entries once the session is authenticated.
+        waitForTag("openChat")
     }
 
     @Test
     fun explorerRunsLiveMethod() {
         launchExplorer()
         login()
-        composeRule.onNodeWithTag("opList").performScrollToNode(hasText("getContexts"))
+        // The SDK surface lives behind the "Explore SDK" entry on the landing.
+        composeRule.onNodeWithTag("exploreSDK").performClick()
+        // Categories are collapsed; searching reveals (auto-expands) the method.
+        waitForTag("sdkSearch")
+        composeRule.onNodeWithTag("sdkSearch").performTextInput("getContexts")
+        waitForText("getContexts")
         composeRule.onNodeWithText("getContexts").performClick()
-        composeRule.onNodeWithText("Run").performClick()
+        composeRule.onNodeWithTag("runOp").performClick()
+        // The response viewer shows the "RESPONSE" label with JSON on success.
         waitForText("RESPONSE")
     }
 
@@ -69,10 +90,14 @@ class AppE2ETest {
     fun chatEndToEnd() {
         launchExplorer()
         login()
-        composeRule.onNodeWithText("Open Chat").performClick()
-        waitForTag("installChat")
-        composeRule.onNodeWithTag("installChat").performClick()
-        waitForTag("chatAdd", timeoutMs = 90_000)
+        composeRule.onNodeWithTag("openChat").performClick()
+        // A fresh node shows the install gate; a reused one (e.g. on a retry) may already have
+        // curb — tolerate both.
+        if (hasTag("installChat", timeoutMs = 8_000)) {
+            composeRule.onNodeWithTag("installChat").performClick()
+        }
+        // registry fetch + install can be slow on CI emulators — wait generously.
+        waitForTag("chatAdd", timeoutMs = 240_000)
 
         // create space
         composeRule.onNodeWithTag("chatAdd").performClick()
@@ -88,10 +113,16 @@ class AppE2ETest {
         composeRule.onNodeWithText("New channel").performClick()
         composeRule.onNodeWithTag("createField").performTextInput("general")
         composeRule.onNodeWithText("Create").performClick()
-        waitForText("general", timeoutMs = 30_000)
-        composeRule.onNodeWithText("general").performClick()
+        waitForText("general", timeoutMs = 60_000)
+
+        // invite: generate a code (still on the channels list)
+        composeRule.onNodeWithTag("channelAdd").performClick()
+        composeRule.onNodeWithText("Invite people").performClick()
+        waitForText("Copy", timeoutMs = 45_000)
+        composeRule.onNodeWithText("Done").performClick()
 
         // send + read a message
+        composeRule.onNodeWithText("general").performClick()
         waitForTag("messageField")
         composeRule.onNodeWithTag("messageField").performTextInput("e2e hello")
         composeRule.onNodeWithTag("sendMessage").performClick()

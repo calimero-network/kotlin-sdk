@@ -7,10 +7,10 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.calimero.mero.Credentials
 import com.calimero.mero.Mero
 import com.calimero.mero.MeroConfig
 import com.calimero.mero.TokenData
-import com.calimero.mero.Credentials
 import com.calimero.mero.auth.AuthLoginOptions
 import com.calimero.mero.auth.SsoLauncher
 import com.calimero.mero.sample.chat.ChatService
@@ -23,8 +23,10 @@ import kotlinx.coroutines.launch
  * `mutableStateOf`-backed fields directly. Android analog of the Swift sample's `MeroSession`.
  */
 class MeroSession : ViewModel() {
-
-    data class LogLine(val level: String, val text: String)
+    data class LogLine(
+        val level: String,
+        val text: String,
+    )
 
     var isAuthenticated by mutableStateOf(false)
         private set
@@ -40,6 +42,14 @@ class MeroSession : ViewModel() {
     var chat by mutableStateOf<ChatService?>(null)
         private set
 
+    /**
+     * e2e hooks, set from the launch intent by `MainActivity` (the Android analog of the Swift
+     * sample's `E2E_USERNAME` / `E2E_JOIN` env vars): a chat display name that overrides the login
+     * user, and an invite code the chat screen auto-joins on open.
+     */
+    var chatDisplayName: String? = null
+    var autoJoinInvite: String? = null
+
     val logs = mutableStateListOf<LogLine>()
 
     var mero: Mero? = null
@@ -48,7 +58,10 @@ class MeroSession : ViewModel() {
     private var pendingSsoNodeUrl: String? = null
     private val callbackScheme = "mero-sample"
 
-    private fun log(level: String, text: String) {
+    private fun log(
+        level: String,
+        text: String,
+    ) {
         logs.add(LogLine(level, text))
         if (logs.size > MAX_LOGS) logs.removeRange(0, logs.size - MAX_LOGS)
     }
@@ -58,7 +71,11 @@ class MeroSession : ViewModel() {
     fun logText(): String = logs.joinToString("\n") { "${it.level} ${it.text}" }
 
     /** Credential login against [nodeUrlString]. Publishes auth state (and a diagnostics log). */
-    fun login(nodeUrlString: String, user: String, password: String) {
+    fun login(
+        nodeUrlString: String,
+        user: String,
+        password: String,
+    ) {
         errorMessage = null
         log("→", "connect $nodeUrlString as \"${user.ifEmpty { "<empty>" }}\"")
         if (user.isBlank() || password.isBlank()) {
@@ -75,7 +92,7 @@ class MeroSession : ViewModel() {
                 nodeUrl = nodeUrlString
                 username = user
                 isAuthenticated = true
-                chat = ChatService(client, user)
+                chat = ChatService(client, user, chatDisplayName)
                 log("✓", "authenticated — token acquired")
                 refreshSummary()
             } catch (e: Exception) {
@@ -92,15 +109,19 @@ class MeroSession : ViewModel() {
      * Start hosted-SSO login: open the node's `/auth/login` page in a Custom Tab (admin mode). The
      * callback returns asynchronously via the deep link into [consumeSsoCallback].
      */
-    fun connect(context: Context, nodeUrlString: String) {
+    fun connect(
+        context: Context,
+        nodeUrlString: String,
+    ) {
         errorMessage = null
         pendingSsoNodeUrl = nodeUrlString
         log("→", "SSO connect $nodeUrlString")
-        val options = AuthLoginOptions(
-            callbackUrl = "$callbackScheme://auth-callback",
-            mode = "admin",
-            permissions = listOf("admin"),
-        )
+        val options =
+            AuthLoginOptions(
+                callbackUrl = "$callbackScheme://auth-callback",
+                mode = "admin",
+                permissions = listOf("admin"),
+            )
         SsoLauncher.launch(context, nodeUrlString, options)
     }
 
@@ -119,7 +140,7 @@ class MeroSession : ViewModel() {
         nodeUrl = base
         username = "admin"
         isAuthenticated = true
-        chat = ChatService(client, "admin")
+        chat = ChatService(client, "admin", chatDisplayName)
         log("✓", "authenticated via SSO — tokens adopted")
         viewModelScope.launch { refreshSummary() }
     }

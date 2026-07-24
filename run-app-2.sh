@@ -109,17 +109,20 @@ step "Install + launch on both emulators"
 for u in "$UDID_A" "$UDID_B"; do
   "$ADB" -s "$u" install -r -g "$APK" >/dev/null 2>&1 || die "install failed on $u"
 done
+# emulator A → node A :4001 (chat name dev1); emulator B → node B :4011 (chat name dev2).
+# The login user is the admin "dev" on both nodes, so the chatUser extra is what keeps the two
+# distinguishable in the room.
 "$ADB" -s "$UDID_A" shell am start -n "${APP_ID}/${APP_ACTIVITY}" \
-  --es nodeUrl "http://10.0.2.2:4001" >/dev/null 2>&1   # emulator A → node A :4001
+  --es nodeUrl "http://10.0.2.2:4001" --es chatUser "dev1" >/dev/null 2>&1
 "$ADB" -s "$UDID_B" shell am start -n "${APP_ID}/${APP_ACTIVITY}" \
-  --es nodeUrl "http://10.0.2.2:4011" >/dev/null 2>&1   # emulator B → node B :4011
+  --es nodeUrl "http://10.0.2.2:4011" --es chatUser "dev2" >/dev/null 2>&1
 
 echo
 echo "${GREEN}${BOLD}✔ two apps launched.${RESET}"
 echo "  emulator A ($UDID_A) → node A :4001    emulator B ($UDID_B) → node B :4011"
-echo "  Sign in as ${BOLD}dev / dev-password${RESET} on both."
-echo "  On A: Open Chat → create a space + channel → Invite people → Copy."
-echo "  Move the invite A→B, then on B: Open Chat → + → Join with invite → paste → Join."
+echo "  Sign in as ${BOLD}dev / dev-password${RESET} on both (chat display names are dev1/dev2)."
+echo "  On A: Open Chat Example → create a space + channel → Invite people → Copy."
+echo "  Move the invite A→B, then on B: Open Chat Example → + → Join existing space → paste → Join."
 echo "  ${DIM}(adb has no shared clipboard between emulators; copy the invite text out of A's"
 echo "   logcat or the UI, then paste it into B by hand.)${RESET}"
 echo "  ${DIM}Nodes stay running. Stop them with: kill \$(cat .mero-a.pid) \$(cat .mero-b.pid)${RESET}"

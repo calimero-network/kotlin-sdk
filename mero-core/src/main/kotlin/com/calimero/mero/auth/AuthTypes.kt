@@ -102,6 +102,71 @@ data class ClientKey(
     @SerialName("is_valid") val isValid: Boolean = true,
 )
 
+/** Mock-token request (CI/testing). Core's shape is snake_case. */
+@Serializable
+data class MockTokenRequest(
+    @SerialName("client_name") val clientName: String,
+    val permissions: List<String>? = null,
+    @SerialName("node_url") val nodeUrl: String? = null,
+    @SerialName("access_token_expiry") val accessTokenExpiry: Long? = null,
+    @SerialName("refresh_token_expiry") val refreshTokenExpiry: Long? = null,
+)
+
+@Serializable
+data class CreateKeyRequest(
+    @SerialName("public_key") val publicKey: String,
+    @SerialName("auth_method") val authMethod: String,
+    @SerialName("provider_data") val providerData: JsonObject = JsonObject(emptyMap()),
+    @SerialName("target_node_url") val targetNodeUrl: String? = null,
+)
+
+@Serializable
+data class CreateKeyResponse(
+    val status: Boolean = false,
+    val message: String = "",
+)
+
+@Serializable
+data class DeleteKeyResponse(
+    val success: Boolean = false,
+    val message: String = "",
+)
+
+@Serializable
+data class GenerateClientKeyRequest(
+    @SerialName("context_id") val contextId: String? = null,
+    @SerialName("context_identity") val contextIdentity: String? = null,
+    val permissions: List<String>? = null,
+    @SerialName("target_node_url") val targetNodeUrl: String? = null,
+)
+
+@Serializable
+data class DeleteClientResponse(
+    val success: Boolean = false,
+    val message: String = "",
+)
+
+/**
+ * Core applies an `{ add, remove }` delta (remove first, then add) — NOT a full-set replacement.
+ * A `permissions` field is ignored by core.
+ */
+@Serializable
+data class UpdateKeyPermissionsRequest(
+    val add: List<String>? = null,
+    val remove: List<String>? = null,
+)
+
+@Serializable
+data class PermissionPayload(
+    val permissions: List<String> = emptyList(),
+)
+
+@Serializable
+data class PermissionResponse(
+    val data: PermissionPayload,
+    val error: String? = null,
+)
+
 /** Result of validating a token via `HEAD /auth/validate`. */
 data class ValidationResult(
     val valid: Boolean,

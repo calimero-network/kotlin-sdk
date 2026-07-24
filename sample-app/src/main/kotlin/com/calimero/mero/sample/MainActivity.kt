@@ -21,7 +21,6 @@ import kotlinx.coroutines.flow.MutableStateFlow
  * intent or via [onNewIntent], and forwards them into the explorer's [MeroSession].
  */
 class MainActivity : ComponentActivity() {
-
     private val ssoCallbacks = MutableStateFlow<String?>(null)
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -29,6 +28,8 @@ class MainActivity : ComponentActivity() {
 
         val mock = intent?.getBooleanExtra(EXTRA_MOCK, false) ?: false
         val nodeUrl = intent?.getStringExtra(EXTRA_NODE_URL)
+        val chatUser = intent?.getStringExtra(EXTRA_CHAT_USER)
+        val invite = intent?.getStringExtra(EXTRA_INVITE)
         consumeCallbackIntent(intent)
 
         setContent {
@@ -37,6 +38,11 @@ class MainActivity : ComponentActivity() {
             } else {
                 val session: MeroSession = viewModel()
                 LaunchedEffect(nodeUrl) { if (!nodeUrl.isNullOrBlank()) session.nodeUrl = nodeUrl }
+                LaunchedEffect(chatUser, invite) {
+                    // e2e hooks: a chat display name and an invite to auto-join (see MeroSession).
+                    if (!chatUser.isNullOrBlank()) session.chatDisplayName = chatUser
+                    if (!invite.isNullOrBlank()) session.autoJoinInvite = invite
+                }
                 LaunchedEffect(Unit) {
                     ssoCallbacks.collect { url -> url?.let { session.consumeSsoCallback(it) } }
                 }
@@ -59,6 +65,8 @@ class MainActivity : ComponentActivity() {
     private companion object {
         const val EXTRA_MOCK = "mock"
         const val EXTRA_NODE_URL = "nodeUrl"
+        const val EXTRA_CHAT_USER = "chatUser"
+        const val EXTRA_INVITE = "invite"
         const val DEFAULT_NODE_URL = "http://localhost:4001"
         const val CALLBACK_SCHEME = "mero-sample"
     }

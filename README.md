@@ -10,18 +10,35 @@ See [`ROADMAP-TASKS/task-2-android-sdk.md`] in the planning repo for the full de
 
 > **Status: transport + auth core, full Admin API, JSON-RPC, and the SSE event client — with a
 > full-feature sample app.** Apps can sign in (credentials or hosted SSO), drive the whole
-> ~106-method Admin API (contexts, groups, namespaces, invitations, registry install), call
-> contracts over JSON-RPC, and subscribe to live node events over SSE. The sample app is a native
-> Calimero chat client (the Android mirror of the Swift SDK's sample). See [Roadmap](#roadmap).
+> ~110-method Admin API (contexts, groups, namespaces, invitations, registry install, root/client
+> keys and permissions), call contracts over JSON-RPC, and subscribe to live node events over SSE.
+> The sample app is an **SDK Explorer** over all 127 catalogued methods plus a native Calimero chat
+> client — feature-for-feature with the Swift SDK's sample. See [Roadmap](#roadmap).
 
 ## Modules
 
 | Module         | What it is                                                                 |
 |----------------|-----------------------------------------------------------------------------|
-| `mero-core`    | The SDK: `Mero`, HTTP transport (OkHttp), `AuthApi`, `AdminApi` (~106 methods), `RefreshCoordinator`, `TokenStore`, `RpcClient`, `SseClient`/`events()`, SSO utils, `Capabilities`. |
+| `mero-core`    | The SDK: `Mero`, HTTP transport (OkHttp), `AuthApi` (incl. root/client keys + permissions), `AdminApi` (~110 methods), `RefreshCoordinator`, `TokenStore`, `RpcClient`, `SseClient`/`events()`, SSO utils, `Capabilities`. |
 | `mero-compose` | Optional Jetpack Compose UI kit: `MeroProvider`/`useMero`, `LoginSheet`, `ConnectButton`, `MeroClient`. |
 | `mero-testkit` | Test-support: `FakeNode`, a stateful in-memory node on OkHttp MockWebServer, for driving a whole login → call → refresh → logout journey with no live node. |
 | `sample-app`   | A Compose sample with two modes: a deterministic mock login→home→RPC→logout flow (drives the instrumented UI test), and an **SDK Explorer + native chat client** that signs in to a real node and exercises the Admin API, RPC, and live SSE. |
+
+### The sample app
+
+The landing screen offers two entries, mirroring the Swift sample:
+
+- **Open Chat Example** — a native [curb](https://github.com/calimero-network/mero-chat) client:
+  install the app from the registry, create/join spaces (namespaces) and channels (subgroup +
+  context), send and read messages over contract RPC with live SSE updates, and share compact
+  invite codes. Joining runs `AdminApi.syncGroupContexts`, so a joined space's contexts actually
+  initialize instead of sitting on the all-ones uninitialized hash.
+- **Explore SDK** — every catalogued SDK method as a searchable, categorized form: fill the fields,
+  Run, read the pretty-printed response. A CI gate (`ci/check-registry-parity.sh`) fails the build
+  if a public SDK method has no entry here.
+
+A **Diagnostics** screen (the `>_` button) shows every request/auth event the session recorded,
+copyable — so a failed connection is debuggable without Android Studio attached.
 
 ## Install
 
@@ -97,7 +114,7 @@ callback's `node_url` before storing any token.
 ## Build & test
 
 ```bash
-./gradlew ktlintCheck detekt              # lint (ktlint 1.x + detekt)
+./gradlew ktlintCheck detekt              # lint (ktlint 1.x, enforcing + detekt)
 ./gradlew testDebugUnitTest               # JVM unit + mock tests (FakeNode / MockWebServer)
 ./gradlew lint                            # Android Lint
 ./gradlew assembleDebug                   # build all modules + sample
@@ -110,7 +127,14 @@ Or run everything (build → unit → lint → live-node e2e → instrumented UI
 ./test-all.sh                # add --skip-e2e / --skip-ui to skip the node/emulator sections
 ./run-app.sh                 # build, boot a local node, install & launch the sample on an emulator
 ./android-e2e.sh             # full-feature app e2e against a live merod
+./chat-multi-e2e.sh          # two-node, two-emulator chat sync e2e
+./ci/check-registry-parity.sh  # every SDK method must have an SDK Explorer entry
 ```
+
+Backend-level sync is checked independently of the app by two **merobox** scenarios that boot real
+`merod` nodes in Docker (`ci/merobox/`, run by `merobox-sync.yml` / `merobox-chat-sync.yml`): a
+kv_store write must replicate across two nodes in both directions, and a message sent in a real curb
+channel on node 1 must be readable on node 2. See [ci/merobox/README.md](ci/merobox/README.md).
 
 See **[TESTING.md](TESTING.md)** for the full matrix (mock vs live node, env vars, emulator setup).
 Unit + mock tests cover the highest-risk logic: single-flight/cross-process refresh, the terminal
@@ -121,7 +145,7 @@ shaping, JSON-RPC unwrap/error mapping, JWT `exp` parsing, and SSO callback pars
 ## Roadmap
 
 - [x] **M1** — Transport + auth core, RpcClient, token store, SSO parse/build, Compose login UI.
-- [x] **M2** — Full Admin API (~106 methods): contexts, groups, namespaces, invitations, registry install.
+- [x] **M2** — Full Admin API (~110 methods): contexts, groups, namespaces, invitations, registry install.
 - [x] **M3** — SSE event client (`okhttp-sse`) with auto-reconnect via `Mero.events(...)`.
 - [x] **M4** — SSO in-app flow (Custom Tabs + deep-link callback) in the sample app.
 - [ ] **M5** — More Compose hooks (`useSubscription`, `useMigrationStatus`, …).

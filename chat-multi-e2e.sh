@@ -7,7 +7,9 @@
 # logcat (adb has no shared clipboard):
 #   A: create space+channel, post "hi from host", LOG the invite token
 #   → scrape the invite from emulator A's logcat, hand it to the guest role
-#   B: join with the invite, see the host's message, reply "hi from guest"
+#   B: auto-join (the `invite` runner arg becomes the app's `invite` launch extra,
+#      so the chat screen installs curb and joins on open), see the host's
+#      message, reply "hi from guest"
 #   A: see the guest's reply
 #
 # NOTE: the cross-node message sync depends on gossipsub between two co-located
@@ -130,7 +132,9 @@ pass=0; fail=0
 step "1/3 HOST creates space + invite + posts (emulator A / node A :4001)"
 # clear logcat so we scrape only this role's invite line
 "$ADB" -s "$UDID_A" logcat -c 2>/dev/null || true
-run_role "$UDID_A" testHostCreateInviteAndPost "host" 4001 && pass=$((pass+1)) || { fail=$((fail+1)); die "host role failed"; }
+run_role "$UDID_A" testHostCreateInviteAndPost "host" 4001 \
+  -Pandroid.testInstrumentationRunnerArguments.chatUser="dev1" \
+  && pass=$((pass+1)) || { fail=$((fail+1)); die "host role failed"; }
 
 step "Handoff invite A → B via logcat"
 # The host test logs `MERO_E2E_INVITE=<token>`; scrape the last one.
@@ -140,10 +144,12 @@ echo "invite (${#INV} chars) captured from emulator A"
 
 step "2/3 GUEST joins + sees host msg + replies (emulator B / node B :4011)"
 run_role "$UDID_B" testGuestJoinAndReply "guest" 4011 \
-  -Pandroid.testInstrumentationRunnerArguments.invite="$INV" && pass=$((pass+1)) || fail=$((fail+1))
+  -Pandroid.testInstrumentationRunnerArguments.invite="$INV" \
+  -Pandroid.testInstrumentationRunnerArguments.chatUser="dev2" && pass=$((pass+1)) || fail=$((fail+1))
 
 step "3/3 HOST sees the guest reply (emulator A / node A :4001)"
-run_role "$UDID_A" testHostSeesReply "verify" 4001 && pass=$((pass+1)) || fail=$((fail+1))
+run_role "$UDID_A" testHostSeesReply "verify" 4001 \
+  -Pandroid.testInstrumentationRunnerArguments.chatUser="dev1" && pass=$((pass+1)) || fail=$((fail+1))
 
 echo
 echo "${BOLD}────────── RESULT ──────────${RESET}"

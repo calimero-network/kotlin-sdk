@@ -16,10 +16,9 @@ subprojects {
     configure<org.jlleitschuh.gradle.ktlint.KtlintExtension> {
         version.set("1.3.1")
         android.set(true)
-        // Report-only for the initial drop: this repo has never had `ktlintFormat` run against it on
-        // a machine with the Kotlin toolchain, so wrapping/trailing-comma nits shouldn't block CI.
-        // Flip to false after the first `./gradlew ktlintFormat` pass.
-        ignoreFailures.set(true)
+        // Enforcing: the repo has had a full `./gradlew ktlintFormat` pass, so a style
+        // regression is a real regression and should fail CI.
+        ignoreFailures.set(false)
         filter {
             exclude { entry -> entry.file.path.contains("/build/") }
         }

@@ -1,5 +1,45 @@
 # Changelog
 
+## Unreleased — swift-sdk parity pass
+
+Brings the Android SDK and sample level with `calimero-network/swift-sdk` as of its
+`syncGroupContexts` / clean-landing work.
+
+### mero-core
+- `AuthApi`: `createRootKey`, `deleteRootKey`, `generateClientKey`, `deleteClientKey`,
+  `getKeyPermissions`, `updateKeyPermissions` (core's `{ add, remove }` delta, not a replacement),
+  and `generateMockTokens` — with their wire types.
+- `AdminApi.syncGroupContexts(groupId)`: sync the group, then join + state-pull each of its contexts,
+  so a freshly joined group initializes instead of staying on the all-ones uninitialized hash.
+  Clients no longer reimplement this (and hit the trap).
+
+### sample-app
+- **Landing screen**: Open Chat Example + Explore SDK entries (with method/category counts), replacing
+  the flat op list; the SDK surface now lives behind a **searchable list of collapsible categories**
+  (search auto-expands matches).
+- **Diagnostics screen** for the session log (clear / copy), reachable from the landing and the login
+  screen; login screen gets the brand mark and a spaced-out form.
+- **Chat**: joined spaces are listed (no more filtering by our own app id, which hid invited spaces);
+  uninitialized contexts are joined + synced on load; joining retries `syncGroupContexts` six times
+  with visible progress and registers the display name per context; "Sync now" + a diagnostic empty
+  state that distinguishes "curb not installed" from "0 peers" from "still syncing"; recursive
+  invitations are accepted; blocking busy overlay; single-line invite field with paste; invite sheet
+  with Copy/Share; deterministic avatar colors; auto-scroll to the newest message.
+- Registry: 12 more operations (root/client keys + permissions, `generateTokens`, `generateMockTokens`,
+  `removeGroupMembers`, `setContextMetadata`, `syncGroup`, `syncGroupContexts`) — 127 total.
+- e2e hooks as launch extras: `chatUser` (chat display name) and `invite` (auto-join on open) —
+  the Android analogs of the Swift harness's `E2E_USERNAME` / `E2E_JOIN`.
+
+### Tests / CI
+- `AdminSyncContextsTest` asserts the sync/join/state-pull call sequence.
+- Merobox two-node checks ported from swift-sdk: `merobox-sync.yml` (kv_store forward + bidirectional,
+  gating) and `merobox-chat-sync.yml` (real published curb app, informational), with `ci/merobox/`
+  scenarios and the node-matched `kv_store.wasm`.
+- CI additionally compiles the instrumented tests, validates the merobox scenarios, and runs
+  `ci/check-registry-parity.sh` so no SDK method can be added without an SDK Explorer entry.
+- ktlint is now **enforcing** (`ignoreFailures = false`) after a full `ktlintFormat` pass; detekt's
+  `LargeClass` is off for the deliberately-large `AdminApi`. Actions bumped to Node-24 runtimes.
+
 ## 0.1.0 (unreleased)
 
 Initial drop — M1 (transport + auth core) plus a Compose login UI kit. Ports the mero-js v7.0.1 wire
