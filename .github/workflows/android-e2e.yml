@@ -166,14 +166,6 @@ jobs:
           disable-animations: false
           script: echo "Generated AVD snapshot for caching."
 
-      # A second, distinct AVD: the cached one is already running by the time the script starts,
-      # and two instances of the same AVD can't coexist here.
-      - name: Create a second AVD for emulator B
-        run: |
-          echo no | "$ANDROID_HOME/cmdline-tools/latest/bin/avdmanager" create avd \
-            --force --name emulator_b --abi x86_64 --package 'system-images;android-30;default;x86_64'
-          "$ANDROID_HOME/cmdline-tools/latest/bin/avdmanager" list avd -c
-
       - name: Run chat-multi-e2e.sh (2 nodes, 2 emulators)
         # This action boots one emulator; chat-multi-e2e.sh boots a second instance
         # and both merod nodes, then runs the host/guest/verify roles.
@@ -187,8 +179,10 @@ jobs:
           disable-animations: true
           script: ./chat-multi-e2e.sh
         env:
-          # Emulator A is the one this action booted (the cached `test` AVD); B must be the other
-          # one, or the script would try to start a second instance of a running AVD.
+          # Emulator A is the one this action booted (the cached `test` AVD); B must be a different
+          # AVD, or the script would try to start a second instance of a running one. The script
+          # creates `emulator_b` itself from the installed system image — it can't be created in an
+          # earlier step, because the system image only lands when this action runs.
           AVD_B: emulator_b
 
       - name: Upload logs

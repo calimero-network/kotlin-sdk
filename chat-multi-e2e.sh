@@ -85,7 +85,29 @@ wait_boot() { for _ in $(seq 1 60); do [ "$("$ADB" -s "$1" shell getprop sys.boo
 
 # portable line→array reads (macOS bash 3.2 has no `mapfile`)
 AVDS=(); while IFS= read -r _l; do AVDS+=("$_l"); done < <("$EMULATOR" -list-avds 2>/dev/null)
+
+# Two DISTINCT AVDs are required: a second instance of an already-running AVD can't start unless
+# every instance is -read-only, and CI caches exactly one. Clone a second one from the same
+# installed system image (read out of the first AVD's config.ini, so we never guess at a package
+# path that isn't installed).
+ensure_two_avds() {
+  [ "${#AVDS[@]}" -ge 2 ] && return 0
+  local mgr="$SDK/cmdline-tools/latest/bin/avdmanager" base="${AVDS[0]:-}" cfg pkg
+  [ -n "$base" ] || return 1
+  [ -x "$mgr" ] || { echo "only one AVD ('$base') and no avdmanager to clone it"; return 1; }
+  cfg="${ANDROID_AVD_HOME:-$HOME/.android/avd}/$base.avd/config.ini"
+  # image.sysdir.1=system-images/android-30/default/x86_64/ → system-images;android-30;default;x86_64
+  pkg=$(sed -n 's#^image.sysdir.1=##p' "$cfg" 2>/dev/null | tr -d '\r' | sed 's#/$##; s#/#;#g')
+  [ -n "$pkg" ] || { echo "could not read a system image from $cfg"; return 1; }
+  echo "only one AVD ('$base') — creating 'emulator_b' from $pkg"
+  echo no | "$mgr" create avd --force --name emulator_b --package "$pkg" >/dev/null 2>&1 || return 1
+  AVDS+=("emulator_b")
+}
+ensure_two_avds || echo "${RED}continuing with one AVD — the second emulator will likely fail${RESET}"
+
 AVD_A="${AVD_A:-${AVDS[0]:-}}"; AVD_B="${AVD_B:-${AVDS[1]:-${AVDS[0]:-}}}"
+# If B resolved to the AVD that is already running, prefer any other one.
+if [ "$AVD_A" = "$AVD_B" ] && [ "${#AVDS[@]}" -ge 2 ]; then AVD_B="${AVDS[1]}"; fi
 # Launch an AVD and wait for a *new* serial to appear. `adb wait-for-device` returns
 # immediately when any emulator is already attached, which used to make the loop below
 # relaunch forever (on CI that spun for the job's whole 90m budget, printing
