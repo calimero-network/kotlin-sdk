@@ -94,7 +94,10 @@ fun ExplorerApp(session: MeroSession) {
 @Composable
 private fun ExplorerLogin(session: MeroSession) {
     val context = LocalContext.current
-    var node by remember { mutableStateOf(session.nodeUrl) }
+    // The node URL lives on the session, not in a `remember` snapshot of it: MainActivity applies the
+    // `nodeUrl` launch extra from a LaunchedEffect, which runs *after* this screen's first
+    // composition — a remembered copy would keep the default port and the login would be posted to a
+    // node that isn't there (which is exactly how the live e2e was failing).
     var username by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
     var showLogs by remember { mutableStateOf(false) }
@@ -130,11 +133,8 @@ private fun ExplorerLogin(session: MeroSession) {
             verticalArrangement = Arrangement.spacedBy(11.dp),
         ) {
             MinimalField(
-                node,
-                {
-                    node = it
-                    session.nodeUrl = it
-                },
+                session.nodeUrl,
+                { session.nodeUrl = it },
                 "Node URL",
                 Modifier.testTag("nodeURLField"),
                 leading = { CalMark(size = 16.dp) },
@@ -161,11 +161,11 @@ private fun ExplorerLogin(session: MeroSession) {
 
             CalPrimaryButton(
                 text = if (session.isLoading) "Connecting…" else "Connect",
-                onClick = { session.login(node, username, password) },
+                onClick = { session.login(session.nodeUrl, username, password) },
                 enabled = !session.isLoading,
                 modifier = Modifier.fillMaxWidth().testTag("loginButton"),
             )
-            TextButton(onClick = { session.connect(context, node) }, modifier = Modifier.fillMaxWidth()) {
+            TextButton(onClick = { session.connect(context, session.nodeUrl) }, modifier = Modifier.fillMaxWidth()) {
                 Text("Sign in with browser (SSO)", color = Cal.lime)
             }
             TextButton(onClick = { showLogs = true }, modifier = Modifier.testTag("connectionLogs")) {
@@ -427,7 +427,13 @@ private fun OpRow(
     onOpenOp: (SDKOperation) -> Unit,
 ) {
     Row(
-        Modifier.fillMaxWidth().clickable { onOpenOp(op) }.padding(horizontal = 14.dp, vertical = 11.dp),
+        Modifier
+            .fillMaxWidth()
+            .clickable { onOpenOp(op) }
+            .padding(horizontal = 14.dp, vertical = 11.dp)
+            // Tagged per method: the search box holds the same text as the row it filtered to, so
+            // matching on text alone is ambiguous for a UI test.
+            .testTag("op:${op.name}"),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Column(Modifier.weight(1f)) {

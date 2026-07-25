@@ -180,7 +180,11 @@ class AdminApiRequestTest {
         assertEquals("/admin-api/namespaces/ns-1/join", req.path)
         val body = req.body.readUtf8()
         assertTrue(body.contains("\"invitation\""))
-        assertTrue(body.contains("\"inviterSignature\":\"sig\""))
+        // The invitation types are snake_case on the wire (calimero_context_config has no
+        // rename_all), unlike the camelCase admin DTOs around them.
+        assertTrue(body, body.contains("\"inviter_signature\":\"sig\""))
+        assertTrue(body, body.contains("\"inviter_identity\""))
+        assertTrue(body, body.contains("\"expiration_timestamp\""))
     }
 
     @Test

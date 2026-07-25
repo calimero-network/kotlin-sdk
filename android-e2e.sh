@@ -66,6 +66,12 @@ done
 
 echo "${BOLD}▶ run AppE2ETest${RESET}"
 export ANDROID_SERIAL="$SERIAL"
+# Capture the app's logcat for the whole run: when a UI wait times out, the app-side
+# reason (auth error, unreachable node, crash) is only visible here.
+"$ADB" -s "$SERIAL" logcat -c 2>/dev/null || true
+"$ADB" -s "$SERIAL" logcat -v time > "$REPO_ROOT/.e2e-logcat.log" 2>&1 &
+LOGCAT_PID=$!
+trap 'kill $LOGCAT_PID 2>/dev/null || true' EXIT
 set -o pipefail
 # The test connects to the node at 10.0.2.2:4001 and authenticates with the admin
 # creds — all handed to the instrumented runner as arguments.

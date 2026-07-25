@@ -1,6 +1,9 @@
 package com.calimero.mero.sample
 
 import android.content.Intent
+import androidx.compose.ui.semantics.SemanticsProperties
+import androidx.compose.ui.semantics.getOrNull
+import androidx.compose.ui.test.ComposeTimeoutException
 import androidx.compose.ui.test.junit4.createEmptyComposeRule
 import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onAllNodesWithText
@@ -66,8 +69,21 @@ class AppE2ETest {
         composeRule.onNodeWithTag("usernameField").performTextInput(user)
         composeRule.onNodeWithTag("passwordField").performTextInput(pass)
         composeRule.onNodeWithTag("loginButton").performClick()
-        // The landing shows the two big entries once the session is authenticated.
-        waitForTag("openChat")
+        // The landing shows the two big entries once the session is authenticated. A first login on
+        // a fresh node is slow (password hashing + key setup), hence the generous window — and when
+        // it does time out, report the on-screen error instead of a bare "condition not satisfied".
+        try {
+            waitForTag("openChat", timeoutMs = 60_000)
+        } catch (e: ComposeTimeoutException) {
+            throw AssertionError("login did not reach the explorer: ${loginErrorText()}", e)
+        }
+    }
+
+    /** The login screen's visible error, if any — the useful half of a login timeout. */
+    private fun loginErrorText(): String {
+        val nodes = composeRule.onAllNodesWithTag("loginError").fetchSemanticsNodes()
+        val texts = nodes.mapNotNull { it.config.getOrNull(SemanticsProperties.Text)?.joinToString() }
+        return if (texts.isEmpty()) "no error shown (node $nodeUrl reachable? still loading?)" else texts.joinToString()
     }
 
     @Test
@@ -79,8 +95,9 @@ class AppE2ETest {
         // Categories are collapsed; searching reveals (auto-expands) the method.
         waitForTag("sdkSearch")
         composeRule.onNodeWithTag("sdkSearch").performTextInput("getContexts")
-        waitForText("getContexts")
-        composeRule.onNodeWithText("getContexts").performClick()
+        // Match the row by tag: the search field carries the same text as the row it filtered to.
+        waitForTag("op:getContexts")
+        composeRule.onNodeWithTag("op:getContexts").performClick()
         composeRule.onNodeWithTag("runOp").performClick()
         // The response viewer shows the "RESPONSE" label with JSON on success.
         waitForText("RESPONSE")
@@ -105,7 +122,9 @@ class AppE2ETest {
         composeRule.onNodeWithTag("createField").performTextInput("e2e-space")
         composeRule.onNodeWithText("Create").performClick()
         waitForText("e2e-space")
-        composeRule.onNodeWithText("e2e-space").performClick()
+        // Index 0, not onNodeWithText: a reused node (test retry) can already hold a same-named
+        // space from an earlier run, and two matches would fail the click outright.
+        composeRule.onAllNodesWithText("e2e-space")[0].performClick()
 
         // create channel
         waitForTag("channelAdd")
@@ -122,7 +141,7 @@ class AppE2ETest {
         composeRule.onNodeWithText("Done").performClick()
 
         // send + read a message
-        composeRule.onNodeWithText("general").performClick()
+        composeRule.onAllNodesWithText("general")[0].performClick()
         waitForTag("messageField")
         composeRule.onNodeWithTag("messageField").performTextInput("e2e hello")
         composeRule.onNodeWithTag("sendMessage").performClick()
