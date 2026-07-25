@@ -7,6 +7,8 @@ import android.util.Log
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.semantics.getOrNull
 import androidx.compose.ui.test.ComposeTimeoutException
+import androidx.compose.ui.test.hasTestTag
+import androidx.compose.ui.test.isEnabled
 import androidx.compose.ui.test.junit4.createEmptyComposeRule
 import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onAllNodesWithText
@@ -178,12 +180,20 @@ class ChatMultiUserTest {
         openChat()
         waitForTag("chatAdd", timeoutMs = 240_000)
 
-        // Fall back to pasting it by hand if the auto-join hook didn't fire.
-        if (!hasTag("channelAdd", timeoutMs = 5_000) &&
-            composeRule.onAllNodesWithText("shared").fetchSemanticsNodes().isEmpty()
-        ) {
+        // Give the auto-join a real window: it installs curb, joins, then retries syncGroupContexts
+        // while the inviter's state arrives. Only if the space never shows up do we paste by hand —
+        // and then wait for the field to be *enabled*, since it is disabled while a join is in
+        // flight (typing into it mid-join failed with "Failed to assert the following: (is enabled)").
+        val autoJoined = runCatching { waitForText("shared", timeoutMs = 120_000) }.isSuccess
+        if (!autoJoined) {
             composeRule.onNodeWithTag("chatAdd").performClick()
             composeRule.onNodeWithText("Join existing space").performClick()
+            composeRule.waitUntil(60_000) {
+                composeRule
+                    .onAllNodes(hasTestTag("joinField").and(isEnabled()))
+                    .fetchSemanticsNodes()
+                    .isNotEmpty()
+            }
             composeRule.onNodeWithTag("joinField").performTextInput(invite)
             composeRule.onNodeWithText("Join space").performClick()
         }
