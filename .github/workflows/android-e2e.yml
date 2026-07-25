@@ -98,6 +98,9 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: android-e2e-single-node
+          # Every log here is a dotfile, and upload-artifact skips hidden files by default —
+          # without this the node log and the logcat capture are silently dropped.
+          include-hidden-files: true
           path: |
             .e2e-android.log
             .e2e-logcat.log
@@ -190,6 +193,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: android-e2e-multi-node
+          include-hidden-files: true
           path: |
             .mero-a.log
             .mero-b.log

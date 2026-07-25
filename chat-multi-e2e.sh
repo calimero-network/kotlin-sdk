@@ -169,14 +169,19 @@ APK=$(find sample-app/build/outputs/apk/debug -name '*.apk' 2>/dev/null | head -
 [ -n "$APK" ] || die "built APK not found"
 for u in "$UDID_A" "$UDID_B"; do "$ADB" -s "$u" install -r -g "$APK" >/dev/null 2>&1 || die "install failed on $u"; done
 
-# run_role <serial> <TestMethod> <label> [extra runner args...]
+# run_role <serial> <TestMethod> <label> <node-port> [extra runner args...]
+#
+# NB: the port and extras are read AFTER `shift 4`, as "$port" and "$@". Referring to `$4`/`${@:5}`
+# after a shift (as this did) points past the end of the shifted list — with `set -u` that aborted
+# every role with "line 176: $4: unbound variable", which stayed hidden while the job was failing
+# earlier during emulator setup.
 run_role() {
-  local serial="$1" method="$2" label="$3"; shift 3
+  local serial="$1" method="$2" label="$3" port="$4"; shift 4
   echo; echo "${BOLD}— $label —${RESET}"
   ANDROID_SERIAL="$serial" ./gradlew :sample-app:connectedDebugAndroidTest \
     -Pandroid.testInstrumentationRunnerArguments.class="$TEST_CLASS#$method" \
-    -Pandroid.testInstrumentationRunnerArguments.nodeUrl="http://10.0.2.2:$4" \
-    "${@:5}" --stacktrace 2>&1 | tee "$REPO_ROOT/.mero-role-$method.log" \
+    -Pandroid.testInstrumentationRunnerArguments.nodeUrl="http://10.0.2.2:$port" \
+    "$@" --stacktrace 2>&1 | tee "$REPO_ROOT/.mero-role-$method.log" \
     | grep -iE "Tests run|FAILED|OK \(|BUILD (SUCCESSFUL|FAILED)"
   return "${PIPESTATUS[0]}"
 }
