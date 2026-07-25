@@ -90,17 +90,29 @@ AVDS=(); while IFS= read -r _l; do AVDS+=("$_l"); done < <("$EMULATOR" -list-avd
 # every instance is -read-only, and CI caches exactly one. Clone a second one from the same
 # installed system image (read out of the first AVD's config.ini, so we never guess at a package
 # path that isn't installed).
+# Resolve an installed system image straight off disk — `$SDK/system-images/<api>/<tag>/<abi>` →
+# `system-images;<api>;<tag>;<abi>`. Reading the AVD's config.ini instead was unreliable: the
+# CI-cached AVD has no `image.sysdir.1` key at all.
+installed_system_image() {
+  local dir
+  dir=$(ls -d "$SDK"/system-images/*/*/* 2>/dev/null | head -1) || return 1
+  [ -n "$dir" ] || return 1
+  printf 'system-images;%s;%s;%s\n' \
+    "$(basename "$(dirname "$(dirname "$dir")")")" "$(basename "$(dirname "$dir")")" "$(basename "$dir")"
+}
+
 ensure_two_avds() {
   [ "${#AVDS[@]}" -ge 2 ] && return 0
-  local mgr="$SDK/cmdline-tools/latest/bin/avdmanager" base="${AVDS[0]:-}" cfg pkg
+  local mgr="$SDK/cmdline-tools/latest/bin/avdmanager" base="${AVDS[0]:-}" pkg out
   [ -n "$base" ] || return 1
   [ -x "$mgr" ] || { echo "only one AVD ('$base') and no avdmanager to clone it"; return 1; }
-  cfg="${ANDROID_AVD_HOME:-$HOME/.android/avd}/$base.avd/config.ini"
-  # image.sysdir.1=system-images/android-30/default/x86_64/ → system-images;android-30;default;x86_64
-  pkg=$(sed -n 's#^image.sysdir.1=##p' "$cfg" 2>/dev/null | tr -d '\r' | sed 's#/$##; s#/#;#g')
-  [ -n "$pkg" ] || { echo "could not read a system image from $cfg"; return 1; }
+  pkg=$(installed_system_image) || true
+  [ -n "$pkg" ] || { echo "no installed system image found under $SDK/system-images"; return 1; }
   echo "only one AVD ('$base') — creating 'emulator_b' from $pkg"
-  echo no | "$mgr" create avd --force --name emulator_b --package "$pkg" >/dev/null 2>&1 || return 1
+  if ! out=$(echo no | "$mgr" create avd --force --name emulator_b --package "$pkg" 2>&1); then
+    echo "avdmanager failed: $out"
+    return 1
+  fi
   AVDS+=("emulator_b")
 }
 ensure_two_avds || echo "${RED}continuing with one AVD — the second emulator will likely fail${RESET}"
