@@ -86,18 +86,38 @@ wait_boot() { for _ in $(seq 1 60); do [ "$("$ADB" -s "$1" shell getprop sys.boo
 # portable line→array reads (macOS bash 3.2 has no `mapfile`)
 AVDS=(); while IFS= read -r _l; do AVDS+=("$_l"); done < <("$EMULATOR" -list-avds 2>/dev/null)
 AVD_A="${AVD_A:-${AVDS[0]:-}}"; AVD_B="${AVD_B:-${AVDS[1]:-${AVDS[0]:-}}}"
+# Launch an AVD and wait for a *new* serial to appear. `adb wait-for-device` returns
+# immediately when any emulator is already attached, which used to make the loop below
+# relaunch forever (on CI that spun for the job's whole 90m budget, printing
+# "launching emulator: test" hundreds of times and never reporting a result).
 launch_avd() {
   [ -x "$EMULATOR" ] || die "'emulator' binary not found"
   [ -n "$1" ] || die "no AVD available — create one (see TESTING.md §0)"
+  local before after log="$REPO_ROOT/.emulator-$$-$1.log"
+  before="$(running_serials | tr '\n' ' ')"
   echo "launching emulator: $1"
   "$EMULATOR" -avd "$1" -no-window -no-boot-anim -read-only -gpu swiftshader_indirect -noaudio \
-    > "$REPO_ROOT/.emulator-$RANDOM.log" 2>&1 &
-  "$ADB" wait-for-device
+    > "$log" 2>&1 &
+  for _ in $(seq 1 60); do
+    after="$(running_serials | tr '\n' ' ')"
+    [ "$after" != "$before" ] && return 0
+    sleep 2
+  done
+  echo "${RED}emulator '$1' never attached (120s). Last lines of $log:${RESET}"
+  tail -20 "$log" 2>/dev/null || true
+  return 1
 }
+attempt=0
 while [ "$(running_serials | wc -l | tr -d ' ')" -lt 2 ]; do
+  attempt=$((attempt + 1))
+  if [ "$attempt" -gt 2 ]; then
+    die "could not bring up two emulators (have $(running_serials | wc -l | tr -d ' ')).
+  Two DISTINCT AVDs are needed: a second instance of an already-running AVD can't start
+  unless every instance is -read-only, which is why one cached CI AVD isn't enough.
+  Create a second AVD (TESTING.md §0) or set AVD_A= / AVD_B= explicitly."
+  fi
   n=$(running_serials | wc -l | tr -d ' ')
-  if [ "$n" -eq 0 ]; then launch_avd "$AVD_A"; else launch_avd "$AVD_B"; fi
-  sleep 3
+  if [ "$n" -eq 0 ]; then launch_avd "$AVD_A" || true; else launch_avd "$AVD_B" || true; fi
 done
 SERIALS=(); while IFS= read -r _l; do SERIALS+=("$_l"); done < <(running_serials)
 UDID_A="${SERIALS[0]}"; UDID_B="${SERIALS[1]}"

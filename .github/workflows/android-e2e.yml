@@ -108,10 +108,12 @@ jobs:
   multi-node-e2e:
     name: Multi-user chat e2e (2 nodes / 2 emulators)
     runs-on: ubuntu-latest
-    # Two emulators + two nodes + three test roles: this job hit the old 60m ceiling on every run
-    # (a timed-out job is reported as "cancelled", which read as a mystery rather than a timeout),
-    # so it never actually reported a result. Same headroom the iOS multi-node job needed.
-    timeout-minutes: 90
+    # Two emulators + two nodes + three test roles. This used to burn its whole budget without
+    # reporting anything: chat-multi-e2e.sh relaunched the single cached AVD in a loop (a second
+    # instance of a running AVD can't start unless every instance is -read-only), and a timed-out
+    # job is reported as "cancelled", so it read as a mystery. The script now fails fast with the
+    # emulator log instead of spinning; 45m is plenty once it does.
+    timeout-minutes: 45
     # Informational: cross-node sync between co-located merods is flaky on one host.
     continue-on-error: true
     steps:
@@ -164,6 +166,14 @@ jobs:
           disable-animations: false
           script: echo "Generated AVD snapshot for caching."
 
+      # A second, distinct AVD: the cached one is already running by the time the script starts,
+      # and two instances of the same AVD can't coexist here.
+      - name: Create a second AVD for emulator B
+        run: |
+          echo no | "$ANDROID_HOME/cmdline-tools/latest/bin/avdmanager" create avd \
+            --force --name emulator_b --abi x86_64 --package 'system-images;android-30;default;x86_64'
+          "$ANDROID_HOME/cmdline-tools/latest/bin/avdmanager" list avd -c
+
       - name: Run chat-multi-e2e.sh (2 nodes, 2 emulators)
         # This action boots one emulator; chat-multi-e2e.sh boots a second instance
         # and both merod nodes, then runs the host/guest/verify roles.
@@ -176,6 +186,10 @@ jobs:
           emulator-options: -no-snapshot-save -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
           disable-animations: true
           script: ./chat-multi-e2e.sh
+        env:
+          # Emulator A is the one this action booted (the cached `test` AVD); B must be the other
+          # one, or the script would try to start a second instance of a running AVD.
+          AVD_B: emulator_b
 
       - name: Upload logs
         if: always()
@@ -186,4 +200,5 @@ jobs:
             .mero-a.log
             .mero-b.log
             .mero-role-*.log
+            .emulator-*.log
           if-no-files-found: warn
