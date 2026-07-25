@@ -12,11 +12,11 @@
 #      message, reply "hi from guest"
 #   A: see the guest's reply
 #
-# NOTE: the cross-node message sync depends on gossipsub between two co-located
-# merods, which is historically unreliable on a single host. If a step fails at
-# "did not sync", that's the P2P layer, not the app/test — the same flow works
-# across separate hosts. Everything up to the sync is verified. This script is
-# therefore informational (android-e2e.yml marks its job continue-on-error).
+# STATUS: all three roles pass on CI (2026-07-25, run 30154354592) — the guest
+# really does receive the host's message and the reply syncs back, between two
+# co-located merods. The job stays continue-on-error for now because that is one
+# green run on an emulator pair; if a step fails at "did not sync", suspect the
+# P2P layer (gossipsub between co-located nodes) before the app or the test.
 #
 # The invite handoff assumes the host test writes the invite to logcat as a line
 # `MERO_E2E_INVITE=<token>` (see report / TESTING.md — the app author wires this),

@@ -195,8 +195,10 @@ Expected: `BUILD SUCCESSFUL` with the instrumented suite green. CI runs this in
 ./chat-multi-e2e.sh           # 2 nodes + 2 emulators: cross-user chat (informational)
 ```
 
-`chat-multi-e2e.sh` is **informational** (its CI job is `continue-on-error`):
-cross-node gossipsub between two co-located merods is unreliable on a single host.
+`chat-multi-e2e.sh` passes all three roles on CI (host posts → guest joins via the invite, sees it
+and replies → host sees the reply), so cross-node message sync between two co-located merods does
+work. Its CI job stays `continue-on-error` for now: an emulator pair plus cross-node sync has more
+moving parts than the rest of CI, and a red run there shouldn't block a merge.
 
 The host role logs the invite as `MERO_E2E_INVITE=<token>`; the script scrapes it from logcat and
 hands it to the guest as the `invite` runner arg, which the test passes on as a launch extra so the

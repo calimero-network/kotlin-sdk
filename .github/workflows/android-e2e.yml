@@ -5,9 +5,8 @@ name: Android E2E (vs live merod)
 # weekly, not on every PR). Two jobs:
 #   * single-node — full-feature AppE2ETest (login → explorer → chat) on 1 node + 1 emulator.
 #   * multi-node  — two nodes + two emulators, cross-user chat (ChatMultiUserTest),
-#     driven by chat-multi-e2e.sh. Allowed to fail: cross-node gossipsub between
-#     two co-located merods is unreliable on a single host, so this job is
-#     informational until that (core-side) settles.
+#     driven by chat-multi-e2e.sh. All three roles pass as of run 30154354592;
+#     still continue-on-error while we see how stable an emulator pair is here.
 on:
   workflow_dispatch:
   push:
@@ -117,7 +116,8 @@ jobs:
     # job is reported as "cancelled", so it read as a mystery. The script now fails fast with the
     # emulator log instead of spinning; 45m is plenty once it does.
     timeout-minutes: 45
-    # Informational: cross-node sync between co-located merods is flaky on one host.
+    # Informational for now — green end-to-end since run 30154354592, but an
+    # emulator pair plus cross-node sync has more moving parts than the rest of CI.
     continue-on-error: true
     steps:
       - uses: actions/checkout@v7
