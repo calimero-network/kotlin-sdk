@@ -126,6 +126,7 @@ Or run everything (build → unit → lint → live-node e2e → instrumented UI
 ```bash
 ./test-all.sh                # add --skip-e2e / --skip-ui to skip the node/emulator sections
 ./run-app.sh                 # build, boot a local node, install & launch the sample on an emulator
+./run-all-2.sh               # two-user stack: 2 nodes + 2 emulators, for invites/chat by hand
 ./android-e2e.sh             # full-feature app e2e against a live merod
 ./chat-multi-e2e.sh          # two-node, two-emulator chat sync e2e
 ./ci/check-registry-parity.sh  # every SDK method must have an SDK Explorer entry

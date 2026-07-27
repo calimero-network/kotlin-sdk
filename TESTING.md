@@ -157,6 +157,21 @@ test in §6. There is no standalone JVM/console entry point, so `test-all.sh` ma
 ./run-app.sh --help     # all flags
 ```
 
+For the two-user flows (invitations, cross-user chat) there's a second launcher that
+brings up the whole stack — two nodes **and** two emulators, each app pointed at its
+own node. `run-app-2.sh` is an alias for it:
+
+```bash
+./run-all-2.sh          # node A :4001 + node B :4011, app on two emulators (dev1 / dev2)
+HEADLESS=1 ./run-all-2.sh   # same, emulators with -no-window
+AVD_A=pixel_a AVD_B=pixel_b ./run-all-2.sh   # pick the AVDs explicitly
+```
+
+Two **distinct** AVDs are needed — a second instance of an already-running AVD can't
+start. The script clones one (`emulator_b`) from an installed system image if you only
+have one. Emulators share no clipboard, so move the invite with
+`adb -s <serial-B> shell input text '<invite-code>'`.
+
 ---
 
 ## 6. Instrumented UI tests — `sample-app` (Android emulator)

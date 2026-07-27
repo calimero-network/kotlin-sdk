@@ -20,3 +20,12 @@ local.properties
 
 # Local dev helpers
 .build-env.sh
+
+# Run-script artifacts (run-app.sh / run-all-2.sh / *-e2e.sh)
+.mero-a*
+.mero-b*
+.mero-node*
+.mero-build.log
+.emulator-*.log
+merod.log
+merod.pid
