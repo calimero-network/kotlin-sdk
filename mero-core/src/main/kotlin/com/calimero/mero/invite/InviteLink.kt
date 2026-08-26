@@ -86,13 +86,17 @@ object InviteLink {
 
         val queryStart = trimmed.indexOf('?')
         if (queryStart < 0) return trimmed
-        for (pair in trimmed.substring(queryStart + 1).split("&")) {
-            val separator = pair.indexOf('=')
-            if (separator < 0) continue
-            if (pair.substring(0, separator) != INVITATION_PARAM) continue
-            return decodePercent(pair.substring(separator + 1))
-        }
-        return trimmed
+
+        // Expressed as a lookup rather than a loop: a loop here needs both a
+        // `continue` for the other parameters and a `return` for the hit, which
+        // detekt flags (LoopWithTooManyJumpStatements) and which reads worse.
+        // A pair with no '=' yields the whole string from `substringBefore`,
+        // which cannot equal the parameter name, so it is skipped for free.
+        val query = trimmed.substring(queryStart + 1)
+        val pairs = query.split("&")
+        val match = pairs.firstOrNull { it.substringBefore('=') == INVITATION_PARAM }
+        if (match == null) return trimmed
+        return decodePercent(match.substringAfter('=', ""))
     }
 
     /** Percent-encode everything a token or slug may contain. */
