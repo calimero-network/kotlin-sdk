@@ -19,6 +19,8 @@ import com.calimero.mero.sse.ContextEvent
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.serialization.SerialName
+import com.calimero.mero.invite.InviteCodec
+import com.calimero.mero.invite.InviteLink
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
@@ -28,7 +30,6 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
-import java.util.zip.Deflater
 import java.util.zip.Inflater
 
 private val chatJson =
@@ -89,26 +90,44 @@ data class ChatInvite(
     val spaceName: String,
     val invitation: SignedGroupOpenInvitation,
 ) {
-    /** Compact single-line invite code — zlib-compressed JSON, base64'd — for easy copy-paste. */
-    fun encoded(): String {
-        val bytes = chatJson.encodeToString(this).toByteArray()
-        val deflater = Deflater()
-        deflater.setInput(bytes)
-        deflater.finish()
-        val out = ByteArray(bytes.size * 2 + BUFFER_PAD)
-        val size = deflater.deflate(out)
-        deflater.end()
-        return Base64.encodeToString(out.copyOf(size), Base64.NO_WRAP)
-    }
+    /**
+     * Compact single-line invite code, in the format the rest of the fleet uses:
+     * `base58(deflate(JSON))` via [InviteCodec].
+     *
+     * This used to be `Deflater()` + base64. Two problems with that: `Deflater()`
+     * defaults to a **zlib-wrapped** stream rather than raw DEFLATE, and base58
+     * is what mero-chat, mero-blocks, merraria, mero-stream and the web apps
+     * actually emit — so a code from here could not be redeemed in any of them,
+     * which is the one thing an example demonstrating "invite and join" has to
+     * get right. It also deflated in a single call into a fixed-size buffer,
+     * which silently truncates a payload larger than the guess.
+     */
+    fun encoded(): String = InviteCodec.encode(chatJson.encodeToString(this))
+
+    /**
+     * The shareable link for this invite — what you would actually send someone.
+     * Opens the desktop app where installed and the web build otherwise.
+     */
+    fun shareableLink(): String = InviteLink.invitation(encoded(), ChatService.PACKAGE_NAME)
 
     companion object {
-        private const val BUFFER_PAD = 64
-
-        /** Decode an invite code. Tries the compact (zlib+base64) form first, then raw JSON. */
+        /**
+         * Decode an invite code, or a link containing one.
+         *
+         * Accepts the shared format, the legacy zlib+base64 form this example
+         * emitted before, and raw JSON — so codes already copied out of a running
+         * build keep working.
+         */
         fun decode(code: String): ChatInvite? {
-            val trimmed = code.trim()
+            val token = InviteLink.tokenFromPasted(code) ?: return null
+
+            InviteCodec.decode(token)?.let { json ->
+                runCatching { return chatJson.decodeFromString<ChatInvite>(json) }
+            }
+
+            // Legacy: zlib-wrapped deflate + base64, as this example used to emit.
             runCatching {
-                val compressed = Base64.decode(trimmed, Base64.DEFAULT)
+                val compressed = Base64.decode(token, Base64.DEFAULT)
                 val inflater = Inflater()
                 inflater.setInput(compressed)
                 val buffer = ByteArray(compressed.size * INFLATE_FACTOR + BUFFER_PAD)
@@ -116,9 +135,10 @@ data class ChatInvite(
                 inflater.end()
                 return chatJson.decodeFromString<ChatInvite>(String(buffer.copyOf(size)))
             }
-            return runCatching { chatJson.decodeFromString<ChatInvite>(trimmed) }.getOrNull()
+            return runCatching { chatJson.decodeFromString<ChatInvite>(token) }.getOrNull()
         }
 
+        private const val BUFFER_PAD = 64
         private const val INFLATE_FACTOR = 8
     }
 }
@@ -415,7 +435,7 @@ class ChatService(
                         invite.namespaceId,
                         JoinNamespaceRequest(invitation = invite.invitation, groupName = invite.spaceName),
                     )
-                val synced = syncJoinedSpace(invite, joined.groupId)
+                val synced = syncJoinedSpace(invite, joined.namespaceId)
                 loadSpaces()
                 status =
                     if (synced) {

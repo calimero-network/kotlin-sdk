@@ -1,0 +1,86 @@
+package com.calimero.mero.invite
+
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
+import org.junit.Test
+
+class InviteLinkTest {
+
+    @Test
+    fun `builds the canonical shareable link`() {
+        assertEquals(
+            "https://links.calimero.network/com.calimero.mero-tag/join?invitation=TOKEN",
+            InviteLink.invitation(token = "TOKEN", slug = "com.calimero.mero-tag"),
+        )
+    }
+
+    @Test
+    fun `percent encodes the token`() {
+        val link = InviteLink.invitation(token = "a b+c", slug = "com.calimero.mero-tag")
+        assertFalse(link.contains("a b"))
+        assertTrue(link.contains("a%20b"))
+    }
+
+    @Test
+    fun `reads the token back out of its own link`() {
+        val link = InviteLink.invitation(token = "ROUNDTRIP", slug = "com.calimero.mero-tag")
+        assertEquals("ROUNDTRIP", InviteLink.tokenFromPasted(link))
+    }
+
+    @Test
+    fun `reads a token from a calimero scheme link`() {
+        // The dotted slug is why the query is split by hand: URI host parsing on
+        // a non-special scheme mangles `com.calimero.mero-tag`.
+        assertEquals(
+            "DEEPLINK",
+            InviteLink.tokenFromPasted("calimero://com.calimero.mero-tag/join?invitation=DEEPLINK"),
+        )
+    }
+
+    @Test
+    fun `accepts a bare token`() {
+        assertEquals("JUSTATOKEN", InviteLink.tokenFromPasted("  JUSTATOKEN  "))
+    }
+
+    @Test
+    fun `decodes percent encoding on the way back`() {
+        assertEquals(
+            "a b",
+            InviteLink.tokenFromPasted(
+                "https://links.calimero.network/com.calimero.mero-tag/join?invitation=a%20b"),
+        )
+    }
+
+    @Test
+    fun `survives extra query parameters`() {
+        assertEquals(
+            "TOK",
+            InviteLink.tokenFromPasted(
+                "https://links.calimero.network/com.calimero.mero-tag/join?ref=x&invitation=TOK&y=2"),
+        )
+    }
+
+    @Test
+    fun `returns null only for blank input`() {
+        assertNull(InviteLink.tokenFromPasted("   "))
+        assertNotNull(InviteLink.tokenFromPasted("anything else"))
+    }
+
+    @Test
+    fun `a link with no invitation parameter comes back unchanged`() {
+        val pasted = "https://links.calimero.network/com.calimero.mero-tag/join?other=1"
+        assertEquals(pasted, InviteLink.tokenFromPasted(pasted))
+    }
+
+    @Test
+    fun `a round trip through the codec and the link survives`() {
+        val json = """{"invitation":{"group_id":"abc"},"__name":"Space"}"""
+        val link = InviteLink.invitation(InviteCodec.encode(json), "com.calimero.mero-tag")
+        val token = InviteLink.tokenFromPasted(link)
+        assertNotNull(token)
+        assertEquals(json, InviteCodec.decode(token!!))
+    }
+}
