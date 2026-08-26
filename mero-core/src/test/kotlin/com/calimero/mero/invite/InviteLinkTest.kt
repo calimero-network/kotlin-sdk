@@ -8,7 +8,6 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class InviteLinkTest {
-
     @Test
     fun `builds the canonical shareable link`() {
         assertEquals(
@@ -34,10 +33,8 @@ class InviteLinkTest {
     fun `reads a token from a calimero scheme link`() {
         // The dotted slug is why the query is split by hand: URI host parsing on
         // a non-special scheme mangles `com.calimero.mero-tag`.
-        assertEquals(
-            "DEEPLINK",
-            InviteLink.tokenFromPasted("calimero://com.calimero.mero-tag/join?invitation=DEEPLINK"),
-        )
+        val pasted = "calimero://com.calimero.mero-tag/join?invitation=DEEPLINK"
+        assertEquals("DEEPLINK", InviteLink.tokenFromPasted(pasted))
     }
 
     @Test
@@ -47,20 +44,14 @@ class InviteLinkTest {
 
     @Test
     fun `decodes percent encoding on the way back`() {
-        assertEquals(
-            "a b",
-            InviteLink.tokenFromPasted(
-                "https://links.calimero.network/com.calimero.mero-tag/join?invitation=a%20b"),
-        )
+        val pasted = "https://links.calimero.network/com.calimero.mero-tag/join?invitation=a%20b"
+        assertEquals("a b", InviteLink.tokenFromPasted(pasted))
     }
 
     @Test
     fun `survives extra query parameters`() {
-        assertEquals(
-            "TOK",
-            InviteLink.tokenFromPasted(
-                "https://links.calimero.network/com.calimero.mero-tag/join?ref=x&invitation=TOK&y=2"),
-        )
+        val pasted = "https://links.calimero.network/com.calimero.mero-tag/join?ref=x&invitation=TOK&y=2"
+        assertEquals("TOK", InviteLink.tokenFromPasted(pasted))
     }
 
     @Test

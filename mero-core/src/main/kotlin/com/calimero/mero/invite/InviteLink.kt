@@ -14,7 +14,6 @@ package com.calimero.mero.invite
  * this requires Android to route a link to the app.
  */
 object InviteLink {
-
     /**
      * Where shareable links point. Always HTTPS: an HTTPS link opens the web
      * build directly and hands off to the desktop launcher on a machine that has
@@ -46,9 +45,10 @@ object InviteLink {
         val path = "${encode(slug)}/${encode(action)}"
         if (params.isEmpty()) return "$base/$path"
         // Sorted so a given invitation always produces the same string.
-        val query = params.toSortedMap().entries.joinToString("&") { (k, v) ->
-            "${encode(k)}=${encode(v)}"
-        }
+        val query =
+            params.toSortedMap().entries.joinToString("&") { (k, v) ->
+                "${encode(k)}=${encode(v)}"
+            }
         return "$base/$path?$query"
     }
 

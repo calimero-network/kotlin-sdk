@@ -14,15 +14,18 @@ import org.junit.Test
  * *required* field, not an unknown one. Both spellings are pinned here.
  */
 class JoinNamespaceCompatTest {
-    private val json = Json { ignoreUnknownKeys = true; explicitNulls = false }
+    private val json =
+        Json {
+            ignoreUnknownKeys = true
+            explicitNulls = false
+        }
 
-    private fun decode(body: String) =
-        json.decodeFromString<JoinNamespaceResponseData>(body)
+    private fun decode(body: String) = json.decodeFromString<JoinNamespaceResponseData>(body)
 
     @Test
     fun `decodes the rc25 spelling`() {
-        val data = decode(
-            """{"namespaceId":"ns-1","memberIdentity":"id-1","memberAccount":"acct-1"}""")
+        val body = """{"namespaceId":"ns-1","memberIdentity":"id-1","memberAccount":"acct-1"}"""
+        val data = decode(body)
         assertEquals("ns-1", data.namespaceId)
         assertEquals("id-1", data.memberIdentity)
         assertEquals("acct-1", data.memberAccount)

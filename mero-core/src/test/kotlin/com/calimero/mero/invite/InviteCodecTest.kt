@@ -14,7 +14,6 @@ import org.junit.Test
  * working on Android — a silent, user-visible break — so it is pinned.
  */
 class InviteCodecTest {
-
     /** base58(deflate(JSON)) produced by bs58 + fflate. */
     private val jsToken = "T3MBR42kMWfzJn5wMvCqe1r7c1hYDuexnUKzqjSNCtW4k71PM1Jkbton9UzSky4P3Vu2kz8bft3hcchY2HESbzeq4WbgLAjTJs6Ep9vxyp5hCD3s9geS6EjLnBnDAQ5Lr2CjSQxB5h7vQmGu11ARv7ty7YAtw"
     private val jsJson = """{"__teamName":"Design Team","invitation":{"invitation":{"expires_at":1787740000000,"group_id":[13,20,27,34,41,48]},"inviter_signature":"5555"}}"""
@@ -47,15 +46,16 @@ class InviteCodecTest {
     @Test
     fun `decodes the legacy base64url form`() {
         val json = """{"invitation":{"group_id":"abc"}}"""
-        val b64 = java.util.Base64.getUrlEncoder().withoutPadding()
-            .encodeToString(json.toByteArray(Charsets.UTF_8))
+        val encoder = java.util.Base64.getUrlEncoder().withoutPadding()
+        val b64 = encoder.encodeToString(json.toByteArray(Charsets.UTF_8))
         assertEquals(json, InviteCodec.decode(b64))
     }
 
     @Test
     fun `decodes uncompressed base58`() {
         val json = """{"invitation":{"group_id":"abc"}}"""
-        assertEquals(json, InviteCodec.decode(InviteCodec.base58Encode(json.toByteArray(Charsets.UTF_8))))
+        val token = InviteCodec.base58Encode(json.toByteArray(Charsets.UTF_8))
+        assertEquals(json, InviteCodec.decode(token))
     }
 
     @Test

@@ -32,7 +32,6 @@ import java.util.zip.Inflater
  * testable without a device.
  */
 object InviteCodec {
-
     private const val ALPHABET = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz"
     private val INDEX: Map<Char, Int> = ALPHABET.withIndex().associate { (i, c) -> c to i }
 
@@ -114,11 +113,12 @@ object InviteCodec {
             val out = ByteArrayOutputStream(data.size * 4)
             val buffer = ByteArray(4096)
             while (!inflater.finished()) {
-                val n = try {
-                    inflater.inflate(buffer)
-                } catch (_: java.util.zip.DataFormatException) {
-                    return null
-                }
+                val n =
+                    try {
+                        inflater.inflate(buffer)
+                    } catch (_: java.util.zip.DataFormatException) {
+                        return null
+                    }
                 // A zero-length read with nothing left to consume means the
                 // stream is truncated rather than finished; bail instead of
                 // spinning forever.
@@ -168,11 +168,12 @@ object InviteCodec {
     private fun looksLikeJson(s: String): Boolean = s.trimStart().startsWith("{")
 
     private fun asJson(bytes: ByteArray): String? {
-        val text = try {
-            bytes.toString(Charsets.UTF_8)
-        } catch (_: Exception) {
-            return null
-        }
+        val text =
+            try {
+                bytes.toString(Charsets.UTF_8)
+            } catch (_: Exception) {
+                return null
+            }
         return if (looksLikeJson(text)) text else null
     }
 

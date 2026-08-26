@@ -567,8 +567,10 @@ data class JoinNamespaceResponseData(
 ) {
     /** The namespace joined, under whichever spelling the node used. */
     val namespaceId: String
-        get() = namespaceIdField ?: groupIdField
-            ?: error("join response carried neither `namespaceId` (rc.25+) nor `groupId` (pre-rc.25)")
+        get() =
+            namespaceIdField
+                ?: groupIdField
+                ?: error("join response carried neither namespaceId (rc.25+) nor groupId (pre-rc.25)")
 
     @Deprecated("Renamed to namespaceId in core 0.11.0-rc.25", ReplaceWith("namespaceId"))
     val groupId: String
