@@ -4,6 +4,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import java.util.Base64
 
 /**
  * The invitation wire format, and its compatibility with the JavaScript apps.
@@ -46,7 +47,7 @@ class InviteCodecTest {
     @Test
     fun `decodes the legacy base64url form`() {
         val json = """{"invitation":{"group_id":"abc"}}"""
-        val encoder = java.util.Base64.getUrlEncoder().withoutPadding()
+        val encoder = Base64.getUrlEncoder().withoutPadding()
         val b64 = encoder.encodeToString(json.toByteArray(Charsets.UTF_8))
         assertEquals(json, InviteCodec.decode(b64))
     }
