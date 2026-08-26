@@ -53,8 +53,14 @@ object InviteLink {
     }
 
     /** The shareable link for an invitation token. */
-    fun invitation(token: String, slug: String, host: String = DEFAULT_HOST): String =
-        create(slug = slug, params = mapOf(INVITATION_PARAM to token), host = host)
+    fun invitation(
+        token: String,
+        slug: String,
+        host: String = DEFAULT_HOST,
+    ): String {
+        val params = mapOf(INVITATION_PARAM to token)
+        return create(slug = slug, params = params, host = host)
+    }
 
     /**
      * Pull the invitation token out of whatever a person pasted: a shareable
@@ -73,9 +79,10 @@ object InviteLink {
         if (trimmed.isEmpty()) return null
 
         val lower = trimmed.lowercase()
-        val isLink = lower.startsWith("http://") || lower.startsWith("https://") ||
-            lower.startsWith("calimero://")
-        if (!isLink) return trimmed
+        val isHttp = lower.startsWith("http://")
+        val isHttps = lower.startsWith("https://")
+        val isScheme = lower.startsWith("calimero://")
+        if (!isHttp && !isHttps && !isScheme) return trimmed
 
         val queryStart = trimmed.indexOf('?')
         if (queryStart < 0) return trimmed
@@ -94,8 +101,12 @@ object InviteLink {
         val out = StringBuilder(value.length)
         for (byte in value.toByteArray(Charsets.UTF_8)) {
             val ch = byte.toInt().toChar()
-            if (safe.indexOf(ch) >= 0) out.append(ch)
-            else out.append('%').append("%02X".format(byte.toInt() and 0xff))
+            if (safe.indexOf(ch) >= 0) {
+                out.append(ch)
+            } else {
+                out.append('%')
+                out.append("%02X".format(byte.toInt() and 0xff))
+            }
         }
         return out.toString()
     }
@@ -110,13 +121,17 @@ object InviteLink {
                 ch == '%' && i + 2 < value.length -> {
                     val hex = value.substring(i + 1, i + 3).toIntOrNull(16)
                     if (hex == null) {
-                        bytes.write(ch.code); i++
+                        bytes.write(ch.code)
+                        i++
                     } else {
-                        bytes.write(hex); i += 3
+                        bytes.write(hex)
+                        i += 3
                     }
                 }
                 else -> {
-                    for (b in ch.toString().toByteArray(Charsets.UTF_8)) bytes.write(b.toInt())
+                    for (b in ch.toString().toByteArray(Charsets.UTF_8)) {
+                        bytes.write(b.toInt())
+                    }
                     i++
                 }
             }

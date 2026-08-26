@@ -153,16 +153,23 @@ object InviteCodec {
     fun decode(token: String): String? {
         val trimmed = token.trim()
         if (trimmed.isEmpty()) return null
+        return firstDecodable(trimmed)
+    }
+
+    /**
+     * The forms above, tried in order, as a single expression — one exit point,
+     * so the sequence stays readable and detekt's return-count limit is not the
+     * thing shaping the code.
+     */
+    private fun firstDecodable(trimmed: String): String? {
         if (looksLikeJson(trimmed)) return trimmed
 
-        base58Decode(trimmed)?.let { raw ->
-            inflate(raw)?.let { asJson(it)?.let { json -> return json } }
-            asJson(raw)?.let { return it }
-        }
+        val base58 = base58Decode(trimmed)
+        val compressed = base58?.let { inflate(it) }?.let { asJson(it) }
+        val uncompressed = base58?.let { asJson(it) }
+        val legacyBase64 = base64UrlDecode(trimmed)?.let { asJson(it) }
 
-        base64UrlDecode(trimmed)?.let { asJson(it)?.let { return it } }
-
-        return null
+        return compressed ?: uncompressed ?: legacyBase64
     }
 
     private fun looksLikeJson(s: String): Boolean = s.trimStart().startsWith("{")
