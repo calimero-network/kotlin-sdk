@@ -540,12 +540,42 @@ data class JoinNamespaceRequest(
     val groupName: String? = null,
 )
 
+/**
+ * The result of joining a namespace.
+ *
+ * core 0.11.0-rc.25 (core#3598) renamed the namespace field on the wire from
+ * `groupId` to `namespaceId`. Both are nullable here and resolved by
+ * [namespaceId] so either node version decodes: declared as a required
+ * `groupId`, this threw `MissingFieldException` on every rc.25 join — a hard
+ * failure of the call, which `ignoreUnknownKeys` does not help with, since the
+ * problem is a *missing required* field rather than an unknown one.
+ *
+ * `memberAccount` (rc.21, the AccountId rekey) and `governanceOp` are optional
+ * for the same reason: a required field a node may not send is a latent throw.
+ */
 @Serializable
 data class JoinNamespaceResponseData(
-    val groupId: String,
+    @SerialName("namespaceId") private val namespaceIdField: String? = null,
+    @SerialName("groupId") private val groupIdField: String? = null,
     val memberIdentity: String,
-    val governanceOp: String,
-)
+    /**
+     * The account the joining key became, 64 hex characters. This — not
+     * [memberIdentity] — is what member-addressing endpoints take.
+     */
+    val memberAccount: String? = null,
+    val governanceOp: String? = null,
+) {
+    /** The namespace joined, under whichever spelling the node used. */
+    val namespaceId: String
+        get() =
+            namespaceIdField
+                ?: groupIdField
+                ?: error("join response carried neither namespaceId (rc.25+) nor groupId (pre-rc.25)")
+
+    @Deprecated("Renamed to namespaceId in core 0.11.0-rc.25", ReplaceWith("namespaceId"))
+    val groupId: String
+        get() = namespaceId
+}
 
 @Serializable
 data class CreateGroupInNamespaceRequest(
