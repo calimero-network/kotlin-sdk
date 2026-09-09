@@ -1,0 +1,11 @@
+# The core release this SDK is tested against. Single source of truth: every
+# workflow and script that boots a node reads this file, so a bump is one edit.
+#
+# Pinned, never "latest": an unpinned download makes a green lane turn red on a
+# commit of its own that changed nothing (core rc.26 turning mDNS off did exactly
+# that across the fleet). Bump deliberately, and let CI tell you what moved.
+#
+# MEROD_IMAGE must name the SAME release as CORE_TAG. ghcr.io/calimero-network/merod
+# publishes a tag per rc — `edge` is a moving target and must not be used here.
+CORE_TAG=0.11.0-rc.32
+MEROD_IMAGE=ghcr.io/calimero-network/merod:0.11.0-rc.32

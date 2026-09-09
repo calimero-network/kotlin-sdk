@@ -22,6 +22,20 @@ The CI job also always dumps each node's logs and a best-effort **peer-connectiv
 count**, so a failure can be diagnosed as *"nodes never peered"* (discovery /
 networking) vs *"peered but state didn't sync"* (the sync path itself).
 
+## Fetch the fixture before running
+
+`res/` is **not committed** — the app bundle is downloaded per-run from the core
+release pinned in [`ci/core-version`](../core-version):
+
+```sh
+. ./ci/core-version
+gh release download "$CORE_TAG" --repo calimero-network/core \
+  --pattern 'kv-store-test-fixture.mpk' \
+  --output ci/merobox/res/kv-store.mpk --clobber
+```
+
+It must stay an **`.mpk` bundle**: a dev install refuses a raw `.wasm`.
+
 ## History: the `1111…` failure was a wasm/node version mismatch
 
 The first runs failed with node 2 stuck on the all-ones **uninitialized** hash
@@ -39,10 +53,13 @@ joining node could never initialize the context. merobox's own Docker CI passes
 all 30+ sync scenarios against `edge` — it just always *builds* the wasm from
 core `master`. Fixed by doing the same (see the wasm note below).
 
-With the matching wasm, both scenarios now converge on CI in **under 2 seconds**
+With the matching wasm, both scenarios converge on CI in **under 2 seconds**
 (forward and backward), so the job is a **gating check** — a red run means a
-genuine regression (upstream node sync broke, or the vendored wasm drifted from
-the node image).
+genuine regression at the pinned release.
+
+The drift that caused it cannot recur: node image and app bundle now come from
+the *same* core release (below), instead of a moving `edge` image and a wasm
+someone rebuilt by hand.
 
 ## Run locally
 
@@ -54,30 +71,60 @@ merobox bootstrap validate ci/merobox/sync-two-node.yml   # schema only, no Dock
 merobox bootstrap run      ci/merobox/sync-two-node.yml   # boots 2 nodes in Docker
 ```
 
-## Node image
+## Node image and app bundle: one pinned release
 
-`merod` has **no published `0.11.x` Docker tag** — the Android e2e uses the
-`0.11.0-rc.x` darwin *binary* from GitHub releases, which has no Docker build.
-So these workflows track `ghcr.io/calimero-network/merod:edge`. Override in CI
-via the `merod_image` `workflow_dispatch` input (see `.github/workflows/merobox-sync.yml`).
+Both come from [`ci/core-version`](../core-version), and CI fails the job if a
+scenario's `image:` no longer agrees with that file — a half-landed bump would
+otherwise run the *old* node and report green.
 
-### `res/kv_store.wasm` must match the node
-
-**This was the root cause of the first failures.** The wasm was originally
-vendored from merobox's stale `example-project/res/kv_store.wasm` (321 KB), whose
-bytecode/host-ABI predates the `edge` node. The joining node could not
-initialize the context against it, so node 2 stayed on the `1111…` hash forever
-— exactly the symptom above. merobox's own CI never hits this because it *builds*
-`kv_store.wasm` from core `master` on every run.
-
-So `res/kv_store.wasm` here is now **built from `calimero-network/core` master**
-(`apps/kv-store`, `app-release` profile) to match the `edge` image. To rebuild
-after a core bump:
-
-```sh
-git clone --depth 1 https://github.com/calimero-network/core.git
-(cd core/apps/kv-store && ./build.sh)
-cp core/apps/kv-store/res/kv_store.wasm ci/merobox/res/kv_store.wasm
+```
+CORE_TAG=0.11.0-rc.32
+MEROD_IMAGE=ghcr.io/calimero-network/merod:0.11.0-rc.32
 ```
 
-(Equivalently, merobox's `workflow-examples/scripts/build_res_wasm.sh`.)
+`ghcr.io/calimero-network/merod` publishes **a tag per rc** (plus `-profiling`
+variants and a short-sha per release commit), so nothing here needs `edge`.
+An earlier note in this file claimed no `0.11.x` tag existed; it was wrong, and
+tracking `edge` is what let the node move underneath a fixed app. Override for
+one run via the `merod_image` `workflow_dispatch` input.
+
+The app comes from the same release: every core tag publishes
+`kv-store-test-fixture.mpk`, built from that release's own SDK. Nothing is
+vendored, so a rebuild-by-hand step cannot go stale — bumping `ci/core-version`
+moves node and app together.
+
+## ⚠️ The joining node needs the app installed too
+
+core 0.11.0-rc.31 (#3652) gates *serving application bytecode to peers* on
+`[registry] mode = "dht"`. `merod init` writes `mode = "http"`, so a stock node
+**withholds exactly the bytecode** (`NodeClient::may_share_blob`; user-data blobs
+are untouched). The joiner falls back to its own registry.
+
+These fixtures dev-install a local bundle published nowhere, so node 2 reached out
+to `apps.calimero.network`, found nothing, and failed its first execution:
+
+```
+bytecode blob c13ac279…7778ed not found in blobstore
+JSON-RPC Error: InternalError
+```
+
+Three steps after the join, and **after `wait_for_sync` reported the context hash
+converged** — governance replicated fine; only the bytecode was missing. So both
+scenarios install the bundle on node 2 as well; `create_mesh` pre-installs
+nothing, and at rc.29 the peer blob transfer was silently doing that work. The
+ApplicationId is derived from package + signer, so the two installs agree on the
+id the joiner is already asking for.
+
+`mode = "dht"` (env `CALIMERO_REGISTRY_MODE=dht`) is core's documented alternative
+for a closed fleet, but merobox's `nodes:` has no key for it — and an explicit
+install keeps these scenarios about state sync rather than about how bytecode
+travels.
+
+The chat scenario needs no such step, and that is the control: `com.calimero.chat`
+is really published, so node 2 resolves it from the registry the same way node 1 did.
+
+## Bumping the core release
+
+1. Edit `ci/core-version` (`CORE_TAG` **and** `MEROD_IMAGE`, same release).
+2. Update the `image:` line in each `ci/merobox/*.yml` to match.
+3. Push — the image-agreement check and both sync scenarios run on the PR.

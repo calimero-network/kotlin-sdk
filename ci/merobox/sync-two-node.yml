@@ -7,16 +7,17 @@
 # exercises node + WASM + sync, independent of the curb chat app or Android.
 #
 # Run:  merobox bootstrap run ci/merobox/sync-two-node.yml   (from repo root)
+#       (fetch the fixture first — see ci/merobox/README.md)
 #
-# Node images: merod has no published 0.11.x Docker tag (the Android e2e uses the
-# 0.11.0-rc.x darwin *binary* from GitHub releases, which has no Docker build),
-# so we track `edge`. Override with MEROD_IMAGE in the CI job if needed.
+# Node image and app bundle come from ONE core release, pinned in ci/core-version;
+# CI asserts the image below still agrees with that file. ghcr publishes a tag per
+# rc, so nothing here needs `edge`.
 name: Two-node cross-node sync (kv_store)
 description: Write on node 1 must replicate to node 2 and the context hash must converge.
 
 nodes:
   count: 2
-  image: ghcr.io/calimero-network/merod:edge
+  image: ghcr.io/calimero-network/merod:0.11.0-rc.32
   prefix: calimero-node
 
 # Fresh state each run so the check is deterministic.
@@ -26,18 +27,44 @@ stop_all_nodes: true
 wait_timeout: 120
 
 steps:
-  - name: Install kv_store on node 1
+  - name: Install kv-store on node 1
     type: install_application
     node: calimero-node-1
-    path: ./ci/merobox/res/kv_store.wasm
+    path: ./ci/merobox/res/kv-store.mpk
     dev: true
     outputs:
       app_id: applicationId
 
-  # Creates the context on node 1 and wires node 2 into it (pre-installs the
-  # app on node 2, invites + joins). The join protocol no longer ships the app
-  # blob, so the pre-install (auto-resolved from the step above) is what lets
-  # node 2's context state initialize instead of staying uninitialized.
+  # ⚠️ The JOINER needs the app too, and must be given it explicitly.
+  #
+  # core 0.11.0-rc.31 (#3652) gates *serving application bytecode to peers* on
+  # `[registry] mode = "dht"`. `merod init` writes `mode = "http"`, so a stock node
+  # withholds exactly the bytecode (`NodeClient::may_share_blob`; user-data blobs
+  # are untouched). Node 2 therefore falls back to its own registry, and this
+  # fixture's app is a dev-installed bundle published nowhere — the node log shows
+  # it dialling apps.calimero.network and coming back empty.
+  #
+  # It surfaces as `bytecode blob … not found in blobstore` on the first method
+  # call: three steps after the join, and AFTER `wait_for_sync` reported the
+  # context hash converged. Governance replicates fine; only the bytes are missing.
+  #
+  # `create_mesh` pre-installs nothing. At rc.29 the peer blob transfer was
+  # silently doing this work, which is why the comment below used to claim it did.
+  #
+  # `mode = "dht"` is core's documented alternative for a closed fleet, but
+  # merobox's `nodes:` has no key for it — and an explicit install keeps this
+  # scenario about state sync rather than about how bytecode travels. Repeating the
+  # install is safe: ApplicationId is derived from package + signer, so both nodes
+  # land on the id the joiner is already asking for.
+  - name: Install kv-store on node 2
+    type: install_application
+    node: calimero-node-2
+    path: ./ci/merobox/res/kv-store.mpk
+    dev: true
+
+  # Creates the context on node 1 and wires node 2 into it (invite + join). The
+  # join protocol does not ship the app blob — see the note above the node-2
+  # install for why that install, not this step, is what lets node 2 execute.
   - name: Mesh the context across node 1 + node 2
     type: create_mesh
     context_node: calimero-node-1

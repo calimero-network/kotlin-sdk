@@ -1,19 +1,22 @@
-name: Merobox Chat Sync (curb)
+name: Merobox Chat Sync
 
-# The chat-app analog of merobox-sync.yml: instead of kv_store, it exercises the
-# REAL published mero-chat app (com.calimero.curb, downloaded from
-# apps.calimero.network) that the Android sample installs — meshing a curb "Channel"
+# The chat-app analog of merobox-sync.yml: instead of kv-store, it exercises the
+# REAL published chat app (com.calimero.chat, downloaded from
+# apps.calimero.network) that the Android sample installs — meshing a "Channel"
 # context across two Docker nodes, sending a message on node 1, and asserting it
-# replicates to node 2. This proves mero-chat cross-node message sync works
-# without the flaky emulator path.
+# replicates to node 2. This proves chat cross-node message sync works without
+# the flaky emulator path.
 #
-# PROVEN: on first CI run, curb 7.0.10 synced a message node 1 -> node 2 in
-# ~1.2s and node 2 read it back — mero-chat cross-node sync works on a live node.
-# Kept INFORMATIONAL (continue-on-error) anyway because it depends on two
-# external moving parts — the apps.calimero.network download and the `edge`
-# node image — so a registry outage or an upstream node break shouldn't redden
-# main. The self-contained kv_store sync check (merobox-sync.yml) is the
-# gating signal; this one is the real-app proof.
+# The node image is pinned (ci/core-version); the app is not, because it is
+# whatever the registry currently serves — which is the point of this lane.
+# Kept INFORMATIONAL (continue-on-error) for that reason: a registry outage or a
+# republished app shouldn't redden main. The self-contained kv-store sync check
+# (merobox-sync.yml) is the gating signal; this one is the real-app proof.
+#
+# ⚠️ It used to install `com.calimero.curb`, which is no longer published. The
+# resolve step below now distinguishes "unpublished" (0 bundles) from
+# "registry unreachable" and says which, instead of dying on `[0]` of an empty
+# list three lines from the cause.
 on:
   push:
     branches:
@@ -27,11 +30,11 @@ on:
   workflow_dispatch:
     inputs:
       merod_image:
-        description: 'merod Docker image (default ghcr.io/calimero-network/merod:edge)'
+        description: 'merod Docker image (default: MEROD_IMAGE from ci/core-version)'
         required: false
-        default: 'ghcr.io/calimero-network/merod:edge'
-      curb_version:
-        description: 'curb version to test (default: latest on the registry)'
+        default: ''
+      chat_version:
+        description: 'com.calimero.chat version to test (default: latest on the registry)'
         required: false
         default: ''
 
@@ -44,63 +47,99 @@ permissions:
 
 jobs:
   chat-sync:
-    name: Two-node curb message sync
+    name: Two-node chat message sync
     runs-on: ubuntu-latest
     timeout-minutes: 25
-    # Informational until proven green on CI (real published app vs moving edge).
+    # Informational: it depends on what the registry currently serves.
     continue-on-error: true
     env:
-      MEROD_IMAGE: ${{ github.event.inputs.merod_image || 'ghcr.io/calimero-network/merod:edge' }}
+      MEROD_IMAGE_OVERRIDE: ${{ github.event.inputs.merod_image }}
       REGISTRY: https://apps.calimero.network
-      PACKAGE: com.calimero.curb
-      CURB_VERSION: ${{ github.event.inputs.curb_version }}
+      PACKAGE: com.calimero.chat
+      CHAT_VERSION: ${{ github.event.inputs.chat_version }}
       WF: ci/merobox/chat-sync-two-node.yml
     steps:
       - uses: actions/checkout@v7
+
+      - name: Resolve the pinned core release
+        run: |
+          . ./ci/core-version
+          echo "MEROD_IMAGE=${MEROD_IMAGE_OVERRIDE:-$MEROD_IMAGE}" >> "$GITHUB_ENV"
 
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
 
+      # Pin the PAIR. `pip install merobox` alone pins nothing that matters:
+      # calimero-client-py is an unpinned transitive dep that tracks core's master,
+      # and a client-py release has broken every unpinned merobox install before
+      # (0.7.0 dropped a kwarg merobox passed). Bump both together, deliberately.
       - name: Install merobox
         run: |
           python -m pip install --upgrade pip
-          pip install merobox
+          pip install 'merobox==0.6.75' 'calimero-client-py==0.7.0'
           merobox --version
+          pip show calimero-client-py | sed -n '1,2p'
 
-      # Download the published curb bundle (.mpk = gzip tar of app.wasm + manifest)
-      # and extract the wasm to the path the workflow references. Resolve the
-      # latest version from the registry unless one was given.
-      - name: Download curb app.wasm from the registry
+      # Download the published bundle. It is installed AS an .mpk — a dev install
+      # refuses a raw .wasm ("not a signed application bundle"), so the old
+      # extract-the-wasm step would now fail at step 1 of the scenario.
+      #
+      # Three registry states, told apart: N bundles (fine), 0 (unpublished — the
+      # state com.calimero.curb is in), and unreachable. Without this the lookup
+      # raised `IndexError: list index out of range` and read as a harness bug.
+      - name: Download the chat bundle from the registry
         run: |
-          set -euo pipefail
-          VER="${CURB_VERSION}"
+          set -uo pipefail
+          VER="${CHAT_VERSION}"
           if [ -z "$VER" ]; then
-            VER=$(curl -sfL "${REGISTRY}/api/v2/bundles?package=${PACKAGE}" \
-              | python3 -c "import sys,json; b=json.load(sys.stdin); print(sorted([x['appVersion'] for x in (b if isinstance(b,list) else b.get('data',b))], reverse=True)[0])")
+            body=$(curl -sfL "${REGISTRY}/api/v2/bundles?package=${PACKAGE}") || {
+              echo "::warning::registry unreachable at ${REGISTRY} — skipping"
+              echo "SKIP_REASON=registry unreachable" >> "$GITHUB_ENV"; exit 0; }
+            VER=$(printf '%s' "$body" | python3 -c \
+              "import sys,json; b=json.load(sys.stdin); b=b if isinstance(b,list) else b.get('data',[]); \
+               print(sorted([x['appVersion'] for x in b], reverse=True)[0] if b else '')")
+            if [ -z "$VER" ]; then
+              echo "::warning::${PACKAGE} is not published on ${REGISTRY} — skipping"
+              echo "SKIP_REASON=${PACKAGE} is not published" >> "$GITHUB_ENV"; exit 0
+            fi
           fi
-          echo "curb version: $VER"
-          echo "CURB_RESOLVED=$VER" >> "$GITHUB_ENV"
-          curl -sfL "${REGISTRY}/artifacts/${PACKAGE}/${VER}/${PACKAGE}-${VER}.mpk" -o curb.mpk
-          mkdir -p extract ci/merobox/res
-          tar xzf curb.mpk -C extract
-          cp "$(find extract -name '*.wasm' | head -1)" ci/merobox/res/curb-app.wasm
-          ls -la ci/merobox/res/curb-app.wasm
-          file ci/merobox/res/curb-app.wasm
+          echo "chat version: $VER"
+          echo "CHAT_RESOLVED=$VER" >> "$GITHUB_ENV"
+          mkdir -p ci/merobox/res
+          curl -sfL "${REGISTRY}/artifacts/${PACKAGE}/${VER}/${PACKAGE}-${VER}.mpk" \
+            -o ci/merobox/res/chat-app.mpk
+          ls -la ci/merobox/res/chat-app.mpk
 
       - name: Pull merod image
+        if: env.SKIP_REASON == ''
         run: docker pull "$MEROD_IMAGE"
 
-      - name: Pin node image in workflow
+      # The scenario carries the real pinned image so it also runs standalone;
+      # assert it agrees with ci/core-version, then apply any dispatch override.
+      - name: Check the scenario image matches ci/core-version
+        if: env.SKIP_REASON == ''
         run: |
-          sed -i "s#image: ghcr.io/calimero-network/merod:edge#image: ${MEROD_IMAGE}#" "$WF"
+          set -euo pipefail
+          declared=$(awk '/^  image:/{print $2; exit}' "$WF")
+          . ./ci/core-version
+          [ "$declared" = "$MEROD_IMAGE" ] || {
+            echo "::error::$WF pins $declared but ci/core-version says $MEROD_IMAGE"; exit 1; }
+          echo "image pin agrees: $declared"
+
+      - name: Apply the dispatch image override
+        if: env.SKIP_REASON == '' && env.MEROD_IMAGE_OVERRIDE != ''
+        run: |
+          sed -i "s#^  image: .*#  image: ${MEROD_IMAGE}#" "$WF"
           grep 'image:' "$WF"
 
       - name: Validate workflow
+        if: env.SKIP_REASON == ''
         run: merobox bootstrap validate "$WF"
 
-      - name: Run curb message-sync check
+      - name: Run the message-sync check
+        if: env.SKIP_REASON == ''
         run: |
           set -o pipefail
           merobox bootstrap run "$WF" 2>&1 | tee merobox-run.log
@@ -109,16 +148,20 @@ jobs:
         if: always()
         run: |
           {
-            echo "## curb (mero-chat ${CURB_RESOLVED:-?}) two-node message sync"
-            if grep -q "Sync verification failed" merobox-run.log 2>/dev/null; then
+            echo "## mero-chat (${PACKAGE} ${CHAT_RESOLVED:-?}) two-node message sync"
+            if [ -n "${SKIP_REASON:-}" ]; then
+              echo ":fast_forward: **Skipped** — ${SKIP_REASON}."
+              echo ""
+              echo "Nothing was run. This is a registry state, not a sync failure."
+            elif grep -q "Sync verification failed" merobox-run.log 2>/dev/null; then
               echo ":warning: **Context state did NOT converge** — final per-node state below."
               echo ""; echo '```'
               sed -n '/Final state:/,/failed/p' merobox-run.log | head -30
               echo '```'
             elif grep -qE "All assertions passed|Workflow completed successfully" merobox-run.log 2>/dev/null; then
-              echo ":white_check_mark: node 2 read back node 1's chat message — mero-chat sync works."
+              echo ":white_check_mark: node 2 read back node 1's chat message — chat sync works."
             else
-              echo "See job log — no clear pass/fail marker found (curb init or contract-arg issue?)."
+              echo "See job log — no clear pass/fail marker found (init or contract-arg issue?)."
             fi
           } >> "$GITHUB_STEP_SUMMARY"
 

@@ -94,19 +94,19 @@ an emulator), so it talks to the node at `localhost`.
 ### 4a. Boot a node
 
 ```bash
-# Download a released merod (Linux x86_64) — or use one you already have.
-# (On macOS use merod_aarch64-apple-darwin instead.)
-TAG=$(gh release list --repo calimero-network/core --limit 1 --json tagName -q '.[0].tagName')
-URL=$(gh release view "$TAG" --repo calimero-network/core --json assets \
+# Download the PINNED merod (Linux x86_64) — the same release CI uses, so a local
+# green means what a CI green means. On macOS use merod_aarch64-apple-darwin.
+. ./ci/core-version                     # CORE_TAG, MEROD_IMAGE
+URL=$(gh release view "$CORE_TAG" --repo calimero-network/core --json assets \
   -q '.assets[] | select(.name | test("merod_x86_64-unknown-linux-gnu\\.tar\\.gz$")) | .url')
 curl -sL "$URL" | tar xz && chmod +x ./merod
 
 # Init a single node with embedded auth + an admin account.
-# rc.17+ creates the admin AT INIT — there's no longer a first-login bootstrap
-# secret in the default flow. The password is never a plain flag; pass it via
-# stdin (below), a file (--admin-password-file <PATH>), or env
-# (MERO_AUTH_ADMIN_PASSWORD). --auth-storage persistent keeps the init-time admin
-# into `run`.
+# The admin is created AT INIT — there is no first-login bootstrap secret (core
+# stopped honouring one; rc.29 parses the field only to discard it). The password
+# is never a plain flag; pass it via stdin (below), a file
+# (--admin-password-file <PATH>), or env (MERO_AUTH_ADMIN_PASSWORD).
+# --auth-storage persistent keeps the init-time admin into `run`.
 printf 'dev-password' | ./merod --home ./e2e-node --node e2e init \
   --server-port 4001 --swarm-port 4002 \
   --auth-mode embedded --auth-storage persistent \
@@ -126,7 +126,6 @@ echo "node healthy"
 ```bash
 MERO_E2E_NODE_URL=http://localhost:4001 \
 MERO_E2E_USER=dev MERO_E2E_PASS=dev-password \
-MERO_AUTH_BOOTSTRAP_SECRET=kotlin-sdk-e2e-bootstrap \
 ./gradlew :mero-core:testDebugUnitTest --tests '*RealNodeE2ETest*'
 ```
 
@@ -229,15 +228,27 @@ real `merod` containers, so they need Docker:
 
 ```bash
 pip install merobox
+
+# The app bundle is not committed — fetch it from the pinned core release first.
+. ./ci/core-version
+gh release download "$CORE_TAG" --repo calimero-network/core \
+  --pattern 'kv-store-test-fixture.mpk' \
+  --output ci/merobox/res/kv-store.mpk --clobber
+
 merobox bootstrap validate ci/merobox/sync-two-node.yml       # schema only, no Docker
-merobox bootstrap run      ci/merobox/sync-two-node.yml       # kv_store, node 1 → node 2
+merobox bootstrap run      ci/merobox/sync-two-node.yml       # kv-store, node 1 → node 2
 merobox bootstrap run      ci/merobox/sync-two-node-bidi.yml  # both directions
 ```
 
-`merobox-sync.yml` runs both kv_store scenarios as a **gating** job; `merobox-chat-sync.yml`
-downloads the real published curb app and asserts a chat message syncs node 1 → node 2
-(**informational** — it depends on the registry and the moving `edge` node image). Details and the
-"`1111…` = wasm/node mismatch" history are in [ci/merobox/README.md](ci/merobox/README.md).
+Node image and app bundle both come from `ci/core-version`; CI fails the job if a
+scenario's `image:` drifts from that file. It must be an `.mpk` — a dev install
+refuses a raw `.wasm` ("not a signed application bundle").
+
+`merobox-sync.yml` runs both kv-store scenarios as a **gating** job; `merobox-chat-sync.yml`
+downloads the real published `com.calimero.chat` app and asserts a chat message syncs node 1 → node 2
+(**informational** — it depends on what the registry currently serves; it skips with the reason when
+the package is unpublished or the registry is unreachable). Details and the "`1111…` = wasm/node
+mismatch" history are in [ci/merobox/README.md](ci/merobox/README.md).
 
 ## 8. SDK ↔ sample parity
 
@@ -257,7 +268,7 @@ The sample doubles as the SDK's living documentation, so CI enforces this. Inten
 | `MERO_E2E_NODE_URL` | `RealNodeE2ETest` (§4) | node URL; unset ⇒ the test self-skips |
 | `MERO_E2E_USER` | `RealNodeE2ETest` | admin username (matches `--admin-user`) |
 | `MERO_E2E_PASS` | `RealNodeE2ETest` | admin password (matches the piped password) |
-| `MERO_AUTH_BOOTSTRAP_SECRET` | node + test (§4) | first-login setup code (core#3221) |
+| `CORE_TAG` / `MEROD_IMAGE` | `ci/core-version` | the pinned core release every node lane uses |
 | `ANDROID_HOME` | scripts, §6 | Android SDK location (`adb`, `emulator`) |
 | `ANDROID_SERIAL` | scripts, §6 | target a specific emulator when several are running |
 
