@@ -45,9 +45,8 @@ suspend fun authenticate(credentials: Credentials? = null): TokenData
 
 Authenticate with credentials (falls back to `config.credentials`; throws
 `MeroStateException` if neither is set). Sends a `user_password` token request
-with client name `mero-kotlin-sdk` and permissions `["admin"]`, includes
-`bootstrap_secret` (from the credentials or the `MERO_AUTH_BOOTSTRAP_SECRET` env
-var) when present, then persists and returns the bundle.
+with client name `mero-kotlin-sdk` and permissions `["admin"]`, then persists and
+returns the bundle. No `bootstrap_secret`: core stopped honouring it.
 
 ## Token state
 
@@ -111,7 +110,6 @@ data class MeroConfig(
 data class Credentials(
     val username: String,
     val password: String,
-    val bootstrapSecret: String? = null,  // only for a fresh node's first login
 )
 ```
 

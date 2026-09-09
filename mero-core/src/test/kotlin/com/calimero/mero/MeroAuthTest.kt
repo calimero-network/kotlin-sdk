@@ -46,7 +46,7 @@ class MeroAuthTest {
                 MockResponse().setBody("""{"data":{"access_token":"access1","refresh_token":"refresh1"}}"""),
             )
 
-            val data = mero.authenticate(Credentials("alice", "secret", bootstrapSecret = "boot-123"))
+            val data = mero.authenticate(Credentials("alice", "secret"))
 
             assertEquals("access1", data.accessToken)
             assertEquals("refresh1", data.refreshToken)
@@ -59,11 +59,15 @@ class MeroAuthTest {
             assertTrue(body.contains("\"auth_method\":\"user_password\""))
             assertTrue(body.contains("\"username\":\"alice\""))
             assertTrue(body.contains("\"password\":\"secret\""))
-            assertTrue(body.contains("\"bootstrap_secret\":\"boot-123\""))
         }
 
+    /**
+     * core stopped honouring `bootstrap_secret` — rc.29 parses the field only to
+     * discard it. Sending one is not merely useless, it is misleading, so the SDK
+     * must not put it on the wire even if a caller has one lying around.
+     */
     @Test
-    fun `omits bootstrap_secret when not provided`() =
+    fun `never sends bootstrap_secret`() =
         runBlocking {
             server.enqueue(
                 MockResponse().setBody("""{"data":{"access_token":"a","refresh_token":"r"}}"""),

@@ -51,11 +51,10 @@ class MeroClient(
     suspend fun login(
         username: String,
         password: String,
-        bootstrapSecret: String? = null,
     ) {
         _state.update { it.copy(isLoading = true, error = null) }
         try {
-            mero.authenticate(Credentials(username, password, bootstrapSecret))
+            mero.authenticate(Credentials(username, password))
             _state.update { it.copy(isAuthenticated = true, isLoading = false, error = null) }
         } catch (e: Exception) {
             _state.update { it.copy(isLoading = false, error = e.message ?: "Login failed") }

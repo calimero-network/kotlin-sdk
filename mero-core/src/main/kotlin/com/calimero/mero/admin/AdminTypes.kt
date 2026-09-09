@@ -1,8 +1,18 @@
 package com.calimero.mero.admin
 
+import kotlinx.serialization.KSerializer
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.descriptors.SerialDescriptor
+import kotlinx.serialization.encoding.Decoder
+import kotlinx.serialization.encoding.Encoder
+import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.intOrNull
+import kotlinx.serialization.json.jsonPrimitive
+import kotlinx.serialization.json.long
 
 /*
  * Admin API wire types — ported 1:1 from the Swift MeroKit `AdminTypes.swift`
@@ -48,21 +58,34 @@ data class AdminAuthStatus(
 
 // ---- Applications ----------------------------------------------------------
 
+/**
+ * Install by registry coordinates. **No URL** — core 0.11.0-rc.31 (core#3652) made
+ * application distribution registry-only, so the node fetches from its own
+ * `[registry]` and nothing else. The request carries `deny_unknown_fields`, so a
+ * body still naming `url` is not ignored, it is refused:
+ *
+ * ```
+ * 400 unknown field `url`, expected `package` or `version`
+ * ```
+ *
+ * Both fields are required, and both are now non-optional here for that reason.
+ */
 @Serializable
 data class InstallApplicationRequest(
-    val url: String,
-    val hash: String? = null,
-    val metadata: List<Int>,
-    @SerialName("package") val packageName: String? = null,
-    val version: String? = null,
+    @SerialName("package") val packageName: String,
+    val version: String,
 )
 
+/**
+ * Install from a local bundle path (development only).
+ *
+ * `metadata` / `package` / `version` went with the same change: the node reads all
+ * three out of the bundle's own signed manifest. It must be an **`.mpk` bundle** —
+ * a raw `.wasm` is refused with `not a signed application bundle`.
+ */
 @Serializable
 data class InstallDevApplicationRequest(
     val path: String,
-    val metadata: List<Int>,
-    @SerialName("package") val packageName: String? = null,
-    val version: String? = null,
 )
 
 @Serializable
@@ -85,7 +108,7 @@ data class ApplicationBlob(
 data class Application(
     val id: String,
     val blob: ApplicationBlob,
-    val size: Int,
+    val size: Long,
     val source: String,
     val metadata: List<Int>,
     /** QUIRK: lone `signer_id` (snake_case) field inside an otherwise camelCase DTO. */
@@ -109,7 +132,7 @@ data class GetApplicationResponseData(
 data class ApplicationVersionEntry(
     val version: String,
     val blobId: String,
-    val size: Int,
+    val size: Long,
     @SerialName("package") val packageName: String,
 )
 
@@ -261,20 +284,7 @@ typealias ContextGroupResponseData = String?
 
 @Serializable
 data class ContextStorageResponseData(
-    val sizeInBytes: Int,
-)
-
-// ---- Specialized Node Invite -----------------------------------------------
-
-@Serializable
-data class InviteSpecializedNodeRequest(
-    val contextId: String,
-    val inviterId: String? = null,
-)
-
-@Serializable
-data class InviteSpecializedNodeResponseData(
-    val nonce: String,
+    val sizeInBytes: Long,
 )
 
 // ---- Update Context Application --------------------------------------------
@@ -328,7 +338,7 @@ class UploadBlobRequest(
 @Serializable
 data class BlobInfo(
     val blobId: String,
-    val size: Int,
+    val size: Long,
 )
 
 typealias UploadBlobResponseData = BlobInfo
@@ -354,7 +364,7 @@ typealias GetBlobResponseData = BlobInfo
 @Serializable
 data class GetBlobInfoResponseData(
     val blobId: String,
-    val size: Int,
+    val size: Long,
     val hash: String? = null,
     val mimeType: String? = null,
 )
@@ -417,22 +427,144 @@ typealias DeleteContextIdentityAliasResponseData = Empty
  * live in `calimero_context_config`, which has no `#[serde(rename_all = "camelCase")]`. Decoding
  * them as camelCase fails with "Fields [inviterIdentity, groupId, …] are required", which is how
  * "Invite people" used to break.
+ *
+ * ⚠️ **These two are verbatim passthroughs, deliberately.** An invitation is a
+ * *signed* document that a client only ever carries: `createNamespaceInvitation`
+ * returns it, an app puts it in a share link or the clipboard, and `joinNamespace`
+ * hands it back. The node verifies by deserializing the JSON into its own struct,
+ * re-encoding as **borsh**, and checking `inviter_signature` over those bytes — so
+ * a field the model does not name is dropped on re-encode, the borsh differs, and
+ * the signature no longer verifies.
+ *
+ * A typed model naming only the fields it knows had exactly that bug. Measured
+ * against a live `merod 0.11.0-rc.32`: the model named 2 of the envelope's 6 keys
+ * and 5 of the signed body's 6.
+ *
+ * ```
+ * envelope:    invitation, inviter_signature,
+ *              inviter_account, admitter_addrs, application_id, app_key
+ * signed body: inviter_identity, group_id, expiration_timestamp,
+ *              secret_salt, invited_role, admitters
+ * ```
+ *
+ * `admitters` is inside the *signed* body, and core#3714 (rc.29) made it non-empty
+ * on every invitation, even when the caller names nobody — before that it was
+ * usually absent, so the drop was invisible. Side by side on one rc.32 pair, with
+ * the same namespace and two freshly minted invitations:
+ *
+ * ```
+ * stripped to the old model → 500  "invalid invitation signature:
+ *                                   Verification equation was not satisfied"
+ * carried verbatim          → 200  joined
+ * ```
+ *
+ * Losing the *unsigned* hints costs something too: without `application_id` /
+ * `app_key` the joiner records zeros and its group state hash diverges from the
+ * originator's permanently; without `admitter_addrs` it has no address to dial.
+ *
+ * Hence: hold the raw [JsonObject], expose typed accessors for what callers read,
+ * and re-encode byte-for-byte. Adding a key is as fatal as dropping one — core
+ * mirrors `skip_serializing_if`, so an absent `admitters` must NOT come back as
+ * `"admitters":[]` — which is another reason not to round-trip through a data
+ * class with defaults.
  */
 
-@Serializable
-data class GroupInvitationFromAdmin(
-    @SerialName("inviter_identity") val inviterIdentity: List<Int>,
-    @SerialName("group_id") val groupId: List<Int>,
-    @SerialName("expiration_timestamp") val expirationTimestamp: Long,
-    @SerialName("secret_salt") val secretSalt: List<Int>,
-    @SerialName("invited_role") val invitedRole: Int? = null,
-)
+/** The signed body of an invitation. Unknown keys are preserved verbatim. */
+@Serializable(with = GroupInvitationFromAdminSerializer::class)
+class GroupInvitationFromAdmin(
+    /** Every key exactly as core sent it. This, not the accessors, is what re-encodes. */
+    val raw: JsonObject,
+) {
+    val inviterIdentity: List<Int> get() = raw.intList("inviter_identity")
+    val groupId: List<Int> get() = raw.intList("group_id")
+    val expirationTimestamp: Long get() = raw["expiration_timestamp"]?.jsonPrimitive?.long ?: 0L
+    val secretSalt: List<Int> get() = raw.intList("secret_salt")
+    val invitedRole: Int? get() = raw["invited_role"]?.jsonPrimitive?.intOrNull
 
-@Serializable
-data class SignedGroupOpenInvitation(
-    val invitation: GroupInvitationFromAdmin,
-    @SerialName("inviter_signature") val inviterSignature: String,
-)
+    /**
+     * Accounts permitted to admit a claim on this invitation (64 hex each), added
+     * in core#3714. **Signed** — see the type docs for why it must survive a
+     * round trip. Empty when core sent no such key.
+     */
+    val admitters: List<String>
+        get() = (raw["admitters"] as? JsonArray)?.mapNotNull { it.jsonPrimitive.contentOrNull }.orEmpty()
+
+    override fun equals(other: Any?): Boolean = other is GroupInvitationFromAdmin && other.raw == raw
+
+    override fun hashCode(): Int = raw.hashCode()
+
+    override fun toString(): String = "GroupInvitationFromAdmin($raw)"
+}
+
+/** An invitation envelope: the signed body plus unsigned bootstrap hints. Verbatim. */
+@Serializable(with = SignedGroupOpenInvitationSerializer::class)
+class SignedGroupOpenInvitation(
+    /** Every key exactly as core sent it. This, not the accessors, is what re-encodes. */
+    val raw: JsonObject,
+) {
+    val invitation: GroupInvitationFromAdmin
+        get() = GroupInvitationFromAdmin(raw["invitation"] as? JsonObject ?: JsonObject(emptyMap()))
+
+    val inviterSignature: String get() = raw["inviter_signature"]?.jsonPrimitive?.content.orEmpty()
+
+    /** Unsigned hint: the account that minted this invitation. */
+    val inviterAccount: String? get() = raw["inviter_account"]?.jsonPrimitive?.contentOrNull
+
+    /**
+     * Unsigned hint: libp2p multiaddrs (each including its `/p2p/<peer-id>` suffix)
+     * for the accounts in [GroupInvitationFromAdmin.admitters].
+     *
+     * rc.32 renamed this from `admitter_hints`, and changed the element type from a
+     * tagged `{multiaddr}`/`{url}` enum to a plain multiaddr string.
+     */
+    val admitterAddrs: List<String>
+        get() = (raw["admitter_addrs"] as? JsonArray)?.mapNotNull { it.jsonPrimitive.contentOrNull }.orEmpty()
+
+    /** Unsigned hint: the application the group targets, as 32 bytes. */
+    val applicationId: List<Int>? get() = (raw["application_id"] as? JsonArray)?.let { raw.intList("application_id") }
+
+    /** Unsigned hint: the bytecode the group is pinned to, as 32 bytes. */
+    val appKey: List<Int>? get() = (raw["app_key"] as? JsonArray)?.let { raw.intList("app_key") }
+
+    override fun equals(other: Any?): Boolean = other is SignedGroupOpenInvitation && other.raw == raw
+
+    override fun hashCode(): Int = raw.hashCode()
+
+    override fun toString(): String = "SignedGroupOpenInvitation($raw)"
+}
+
+private fun JsonObject.intList(key: String): List<Int> =
+    (this[key] as? JsonArray)?.mapNotNull { it.jsonPrimitive.intOrNull }.orEmpty()
+
+/**
+ * Decodes to, and re-encodes from, the raw object. Nothing is normalized: no key
+ * added, none dropped, no number reshaped — [JsonPrimitive] keeps the literal text,
+ * so a u64 timestamp cannot lose precision through a `Double` on the way past.
+ */
+internal object GroupInvitationFromAdminSerializer : KSerializer<GroupInvitationFromAdmin> {
+    override val descriptor: SerialDescriptor = JsonObject.serializer().descriptor
+
+    override fun deserialize(decoder: Decoder): GroupInvitationFromAdmin =
+        GroupInvitationFromAdmin(JsonObject.serializer().deserialize(decoder))
+
+    override fun serialize(
+        encoder: Encoder,
+        value: GroupInvitationFromAdmin,
+    ) = JsonObject.serializer().serialize(encoder, value.raw)
+}
+
+/** As [GroupInvitationFromAdminSerializer], for the envelope. */
+internal object SignedGroupOpenInvitationSerializer : KSerializer<SignedGroupOpenInvitation> {
+    override val descriptor: SerialDescriptor = JsonObject.serializer().descriptor
+
+    override fun deserialize(decoder: Decoder): SignedGroupOpenInvitation =
+        SignedGroupOpenInvitation(JsonObject.serializer().deserialize(decoder))
+
+    override fun serialize(
+        encoder: Encoder,
+        value: SignedGroupOpenInvitation,
+    ) = JsonObject.serializer().serialize(encoder, value.raw)
+}
 
 @Serializable
 data class RecursiveInvitationEntry(
@@ -443,41 +575,39 @@ data class RecursiveInvitationEntry(
 
 // ---- Namespaces ------------------------------------------------------------
 
+/**
+ * ⚠️ `upgradePolicy` is **gone** (core#3485). It always held `"LazyOnAccess"` —
+ * the concept moved server-side — and it is not sent any more, so a model that
+ * still declares it required throws `MissingFieldException` on every
+ * `listNamespaces` / `getNamespace`. `ignoreUnknownKeys` does not help: the
+ * problem is a missing *required* field, not an unknown one.
+ *
+ * `appVersion` arrived in its place.
+ */
 @Serializable
 data class Namespace(
     val namespaceId: String,
     val appKey: String,
     val targetApplicationId: String,
-    val upgradePolicy: String,
-    val createdAt: Int,
+    val createdAt: Long,
     val name: String? = null,
     val memberCount: Int,
     val contextCount: Int,
     val subgroupCount: Int,
+    /** The release the target application was built from, e.g. `0.11.0-rc.32`. */
+    val appVersion: String? = null,
 )
 
 typealias ListNamespacesResponseData = List<Namespace>
 
-@Serializable
-data class NamespaceIdentity(
-    val namespaceId: String,
-    val publicKey: String,
-)
-
-/** Core's `UpgradePolicy` enum — how a namespace/group adopts new app versions. */
-@Serializable
-enum class UpgradePolicy {
-    @SerialName("Automatic")
-    AUTOMATIC,
-
-    @SerialName("LazyOnAccess")
-    LAZY_ON_ACCESS,
-}
-
+/**
+ * `upgradePolicy` is not here either: core#3485 removed the concept, and a node
+ * that no longer knows the field ignores it on the way in. Sending it is harmless
+ * but meaningless, so the SDK stopped.
+ */
 @Serializable
 data class CreateNamespaceRequest(
     val applicationId: String,
-    val upgradePolicy: UpgradePolicy,
     val name: String? = null,
     /** Hex 32-byte blob id; pins the namespace to a specific installed version. */
     val appKey: String? = null,
@@ -501,8 +631,19 @@ data class DeleteNamespaceResponseData(
 @Serializable
 data class CreateNamespaceInvitationRequest(
     val requester: String? = null,
-    val expirationTimestamp: Int? = null,
+    /**
+     * Clamped to 24h by core (`MAX_INVITATION_VALIDITY_SECS`, rc.29) — a longer
+     * value is silently lowered, not refused. It used to default to a year.
+     */
+    val expirationTimestamp: Long? = null,
     val recursive: Boolean? = null,
+    /**
+     * Accounts permitted to admit a claim on this invitation, 64 hex each; core
+     * 400s on anything else. **Empty means core picks** the group's admins and TEE
+     * nodes (core#3714), which is why every rc.29+ invitation comes back carrying a
+     * non-empty `admitters` in its signed body.
+     */
+    val admitters: List<String>? = null,
 )
 
 @Serializable
@@ -596,10 +737,10 @@ data class SubgroupEntry(
 
 // ---- Groups ----------------------------------------------------------------
 
+/** `upgradePolicy` dropped here too — see [CreateNamespaceRequest]. */
 @Serializable
 data class CreateGroupRequest(
     val applicationId: String,
-    val upgradePolicy: String,
     val groupId: String? = null,
     val appKey: String? = null,
     val name: String? = null,
@@ -615,13 +756,13 @@ data class CreateGroupResponseData(
 data class GroupUpgradeStatus(
     val fromVersion: String,
     val toVersion: String,
-    val initiatedAt: Int,
+    val initiatedAt: Long,
     val initiatedBy: String,
     val status: String,
     val total: Int? = null,
     val completed: Int? = null,
     val failed: Int? = null,
-    val completedAt: Int? = null,
+    val completedAt: Long? = null,
 )
 
 // ---- Migration status ------------------------------------------------------
@@ -659,8 +800,8 @@ data class MemberMigrationReport(
     val schemaVersion: Int,
     val residueAuto: Int,
     val residueIdentity: Int,
-    val syncedUpToHlc: Int,
-    val reportedAt: Int,
+    val syncedUpToHlc: Long,
+    val reportedAt: Long,
     /** Member's self-reported pending-authored count (best-effort). */
     val authoredRemaining: Int,
     /** Set when the member's migrate did not complete. Absent otherwise. */
@@ -706,12 +847,12 @@ data class CascadeStatusEntry(
     val cascadeHlc: String? = null,
 )
 
+/** `upgradePolicy` is gone from this response too (core#3485); `groupStateHash` is new. */
 @Serializable
 data class GroupInfo(
     val groupId: String,
     val appKey: String,
     val targetApplicationId: String,
-    val upgradePolicy: String,
     val memberCount: Int,
     val contextCount: Int,
     val activeUpgrade: GroupUpgradeStatus? = null,
@@ -719,6 +860,8 @@ data class GroupInfo(
     val subgroupVisibility: String,
     /** The group's generic metadata record. `null` if never set. */
     val metadata: MetadataRecord? = null,
+    /** Hex digest of the group's governance state, for comparing two replicas. */
+    val groupStateHash: String? = null,
 )
 
 typealias GroupInfoResponseData = GroupInfo
@@ -830,12 +973,6 @@ data class GetTeeAdmissionPolicyResponseData(
     val acceptMock: Boolean,
 )
 
-@Serializable
-data class UpdateGroupSettingsRequest(
-    val upgradePolicy: String,
-    val requester: String? = null,
-)
-
 // ---- Group / member / context metadata -------------------------------------
 
 /**
@@ -847,7 +984,13 @@ data class UpdateGroupSettingsRequest(
 data class MetadataRecord(
     val name: String? = null,
     val data: Map<String, String>,
-    val updatedAt: Int,
+    /**
+     * ⚠️ **Milliseconds**, and `u64` in core — not seconds, and not an `Int`.
+     * Declared `Int`, this overflowed on the very first real body that carried a
+     * metadata record (`1788952411519`), taking every `getGroupInfo`,
+     * `getGroupMetadata`, `getMemberMetadata` and `getContextMetadata` with it.
+     */
+    val updatedAt: Long,
     /** Public key (hex) of the member that last updated the record. */
     val updatedBy: String,
 )
@@ -888,16 +1031,6 @@ data class SyncGroupResponseData(
     val targetApplicationId: String,
     val memberCount: Int,
     val contextCount: Int,
-)
-
-@Serializable
-data class RegisterGroupSigningKeyRequest(
-    val signingKey: String,
-)
-
-@Serializable
-data class RegisterGroupSigningKeyResponseData(
-    val publicKey: String,
 )
 
 @Serializable
@@ -956,8 +1089,11 @@ data class DetachContextFromGroupRequest(
 @Serializable
 data class CreateGroupInvitationRequest(
     val requester: String? = null,
-    val expirationTimestamp: Int? = null,
+    /** Clamped to 24h by core (`MAX_INVITATION_VALIDITY_SECS`, rc.29). */
+    val expirationTimestamp: Long? = null,
     val recursive: Boolean? = null,
+    /** See [CreateNamespaceInvitationRequest.admitters]. */
+    val admitters: List<String>? = null,
 )
 
 @Serializable
@@ -1080,4 +1216,223 @@ data class TeeVerifyQuoteResponseData(
 @Serializable
 data class PeersCountResponseData(
     val count: Int,
+)
+
+// ---- Node identity, readiness (rc.23 / rc.26) ------------------------------
+
+/**
+ * Who this node is. Replaces the deleted `GET /namespaces/{id}/identity`
+ * (core#3522, rc.23) — core's own commit message: *"ask the node who it is, and
+ * delete the route that asked a namespace"*.
+ */
+@Serializable
+data class NodeIdentity(
+    /** The account this node writes as, 64 hex. */
+    val accountId: String,
+    /** `null` on a node that holds only an account root and no usable device. */
+    val deviceId: String? = null,
+    /** This node's namespace signing key, 64 hex. */
+    val publicKey: String,
+    val accountRootPublicKey: String,
+    /** The device's KEM key — what certificates publish. `null` with no device. */
+    val deviceAgreementKey: String? = null,
+    /**
+     * Whether this node holds the root of the account it speaks for (rc.32,
+     * core#3774). A *paired* node adopted an account rooted on another machine
+     * and may hold a root of its own besides, so "a root exists" is not the same
+     * question — only the holder can certify another device into the account.
+     */
+    val holdsAccountRoot: Boolean? = null,
+)
+
+// ---- Account: devices, applications, pairing (rc.27 / rc.28) ---------------
+
+/**
+ * ⚠️ Flat, not enveloped: `{"devices":[…]}`, with no `data` wrapper. So are
+ * [AccountApplications] and [MemberDevices]. Not guessable from the neighbours.
+ */
+@Serializable
+data class AccountDevices(
+    val devices: List<AccountDevice>,
+)
+
+@Serializable
+data class AccountDevice(
+    val deviceId: String,
+    val signingKey: String,
+    /** Set only on the device this node itself presents. */
+    val isSelf: Boolean = false,
+    val revoked: Boolean = false,
+    /** Applications this device may speak for. **Empty means every application.** */
+    val applications: List<String> = emptyList(),
+    /** Namespaces currently holding a live binding for this device, hex. */
+    val namespaces: List<String> = emptyList(),
+)
+
+/** ⚠️ Flat: `{"applications":[…]}`. */
+@Serializable
+data class AccountApplications(
+    val applications: List<AccountApplication>,
+)
+
+@Serializable
+data class AccountApplication(
+    val applicationId: String,
+    /** Namespaces targeting this application, hex. */
+    val namespaces: List<String> = emptyList(),
+)
+
+/**
+ * Begin pairing a new device into an account.
+ *
+ * ⚠️ Pairing moved **off the namespace** in rc.28: a device pairs to an ACCOUNT
+ * once (`/account/pair-*`) and then links into namespaces. Revocation stayed
+ * per-namespace — that is where the group key rotates.
+ */
+@Serializable
+data class PairInitRequest(
+    val accountRootPublicKey: String,
+    /** Namespaces to link the new device into. */
+    val namespaces: List<String> = emptyList(),
+)
+
+@Serializable
+data class PairInitResponseData(
+    val accountId: String,
+    val deviceId: String,
+    val kemPublicKey: String,
+    val signPublicKey: String,
+    /** The statement the holder signs to certify this device. */
+    val statement: String,
+    /** Short code both sides compare out of band before completing. */
+    val confirmationCode: String,
+)
+
+@Serializable
+data class PairCompleteRequest(
+    val deviceId: String,
+    val kemPublicKey: String,
+    val signPublicKey: String,
+    val statement: String,
+    val confirmationCode: String,
+    /** Empty means the device may speak for every application. */
+    val applications: List<String> = emptyList(),
+)
+
+@Serializable
+data class PairCompleteResponseData(
+    val accountId: String,
+    val deviceId: String,
+    val keyDelivered: Boolean,
+    val confirmationCode: String,
+    val credential: String,
+)
+
+/** Re-link an already-certified device, optionally narrowing its applications. */
+@Serializable
+data class RelinkDeviceRequest(
+    /** Empty means every application. */
+    val applications: List<String> = emptyList(),
+)
+
+@Serializable
+data class RelinkDeviceResponseData(
+    val accountId: String,
+    val deviceId: String,
+    val applications: List<String> = emptyList(),
+    val linkedIn: List<RelinkOutcome> = emptyList(),
+    val skipped: List<RelinkSkip> = emptyList(),
+)
+
+@Serializable
+data class RelinkOutcome(
+    val namespaceId: String,
+    val keyDelivered: Boolean,
+)
+
+@Serializable
+data class RelinkSkip(
+    val namespaceId: String,
+    val reason: String,
+)
+
+/** Revoke a device from ONE namespace — this is where the group key rotates. */
+@Serializable
+data class RevokeDeviceRequest(
+    val deviceId: String,
+    /** Offline-root proof, when the revoking node is not the holder. */
+    val proof: String? = null,
+)
+
+@Serializable
+data class RevokeDeviceResponseData(
+    val accountId: String,
+    val deviceId: String,
+    val keyRotated: Boolean,
+    val revokedIn: List<RevocationOutcome> = emptyList(),
+)
+
+@Serializable
+data class RevocationOutcome(
+    val namespaceId: String,
+    val keyRotated: Boolean,
+)
+
+/** ⚠️ Flat: `{"members":[…]}`. */
+@Serializable
+data class MemberDevices(
+    val members: List<MemberDeviceGroup>,
+)
+
+@Serializable
+data class MemberDeviceGroup(
+    val account: String,
+    val devices: List<MemberDevice>,
+)
+
+@Serializable
+data class MemberDevice(
+    val deviceId: String,
+    val signingKey: String,
+)
+
+// ---- Direct admission (rc.29) ----------------------------------------------
+
+/**
+ * Carry a join that its author signed but cannot publish.
+ *
+ * The joiner may hold no node at all — an account, a key, a certificate and
+ * nowhere to publish from. It signs its own join, hands it to a node the inviter
+ * named in the invitation's `admitters`, and that node relays it.
+ *
+ * The response says **`published`**, not *joined*.
+ */
+@Serializable
+data class AdmitJoinRequest(
+    /** The invitation being claimed. Must name the admitting node in its `admitters`. */
+    val invitation: SignedGroupOpenInvitation,
+    /** The joiner's `SignedNamespaceOp`, borsh-encoded and hex. */
+    val signedOp: String,
+)
+
+@Serializable
+data class AdmitJoinResponseData(
+    val published: Boolean,
+)
+
+// ---- Intents (rc.26) --------------------------------------------------------
+
+/** Execute a method under a warrant rather than as this node's own identity. */
+@Serializable
+data class PerformIntentRequest(
+    val method: String,
+    val argsJson: JsonElement,
+    val warrant: String,
+    val authorProof: String,
+)
+
+@Serializable
+data class PerformIntentResponseData(
+    val rootHash: String,
+    val returns: JsonElement? = null,
 )

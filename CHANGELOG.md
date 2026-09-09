@@ -1,5 +1,86 @@
 # Changelog
 
+## Unreleased — core 0.11.0-rc.32
+
+Verified against a real `merod 0.11.0-rc.32`, and against a second one for the join.
+
+### Breaking — the SDK could not do these against a current node
+
+- **`InstallApplicationRequest` is `{package, version}`.** core#3652 (rc.31) made
+  distribution registry-only: the node fetches from its own `[registry]`, and the
+  request carries `deny_unknown_fields`, so the old body naming `url` is
+  **refused** — `400 unknown field \`url\`, expected \`package\` or \`version\``.
+  `installFromRegistry(registryUrl, package, version)` loses its first argument;
+  discover versions with `listPackageVersions` / `getLatestPackageVersion`, which
+  ask the node and therefore answer for the same registry the install will use.
+  `InstallDevApplicationRequest` is `{path}` alone, and the path must be an
+  `.mpk` — a raw `.wasm` is refused with *"not a signed application bundle"*.
+
+- **Invitations are carried verbatim.** `SignedGroupOpenInvitation` and
+  `GroupInvitationFromAdmin` now hold the object core sent and re-encode it key
+  for key, with typed accessors over it. Naming only the fields the model knew
+  dropped the rest on re-encode — including **`admitters`**, which is inside the
+  *signed* body and which core#3714 (rc.29) made non-empty on every invitation.
+  The node re-encodes to borsh and checks the signature, so on one rc.32 pair,
+  same namespace, two freshly minted invitations:
+  `stripped → 500 invalid invitation signature` · `verbatim → 200, joined`.
+
+- **`upgradePolicy` is gone** from `Namespace`, `GroupInfo`, `CreateNamespaceRequest`
+  and `CreateGroupRequest`, along with the `UpgradePolicy` enum (core#3485 — it
+  always held `"LazyOnAccess"`). Declared required, it threw
+  `MissingFieldException` on every `listNamespaces` / `getNamespace` /
+  `getGroupInfo`; `ignoreUnknownKeys` cannot help with a *missing* field.
+  `Namespace` gains `appVersion`, `GroupInfo` gains `groupStateHash`.
+
+- **Timestamps and sizes are `Long`.** They are `u64` in core.
+  `MetadataRecord.updatedAt` is wall-clock **milliseconds** and overflowed a
+  32-bit `Int` on the first real body carrying a metadata record
+  (`Failed to parse int for input '1788952411519'`), taking `getGroupInfo` and
+  all three metadata getters with it. Also `size` / `sizeInBytes` (a blob may
+  exceed 2 GB), `createdAt`, `initiatedAt`, `completedAt`, `reportedAt`,
+  `expirationTimestamp`.
+
+- **Four methods removed — their routes do not exist.** Probed live:
+  `getNamespaceIdentity` (404, deleted rc.23 core#3522 — use `getNodeIdentity`),
+  `registerGroupSigningKey` (404, rc.21 core#3439),
+  `inviteSpecializedNode` (405, rc.17 core#3267 — the path now matches
+  `/contexts/:id`, so it resolves to a *different* route), and
+  `updateGroupSettings` (405; its only field was `upgradePolicy`).
+
+- **`Credentials.bootstrapSecret` removed**, with `MeroClient.login`'s third
+  parameter and `LoginSheet`'s `showBootstrapSecret`. `merod init` creates the
+  admin account, and rc.29 parses `bootstrap_secret` only to discard it.
+
+### Added — surface from rc.23 to rc.32
+
+`getNodeIdentity` (incl. rc.32's `holdsAccountRoot`) · `isReady` ·
+`getApplicationAbi` · `performIntent` · `listMemberDevices` ·
+`listAccountDevices` · `listAccountApplications` · `pairInit` · `pairComplete` ·
+`relinkDevice` · `revokeAccountDevice` · `admitJoin`, and `admitters` on both
+invite requests.
+
+⚠️ `listAccountDevices`, `listAccountApplications` and `listMemberDevices` answer
+**flat** — `{devices:[…]}` / `{applications:[…]}` / `{members:[…]}`, no `data`
+envelope — unlike every route around them.
+
+### sample-app
+
+- Chat installs **`com.calimero.chat`**: `com.calimero.curb` is no longer
+  published (the registry answers `[]`). Same `init` params, but `send_message`
+  has **no `sender_username`** argument — passing curb's panics the guest at
+  argument deserialization. "Not published" is now reported as itself instead of
+  leaving the UI on the install gate.
+- SDK Explorer gains an **Accounts & devices** category and entries for every new
+  method, so `check-registry-parity.sh` stays green.
+
+### Testing
+
+Response bodies captured verbatim from the live node live in
+`mero-core/src/test/resources/fixtures/`. A fixture written to match the model can
+only confirm the model agrees with itself — which is how both this and the rc.25
+`groupId`→`namespaceId` rename got past a green suite. 78 tests, and
+`RealNodeE2ETest` now drives the new surface against a real node.
+
 ## Unreleased — swift-sdk parity pass
 
 Brings the Android SDK and sample level with `calimero-network/swift-sdk` as of its

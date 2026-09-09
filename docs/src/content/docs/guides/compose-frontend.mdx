@@ -94,7 +94,7 @@ class MeroClient(
     val state: StateFlow<MeroAuthState>
     val rpc: RpcClient                       // passthrough to mero.rpc
 
-    suspend fun login(username: String, password: String, bootstrapSecret: String? = null)
+    suspend fun login(username: String, password: String)
     fun startSsoLogin(context: Context, options: AuthLoginOptions)   // opens a Custom Tab
     fun handleAuthCallback(url: String): Boolean                     // parse + adopt SSO tokens
     suspend fun logout(clientId: String? = null)

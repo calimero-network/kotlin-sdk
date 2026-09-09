@@ -217,7 +217,7 @@ moving parts than the rest of CI, and a red run there shouldn't block a merge.
 
 The host role logs the invite as `MERO_E2E_INVITE=<token>`; the script scrapes it from logcat and
 hands it to the guest as the `invite` runner arg, which the test passes on as a launch extra so the
-chat screen installs curb and joins on open (no typing a 1 KB code). `chatUser=dev1|dev2` keeps the
+chat screen installs the chat app and joins on open (no typing a 1 KB code). `chatUser=dev1|dev2` keeps the
 two emulators' chat display names apart — the login user is the admin on both nodes.
 
 ---

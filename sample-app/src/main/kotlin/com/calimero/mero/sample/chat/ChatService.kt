@@ -14,7 +14,6 @@ import com.calimero.mero.admin.JoinNamespaceRequest
 import com.calimero.mero.admin.SetSubgroupVisibilityRequest
 import com.calimero.mero.admin.SignedGroupOpenInvitation
 import com.calimero.mero.admin.SubgroupEntry
-import com.calimero.mero.admin.UpgradePolicy
 import com.calimero.mero.invite.InviteCodec
 import com.calimero.mero.invite.InviteLink
 import com.calimero.mero.sse.ContextEvent
@@ -38,7 +37,7 @@ private val chatJson =
         encodeDefaults = true
     }
 
-// ---- Wire models (curb contract, snake_case) -------------------------------
+// ---- Wire models (com.calimero.chat contract, snake_case) ------------------
 
 @Serializable
 data class ChatMessage(
@@ -146,7 +145,7 @@ data class ChatInvite(
 // ---- ChatService -----------------------------------------------------------
 
 /**
- * A native curb (mero-chat) frontend over the authenticated [Mero] client: install the app,
+ * A native mero-chat frontend over the authenticated [Mero] client: install the app,
  * create/list spaces (namespaces) and channels (subgroup + context), send/read messages
  * (contract RPC), invite, and join. Same logic as mero-chat, in Kotlin, on the same WASM contract.
  * Compose observes its `mutableStateOf` fields directly.
@@ -178,26 +177,37 @@ class ChatService(
 
     // ---- setup / install ---------------------------------------------------
 
+    /**
+     * Install the chat app by coordinates. The **node** resolves them against the
+     * registry it is configured with — a client cannot name a URL since core#3652
+     * (rc.31), so version discovery asks the node too, and therefore answers for
+     * the same registry the install will use.
+     *
+     * "not published" is reported as itself. The previous version treated an empty
+     * version list as a status line and carried on, which left the UI sitting on
+     * the install gate saying nothing useful — precisely the state
+     * `com.calimero.curb` being unpublished put it in.
+     */
     suspend fun setup() =
         runStep("installing $PACKAGE_NAME…") {
-            val versions = mero.admin.getRegistryVersions(REGISTRY_URL, PACKAGE_NAME)
-            val version = versions.firstOrNull()
-            if (version == null) {
-                status = "no registry versions found"
+            val version =
+                runCatching { mero.admin.getLatestPackageVersion(PACKAGE_NAME).version }.getOrNull()
+            if (version.isNullOrEmpty()) {
+                status = "$PACKAGE_NAME is not published on this node's registry"
                 return@runStep
             }
-            val resp = mero.admin.installFromRegistry(REGISTRY_URL, PACKAGE_NAME, version)
+            val resp = mero.admin.installFromRegistry(PACKAGE_NAME, version)
             appId = resp.applicationId
             status = "installed $PACKAGE_NAME@$version"
             loadSpaces()
         }
 
-    /** Adopt curb's app id if it is already installed, skipping the install gate. */
+    /** Adopt the chat app id if it is already installed, skipping the install gate. */
     suspend fun detectInstalled() {
         if (appId != null) return
         val apps = runCatching { mero.admin.listApplications() }.getOrNull() ?: return
-        val curb = apps.apps.firstOrNull { it.packageName == PACKAGE_NAME } ?: return
-        appId = curb.id
+        val installed = apps.apps.firstOrNull { it.packageName == PACKAGE_NAME } ?: return
+        appId = installed.id
         status = "$PACKAGE_NAME already installed"
         loadSpaces()
     }
@@ -227,7 +237,7 @@ class ChatService(
         runStep("creating space \"$name\"…") {
             val resp =
                 mero.admin.createNamespace(
-                    CreateNamespaceRequest(applicationId = app, upgradePolicy = UpgradePolicy.AUTOMATIC, name = name),
+                    CreateNamespaceRequest(applicationId = app, name = name),
                 )
             status = "space created: ${resp.namespaceId}"
             loadSpaces()
@@ -270,7 +280,7 @@ class ChatService(
             }
     }
 
-    /** Resolve a subgroup to a display channel (curb `get_info` for name/kind); null to skip (DMs). */
+    /** Resolve a subgroup to a display channel (`get_info` for name/kind); null to skip (DMs). */
     private suspend fun buildChannel(sg: SubgroupEntry): ChatChannel? {
         val ctx = mero.admin.listGroupContexts(sg.groupId).firstOrNull() ?: return null
         var executor = ownedIdentity(ctx.contextId)
@@ -380,7 +390,9 @@ class ChatService(
                     put("mentions_usernames", buildJsonArray { })
                     put("parent_message", JsonNull)
                     put("timestamp", ts)
-                    put("sender_username", username)
+                    // No `sender_username`: com.calimero.chat's `send_message` has no such
+                    // parameter (curb's did), and an extra one panics the guest at argument
+                    // deserialization. The sender is the executing identity.
                     put("files", JsonNull)
                     put("images", JsonNull)
                 }
@@ -476,7 +488,7 @@ class ChatService(
         return false
     }
 
-    /** Register our display name in an initialized context (curb `set_profile`). */
+    /** Register our display name in an initialized context (`set_profile`). */
     private suspend fun registerProfile(contextId: String) {
         val executor = ownedIdentity(contextId)
         if (executor.isEmpty()) return
@@ -534,8 +546,12 @@ class ChatService(
     private fun short(error: Exception): String = error.message ?: error.toString()
 
     companion object {
-        const val REGISTRY_URL = "https://apps.calimero.network"
-        const val PACKAGE_NAME = "com.calimero.curb"
+        /**
+         * ⚠️ Was `com.calimero.curb`, which is no longer published — the registry
+         * answers `[]` for it. `com.calimero.chat` 3.1.1 takes the same `init`
+         * params, but its `send_message` has no `sender_username` argument.
+         */
+        const val PACKAGE_NAME = "com.calimero.chat"
         private const val MESSAGE_PAGE = 50
         private const val MILLIS_PER_SECOND = 1000
         private const val JOIN_ATTEMPTS = 6

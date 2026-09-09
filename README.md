@@ -28,7 +28,7 @@ See [`ROADMAP-TASKS/task-2-android-sdk.md`] in the planning repo for the full de
 
 The landing screen offers two entries, mirroring the Swift sample:
 
-- **Open Chat Example** — a native [curb](https://github.com/calimero-network/mero-chat) client:
+- **Open Chat Example** — a native `com.calimero.chat` client:
   install the app from the registry, create/join spaces (namespaces) and channels (subgroup +
   context), send and read messages over contract RPC with live SSE updates, and share compact
   invite codes. Joining runs `AdminApi.syncGroupContexts`, so a joined space's contexts actually
@@ -70,8 +70,9 @@ val mero = Mero(
     ),
 )
 
-// Credential login (bootstrap_secret is included only on a fresh node's first login).
-mero.authenticate(Credentials("alice", "s3cret", bootstrapSecret = "setup-code"))
+// Credential login. The admin account is created by `merod init`; there is no
+// first-login setup code (core stopped honouring `bootstrap_secret`).
+mero.authenticate(Credentials("alice", "s3cret"))
 
 // Call a contract method — result decoded with kotlinx.serialization.
 val summary: MigrateMyEntriesSummary = mero.rpc.migrateMyEntries(contextId)

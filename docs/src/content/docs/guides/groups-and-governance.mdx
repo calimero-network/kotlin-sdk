@@ -16,18 +16,20 @@ in the [admin API reference](/reference/admin-api/#group-management).
 
 ```kotlin
 val ns = mero.admin.createNamespace(
-    CreateNamespaceRequest(
-        applicationId = applicationId,
-        upgradePolicy = UpgradePolicy.AUTOMATIC,
-        name = "production",
-    )
+    CreateNamespaceRequest(applicationId = applicationId, name = "production")
 )
 val namespaceId = ns.namespaceId
 
-val all      = mero.admin.listNamespaces()             // List<Namespace>
-val one      = mero.admin.getNamespace(namespaceId)
-val identity = mero.admin.getNamespaceIdentity(namespaceId)
+val all = mero.admin.listNamespaces()             // List<Namespace>
+val one = mero.admin.getNamespace(namespaceId)
+
+// Who this node is. `getNamespaceIdentity` is gone: core#3522 deleted the route
+// that asked a namespace — "ask the node who it is" — and it 404s.
+val identity = mero.admin.getNodeIdentity()
 ```
+
+`upgradePolicy` is not a parameter any more: core#3485 removed the concept, and
+it always held `"LazyOnAccess"`.
 
 Invite and join:
 

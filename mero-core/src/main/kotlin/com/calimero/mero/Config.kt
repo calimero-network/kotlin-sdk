@@ -31,14 +31,14 @@ data class MeroConfig(
 /**
  * Login credentials.
  *
- * @property bootstrapSecret first-login setup code (core#3221 / rc.14). A fresh node only mints its
- *   first root key when the login carries this out-of-band secret — `merod` prints it at startup and
- *   stores it in `config.toml`. Ignored once an account exists, so it is always safe to include.
+ * There is no `bootstrapSecret` any more. The first-login setup code (core#3221)
+ * stopped being how a node gets its first admin: since rc.17 `merod init` creates
+ * the admin account, and rc.29 parses `bootstrap_secret` only to discard it
+ * (`crates/auth/src/providers/impls/user_password.rs`). Sending it did nothing.
  */
 data class Credentials(
     val username: String,
     val password: String,
-    val bootstrapSecret: String? = null,
 )
 
 /**
