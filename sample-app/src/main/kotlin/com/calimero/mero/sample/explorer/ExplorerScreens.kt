@@ -245,7 +245,7 @@ private fun ExplorerLanding(
             }
             BigEntry(
                 title = "Open Chat Example",
-                subtitle = "Spaces, channels & messaging on curb",
+                subtitle = "Spaces, channels & messaging on mero-chat",
                 accent = true,
                 tag = "openChat",
                 onClick = onOpenChat,

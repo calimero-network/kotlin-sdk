@@ -227,7 +227,7 @@ class ChatService(
     suspend fun loadSpaces() {
         try {
             // Show every namespace this node belongs to (created OR joined). We used to filter to our
-            // own curb app id — but an *invited* space targets the inviter's app id, which can differ,
+            // own app id — but an *invited* space targets the inviter's app id, which can differ,
             // so that hid joined spaces entirely (they showed on the admin dashboard but not here).
             spaces = mero.admin.listNamespaces().map { ChatSpace(it.namespaceId, it.name ?: "space") }
         } catch (e: Exception) {
@@ -266,12 +266,12 @@ class ChatService(
 
     /**
      * When a joined space shows no channels, say WHY. A context executes against the group's
-     * bytecode-derived app_key, so what matters is (a) that curb is installed here at all and (b) that
+     * bytecode-derived app_key, so what matters is (a) that the chat app is installed here at all and (b) that
      * this node has a peer to sync the context state from — a joined-but-uninitialized context
      * (hash 1111…) is almost always "0 peers", not an app-id mismatch.
      */
     private suspend fun diagnoseEmptySpace() {
-        val hasCurb =
+        val hasChatApp =
             runCatching { mero.admin.listApplications().apps }
                 .getOrNull()
                 .orEmpty()
@@ -279,7 +279,7 @@ class ChatService(
         val peers = runCatching { mero.admin.getPeersCount().count }.getOrNull()
         status =
             when {
-                !hasCurb -> "curb isn't installed on this node — install it, then rejoin."
+                !hasChatApp -> "the chat app isn't installed on this node — install it, then rejoin."
                 peers == 0 ->
                     "Joined, but this node has 0 peers — it can't sync the channel from the inviter. " +
                         "Make sure this node is networked to the inviter's node (swarm/bootstrap peers)."
