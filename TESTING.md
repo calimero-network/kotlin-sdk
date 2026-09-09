@@ -135,6 +135,35 @@ Expected: `RealNodeE2ETest` now **executes** (not skips). `MERO_E2E_USER` /
 this in `.github/workflows/e2e.yml` (manual + weekly) and guards against a
 vacuous all-skipped green by inspecting the JUnit XML.
 
+### 4b-2. Two-node invite → join (optional)
+
+`TwoNodeInviteJoinE2ETest` mints an invitation on one node and joins with it from
+another, **through the SDK's own types** — the round trip an app makes when it
+puts an invitation in a share link and hands it back. It self-skips unless a
+second node is given:
+
+```bash
+# Node B needs to reach node A: mDNS is off by default since core rc.26, so name
+# the peer explicitly. `peer_id` is in node A's config.toml right after init.
+PEER=$(awk -F'"' '/^peer_id/{print $2; exit}' ./e2e-node/e2e/config.toml)
+printf 'dev-password' | ./merod --home ./e2e-node --node e2e-b init \
+  --server-port 4011 --swarm-port 4012 \
+  --auth-mode embedded --auth-storage persistent \
+  --admin-user dev --admin-password-stdin \
+  --boot-nodes "/ip4/127.0.0.1/tcp/4002/p2p/$PEER"
+./merod --home ./e2e-node --node e2e-b run > merod-b.log 2>&1 &
+
+# Both nodes need the app installed: since core#3652 an http-registry node serves
+# no bytecode to peers, so the joiner cannot get it from the inviter.
+gh release download "$CORE_TAG" --repo calimero-network/core \
+  --pattern 'kv-store-test-fixture.mpk' --output /tmp/kv-store.mpk --clobber
+
+MERO_E2E_NODE_URL=http://localhost:4001 \
+MERO_E2E_NODE_B_URL=http://localhost:4011 \
+MERO_E2E_BUNDLE=/tmp/kv-store.mpk \
+./gradlew :mero-core:testDebugUnitTest --tests '*TwoNodeInviteJoinE2ETest*'
+```
+
 ### 4c. Stop the node
 
 ```bash

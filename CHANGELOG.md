@@ -119,6 +119,14 @@ only confirm the model agrees with itself — which is how both this and the rc.
 **decode-sweeps every read that needs no id** — which is what caught the alias
 map and the certificate 404 after the hand-picked checks had all passed.
 
+`TwoNodeInviteJoinE2ETest` drives the whole invitation journey through the SDK's
+own types across two real nodes: mint on A, carry as Kotlin objects, join on B.
+Simulating the old model at both levels turns that join into an HTTP 500 and
+reddens three unit tests, so it is load-bearing rather than decorative — checked,
+not assumed. (The first attempt at that check filtered the wrong serializer and
+passed; the envelope carries the nested object verbatim, so only filtering there
+reproduces the bug.)
+
 ## Unreleased — swift-sdk parity pass
 
 Brings the Android SDK and sample level with `calimero-network/swift-sdk` as of its
