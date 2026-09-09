@@ -49,6 +49,22 @@ jobs:
 
       # AVD snapshot cache (per the android-emulator-runner README): the first run
       # creates and snapshots the AVD, later runs restore it and boot faster.
+      # ⚠️ Bump the key to discard a poisoned snapshot. `actions/cache` saves
+      # `~/.android/avd/*` in its POST step — i.e. after the test step has already
+      # run the emulator with `-no-snapshot-save` and killed it — so a snapshot can
+      # be cached mid-teardown. Restore that and the emulator boots far enough for
+      # adb but never registers its system services:
+      #
+      #   android.os.ServiceManager$ServiceNotFoundException: No service published for: input
+      #   ##[error]The process '…/platform-tools/adb' failed with exit code 1
+      #
+      # and the job then idles to `timeout-minutes` — 90 seconds of work reported as
+      # a 45-minute failure. With a static key it cannot self-heal: every later run
+      # restores the same bad snapshot, so re-running never helps.
+      #
+      # Seen 2026-09-09: the last green emulator run was the one that WROTE this
+      # cache (main, 11:15Z); every run after it timed out, on three branches, one
+      # of which changed only `docs/package-lock.json`.
       - name: AVD cache
         uses: actions/cache@v4
         id: avd-cache
@@ -56,7 +72,7 @@ jobs:
           path: |
             ~/.android/avd/*
             ~/.android/adb*
-          key: avd-api30-x86_64
+          key: avd-api30-x86_64-v2
 
       - name: Create AVD and generate snapshot for caching
         if: steps.avd-cache.outputs.cache-hit != 'true'

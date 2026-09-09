@@ -65,7 +65,8 @@ jobs:
           path: |
             ~/.android/avd/*
             ~/.android/adb*
-          key: avd-api30-x86_64
+          # Same key as instrumented.yml, bumped with it — see the note there.
+          key: avd-api30-x86_64-v2
 
       - name: Create AVD and generate snapshot for caching
         if: steps.avd-cache.outputs.cache-hit != 'true'
@@ -155,7 +156,8 @@ jobs:
           path: |
             ~/.android/avd/*
             ~/.android/adb*
-          key: avd-api30-x86_64
+          # Same key as instrumented.yml, bumped with it — see the note there.
+          key: avd-api30-x86_64-v2
 
       - name: Create AVD and generate snapshot for caching
         if: steps.avd-cache.outputs.cache-hit != 'true'
