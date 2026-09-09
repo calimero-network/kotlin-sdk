@@ -38,13 +38,18 @@ job.cancel()   // closes the SSE stream
 ```kotlin
 data class ContextEvent(
     val contextId: String,
-    val kind: String,          // event discriminator, e.g. "ExecutionEvent"
+    val kind: String,          // "StateMutation" | "SyncStatus" | …
     val payload: JsonElement,  // the raw event JSON
 )
 ```
 
-For a contract emission (`kind == "ExecutionEvent"`) the encoded contract events
-live under `payload`'s `data.events[].data`.
+The discriminator is the frame's `result.type`. A live `merod 0.11.0-rc.32` sends
+**`StateMutation`** (the context state moved) and **`SyncStatus`**
+(`syncing` / `waitingForPeers` / …). It does **not** send `ExecutionEvent`, which
+earlier versions of this page named — a `when` branching on it never fired.
+
+For a contract emission (`kind == "StateMutation"`) the encoded contract events
+live under `payload`'s `data.events[].data`, each with its own `kind`.
 
 ## `SseClient`
 

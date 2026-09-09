@@ -30,6 +30,7 @@ EXCLUDED=(
   origin             # internal: base-URL accessor
   fetchExternal      # internal: cross-node fetch helper
   getMetadataRecord  # internal: shared metadata decoder
+  listAliases        # internal: shared decoder behind the three list*Aliases methods
   rawJson            # internal: untyped passthrough used by typed wrappers
   subscribe          # SSE subscription plumbing
 )

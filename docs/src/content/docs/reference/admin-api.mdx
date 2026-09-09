@@ -8,8 +8,8 @@ sidebar:
 import { Aside } from '@astrojs/starlight/components';
 
 `mero.admin` (`AdminApi`) is the node's `/admin-api` REST surface — the full set
-(~106 methods) across applications, contexts, namespaces, groups, blobs, aliases,
-capabilities, metadata, upgrades, and TEE. Every method is a `suspend fun` over
+(~110 methods) across applications, contexts, namespaces, groups, blobs, aliases,
+capabilities, metadata, upgrades, accounts/devices, and TEE. Every method is a `suspend fun` over
 the shared [`HttpClient`](/get-started/quickstart/); most reads unwrap the node's
 `{ data }` envelope for you. Endpoints below are relative to `/admin-api`.
 
@@ -21,20 +21,32 @@ so there are no limit/offset/cursor parameters.
 | Method | Endpoint |
 | --- | --- |
 | `healthCheck(): HealthStatus` | `GET /health` |
+| `isReady(): HealthStatus` | `GET /ready` |
 | `isAuthed(): AdminAuthStatus` | `GET /is-authed` |
+| `getNodeIdentity(): NodeIdentity` | `GET /identity` |
 
 ## Applications
 
 | Method | Endpoint |
 | --- | --- |
 | `installApplication(request): InstallApplicationResponseData` | `POST /install-application` |
-| `installFromRegistry(registryUrl, packageName, version): InstallApplicationResponseData` | registry → `POST /install-application` |
+| `installFromRegistry(packageName, version): InstallApplicationResponseData` | `POST /install-application` |
 | `getRegistryVersions(registryUrl, packageName): List<String>` | off-node registry read |
 | `installDevApplication(request): InstallApplicationResponseData` | `POST /install-dev-application` |
 | `uninstallApplication(appId): UninstallApplicationResponseData` | `DELETE /applications/{appId}` |
 | `listApplications(): ListApplicationsResponseData` | `GET /applications` |
 | `getApplication(appId): GetApplicationResponseData` | `GET /applications/{appId}` |
+| `getApplicationAbi(appId, serviceName?): JsonElement?` | `GET /applications/{appId}/abi` |
 | `listApplicationVersions(applicationId): List<ApplicationVersionEntry>` | `GET /applications/{applicationId}/versions` |
+
+:::caution[Installs are registry-only since core 0.11.0-rc.31]
+`InstallApplicationRequest` is `{package, version}` and nothing else — the node
+fetches from the registry **it** is configured with. The request carries
+`deny_unknown_fields`, so a body still naming `url` is refused, not ignored:
+`400 unknown field \`url\`, expected \`package\` or \`version\``. `installDevApplication`
+takes only a `path`, and that path must be an `.mpk` bundle — a raw `.wasm` is
+refused with *"not a signed application bundle"*.
+:::
 
 ## Packages
 
@@ -61,7 +73,7 @@ so there are no limit/offset/cursor parameters.
 | `getContextStorage(contextId): ContextStorageResponseData` | `GET /contexts/{contextId}/storage` |
 | `syncContext(contextId? = null)` | `POST /contexts/sync/{contextId?}` |
 | `resyncContext(contextId, request = ResyncContextRequest()): ResyncContextResponseData` | `POST /contexts/{contextId}/resync` |
-| `inviteSpecializedNode(request): InviteSpecializedNodeResponseData` | `POST /contexts/invite-specialized-node` |
+| `performIntent(contextId, request): PerformIntentResponseData` | `POST /contexts/{contextId}/intents` |
 | `updateContextApplication(contextId, request)` | `POST /contexts/{contextId}/application` |
 | `getContextsWithExecutorsForApplication(applicationId): ContextsWithExecutorsResponseData` | `GET /contexts/with-executors/for-application/{applicationId}` |
 
@@ -87,10 +99,21 @@ so there are no limit/offset/cursor parameters.
 | `deleteApplicationAlias(name): DeleteAliasResponseData` | `POST /alias/delete/application/{name}` |
 | `listContextAliases(): ListAliasesResponseData` | `GET /alias/list/context` |
 | `listApplicationAliases(): ListAliasesResponseData` | `GET /alias/list/application` |
-| `listContextIdentityAliases(contextId): ListContextIdentityAliasesResponseData` | `GET /alias/list/identity/{contextId}` |
-| `createContextIdentityAlias(contextId, request): CreateContextIdentityAliasResponseData` | `POST /alias/create/identity/{contextId}` |
-| `lookupContextIdentityAlias(contextId, name): LookupContextIdentityAliasResponseData` | `POST /alias/lookup/identity/{contextId}/{name}` |
-| `deleteContextIdentityAlias(contextId, name): DeleteContextIdentityAliasResponseData` | `POST /alias/delete/identity/{contextId}/{name}` |
+| `createDeviceAlias(request): CreateAliasResponseData` | `POST /alias/create/device` |
+| `lookupDeviceAlias(name): LookupAliasResponseData` | `POST /alias/lookup/device/{name}` |
+| `deleteDeviceAlias(name): DeleteAliasResponseData` | `POST /alias/delete/device/{name}` |
+| `listDeviceAliases(): ListAliasesResponseData` | `GET /alias/list/device` |
+
+:::caution[Three scopes: context, application, **device**]
+There is no `identity/{contextId}` scope — every route under it answers **404**.
+The SDK used to offer four methods there; they are gone, replaced by the `device`
+scope core actually serves.
+
+The list routes answer a **map** — `{"data": {"<alias>": "<value>"}}`, and
+`{"data": {}}` when empty — so `ListAliasesResponseData` is a
+`List<AliasEntry>` the SDK builds from it. Modeled as `{aliases: […]}` it threw
+`MissingFieldException` on every call, empty or not.
+:::
 
 ## Namespaces
 
@@ -98,7 +121,8 @@ so there are no limit/offset/cursor parameters.
 | --- | --- |
 | `listNamespaces(): ListNamespacesResponseData` | `GET /namespaces` |
 | `getNamespace(namespaceId): Namespace` | `GET /namespaces/{namespaceId}` |
-| `getNamespaceIdentity(namespaceId): NamespaceIdentity` | `GET /namespaces/{namespaceId}/identity` |
+| `admitJoin(namespaceId, request): AdmitJoinResponseData` | `POST /namespaces/{namespaceId}/admit` |
+| `revokeAccountDevice(namespaceId, request): RevokeDeviceResponseData` | `POST /namespaces/{namespaceId}/account/revoke` |
 | `listNamespacesForApplication(applicationId): ListNamespacesResponseData` | `GET /namespaces/for-application/{applicationId}` |
 | `createNamespace(request): CreateNamespaceResponseData` | `POST /namespaces` |
 | `deleteNamespace(namespaceId, request? = null): DeleteNamespaceResponseData` | `DELETE /namespaces/{namespaceId}` |
@@ -114,7 +138,6 @@ so there are no limit/offset/cursor parameters.
 | --- | --- |
 | `createGroup(request): CreateGroupResponseData` | `POST /groups` |
 | `getGroupInfo(groupId): GroupInfoResponseData` | `GET /groups/{groupId}` |
-| `updateGroupSettings(groupId, request)` | `PATCH /groups/{groupId}` |
 | `deleteGroup(groupId, request? = null): DeleteGroupResponseData` | `DELETE /groups/{groupId}` |
 | `listGroupMembers(groupId): ListGroupMembersResponseData` | `GET /groups/{groupId}/members` |
 | `listGroupContexts(groupId): ListGroupContextsResponseData` | `GET /groups/{groupId}/contexts` |
@@ -168,7 +191,7 @@ so there are no limit/offset/cursor parameters.
 | --- | --- |
 | `syncGroup(groupId, request? = null): SyncGroupResponseData` | `POST /groups/{groupId}/sync` |
 | `syncGroupContexts(groupId): ListGroupContextsResponseData` | *composite — see below* |
-| `registerGroupSigningKey(groupId, request): RegisterGroupSigningKeyResponseData` | `POST /groups/{groupId}/signing-key` |
+| `listMemberDevices(groupId): MemberDevices` | `GET /groups/{groupId}/member-devices` |
 | `upgradeGroup(groupId, request): UpgradeGroupResponseData` | `POST /groups/{groupId}/upgrade` |
 | `getGroupUpgradeStatus(groupId): GroupUpgradeStatusResponseData` | `GET /groups/{groupId}/upgrade/status` |
 | `retryGroupUpgrade(groupId, request? = null): RetryGroupUpgradeResponseData` | `POST /groups/{groupId}/upgrade/retry` |
@@ -192,6 +215,28 @@ It runs `syncGroup`, lists the group's contexts, then `joinContext` +
 `syncContext` for each, tolerating per-context failures (sync is async — call it
 again). The sample app's chat calls it in a short retry loop right after
 `joinNamespace`, which is what makes an invited space's channels appear.
+
+## Accounts & devices
+
+A device pairs to an **account** once (core 0.11.0-rc.28 moved this off the
+namespace), then links into namespaces. Revocation stayed per-namespace, because
+that is where the group key rotates.
+
+| Method | Endpoint |
+| --- | --- |
+| `listAccountDevices(): AccountDevices` | `GET /account/devices` |
+| `listAccountApplications(): AccountApplications` | `GET /account/applications` |
+| `pairInit(request): PairInitResponseData` | `POST /account/pair-init` |
+| `pairComplete(request): PairCompleteResponseData` | `POST /account/pair-complete` |
+| `relinkDevice(deviceId, request): RelinkDeviceResponseData` | `POST /account/devices/{deviceId}/relink` |
+
+<Aside type="caution" title="Three of these answer flat, not enveloped">
+`GET /account/devices`, `GET /account/applications` and
+`GET /groups/{id}/member-devices` return `{devices:[…]}` / `{applications:[…]}` /
+`{members:[…]}` with **no `data` wrapper**, unlike every route around them.
+Decoding one as an envelope yields `null` and reads as "empty".
+</Aside>
+
 
 ## TEE
 
@@ -230,29 +275,45 @@ data class ContextWithGroup(/* Context fields … */ val groupId: String? = null
 
 data class Namespace(
     val namespaceId: String, val appKey: String, val targetApplicationId: String,
-    val upgradePolicy: String, val createdAt: Int, val name: String? = null,
+    val createdAt: Long, val name: String? = null,
     val memberCount: Int, val contextCount: Int, val subgroupCount: Int,
+    val appVersion: String? = null,
 )
 
 data class GroupInfo(
     val groupId: String, val appKey: String, val targetApplicationId: String,
-    val upgradePolicy: String, val memberCount: Int, val contextCount: Int,
+    val memberCount: Int, val contextCount: Int,
     val activeUpgrade: GroupUpgradeStatus? = null,
     val defaultCapabilities: Int, val subgroupVisibility: String,
-    val metadata: MetadataRecord? = null,
+    val metadata: MetadataRecord? = null, val groupStateHash: String? = null,
 )
 
-data class BlobInfo(val blobId: String, val size: Int)   // GetBlobInfoResponseData adds hash?, mimeType?
+data class BlobInfo(val blobId: String, val size: Long)  // GetBlobInfoResponseData adds hash?, mimeType?
 
 data class MetadataRecord(
     val name: String? = null, val data: Map<String, String>,
-    val updatedAt: Int, val updatedBy: String,
+    val updatedAt: Long, val updatedBy: String,      // MILLIS, and u64 in core
+)
+
+data class NodeIdentity(
+    val accountId: String, val deviceId: String? = null, val publicKey: String,
+    val accountRootPublicKey: String, val deviceAgreementKey: String? = null,
+    val holdsAccountRoot: Boolean? = null,
 )
 
 data class MemberCapabilities(val capabilities: Int)   // see /reference/capabilities/
-
-enum class UpgradePolicy { AUTOMATIC, LAZY_ON_ACCESS }  // wire: "Automatic" / "LazyOnAccess"
 ```
+
+:::caution[`upgradePolicy` is gone]
+core#3485 removed the concept — it always held `"LazyOnAccess"` — so neither
+`Namespace` nor `GroupInfo` carries it, and neither `CreateNamespaceRequest` nor
+`CreateGroupRequest` sends it. A model that still declares it **required** throws
+`MissingFieldException` on every read; `ignoreUnknownKeys` does not help, because
+the problem is a missing field, not an unknown one.
+
+Timestamps are `Long`, not `Int`: `MetadataRecord.updatedAt` is wall-clock
+**milliseconds** and overflows a 32-bit `Int` today.
+:::
 
 See [`AdminTypes.kt`](https://github.com/calimero-network/kotlin-sdk/blob/master/mero-core/src/main/kotlin/com/calimero/mero/admin/AdminTypes.kt)
 for the complete set of request and response types.

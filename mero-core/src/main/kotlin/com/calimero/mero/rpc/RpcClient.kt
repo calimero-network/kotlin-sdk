@@ -77,7 +77,7 @@ class RpcClient(
      * Execute and return the raw `result.output` [JsonElement] without decoding.
      *
      * [executorPublicKey] is the context identity executing the call; omitted from the request when
-     * null (the node then uses the context's default/owning identity). Apps like curb key their
+     * null (the node then uses the context's default/owning identity). Apps like mero-chat key their
      * state on the caller identity and require it. (== mero-swift-sdk `RpcClient.execute`.)
      */
     suspend fun executeRaw(

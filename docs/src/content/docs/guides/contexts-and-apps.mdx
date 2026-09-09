@@ -50,18 +50,31 @@ val installed = mero.admin.installApplication(
 val applicationId = installed.applicationId
 ```
 
-From a **registry** package — mero-kotlin resolves the manifest, derives the
-bundle artifact URL, and installs it:
+From a **registry** package — you name coordinates, and the **node** fetches them
+from the registry it is configured with:
 
 ```kotlin
-val versions = mero.admin.getRegistryVersions(registryUrl, packageName = "my-package") // newest first
-
-val app = mero.admin.installFromRegistry(
-    registryUrl, packageName = "my-package", version = versions.first()
-)
+val versions = mero.admin.getRegistryVersions(registryUrl, "my-package")  // newest first
+val app = mero.admin.installFromRegistry("my-package", versions.first())
 ```
 
-During development, install from a path with `installDevApplication(request)`.
+:::caution[A client cannot name a URL]
+core 0.11.0-rc.31 made distribution registry-only. `InstallApplicationRequest` is
+`{package, version}` and carries `deny_unknown_fields`, so an old body naming
+`url` is refused: `400 unknown field \`url\``. Which registry a node trusts is its
+own `[registry]` config, not a caller's argument.
+:::
+
+:::note[`listPackageVersions` is not the catalogue]
+`listPackages`, `listPackageVersions` and `getLatestPackageVersion` report what the
+node has **installed**. For a package it has never seen they answer `[]` and
+`null` — which reads like "not published" but is not the same question. Discover
+what you *could* install with `getRegistryVersions`, the registry read.
+:::
+
+During development, install a local bundle with `installDevApplication(request)`.
+It must be an `.mpk` — a raw `.wasm` is refused with *"not a signed application
+bundle"*.
 
 Inspect and manage:
 

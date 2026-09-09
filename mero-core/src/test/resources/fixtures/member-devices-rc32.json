@@ -1,0 +1,31 @@
+{
+  "members": [
+    {
+      "account": "2b0d582eeb7760ac5049138a3725c1528ed53698e80f3458e8df179a6c3901d1",
+      "devices": [
+        {
+          "deviceId": "cfc4a459d147a475d0275f61db019caf556248c7b76ae8d93e33c4e0d8906d9a",
+          "signingKey": "e2298fb4b4b3fcb8f1cfa3c358391a61be6b9b5bd9157bc1c273a02558ef1f56"
+        }
+      ]
+    },
+    {
+      "account": "5d9b29879a5ad00895e96bc4302d61efa9ddd1c24937251f9907b3a0ed9eba5d",
+      "devices": [
+        {
+          "deviceId": "9069e2ea96a2cfcb523b0878b32fc102ea166584fdf4aec33087264855174256",
+          "signingKey": "2a0e3583791c4cab9aec337f09b4d5b70b6a166ae8744e28df90597ee6f34b69"
+        }
+      ]
+    },
+    {
+      "account": "9f26ffa6a6e191252fec3e02ec530d26068f03d6827664be05c18ef4ea3eae2d",
+      "devices": [
+        {
+          "deviceId": "fa830e8acba43a17ddda6c8f4c1b2b3a11bc518a67ab984d59ff1a400dfa4070",
+          "signingKey": "09848d42bf2273c6f492fa4e986298adbd9b048b1efce838403506bfd26001c8"
+        }
+      ]
+    }
+  ]
+}

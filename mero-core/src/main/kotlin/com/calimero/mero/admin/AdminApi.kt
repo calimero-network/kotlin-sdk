@@ -63,7 +63,7 @@ private fun compareSemverComponent(
 @Serializable
 private data class BlobWire(
     @SerialName("blob_id") val blobId: String,
-    val size: Int,
+    val size: Long,
 )
 
 @Serializable
@@ -87,13 +87,6 @@ private data class ListPackagesWire(
 private data class ListVersionsWire(
     val versions: List<String>? = null,
     val data: ListVersionsResponseData? = null,
-)
-
-@Serializable
-private data class NamespaceIdentityWire(
-    val namespaceId: String? = null,
-    val publicKey: String? = null,
-    val data: NamespaceIdentity? = null,
 )
 
 @Serializable
@@ -152,8 +145,37 @@ class AdminApi(
     suspend fun isAuthed(): AdminAuthStatus =
         http.getJson("/admin-api/is-authed")
 
+    /**
+     * Readiness, as distinct from liveness: `health` says the process is up,
+     * this says it can serve.
+     */
+    suspend fun isReady(): HealthStatus =
+        http.getJson<ApiEnvelope<HealthStatus>>("/admin-api/ready").data ?: error("isReady")
+
+    /**
+     * Who this node is — the account it writes as, the device it is, and the keys
+     * that identify both.
+     *
+     * This replaces `getNamespaceIdentity`, which asked a *namespace* who the node
+     * was. Core deleted that route in rc.23 (core#3522) and it has answered 404
+     * ever since.
+     *
+     * `404` here is a real answer: a node holding neither a usable device nor an
+     * account root has taken part in nothing at all.
+     */
+    suspend fun getNodeIdentity(): NodeIdentity =
+        http.getJson<ApiEnvelope<NodeIdentity>>("/admin-api/identity").data ?: error("getNodeIdentity")
+
     // ---- Application Management --------------------------------------------
 
+    /**
+     * Install by registry coordinates. The node fetches the bundle from the
+     * registry it is configured with (`[registry]` in `config.toml`) — a client
+     * cannot name a URL any more (core#3652, rc.31).
+     *
+     * A `502` here is neither the node's fault nor the caller's: *"the configured
+     * Http source has no application published at `<package>@<version>`"*.
+     */
     suspend fun installApplication(request: InstallApplicationRequest): InstallApplicationResponseData =
         http
             .postJson<InstallApplicationRequest, ApiEnvelope<InstallApplicationResponseData>>(
@@ -161,32 +183,31 @@ class AdminApi(
             ).data ?: error("installApplication")
 
     /**
-     * Resolve a `package@version` to its registry artifact URL and install it.
-     * Fetches the bundle manifest from the registry (off-node, via [URL]), derives
-     * the `.mpk` artifact URL, then calls [installApplication]. `registryUrl` is the
-     * registry origin.
+     * Install `package@version` from the node's registry.
+     *
+     * This used to fetch the bundle manifest itself, derive an `.mpk` artifact URL
+     * and hand the node that URL. rc.31 removed URL installs — the request now
+     * carries `deny_unknown_fields`, so the old body is **refused**, not ignored:
+     *
+     * ```
+     * 400 unknown field `url`, expected `package` or `version`
+     * ```
+     *
+     * `registryUrl` is gone with it: which registry a node trusts is the node's
+     * configuration (`[registry]` in `config.toml`), not a caller's argument.
+     *
+     * ⚠️ To discover a version to install, use [getRegistryVersions] — the
+     * registry read. [listPackageVersions] and [getLatestPackageVersion] ask the
+     * *node*, and a node reports only what it has **installed**: for a package it
+     * has never seen they answer `{"versions":[]}` and `{"version":null}`, not
+     * "here is what you could install". The node exposes no route naming its own
+     * registry, so point [getRegistryVersions] at the same one it is configured
+     * with; a mismatch surfaces as a `502` from the install.
      */
     suspend fun installFromRegistry(
-        registryUrl: String,
         packageName: String,
         version: String,
-    ): InstallApplicationResponseData {
-        val base = origin(registryUrl)
-        val manifestUrl = "$base/api/v2/bundles/${encodeComponent(packageName)}/${encodeComponent(version)}"
-        val body = fetchExternal(manifestUrl, "registry manifest fetch failed for $packageName@$version")
-        val bundle = http.json.decodeFromString<RegistryBundleManifest>(body)
-        val pkg = encodeComponent(bundle.packageName)
-        val ver = encodeComponent(bundle.appVersion)
-        val artifactUrl = "$base/artifacts/$pkg/$ver/$pkg-$ver.mpk"
-        return installApplication(
-            InstallApplicationRequest(
-                url = artifactUrl,
-                metadata = emptyList(),
-                packageName = bundle.packageName,
-                version = bundle.appVersion,
-            ),
-        )
-    }
+    ): InstallApplicationResponseData = installApplication(InstallApplicationRequest(packageName, version))
 
     /**
      * List a package's published versions from the registry, newest-first by semver.
@@ -229,6 +250,7 @@ class AdminApi(
 
     // ---- Package Management ------------------------------------------------
 
+    /** Packages this node has **installed** — not the registry's catalogue. */
     suspend fun listPackages(): ListPackagesResponseData {
         // Core returns this flat ({ packages: [...] }), not under `data`; tolerate both.
         val res = http.execute("GET", "/admin-api/packages").ensureSuccessful()
@@ -236,6 +258,11 @@ class AdminApi(
         return wire.data ?: ListPackagesResponseData(packages = wire.packages ?: emptyList())
     }
 
+    /**
+     * Versions of a package this node has **installed**. An empty list means
+     * "not installed here", never "not published" — use [getRegistryVersions] for
+     * what is available to install.
+     */
     suspend fun listPackageVersions(packageName: String): ListVersionsResponseData {
         // Core returns this flat ({ versions: [...] }), not under `data`; tolerate both.
         val res = http.execute("GET", "/admin-api/packages/${encodeComponent(packageName)}/versions").ensureSuccessful()
@@ -243,6 +270,7 @@ class AdminApi(
         return wire.data ?: ListVersionsResponseData(versions = wire.versions ?: emptyList())
     }
 
+    /** Newest **installed** version of a package. Both fields are `null` if none is. */
     suspend fun getLatestPackageVersion(packageName: String): GetLatestVersionResponseData =
         http.getJson("/admin-api/packages/${encodeComponent(packageName)}/latest")
 
@@ -313,8 +341,26 @@ class AdminApi(
         http.getJson<ApiEnvelope<ContextStorageResponseData>>("/admin-api/contexts/$contextId/storage").data
             ?: error("getContextStorage")
 
+    /**
+     * Sync one context, or every context when [contextId] is null.
+     *
+     * ⚠️ The two are **different paths**, and must be built separately. This used
+     * to interpolate `${contextId ?: ""}`, which for the sync-everything case
+     * produced a trailing slash — and axum 0.8 (core 0.11.0-rc.30, #3744) stopped
+     * matching a trailing slash to its route:
+     *
+     * ```
+     * POST /admin-api/contexts/sync       → 200
+     * POST /admin-api/contexts/sync/      → 404
+     * POST /admin-api/contexts/sync/{id}  → 200
+     * ```
+     *
+     * So "sync everything" silently became a 404 and this threw, on a call that
+     * had worked for every release before rc.30.
+     */
     suspend fun syncContext(contextId: String? = null) {
-        http.execute("POST", "/admin-api/contexts/sync/${contextId ?: ""}", "{}").ensureSuccessful()
+        val path = if (contextId == null) "/admin-api/contexts/sync" else "/admin-api/contexts/sync/$contextId"
+        http.execute("POST", path, "{}").ensureSuccessful()
     }
 
     /**
@@ -334,12 +380,6 @@ class AdminApi(
         return runCatching { http.json.decodeFromString<ResyncContextResponseData>(res.body) }.getOrNull()
             ?: ResyncContextResponseData(contextId = contextId, resyncStarted = true)
     }
-
-    suspend fun inviteSpecializedNode(request: InviteSpecializedNodeRequest): InviteSpecializedNodeResponseData =
-        http
-            .postJson<InviteSpecializedNodeRequest, ApiEnvelope<InviteSpecializedNodeResponseData>>(
-                "/admin-api/contexts/invite-specialized-node", request,
-            ).data ?: error("inviteSpecializedNode")
 
     suspend fun updateContextApplication(
         contextId: String,
@@ -415,7 +455,7 @@ class AdminApi(
         val headers = res.headers.entries.associate { it.key.lowercase() to it.value }
         return GetBlobInfoResponseData(
             blobId = headers["x-blob-id"] ?: blobId,
-            size = headers["content-length"]?.toIntOrNull() ?: 0,
+            size = headers["content-length"]?.toLongOrNull() ?: 0,
             hash = headers["x-blob-hash"],
             mimeType = headers["x-blob-mime-type"],
         )
@@ -459,48 +499,51 @@ class AdminApi(
                 "/admin-api/alias/delete/application/${encodeComponent(name)}", JsonObject(emptyMap()),
             ).data ?: error("deleteApplicationAlias")
 
-    suspend fun listContextAliases(): ListAliasesResponseData =
-        http.getJson<ApiEnvelope<ListAliasesResponseData>>("/admin-api/alias/list/context").data
-            ?: error("listContextAliases")
+    /**
+     * ⚠️ The list routes answer a **map** — `{"data": {"<alias>": "<value>"}}`, and
+     * `{"data": {}}` when empty — not `{aliases: […]}`. Decoded as a list this
+     * threw `MissingFieldException: Field 'aliases' is required` on every call,
+     * so all three list methods had never returned anything.
+     */
+    suspend fun listContextAliases(): ListAliasesResponseData = listAliases("context")
 
-    suspend fun listApplicationAliases(): ListAliasesResponseData =
-        http.getJson<ApiEnvelope<ListAliasesResponseData>>("/admin-api/alias/list/application").data
-            ?: error("listApplicationAliases")
+    suspend fun listApplicationAliases(): ListAliasesResponseData = listAliases("application")
 
-    // ---- Context Identity Aliases ------------------------------------------
+    // ---- Device aliases ----------------------------------------------------
+    //
+    // `device` is the third alias scope core actually serves. The SDK used to
+    // offer an `identity/{contextId}` scope instead, which does not exist —
+    // every create/lookup/delete/list under it answered 404.
 
-    suspend fun listContextIdentityAliases(contextId: String): ListContextIdentityAliasesResponseData =
+    suspend fun listDeviceAliases(): ListAliasesResponseData = listAliases("device")
+
+    suspend fun createDeviceAlias(request: CreateDeviceAliasRequest): CreateAliasResponseData =
         http
-            .getJson<ApiEnvelope<ListContextIdentityAliasesResponseData>>(
-                "/admin-api/alias/list/identity/$contextId",
-            ).data ?: error("listContextIdentityAliases")
+            .postJson<CreateDeviceAliasRequest, ApiEnvelope<CreateAliasResponseData>>(
+                "/admin-api/alias/create/device", request,
+            ).data ?: Empty()
 
-    suspend fun createContextIdentityAlias(
-        contextId: String,
-        request: CreateContextIdentityAliasRequest,
-    ): CreateContextIdentityAliasResponseData =
+    suspend fun lookupDeviceAlias(name: String): LookupAliasResponseData =
         http
-            .postJson<CreateContextIdentityAliasRequest, ApiEnvelope<CreateContextIdentityAliasResponseData>>(
-                "/admin-api/alias/create/identity/$contextId", request,
-            ).data ?: error("createContextIdentityAlias")
+            .postJson<JsonObject, ApiEnvelope<LookupAliasResponseData>>(
+                "/admin-api/alias/lookup/device/${encodeComponent(name)}", JsonObject(emptyMap()),
+            ).data ?: LookupAliasResponseData()
 
-    suspend fun lookupContextIdentityAlias(
-        contextId: String,
-        name: String,
-    ): LookupContextIdentityAliasResponseData =
+    suspend fun deleteDeviceAlias(name: String): DeleteAliasResponseData =
         http
-            .postJson<JsonObject, ApiEnvelope<LookupContextIdentityAliasResponseData>>(
-                "/admin-api/alias/lookup/identity/$contextId/${encodeComponent(name)}", JsonObject(emptyMap()),
-            ).data ?: error("lookupContextIdentityAlias")
+            .postJson<JsonObject, ApiEnvelope<DeleteAliasResponseData>>(
+                "/admin-api/alias/delete/device/${encodeComponent(name)}", JsonObject(emptyMap()),
+            ).data ?: Empty()
 
-    suspend fun deleteContextIdentityAlias(
-        contextId: String,
-        name: String,
-    ): DeleteContextIdentityAliasResponseData =
-        http
-            .postJson<JsonObject, ApiEnvelope<DeleteContextIdentityAliasResponseData>>(
-                "/admin-api/alias/delete/identity/$contextId/${encodeComponent(name)}", JsonObject(emptyMap()),
-            ).data ?: error("deleteContextIdentityAlias")
+    private suspend fun listAliases(scope: String): ListAliasesResponseData {
+        val res = http.execute("GET", "/admin-api/alias/list/$scope").ensureSuccessful()
+        val map =
+            http.json
+                .decodeFromString<ApiEnvelope<Map<String, String>>>(res.body)
+                .data
+                .orEmpty()
+        return map.map { (name, value) -> AliasEntry(name = name, value = value) }
+    }
 
     // ---- Namespace Management ----------------------------------------------
 
@@ -509,13 +552,6 @@ class AdminApi(
 
     suspend fun getNamespace(namespaceId: String): Namespace =
         http.getJson<ApiEnvelope<Namespace>>("/admin-api/namespaces/$namespaceId").data ?: error("getNamespace")
-
-    suspend fun getNamespaceIdentity(namespaceId: String): NamespaceIdentity {
-        // Core returns this endpoint flat ({ namespaceId, publicKey }); tolerate both.
-        val res = http.execute("GET", "/admin-api/namespaces/$namespaceId/identity").ensureSuccessful()
-        val wire = http.json.decodeFromString<NamespaceIdentityWire>(res.body)
-        return wire.data ?: NamespaceIdentity(namespaceId = wire.namespaceId ?: "", publicKey = wire.publicKey ?: "")
-    }
 
     suspend fun listNamespacesForApplication(applicationId: String): ListNamespacesResponseData =
         http
@@ -708,13 +744,6 @@ class AdminApi(
         return http.json.decodeFromString(res.body)
     }
 
-    suspend fun updateGroupSettings(
-        groupId: String,
-        request: UpdateGroupSettingsRequest,
-    ) {
-        http.execute("PATCH", "/admin-api/groups/$groupId", http.json.encodeToString(request)).ensureSuccessful()
-    }
-
     // ---- Group / member / context metadata ---------------------------------
 
     suspend fun setGroupMetadata(
@@ -784,15 +813,6 @@ class AdminApi(
         }
         return contexts
     }
-
-    suspend fun registerGroupSigningKey(
-        groupId: String,
-        request: RegisterGroupSigningKeyRequest,
-    ): RegisterGroupSigningKeyResponseData =
-        http
-            .postJson<RegisterGroupSigningKeyRequest, ApiEnvelope<RegisterGroupSigningKeyResponseData>>(
-                "/admin-api/groups/$groupId/signing-key", request,
-            ).data ?: error("registerGroupSigningKey")
 
     suspend fun upgradeGroup(
         groupId: String,
@@ -915,9 +935,20 @@ class AdminApi(
     suspend fun getUsage(): JsonElement =
         rawJson("GET", "/admin-api/usage", null)
 
-    /** Node TLS certificate, PEM text (GET /admin-api/certificate). */
-    suspend fun getCertificate(): String =
-        http.execute("GET", "/admin-api/certificate").ensureSuccessful().body
+    /**
+     * The node's TLS certificate as PEM (`GET /admin-api/certificate`), or `null`
+     * when it has none.
+     *
+     * A `404 Certificate not found` is a normal answer, not a failure: the route
+     * exists on every node and only serves a file when one is configured. This
+     * used to `ensureSuccessful()` and throw, so calling it on a plain
+     * `merod init` node was an exception rather than an absence.
+     */
+    suspend fun getCertificate(): String? {
+        val res = http.execute("GET", "/admin-api/certificate")
+        if (res.status == 404) return null
+        return res.ensureSuccessful().body
+    }
 
     // ---- Group / context / namespace membership ----------------------------
 
@@ -1041,6 +1072,121 @@ class AdminApi(
                 conn.disconnect()
             }
         }
+
+    // ---- Application ABI (rc.26) -------------------------------------------
+
+    /**
+     * The application's WASM ABI: its types, methods and events, as the node
+     * resolved them from the installed bundle.
+     *
+     * [serviceName] selects one service from a multi-service bundle; omit it for
+     * a single-service application. Returns `null` on `404` — the application is
+     * not installed here.
+     */
+    suspend fun getApplicationAbi(
+        applicationId: String,
+        serviceName: String? = null,
+    ): JsonElement? {
+        val query = serviceName?.let { "?service_name=" + encodeComponent(it) }.orEmpty()
+        val res = http.execute("GET", "/admin-api/applications/$applicationId/abi$query")
+        if (res.status == 404) return null
+        return http.json.decodeFromString<ApiEnvelope<JsonElement>>(res.ensureSuccessful().body).data
+    }
+
+    // ---- Intents (rc.26) ----------------------------------------------------
+
+    /**
+     * Execute a method under a warrant, rather than as this node's own identity.
+     * The warrant names who authorized the call; `authorProof` binds it to the
+     * author.
+     */
+    suspend fun performIntent(
+        contextId: String,
+        request: PerformIntentRequest,
+    ): PerformIntentResponseData =
+        http
+            .postJson<PerformIntentRequest, ApiEnvelope<PerformIntentResponseData>>(
+                "/admin-api/contexts/$contextId/intents", request,
+            ).data ?: error("performIntent")
+
+    // ---- Account: devices, applications, pairing (rc.27 / rc.28) -----------
+
+    /**
+     * Every device bound to the account this node speaks for.
+     *
+     * ⚠️ Flat on the wire — `{"devices":[…]}`, no `data` envelope. So are
+     * [listAccountApplications] and [listMemberDevices]. Only a real body settles
+     * that; it is not guessable from the neighbouring routes.
+     */
+    suspend fun listAccountDevices(): AccountDevices =
+        http.getJson("/admin-api/account/devices")
+
+    /** Applications this account speaks in, derived from the namespaces it is in. Flat. */
+    suspend fun listAccountApplications(): AccountApplications =
+        http.getJson("/admin-api/account/applications")
+
+    /** Each member of a group and the devices behind it. Flat: `{"members":[…]}`. */
+    suspend fun listMemberDevices(groupId: String): MemberDevices =
+        http.getJson("/admin-api/groups/$groupId/member-devices")
+
+    /**
+     * Begin pairing a device into an account.
+     *
+     * ⚠️ Pairing is an **account** operation since rc.28 — it used to live under
+     * `/namespaces/{id}/account/pair-*`. A device pairs once, then links into
+     * namespaces. [revokeAccountDevice] stayed per-namespace, because that is
+     * where the group key rotates.
+     */
+    suspend fun pairInit(request: PairInitRequest): PairInitResponseData =
+        http
+            .postJson<PairInitRequest, ApiEnvelope<PairInitResponseData>>(
+                "/admin-api/account/pair-init", request,
+            ).data ?: error("pairInit")
+
+    /** Complete a pairing begun by [pairInit], after both sides matched the code. */
+    suspend fun pairComplete(request: PairCompleteRequest): PairCompleteResponseData =
+        http
+            .postJson<PairCompleteRequest, ApiEnvelope<PairCompleteResponseData>>(
+                "/admin-api/account/pair-complete", request,
+            ).data ?: error("pairComplete")
+
+    /** Re-link an already-certified device, optionally narrowing which apps it may speak for. */
+    suspend fun relinkDevice(
+        deviceId: String,
+        request: RelinkDeviceRequest = RelinkDeviceRequest(),
+    ): RelinkDeviceResponseData =
+        http
+            .postJson<RelinkDeviceRequest, ApiEnvelope<RelinkDeviceResponseData>>(
+                "/admin-api/account/devices/$deviceId/relink", request,
+            ).data ?: error("relinkDevice")
+
+    /** Revoke a device from ONE namespace, rotating that namespace's group key. */
+    suspend fun revokeAccountDevice(
+        namespaceId: String,
+        request: RevokeDeviceRequest,
+    ): RevokeDeviceResponseData =
+        http
+            .postJson<RevokeDeviceRequest, ApiEnvelope<RevokeDeviceResponseData>>(
+                "/admin-api/namespaces/$namespaceId/account/revoke", request,
+            ).data ?: error("revokeAccountDevice")
+
+    // ---- Direct admission (rc.29) ------------------------------------------
+
+    /**
+     * Publish a join on behalf of a keyholder that has no node of its own.
+     *
+     * This node must appear in the invitation's signed `admitters` list; being
+     * designated is what permits it to carry the claim. The response says
+     * **`published`** — not *joined*.
+     */
+    suspend fun admitJoin(
+        namespaceId: String,
+        request: AdmitJoinRequest,
+    ): AdmitJoinResponseData =
+        http
+            .postJson<AdmitJoinRequest, ApiEnvelope<AdmitJoinResponseData>>(
+                "/admin-api/namespaces/$namespaceId/admit", request,
+            ).data ?: error("admitJoin")
 
     private companion object {
         /** RFC-3986 unreserved set: ALPHA / DIGIT / `-` / `.` / `_` / `~`. */

@@ -109,7 +109,7 @@ class AppE2ETest {
         login()
         composeRule.onNodeWithTag("openChat").performClick()
         // A fresh node shows the install gate; a reused one (e.g. on a retry) may already have
-        // curb — tolerate both.
+        // the chat app — tolerate both.
         if (hasTag("installChat", timeoutMs = 8_000)) {
             composeRule.onNodeWithTag("installChat").performClick()
         }

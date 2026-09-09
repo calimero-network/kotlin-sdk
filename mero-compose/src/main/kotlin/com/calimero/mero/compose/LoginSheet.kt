@@ -27,13 +27,11 @@ import kotlinx.coroutines.launch
  * A credential login form bound to the ambient [MeroClient]. Kotlin analogue of mero-react's
  * `LoginModal` (credential path). Shows inline loading + error and calls back on success.
  *
- * @param showBootstrapSecret surface the first-login setup code field (core#3221).
  */
 @Composable
 fun LoginSheet(
     modifier: Modifier = Modifier,
     client: MeroClient = useMero(),
-    showBootstrapSecret: Boolean = false,
     onAuthenticated: () -> Unit = {},
 ) {
     val state by client.state.collectAsStateWithLifecycle()
@@ -41,7 +39,6 @@ fun LoginSheet(
 
     var username by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
-    var bootstrapSecret by remember { mutableStateOf("") }
 
     if (state.isAuthenticated) {
         onAuthenticated()
@@ -70,16 +67,6 @@ fun LoginSheet(
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
             modifier = Modifier.fillMaxWidth(),
         )
-        if (showBootstrapSecret) {
-            OutlinedTextField(
-                value = bootstrapSecret,
-                onValueChange = { bootstrapSecret = it },
-                label = { Text("Setup code (first login only)") },
-                singleLine = true,
-                modifier = Modifier.fillMaxWidth(),
-            )
-        }
-
         state.error?.let {
             Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
         }
@@ -87,7 +74,7 @@ fun LoginSheet(
         Button(
             onClick = {
                 scope.launch {
-                    client.login(username, password, bootstrapSecret.ifBlank { null })
+                    client.login(username, password)
                 }
             },
             enabled = !state.isLoading && username.isNotBlank() && password.isNotBlank(),

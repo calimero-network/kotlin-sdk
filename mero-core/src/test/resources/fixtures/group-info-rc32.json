@@ -1,0 +1,18 @@
+{
+  "data": {
+    "groupId": "ef34f96728947c4f39549bd785d73d2f9a62a95ac554dd640801a811f846186b",
+    "appKey": "c13ac279136a351cd9004d7fab16994c02bb7c485876dcca9628fc0b3c7778ed",
+    "targetApplicationId": "ad61b1324e760fc4a8cb2beaeb1a799e4bac774b5f78bebe66f2cb863774926f",
+    "memberCount": 3,
+    "contextCount": 0,
+    "defaultCapabilities": 4,
+    "subgroupVisibility": "restricted",
+    "metadata": {
+      "name": "probe-ns",
+      "data": {},
+      "updatedAt": 1788952411519,
+      "updatedBy": "e2298fb4b4b3fcb8f1cfa3c358391a61be6b9b5bd9157bc1c273a02558ef1f56"
+    },
+    "groupStateHash": "d1958e7e1e8a54a6f2f3af98c60ecfbd46e9bd2c8d6eb9f4ba56cf5382c6765f"
+  }
+}

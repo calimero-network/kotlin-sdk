@@ -50,7 +50,7 @@ class ChatMultiUserTest {
                 .putExtra("mock", false)
                 .putExtra("nodeUrl", nodeUrl)
         if (chatUser.isNotEmpty()) intent.putExtra("chatUser", chatUser)
-        // Handing the invite in as an extra makes the chat screen install curb and join on open —
+        // Handing the invite in as an extra makes the chat screen install the app and join on open —
         // the Android analog of the Swift harness's TEST_RUNNER_E2E_JOIN.
         if (!joinInvite.isNullOrEmpty()) intent.putExtra("invite", joinInvite)
         ActivityScenario.launch<MainActivity>(intent)
@@ -90,7 +90,7 @@ class ChatMultiUserTest {
         composeRule.onNodeWithTag("openChat").performClick()
     }
 
-    /** Non-fatal presence check — the install gate is skipped when curb is already installed. */
+    /** Non-fatal presence check — the install gate is skipped when the chat app is already installed. */
     private fun hasTag(
         tag: String,
         timeoutMs: Long,
@@ -173,14 +173,14 @@ class ChatMultiUserTest {
     // 2. Guest: join via the invite, see the host's message, reply.
     @Test
     fun testGuestJoinAndReply() {
-        // The invite arrives as a launch extra, so the chat screen installs curb and joins on open
+        // The invite arrives as a launch extra, so the chat screen installs the app and joins on open
         // (no typing a 1 KB code into a text field).
         launch(joinInvite = invite)
         login()
         openChat()
         waitForTag("chatAdd", timeoutMs = 240_000)
 
-        // Give the auto-join a real window: it installs curb, joins, then retries syncGroupContexts
+        // Give the auto-join a real window: it installs the app, joins, then retries syncGroupContexts
         // while the inviter's state arrives. Only if the space never shows up do we paste by hand —
         // and then wait for the field to be *enabled*, since it is disabled while a join is in
         // flight (typing into it mid-join failed with "Failed to assert the following: (is enabled)").

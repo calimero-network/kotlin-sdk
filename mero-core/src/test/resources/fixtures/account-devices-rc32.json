@@ -1,0 +1,18 @@
+{
+  "devices": [
+    {
+      "deviceId": "cfc4a459d147a475d0275f61db019caf556248c7b76ae8d93e33c4e0d8906d9a",
+      "signingKey": "e2298fb4b4b3fcb8f1cfa3c358391a61be6b9b5bd9157bc1c273a02558ef1f56",
+      "isSelf": true,
+      "revoked": false,
+      "applications": [],
+      "namespaces": [
+        "2baab836072cedcd959cba5afce73a1d70f87bd0db6e72ca6b0dba28c58b8e12",
+        "6d9df044239322b935a49b65cd8f4a5475ca2713fb948910310490e26fd1de82",
+        "784f21ebdfd2e563364a22b783b500ef672db06c9089d7223f0ec025699a32c5",
+        "ef34f96728947c4f39549bd785d73d2f9a62a95ac554dd640801a811f846186b",
+        "f3b853e5bc6e85bbe5089e24d01d8dfb7f83e698f3ee0774c6c42223e79856ef"
+      ]
+    }
+  ]
+}

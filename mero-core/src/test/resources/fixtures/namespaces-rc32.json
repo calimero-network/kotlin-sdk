@@ -1,0 +1,59 @@
+{
+  "data": [
+    {
+      "namespaceId": "2baab836072cedcd959cba5afce73a1d70f87bd0db6e72ca6b0dba28c58b8e12",
+      "appKey": "c13ac279136a351cd9004d7fab16994c02bb7c485876dcca9628fc0b3c7778ed",
+      "targetApplicationId": "ad61b1324e760fc4a8cb2beaeb1a799e4bac774b5f78bebe66f2cb863774926f",
+      "createdAt": 1788953701,
+      "name": "g-up",
+      "memberCount": 1,
+      "contextCount": 0,
+      "subgroupCount": 0,
+      "appVersion": "0.11.0-rc.32"
+    },
+    {
+      "namespaceId": "6d9df044239322b935a49b65cd8f4a5475ca2713fb948910310490e26fd1de82",
+      "appKey": "e348c41b183a11edc70d1dea09914807751193975907828b4e2aaea33a27b47e",
+      "targetApplicationId": "3f550253b3ef43c02b3697ff26b17e8e21a0d2db75a6ff5832fe7639e2596e22",
+      "createdAt": 1788953016,
+      "name": "chat-probe",
+      "memberCount": 1,
+      "contextCount": 1,
+      "subgroupCount": 0,
+      "appVersion": "3.1.1"
+    },
+    {
+      "namespaceId": "784f21ebdfd2e563364a22b783b500ef672db06c9089d7223f0ec025699a32c5",
+      "appKey": "c13ac279136a351cd9004d7fab16994c02bb7c485876dcca9628fc0b3c7778ed",
+      "targetApplicationId": "ad61b1324e760fc4a8cb2beaeb1a799e4bac774b5f78bebe66f2cb863774926f",
+      "createdAt": 1788953701,
+      "name": "g-noup",
+      "memberCount": 1,
+      "contextCount": 0,
+      "subgroupCount": 0,
+      "appVersion": "0.11.0-rc.32"
+    },
+    {
+      "namespaceId": "ef34f96728947c4f39549bd785d73d2f9a62a95ac554dd640801a811f846186b",
+      "appKey": "c13ac279136a351cd9004d7fab16994c02bb7c485876dcca9628fc0b3c7778ed",
+      "targetApplicationId": "ad61b1324e760fc4a8cb2beaeb1a799e4bac774b5f78bebe66f2cb863774926f",
+      "createdAt": 1788952411,
+      "name": "probe-ns",
+      "memberCount": 3,
+      "contextCount": 0,
+      "subgroupCount": 0,
+      "appVersion": "0.11.0-rc.32"
+    },
+    {
+      "namespaceId": "f3b853e5bc6e85bbe5089e24d01d8dfb7f83e698f3ee0774c6c42223e79856ef",
+      "appKey": "c13ac279136a351cd9004d7fab16994c02bb7c485876dcca9628fc0b3c7778ed",
+      "targetApplicationId": "ad61b1324e760fc4a8cb2beaeb1a799e4bac774b5f78bebe66f2cb863774926f",
+      "createdAt": 1788952411,
+      "name": "probe-ns2",
+      "memberCount": 1,
+      "contextCount": 0,
+      "subgroupCount": 0,
+      "appVersion": "0.11.0-rc.32"
+    }
+  ]
+}

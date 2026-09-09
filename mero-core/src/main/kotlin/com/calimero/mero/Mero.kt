@@ -121,10 +121,10 @@ class Mero(
         ).events(contextIds)
 
     /**
-     * Authenticate with credentials (creates the root key on first use). Builds the exact mero-js
-     * request body: `auth_method=user_password`, `client_name=mero-kotlin-sdk`, `permissions=[admin]`.
-     * The `bootstrap_secret` (core#3221) is included when supplied on the credentials or via the
-     * `MERO_AUTH_BOOTSTRAP_SECRET` env var (test harnesses), and omitted otherwise.
+     * Authenticate with credentials. Builds the exact mero-js request body:
+     * `auth_method=user_password`, `client_name=mero-kotlin-sdk`, `permissions=[admin]`.
+     *
+     * No `bootstrap_secret`: core stopped honouring it (see [Credentials]).
      */
     suspend fun authenticate(credentials: Credentials? = null): TokenData {
         val creds =
@@ -132,15 +132,10 @@ class Mero(
                 ?: config.credentials
                 ?: throw MeroStateException("No credentials provided for authentication")
 
-        val bootstrapSecret =
-            creds.bootstrapSecret?.takeIf { it.isNotBlank() }
-                ?: System.getenv("MERO_AUTH_BOOTSTRAP_SECRET")?.takeIf { it.isNotBlank() }
-
         val providerData =
             buildJsonObject {
                 put("username", creds.username)
                 put("password", creds.password)
-                if (bootstrapSecret != null) put("bootstrap_secret", bootstrapSecret)
             }
 
         val request =

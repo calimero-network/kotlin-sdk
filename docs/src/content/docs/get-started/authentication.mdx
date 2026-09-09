@@ -15,18 +15,17 @@ you.
 ## Direct credentials
 
 For first-party apps, exchange a username and password for a token bundle.
-`bootstrapSecret` is only needed for the very first login on a fresh node.
 
 ```kotlin
-mero.authenticate(
-    Credentials(
-        username = "alice",
-        password = "s3cr3t",
-        bootstrapSecret = "…", // only on a fresh node's first login
-    )
-)
+mero.authenticate(Credentials(username = "alice", password = "s3cr3t"))
 val authed = mero.isAuthenticated   // true
 ```
+
+:::note[There is no bootstrap secret]
+`Credentials.bootstrapSecret` is gone. `merod init` creates the admin account, and
+core 0.11.0-rc.29 parses `bootstrap_secret` only to discard it — sending one did
+nothing. Use the `--admin-user` / `--admin-password-stdin` credentials from init.
+:::
 
 <SeqDiagram
   id="d-direct-login"

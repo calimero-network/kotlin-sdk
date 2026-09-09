@@ -83,7 +83,7 @@ private sealed interface ChatRoute {
  * Chat home: routes spaces → channels → messages, with the install gate up front.
  *
  * [autoJoinInvite] is the e2e hook (the `invite` launch extra, Android analog of the Swift sample's
- * `E2E_JOIN`): when set, the screen installs curb and joins that invite on open, so the multi-user
+ * `E2E_JOIN`): when set, the screen installs the chat app and joins that invite on open, so the multi-user
  * harness can hand a guest an invite without typing it.
  */
 @Composable
@@ -99,7 +99,7 @@ fun ChatScreen(
             service.setup()
             service.joinSpace(autoJoinInvite)
         } else {
-            // Skip the install gate if curb is already installed on this node.
+            // Skip the install gate if the chat app is already installed on this node.
             service.detectInstalled()
         }
     }
@@ -242,7 +242,7 @@ private fun InstallGate(service: ChatService) {
         Spacer(Modifier.weight(1f))
         Text("mero-chat", color = Cal.text, fontWeight = FontWeight.Bold, fontSize = 22.sp)
         Text(
-            "Install the curb chat app (com.calimero.curb) from the registry to start.",
+            "Install the chat app (com.calimero.chat) from the registry to start.",
             color = Cal.textDim,
             fontSize = 13.sp,
         )

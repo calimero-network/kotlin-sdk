@@ -3,13 +3,12 @@ package com.calimero.mero
 import com.calimero.mero.admin.CreateContextRequest
 import com.calimero.mero.admin.CreateGroupInNamespaceRequest
 import com.calimero.mero.admin.CreateNamespaceRequest
-import com.calimero.mero.admin.GroupInvitationFromAdmin
 import com.calimero.mero.admin.JoinNamespaceRequest
 import com.calimero.mero.admin.SetSubgroupVisibilityRequest
 import com.calimero.mero.admin.SignedGroupOpenInvitation
-import com.calimero.mero.admin.UpgradePolicy
 import com.calimero.mero.storage.MemoryTokenStore
 import kotlinx.coroutines.runBlocking
+import kotlinx.serialization.json.Json
 import okhttp3.mockwebserver.MockResponse
 import okhttp3.mockwebserver.MockWebServer
 import okhttp3.mockwebserver.RecordedRequest
@@ -126,15 +125,14 @@ class AdminApiRequestTest {
 
         req =
             capture {
-                mero.admin.createNamespace(
-                    CreateNamespaceRequest(applicationId = "app-1", upgradePolicy = UpgradePolicy.AUTOMATIC, name = "ns"),
-                )
+                mero.admin.createNamespace(CreateNamespaceRequest(applicationId = "app-1", name = "ns"))
             }
         assertEquals("POST", req.method)
         assertEquals("/admin-api/namespaces", req.path)
         val body = req.body.readUtf8()
         assertTrue(body.contains("\"applicationId\":\"app-1\""))
-        assertTrue(body.contains("\"upgradePolicy\":\"Automatic\""))
+        // core#3485 removed the concept; sending the key would be noise, not policy.
+        assertTrue(body, !body.contains("upgradePolicy"))
     }
 
     @Test
@@ -161,16 +159,15 @@ class AdminApiRequestTest {
 
     @Test
     fun `joinNamespace posts the invitation to the namespace join path`() {
+        // Built from JSON, not from named fields: an invitation is a document the SDK
+        // carries verbatim, so the model holds the object core sent. See
+        // InvitationRoundTripTest for why naming fields is what broke joins.
         val invitation =
-            SignedGroupOpenInvitation(
-                invitation =
-                    GroupInvitationFromAdmin(
-                        inviterIdentity = emptyList(),
-                        groupId = emptyList(),
-                        expirationTimestamp = 0,
-                        secretSalt = emptyList(),
-                    ),
-                inviterSignature = "sig",
+            Json.decodeFromString<SignedGroupOpenInvitation>(
+                """
+                {"invitation":{"inviter_identity":[],"group_id":[],"expiration_timestamp":0,
+                 "secret_salt":[],"admitters":["ab"]},"inviter_signature":"sig"}
+                """.trimIndent(),
             )
         val req =
             capture {
@@ -185,6 +182,8 @@ class AdminApiRequestTest {
         assertTrue(body, body.contains("\"inviter_signature\":\"sig\""))
         assertTrue(body, body.contains("\"inviter_identity\""))
         assertTrue(body, body.contains("\"expiration_timestamp\""))
+        // The signed field whose loss made rc.29+ refuse every join.
+        assertTrue(body, body.contains("\"admitters\":[\"ab\"]"))
     }
 
     @Test
