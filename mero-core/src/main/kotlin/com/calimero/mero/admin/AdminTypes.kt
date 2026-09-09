@@ -644,6 +644,17 @@ data class CreateNamespaceInvitationRequest(
      * non-empty `admitters` in its signed body.
      */
     val admitters: List<String>? = null,
+    /**
+     * libp2p multiaddrs (each with its `/p2p/<peer-id>`) for those accounts, taken
+     * **as given** rather than merged with what the node knows. Unsigned, so a
+     * wrong one costs a failed dial, never authority.
+     *
+     * ⚠️ Silent if misspelled. rc.32 renamed this from `admitterHints`, and the
+     * request is not `deny_unknown_fields` — a node ignores the old key and
+     * answers 200, so an unfixed client quietly mints invitations no joiner can
+     * dial, exactly as core#3804 made `admitters` an authorization boundary.
+     */
+    val admitterAddrs: List<String>? = null,
 )
 
 @Serializable
@@ -1094,6 +1105,8 @@ data class CreateGroupInvitationRequest(
     val recursive: Boolean? = null,
     /** See [CreateNamespaceInvitationRequest.admitters]. */
     val admitters: List<String>? = null,
+    /** See [CreateNamespaceInvitationRequest.admitterAddrs]. */
+    val admitterAddrs: List<String>? = null,
 )
 
 @Serializable

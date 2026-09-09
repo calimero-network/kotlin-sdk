@@ -341,8 +341,26 @@ class AdminApi(
         http.getJson<ApiEnvelope<ContextStorageResponseData>>("/admin-api/contexts/$contextId/storage").data
             ?: error("getContextStorage")
 
+    /**
+     * Sync one context, or every context when [contextId] is null.
+     *
+     * ⚠️ The two are **different paths**, and must be built separately. This used
+     * to interpolate `${contextId ?: ""}`, which for the sync-everything case
+     * produced a trailing slash — and axum 0.8 (core 0.11.0-rc.30, #3744) stopped
+     * matching a trailing slash to its route:
+     *
+     * ```
+     * POST /admin-api/contexts/sync       → 200
+     * POST /admin-api/contexts/sync/      → 404
+     * POST /admin-api/contexts/sync/{id}  → 200
+     * ```
+     *
+     * So "sync everything" silently became a 404 and this threw, on a call that
+     * had worked for every release before rc.30.
+     */
     suspend fun syncContext(contextId: String? = null) {
-        http.execute("POST", "/admin-api/contexts/sync/${contextId ?: ""}", "{}").ensureSuccessful()
+        val path = if (contextId == null) "/admin-api/contexts/sync" else "/admin-api/contexts/sync/$contextId"
+        http.execute("POST", path, "{}").ensureSuccessful()
     }
 
     /**

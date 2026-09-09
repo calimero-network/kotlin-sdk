@@ -40,6 +40,13 @@ Verified against a real `merod 0.11.0-rc.32`, and against a second one for the j
   exceed 2 GB), `createdAt`, `initiatedAt`, `completedAt`, `reportedAt`,
   `expirationTimestamp`.
 
+- **`syncContext(null)` posted to a path that 404s.** It built
+  `"/contexts/sync/${contextId ?: ""}"`, and axum 0.8 (core rc.30, #3744) stopped
+  matching a trailing slash to its route — `POST /contexts/sync` is 200,
+  `POST /contexts/sync/` is **404**. So "sync every context" broke at rc.30 on a
+  call that had worked for every release before it. The two paths are built
+  separately now.
+
 - **Four methods removed — their routes do not exist.** Probed live:
   `getNamespaceIdentity` (404, deleted rc.23 core#3522 — use `getNodeIdentity`),
   `registerGroupSigningKey` (404, rc.21 core#3439),
@@ -56,8 +63,14 @@ Verified against a real `merod 0.11.0-rc.32`, and against a second one for the j
 `getNodeIdentity` (incl. rc.32's `holdsAccountRoot`) · `isReady` ·
 `getApplicationAbi` · `performIntent` · `listMemberDevices` ·
 `listAccountDevices` · `listAccountApplications` · `pairInit` · `pairComplete` ·
-`relinkDevice` · `revokeAccountDevice` · `admitJoin`, and `admitters` on both
-invite requests.
+`relinkDevice` · `revokeAccountDevice` · `admitJoin`, and **`admitters` +
+`admitterAddrs`** on both invite requests.
+
+⚠️ `admitterAddrs` is silent if missed: rc.32 renamed it from `admitterHints`, and
+the request is not `deny_unknown_fields`, so a node ignores the old key and
+answers 200 — an unfixed client quietly mints invitations no joiner can dial,
+just as core#3804 made the `admitters` those addresses point at an authorization
+boundary rather than a hint.
 
 ⚠️ `listAccountDevices`, `listAccountApplications` and `listMemberDevices` answer
 **flat** — `{devices:[…]}` / `{applications:[…]}` / `{members:[…]}`, no `data`
