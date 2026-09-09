@@ -95,12 +95,12 @@ moves node and app together.
 
 ## ⚠️ The joining node needs the app installed too
 
-core 0.11.0-rc.31 (#3652) made distribution **registry-only**. The context
-registration op carries `package` + `version`, and a joining node resolves those
-against **its own** registry instead of pulling the blob from the peer.
+core 0.11.0-rc.31 (#3652) gates *serving application bytecode to peers* on
+`[registry] mode = "dht"`. `merod init` writes `mode = "http"`, so a stock node
+**withholds exactly the bytecode** (`NodeClient::may_share_blob`; user-data blobs
+are untouched). The joiner falls back to its own registry.
 
-These fixtures dev-install a local bundle whose coordinates
-(`com.calimero.kv-store@<core tag>`) are published nowhere, so node 2 reached out
+These fixtures dev-install a local bundle published nowhere, so node 2 reached out
 to `apps.calimero.network`, found nothing, and failed its first execution:
 
 ```
@@ -110,8 +110,15 @@ JSON-RPC Error: InternalError
 
 Three steps after the join, and **after `wait_for_sync` reported the context hash
 converged** — governance replicated fine; only the bytecode was missing. So both
-scenarios install the bundle on node 2 as well. The ApplicationId is derived from
-package + signer, so the two installs agree.
+scenarios install the bundle on node 2 as well; `create_mesh` pre-installs
+nothing, and at rc.29 the peer blob transfer was silently doing that work. The
+ApplicationId is derived from package + signer, so the two installs agree on the
+id the joiner is already asking for.
+
+`mode = "dht"` (env `CALIMERO_REGISTRY_MODE=dht`) is core's documented alternative
+for a closed fleet, but merobox's `nodes:` has no key for it — and an explicit
+install keeps these scenarios about state sync rather than about how bytecode
+travels.
 
 The chat scenario needs no such step, and that is the control: `com.calimero.chat`
 is really published, so node 2 resolves it from the registry the same way node 1 did.

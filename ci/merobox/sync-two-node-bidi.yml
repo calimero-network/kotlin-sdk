@@ -32,17 +32,25 @@ steps:
 
   # ⚠️ The JOINER needs the app too, and must be given it explicitly.
   #
-  # core 0.11.0-rc.31 (#3652) made distribution registry-only: the context
-  # registration op carries `package`+`version`, and a joining node resolves those
-  # against ITS OWN registry rather than pulling the blob from the peer. This
-  # fixture's app is a dev-installed local bundle whose coordinates
-  # (com.calimero.kv-store@<core tag>) are not published anywhere, so node 2 went
-  # to apps.calimero.network, found nothing, and failed the first execution with
-  # `bytecode blob … not found in blobstore` — three steps after the join, and
-  # AFTER `wait_for_sync` had already reported the context hash converged.
+  # core 0.11.0-rc.31 (#3652) gates *serving application bytecode to peers* on
+  # `[registry] mode = "dht"`. `merod init` writes `mode = "http"`, so a stock node
+  # withholds exactly the bytecode (`NodeClient::may_share_blob`; user-data blobs
+  # are untouched). Node 2 therefore falls back to its own registry, and this
+  # fixture's app is a dev-installed bundle published nowhere — the node log shows
+  # it dialling apps.calimero.network and coming back empty.
   #
-  # Installing the same bundle here gives node 2 the same ApplicationId
-  # (it is derived from package + signer, not from the install path).
+  # It surfaces as `bytecode blob … not found in blobstore` on the first method
+  # call: three steps after the join, and AFTER `wait_for_sync` reported the
+  # context hash converged. Governance replicates fine; only the bytes are missing.
+  #
+  # `create_mesh` pre-installs nothing. At rc.29 the peer blob transfer was
+  # silently doing this work, which is why the comment below used to claim it did.
+  #
+  # `mode = "dht"` is core's documented alternative for a closed fleet, but
+  # merobox's `nodes:` has no key for it — and an explicit install keeps this
+  # scenario about state sync rather than about how bytecode travels. Repeating the
+  # install is safe: ApplicationId is derived from package + signer, so both nodes
+  # land on the id the joiner is already asking for.
   - name: Install kv-store on node 2
     type: install_application
     node: calimero-node-2
