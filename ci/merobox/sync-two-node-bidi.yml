@@ -5,8 +5,7 @@
 # it writes a key and node 1 must see it. Catches a sync path that only works
 # from the context creator outward.
 #
-# Same node-image caveat as sync-two-node.yml (tracks `edge`; merod has no
-# 0.11.x Docker tag).
+# Same pinned node image + release fixture as sync-two-node.yml (ci/core-version).
 #
 # Run:  merobox bootstrap run ci/merobox/sync-two-node-bidi.yml   (from repo root)
 name: Two-node bidirectional sync (kv_store)
@@ -14,7 +13,7 @@ description: Writes on BOTH nodes must replicate to the other; context hash conv
 
 nodes:
   count: 2
-  image: ghcr.io/calimero-network/merod:edge
+  image: ghcr.io/calimero-network/merod:0.11.0-rc.32
   prefix: calimero-node
 
 nuke_on_start: true
@@ -26,7 +25,7 @@ steps:
   - name: Install kv_store on node 1
     type: install_application
     node: calimero-node-1
-    path: ./ci/merobox/res/kv_store.wasm
+    path: ./ci/merobox/res/kv-store.mpk
     dev: true
     outputs:
       app_id: applicationId

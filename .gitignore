@@ -29,3 +29,9 @@ local.properties
 .emulator-*.log
 merod.log
 merod.pid
+
+# merobox fixtures: fetched per-run from the pinned core release, never committed.
+# Both extensions — the ignore used to cover only the bundle, so a stray raw wasm
+# was committable, and one was (474 KB of it, for ten releases).
+ci/merobox/res/*.mpk
+ci/merobox/res/*.wasm

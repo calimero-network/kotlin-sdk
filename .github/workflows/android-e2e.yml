@@ -47,14 +47,14 @@ jobs:
           sudo udevadm control --reload-rules
           sudo udevadm trigger --name-match=kvm
 
-      - name: Download released merod (x86_64-unknown-linux-gnu)
+      - name: Download the pinned merod (x86_64-unknown-linux-gnu)
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          TAG=$(gh release list --repo calimero-network/core --limit 1 --json tagName -q '.[0].tagName')
-          URL=$(gh release view "$TAG" --repo calimero-network/core --json assets \
+          . ./ci/core-version
+          URL=$(gh release view "$CORE_TAG" --repo calimero-network/core --json assets \
             -q '.assets[] | select(.name | test("merod_x86_64-unknown-linux-gnu\\.tar\\.gz$")) | .url')
-          test -n "$URL" || { echo "no merod linux asset on $TAG"; exit 1; }
+          test -n "$URL" || { echo "no merod linux asset on $CORE_TAG"; exit 1; }
           curl -sL "$URL" | tar xz && chmod +x ./merod && sudo mv ./merod /usr/local/bin/merod
           merod --version
 
@@ -138,14 +138,14 @@ jobs:
           sudo udevadm control --reload-rules
           sudo udevadm trigger --name-match=kvm
 
-      - name: Download released merod (x86_64-unknown-linux-gnu)
+      - name: Download the pinned merod (x86_64-unknown-linux-gnu)
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          TAG=$(gh release list --repo calimero-network/core --limit 1 --json tagName -q '.[0].tagName')
-          URL=$(gh release view "$TAG" --repo calimero-network/core --json assets \
+          . ./ci/core-version
+          URL=$(gh release view "$CORE_TAG" --repo calimero-network/core --json assets \
             -q '.assets[] | select(.name | test("merod_x86_64-unknown-linux-gnu\\.tar\\.gz$")) | .url')
-          test -n "$URL" || { echo "no merod linux asset on $TAG"; exit 1; }
+          test -n "$URL" || { echo "no merod linux asset on $CORE_TAG"; exit 1; }
           curl -sL "$URL" | tar xz && chmod +x ./merod && sudo mv ./merod /usr/local/bin/merod
 
       - name: AVD cache

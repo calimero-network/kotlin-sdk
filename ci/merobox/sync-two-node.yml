@@ -7,16 +7,17 @@
 # exercises node + WASM + sync, independent of the curb chat app or Android.
 #
 # Run:  merobox bootstrap run ci/merobox/sync-two-node.yml   (from repo root)
+#       (fetch the fixture first — see ci/merobox/README.md)
 #
-# Node images: merod has no published 0.11.x Docker tag (the Android e2e uses the
-# 0.11.0-rc.x darwin *binary* from GitHub releases, which has no Docker build),
-# so we track `edge`. Override with MEROD_IMAGE in the CI job if needed.
+# Node image and app bundle come from ONE core release, pinned in ci/core-version;
+# CI asserts the image below still agrees with that file. ghcr publishes a tag per
+# rc, so nothing here needs `edge`.
 name: Two-node cross-node sync (kv_store)
 description: Write on node 1 must replicate to node 2 and the context hash must converge.
 
 nodes:
   count: 2
-  image: ghcr.io/calimero-network/merod:edge
+  image: ghcr.io/calimero-network/merod:0.11.0-rc.32
   prefix: calimero-node
 
 # Fresh state each run so the check is deterministic.
@@ -29,7 +30,7 @@ steps:
   - name: Install kv_store on node 1
     type: install_application
     node: calimero-node-1
-    path: ./ci/merobox/res/kv_store.wasm
+    path: ./ci/merobox/res/kv-store.mpk
     dev: true
     outputs:
       app_id: applicationId

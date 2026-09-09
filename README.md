@@ -134,8 +134,10 @@ Or run everything (build → unit → lint → live-node e2e → instrumented UI
 
 Backend-level sync is checked independently of the app by two **merobox** scenarios that boot real
 `merod` nodes in Docker (`ci/merobox/`, run by `merobox-sync.yml` / `merobox-chat-sync.yml`): a
-kv_store write must replicate across two nodes in both directions, and a message sent in a real curb
-channel on node 1 must be readable on node 2. See [ci/merobox/README.md](ci/merobox/README.md).
+kv-store write must replicate across two nodes in both directions, and a message sent in a real
+`com.calimero.chat` channel on node 1 must be readable on node 2. Node image and app bundle both come
+from the release pinned in [`ci/core-version`](ci/core-version). See
+[ci/merobox/README.md](ci/merobox/README.md).
 
 See **[TESTING.md](TESTING.md)** for the full matrix (mock vs live node, env vars, emulator setup).
 Unit + mock tests cover the highest-risk logic: single-flight/cross-process refresh, the terminal

@@ -10,16 +10,19 @@ name: Merobox Sync (2 nodes)
 # from the curb app and the emulator.
 #
 # Docker-based, so it runs on ubuntu (the macOS runners the Android suites use have
-# no Docker). Not a blanket PR gate: it exercises the upstream `edge` node image
-# (merod has no 0.11.x Docker tag), so it runs on main pushes / weekly / on
-# demand, plus PRs that touch the merobox harness itself.
+# no Docker). Not a blanket PR gate: it runs on main pushes / weekly / on demand,
+# plus PRs that touch the merobox harness itself.
 #
-# GATING: cross-node sync converges reliably (sub-second) once the kv_store wasm
-# matches the node — see ci/merobox/README.md. A red run here means a genuine
-# regression (upstream node sync broke, or the vendored wasm drifted from the
-# node image), which we want surfaced. The always-on node-log + peer-connectivity
-# dump is kept to make such a failure quick to triage ("nodes never peered" vs
-# "peered but state didn't sync").
+# Node image and app fixture both come from ONE pinned core release (ci/core-version):
+# the merod image is the rc tag, and the kv-store bundle is that release's own
+# `kv-store-test-fixture.mpk` asset. Pinning both together is what stops this lane
+# reddening on a commit of its own — it used to track `edge` against a wasm vendored
+# ten releases earlier, so node and app drifted apart independently.
+#
+# GATING: a red run means a genuine regression (node sync broke at the pinned
+# release, or the harness did). The always-on node-log + peer-connectivity dump
+# makes such a failure quick to triage ("nodes never peered" vs "peered but state
+# didn't sync").
 on:
   push:
     branches:
@@ -33,9 +36,9 @@ on:
   workflow_dispatch:
     inputs:
       merod_image:
-        description: 'merod Docker image (default ghcr.io/calimero-network/merod:edge)'
+        description: 'merod Docker image (default: MEROD_IMAGE from ci/core-version)'
         required: false
-        default: 'ghcr.io/calimero-network/merod:edge'
+        default: ''
   schedule:
     - cron: '0 8 * * 1'  # Mondays 08:00 UTC
 
@@ -58,30 +61,68 @@ jobs:
           - sync-two-node.yml
           - sync-two-node-bidi.yml
     env:
-      MEROD_IMAGE: ${{ github.event.inputs.merod_image || 'ghcr.io/calimero-network/merod:edge' }}
+      MEROD_IMAGE_OVERRIDE: ${{ github.event.inputs.merod_image }}
       WF: ci/merobox/${{ matrix.scenario }}
     steps:
       - uses: actions/checkout@v7
+
+      - name: Resolve the pinned core release
+        run: |
+          . ./ci/core-version
+          echo "CORE_TAG=$CORE_TAG" >> "$GITHUB_ENV"
+          echo "MEROD_IMAGE=${MEROD_IMAGE_OVERRIDE:-$MEROD_IMAGE}" >> "$GITHUB_ENV"
 
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
 
+      # Pin the PAIR. `pip install merobox` alone pins nothing that matters:
+      # calimero-client-py is an unpinned transitive dep that tracks core's master,
+      # and a client-py release has broken every unpinned merobox install before
+      # (0.7.0 dropped a kwarg merobox passed). Bump both together, deliberately.
       - name: Install merobox
         run: |
           python -m pip install --upgrade pip
-          pip install merobox
+          pip install 'merobox==0.6.75' 'calimero-client-py==0.7.0'
           merobox --version
+          pip show calimero-client-py | sed -n '1,2p'
+
+      # The app fixture ships WITH the node: every core release publishes a
+      # `kv-store-test-fixture.mpk` built from that release's SDK, so the app can
+      # never drift from the node the way a vendored wasm does. It must stay an
+      # .mpk — a dev install refuses a raw .wasm.
+      - name: Fetch the kv-store bundle from the pinned release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir -p ci/merobox/res
+          gh release download "$CORE_TAG" --repo calimero-network/core \
+            --pattern 'kv-store-test-fixture.mpk' \
+            --output ci/merobox/res/kv-store.mpk --clobber
+          ls -la ci/merobox/res/kv-store.mpk
 
       - name: Pull merod image
         run: docker pull "$MEROD_IMAGE"
 
-      # Point the workflow at the resolved image (workflow_dispatch override or
-      # the edge default) without editing the checked-in YAML.
-      - name: Pin node image in workflow
+      # The scenario files carry the real pinned image so they also run standalone
+      # (`merobox bootstrap run ci/merobox/<scenario>`). Assert they agree with
+      # ci/core-version — a half-landed bump would otherwise run the OLD node here
+      # and report green — then apply any dispatch override.
+      - name: Check the scenario image matches ci/core-version
         run: |
-          sed -i "s#image: ghcr.io/calimero-network/merod:edge#image: ${MEROD_IMAGE}#" "$WF"
+          set -euo pipefail
+          declared=$(awk '/^  image:/{print $2; exit}' "$WF")
+          . ./ci/core-version
+          [ "$declared" = "$MEROD_IMAGE" ] || {
+            echo "::error::$WF pins $declared but ci/core-version says $MEROD_IMAGE"; exit 1; }
+          echo "image pin agrees: $declared"
+
+      - name: Apply the dispatch image override
+        if: env.MEROD_IMAGE_OVERRIDE != ''
+        run: |
+          sed -i "s#^  image: .*#  image: ${MEROD_IMAGE}#" "$WF"
           grep 'image:' "$WF"
 
       - name: Validate workflow

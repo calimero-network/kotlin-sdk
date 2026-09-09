@@ -21,10 +21,6 @@ jobs:
     name: E2E (single node)
     runs-on: ubuntu-latest
     timeout-minutes: 20
-    env:
-      # First-login setup code (core#3221). merod below inherits it and the SDK
-      # test passes it explicitly, so the first login mints the root key.
-      MERO_AUTH_BOOTSTRAP_SECRET: kotlin-sdk-e2e-bootstrap
     steps:
       - uses: actions/checkout@v7
 
@@ -37,15 +33,17 @@ jobs:
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
 
-      - name: Download released merod (x86_64-unknown-linux-gnu)
+      - name: Download the pinned merod (x86_64-unknown-linux-gnu)
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          TAG=$(gh release list --repo calimero-network/core --limit 1 --json tagName -q '.[0].tagName')
-          echo "Using core release $TAG"
-          URL=$(gh release view "$TAG" --repo calimero-network/core --json assets \
+          # ci/core-version, not "the latest release": an unpinned download turns
+          # this lane red on a commit that changed nothing here.
+          . ./ci/core-version
+          echo "Using core release $CORE_TAG"
+          URL=$(gh release view "$CORE_TAG" --repo calimero-network/core --json assets \
             -q '.assets[] | select(.name | test("merod_x86_64-unknown-linux-gnu\\.tar\\.gz$")) | .url')
-          test -n "$URL" || { echo "no merod linux asset on release $TAG"; exit 1; }
+          test -n "$URL" || { echo "no merod linux asset on release $CORE_TAG"; exit 1; }
           curl -sL "$URL" | tar xz
           chmod +x ./merod
           ./merod --version

@@ -1,25 +1,32 @@
-# Two-node mero-chat (curb) message-sync check.
+# Two-node mero-chat message-sync check.
 #
-# Exercises the REAL published curb app (com.calimero.curb 7.0.10, downloaded
-# from apps.calimero.network in CI) — the same app the Android chat sample installs —
-# but on two Docker nodes instead of emulators. Creates a curb "Channel"
-# context meshed across both nodes, sends a message on node 1, waits for the
-# context hash to converge, and asserts node 2 reads the message back. This is
-# the chat-app analog of sync-two-node.yml (kv_store), and the definitive,
-# emulator-free proof that mero-chat cross-node message sync works.
+# Exercises the REAL published chat app (com.calimero.chat, downloaded from
+# apps.calimero.network in CI) — the same app the Android chat sample installs —
+# but on two Docker nodes instead of emulators. Creates a "Channel" context
+# meshed across both nodes, sends a message on node 1, waits for the context
+# hash to converge, and asserts node 2 reads the message back. This is the
+# chat-app analog of sync-two-node.yml (kv-store), and the definitive,
+# emulator-free proof that chat cross-node message sync works.
 #
-# curb's channel/message contract shape mirrors the sample app's
+# The contract shape mirrors the sample app's
 # sample-app/src/main/kotlin/com/calimero/mero/sample/chat/ChatService.kt
 # (init params + send_message/get_messages args).
 #
-# The wasm is downloaded + extracted by the CI job to ./ci/merobox/res/curb-app.wasm
-# (see .github/workflows/merobox-chat-sync.yml).
-name: Two-node mero-chat (curb) message sync
-description: A message sent on node 1 in a curb channel must replicate to node 2.
+# ⚠️ This used to install `com.calimero.curb`, which is no longer published —
+# `GET /api/v2/bundles?package=com.calimero.curb` answers `[]`, so the version
+# lookup died on an empty list three lines from the cause. com.calimero.chat
+# 3.1.1 takes the SAME init params, but `send_message` has NO `sender_username`
+# argument (curb's did); passing it panics the guest at argument deserialization.
+#
+# The bundle is downloaded by the CI job to ./ci/merobox/res/chat-app.mpk
+# (see .github/workflows/merobox-chat-sync.yml). It stays an .mpk: a dev install
+# refuses a raw .wasm ("not a signed application bundle").
+name: Two-node mero-chat message sync
+description: A message sent on node 1 in a chat channel must replicate to node 2.
 
 nodes:
   count: 2
-  image: ghcr.io/calimero-network/merod:edge
+  image: ghcr.io/calimero-network/merod:0.11.0-rc.32
   prefix: calimero-node
 
 nuke_on_start: true
@@ -28,18 +35,18 @@ stop_all_nodes: true
 wait_timeout: 120
 
 steps:
-  - name: Install curb (mero-chat) on node 1
+  - name: Install mero-chat on node 1
     type: install_application
     node: calimero-node-1
-    path: ./ci/merobox/res/curb-app.wasm
+    path: ./ci/merobox/res/chat-app.mpk
     dev: true
     outputs:
       app_id: applicationId
 
-  # Create a curb "Channel" context (init params mirror ChatService.initParams)
-  # and mesh node 2 into it. created_at is a fixed epoch — merobox scripts can't
-  # call Date.now(), and curb only stores it.
-  - name: Mesh a curb channel across node 1 + node 2
+  # Create a "Channel" context (init params mirror ChatService.initParams) and
+  # mesh node 2 into it. created_at is a fixed epoch — merobox scripts can't call
+  # Date.now(), and the app only stores it.
+  - name: Mesh a chat channel across node 1 + node 2
     type: create_mesh
     context_node: calimero-node-1
     application_id: "{{app_id}}"
@@ -62,7 +69,6 @@ steps:
       mentions_usernames: []
       parent_message: null
       timestamp: 1721800001000
-      sender_username: "host"
       files: null
       images: null
 

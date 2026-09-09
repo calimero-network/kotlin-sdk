@@ -129,16 +129,18 @@ NODE_UP=0
 MEROD_BIN=""
 
 boot_node() {
-  # pick a merod: PATH first, then ./merod, else download the latest release
+  # pick a merod: PATH first, then ./merod, else download the PINNED release
+  # (ci/core-version — the same one CI uses, so a local green means the same thing)
   if command -v merod >/dev/null 2>&1; then MEROD_BIN="$(command -v merod)"
   elif [ -x ./merod ]; then MEROD_BIN="./merod"
   else
-    echo "downloading released merod (x86_64-unknown-linux-gnu)…"
-    local TAG URL
-    TAG=$(gh release list --repo calimero-network/core --limit 1 --json tagName -q '.[0].tagName') || return 1
-    URL=$(gh release view "$TAG" --repo calimero-network/core --json assets \
+    # shellcheck source=ci/core-version
+    . ./ci/core-version || return 1
+    echo "downloading merod $CORE_TAG (x86_64-unknown-linux-gnu)…"
+    local URL
+    URL=$(gh release view "$CORE_TAG" --repo calimero-network/core --json assets \
       -q '.assets[] | select(.name | test("merod_x86_64-unknown-linux-gnu\\.tar\\.gz$")) | .url') || return 1
-    [ -n "$URL" ] || { echo "no merod linux asset on $TAG"; return 1; }
+    [ -n "$URL" ] || { echo "no merod linux asset on $CORE_TAG"; return 1; }
     curl -sL "$URL" | tar xz && chmod +x ./merod && MEROD_BIN="./merod"
   fi
   echo "using merod: ${MEROD_BIN} ($("$MEROD_BIN" --version 2>&1 | head -1))"
@@ -176,11 +178,10 @@ if [ "$SKIP_E2E" -eq 1 ]; then
   skip_step "§4a Boot merod node" "--skip-e2e"
   skip_step "§4b Live e2e — RealNodeE2ETest" "--skip-e2e"
 else
-  run_step "§4a Boot merod node (rc.17 init-time admin creds)" boot_node
+  run_step "§4a Boot merod node (init-time admin creds)" boot_node
   if [ "$NODE_UP" -eq 1 ]; then
     run_step "§4b Live e2e — :mero-core RealNodeE2ETest" \
       env MERO_E2E_NODE_URL=http://localhost:4001 MERO_E2E_USER=dev MERO_E2E_PASS=dev-password \
-          MERO_AUTH_BOOTSTRAP_SECRET=kotlin-sdk-e2e-bootstrap \
       ./gradlew :mero-core:testDebugUnitTest --tests '*RealNodeE2ETest*' --stacktrace
   else
     skip_step "§4b Live e2e — :mero-core RealNodeE2ETest" "node did not boot"
