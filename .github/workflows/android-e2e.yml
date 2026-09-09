@@ -58,14 +58,14 @@ jobs:
           curl -sL "$URL" | tar xz && chmod +x ./merod && sudo mv ./merod /usr/local/bin/merod
           merod --version
 
-      - name: AVD cache
-        uses: actions/cache@v4
+      - name: Restore AVD cache
+        uses: actions/cache/restore@v4
         id: avd-cache
         with:
           path: |
             ~/.android/avd/*
             ~/.android/adb*
-          # Same key as instrumented.yml, bumped with it — see the note there.
+          # Same key as instrumented.yml — see the restore/save note there.
           key: avd-api30-x86_64-v2
 
       - name: Create AVD and generate snapshot for caching
@@ -79,6 +79,16 @@ jobs:
           emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
           disable-animations: false
           script: echo "Generated AVD snapshot for caching."
+
+      # Only on a miss, and only BEFORE anything runs tests against the AVD.
+      - name: Save the pristine AVD cache
+        if: steps.avd-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            ~/.android/avd/*
+            ~/.android/adb*
+          key: avd-api30-x86_64-v2
 
       - name: Run AppE2ETest (boots node, reuses the emulator)
         # android-e2e.sh boots merod on :4001 and reuses the emulator that this
@@ -149,14 +159,14 @@ jobs:
           test -n "$URL" || { echo "no merod linux asset on $CORE_TAG"; exit 1; }
           curl -sL "$URL" | tar xz && chmod +x ./merod && sudo mv ./merod /usr/local/bin/merod
 
-      - name: AVD cache
-        uses: actions/cache@v4
+      - name: Restore AVD cache
+        uses: actions/cache/restore@v4
         id: avd-cache
         with:
           path: |
             ~/.android/avd/*
             ~/.android/adb*
-          # Same key as instrumented.yml, bumped with it — see the note there.
+          # Same key as instrumented.yml — see the restore/save note there.
           key: avd-api30-x86_64-v2
 
       - name: Create AVD and generate snapshot for caching
@@ -170,6 +180,16 @@ jobs:
           emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
           disable-animations: false
           script: echo "Generated AVD snapshot for caching."
+
+      # Only on a miss, and only BEFORE anything runs tests against the AVD.
+      - name: Save the pristine AVD cache
+        if: steps.avd-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            ~/.android/avd/*
+            ~/.android/adb*
+          key: avd-api30-x86_64-v2
 
       - name: Run chat-multi-e2e.sh (2 nodes, 2 emulators)
         # This action boots one emulator; chat-multi-e2e.sh boots a second instance
