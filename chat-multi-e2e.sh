@@ -8,13 +8,36 @@
 #   A: create space+channel, post "hi from host", LOG the invite token
 #   → scrape the invite from emulator A's logcat, hand it to the guest role
 #   B: auto-join (the `invite` runner arg becomes the app's `invite` launch extra,
-#      so the chat screen installs curb and joins on open), see the host's
+#      so the chat screen installs the chat app and joins on open), see the host's
 #      message, reply "hi from guest"
 #   A: see the guest's reply
 #
-# STATUS: all three roles pass on CI (2026-07-25, run 30154354592) — the guest
-# really does receive the host's message and the reply syncs back, between two
-# co-located merods. The job stays continue-on-error for now because that is one
+# ⚠️ STATUS 2026-09-09: roles 1 and 2 pass on core rc.32; role 3 FAILS, and it is
+# NOT the app, the network, or this script — the published `com.calimero.chat`
+# 3.1.1 declares `minRuntimeVersion 0.11.0-rc.28` and was compiled against that
+# SDK. core rc.31/rc.32 moved the `CrdtType` borsh tags into the 0x80+ range
+# (core#3743, #3789) and stamped collection entries with a crdt_type (#3799), so
+# when node A applies the guest's delta the APP's `__calimero_sync` cannot decode
+# it and panics:
+#
+#   guest panicked: fatal: sync failed:
+#     DeserializationError(Custom { kind: InvalidData, error: "Unexpected variant tag: 136" })
+#
+# 136 = 0x88 = CRDT_TYPE_TAG_V2 + 8. core made this fail loudly on purpose: its own
+# comment says "an unknown discriminant fails the decode outright, where a shared
+# tag would have it consume the following field as a string length and misalign
+# everything after it".
+#
+# Direction matters and is consistent with the cause: A→B works (the joiner starts
+# empty and takes state), B→A fails (node A must MERGE a stamped entry into state it
+# already has). The control is the merobox kv-store lane, which syncs bidirectionally
+# on the same nodes — because its app is built from the rc.32 release itself.
+#
+# Fixing it means republishing com.calimero.chat against rc.32; nothing in this repo
+# can. Until then this role is expected red.
+#
+# (Previously: all three roles passed on 2026-07-25, run 30154354592, against curb
+# on an older core.) The job stays continue-on-error for now because that is one
 # green run on an emulator pair; if a step fails at "did not sync", suspect the
 # P2P layer (gossipsub between co-located nodes) before the app or the test.
 #
@@ -214,5 +237,5 @@ echo
 echo "${BOLD}────────── RESULT ──────────${RESET}"
 echo "  ${GREEN}$pass passed${RESET}, ${RED}$fail failed${RESET} of 3 roles"
 [ "$fail" -eq 0 ] && echo "${GREEN}✔ multi-user chat e2e passed${RESET}" \
-  || echo "${YELLOW}⚠ a cross-node step failed — if it's 'did not sync', that's co-located gossipsub, not the app (see header).${RESET}"
+  || echo "${YELLOW}⚠ a cross-node step failed. Check .mero-a.log / .mero-b.log BEFORE blaming the network: an 'Unexpected variant tag' panic in __calimero_sync means the published app predates the node's storage format (see header), not a sync problem.${RESET}"
 [ "$fail" -eq 0 ]

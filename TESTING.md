@@ -238,10 +238,16 @@ Expected: `BUILD SUCCESSFUL` with the instrumented suite green. CI runs this in
 ./chat-multi-e2e.sh           # 2 nodes + 2 emulators: cross-user chat (informational)
 ```
 
-`chat-multi-e2e.sh` passes all three roles on CI (host posts → guest joins via the invite, sees it
-and replies → host sees the reply), so cross-node message sync between two co-located merods does
-work. Its CI job stays `continue-on-error` for now: an emulator pair plus cross-node sync has more
-moving parts than the rest of CI, and a red run there shouldn't block a merge.
+⚠️ **`chat-multi-e2e.sh` role 3 is expected red on core rc.32, and it is not a sync bug.**
+Roles 1 and 2 pass — the guest joins via the invite, sees the host's message and replies. Role 3
+(host sees the reply) fails because the published `com.calimero.chat` 3.1.1 declares
+`minRuntimeVersion 0.11.0-rc.28`: rc.31/rc.32 moved the `CrdtType` borsh tags into the `0x80+`
+range and stamped collection entries, so applying the guest's delta panics inside the **app's**
+`__calimero_sync` with `Unexpected variant tag: 136` (= `0x88`). Node A's log shows it plainly.
+Fixing it means republishing the chat app against rc.32. The control is the merobox kv-store lane,
+which syncs both directions on the same nodes — its app is built from the rc.32 release itself.
+
+The job stays `continue-on-error`, so this does not block a merge.
 
 The host role logs the invite as `MERO_E2E_INVITE=<token>`; the script scrapes it from logcat and
 hands it to the guest as the `invite` runner arg, which the test passes on as a launch extra so the

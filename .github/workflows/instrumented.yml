@@ -47,35 +47,32 @@ jobs:
           sudo udevadm control --reload-rules
           sudo udevadm trigger --name-match=kvm
 
-      # AVD snapshot cache (per the android-emulator-runner README): the first run
-      # creates and snapshots the AVD, later runs restore it and boot faster.
-      # ⚠️ Bump the key to discard a poisoned snapshot. `actions/cache` saves
-      # `~/.android/avd/*` in its POST step — i.e. after the test step has already
-      # run the emulator with `-no-snapshot-save` and killed it — so a snapshot can
-      # be cached mid-teardown. Restore that and the emulator boots far enough for
-      # adb but never registers its system services:
+      # ⚠️ NO AVD CACHE — restoring one hangs the emulator on these runners.
+      #
+      # Measured 2026-09-09 on one job, three attempts, only the cache varied:
+      #
+      #   restore a cache saved AFTER a test run   → hung, killed at the 45m timeout
+      #   NO cache, create the AVD in-job          → PASSED in ~3 minutes
+      #   restore a cache saved BEFORE any test    → hung again
+      #
+      # So it is the RESTORE that breaks it, not staleness and not when the cache was
+      # written — a freshly created, immediately saved AVD fails the same way. A
+      # restored AVD boots far enough for adb and then never registers its system
+      # services:
       #
       #   android.os.ServiceManager$ServiceNotFoundException: No service published for: input
       #   ##[error]The process '…/platform-tools/adb' failed with exit code 1
       #
-      # and the job then idles to `timeout-minutes` — 90 seconds of work reported as
-      # a 45-minute failure. With a static key it cannot self-heal: every later run
-      # restores the same bad snapshot, so re-running never helps.
+      # …after which the job idles to `timeout-minutes`, so 90 seconds of work is
+      # reported as a 45-minute failure. With a fixed key it could never self-heal:
+      # every run restored the same thing, which is why RE-RUNNING NEVER HELPED.
+      # That cost two hours across three branches on 2026-09-09, one of which
+      # changed only `docs/package-lock.json`.
       #
-      # Seen 2026-09-09: the last green emulator run was the one that WROTE this
-      # cache (main, 11:15Z); every run after it timed out, on three branches, one
-      # of which changed only `docs/package-lock.json`.
-      - name: AVD cache
-        uses: actions/cache@v4
-        id: avd-cache
-        with:
-          path: |
-            ~/.android/avd/*
-            ~/.android/adb*
-          key: avd-api30-x86_64-v2
-
-      - name: Create AVD and generate snapshot for caching
-        if: steps.avd-cache.outputs.cache-hit != 'true'
+      # Creating the AVD in-job costs ~2 minutes and is reliable. If you reinstate a
+      # cache, prove it by running the job TWICE — the second run is the one that
+      # restores, and the first will happily mislead you.
+      - name: Create AVD (not cached — see above)
         uses: reactivecircus/android-emulator-runner@v2
         with:
           api-level: 30
@@ -84,7 +81,7 @@ jobs:
           force-avd-creation: false
           emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
           disable-animations: false
-          script: echo "Generated AVD snapshot for caching."
+          script: echo "AVD created for this job."
 
       - name: Run instrumented tests (in-app mock)
         uses: reactivecircus/android-emulator-runner@v2
