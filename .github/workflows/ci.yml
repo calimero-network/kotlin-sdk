@@ -52,13 +52,29 @@ jobs:
       - name: SDK surface / registry parity
         run: ./ci/check-registry-parity.sh
 
+      # Same pinned pair as the merobox workflows: pinning merobox alone pins
+      # nothing, because calimero-client-py is an unpinned transitive dep that
+      # tracks core's master. Schema-only, so no Docker and no fixture needed.
       - name: Validate merobox scenarios
         run: |
           python -m pip install --upgrade pip
-          pip install merobox
+          pip install 'merobox==0.6.75' 'calimero-client-py==0.7.0'
           for wf in ci/merobox/*.yml; do
             echo "── $wf"
             merobox bootstrap validate "$wf"
+          done
+
+      # A scenario pinning a node image that ci/core-version no longer names would
+      # otherwise run the OLD node in the merobox lanes and report green.
+      - name: Scenario node images match ci/core-version
+        run: |
+          set -euo pipefail
+          . ./ci/core-version
+          for wf in ci/merobox/*.yml; do
+            declared=$(awk '/^  image:/{print $2; exit}' "$wf")
+            [ "$declared" = "$MEROD_IMAGE" ] || {
+              echo "::error file=$wf::pins $declared but ci/core-version says $MEROD_IMAGE"; exit 1; }
+            echo "✓ $wf → $declared"
           done
 
       - name: Upload test reports
