@@ -81,6 +81,15 @@ steps:
     trigger_sync: true
     timeout: 90
 
+  # A short settle between "the hash converged" and "read it back". `wait_for_sync`
+  # polls contextStateHash, which agrees a moment before node 2's own execution
+  # sees the new entry — this assertion failed once in three runs on exactly that
+  # gap, with every step before it green. The kv-store lanes do not need it; a
+  # chat message is a bigger entry through a slower path.
+  - name: Let node 2 settle after convergence
+    type: wait
+    seconds: 5
+
   - name: Read messages back on node 2
     type: call
     node: calimero-node-2
