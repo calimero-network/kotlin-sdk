@@ -499,48 +499,51 @@ class AdminApi(
                 "/admin-api/alias/delete/application/${encodeComponent(name)}", JsonObject(emptyMap()),
             ).data ?: error("deleteApplicationAlias")
 
-    suspend fun listContextAliases(): ListAliasesResponseData =
-        http.getJson<ApiEnvelope<ListAliasesResponseData>>("/admin-api/alias/list/context").data
-            ?: error("listContextAliases")
+    /**
+     * ⚠️ The list routes answer a **map** — `{"data": {"<alias>": "<value>"}}`, and
+     * `{"data": {}}` when empty — not `{aliases: […]}`. Decoded as a list this
+     * threw `MissingFieldException: Field 'aliases' is required` on every call,
+     * so all three list methods had never returned anything.
+     */
+    suspend fun listContextAliases(): ListAliasesResponseData = listAliases("context")
 
-    suspend fun listApplicationAliases(): ListAliasesResponseData =
-        http.getJson<ApiEnvelope<ListAliasesResponseData>>("/admin-api/alias/list/application").data
-            ?: error("listApplicationAliases")
+    suspend fun listApplicationAliases(): ListAliasesResponseData = listAliases("application")
 
-    // ---- Context Identity Aliases ------------------------------------------
+    // ---- Device aliases ----------------------------------------------------
+    //
+    // `device` is the third alias scope core actually serves. The SDK used to
+    // offer an `identity/{contextId}` scope instead, which does not exist —
+    // every create/lookup/delete/list under it answered 404.
 
-    suspend fun listContextIdentityAliases(contextId: String): ListContextIdentityAliasesResponseData =
+    suspend fun listDeviceAliases(): ListAliasesResponseData = listAliases("device")
+
+    suspend fun createDeviceAlias(request: CreateDeviceAliasRequest): CreateAliasResponseData =
         http
-            .getJson<ApiEnvelope<ListContextIdentityAliasesResponseData>>(
-                "/admin-api/alias/list/identity/$contextId",
-            ).data ?: error("listContextIdentityAliases")
+            .postJson<CreateDeviceAliasRequest, ApiEnvelope<CreateAliasResponseData>>(
+                "/admin-api/alias/create/device", request,
+            ).data ?: Empty()
 
-    suspend fun createContextIdentityAlias(
-        contextId: String,
-        request: CreateContextIdentityAliasRequest,
-    ): CreateContextIdentityAliasResponseData =
+    suspend fun lookupDeviceAlias(name: String): LookupAliasResponseData =
         http
-            .postJson<CreateContextIdentityAliasRequest, ApiEnvelope<CreateContextIdentityAliasResponseData>>(
-                "/admin-api/alias/create/identity/$contextId", request,
-            ).data ?: error("createContextIdentityAlias")
+            .postJson<JsonObject, ApiEnvelope<LookupAliasResponseData>>(
+                "/admin-api/alias/lookup/device/${encodeComponent(name)}", JsonObject(emptyMap()),
+            ).data ?: LookupAliasResponseData()
 
-    suspend fun lookupContextIdentityAlias(
-        contextId: String,
-        name: String,
-    ): LookupContextIdentityAliasResponseData =
+    suspend fun deleteDeviceAlias(name: String): DeleteAliasResponseData =
         http
-            .postJson<JsonObject, ApiEnvelope<LookupContextIdentityAliasResponseData>>(
-                "/admin-api/alias/lookup/identity/$contextId/${encodeComponent(name)}", JsonObject(emptyMap()),
-            ).data ?: error("lookupContextIdentityAlias")
+            .postJson<JsonObject, ApiEnvelope<DeleteAliasResponseData>>(
+                "/admin-api/alias/delete/device/${encodeComponent(name)}", JsonObject(emptyMap()),
+            ).data ?: Empty()
 
-    suspend fun deleteContextIdentityAlias(
-        contextId: String,
-        name: String,
-    ): DeleteContextIdentityAliasResponseData =
-        http
-            .postJson<JsonObject, ApiEnvelope<DeleteContextIdentityAliasResponseData>>(
-                "/admin-api/alias/delete/identity/$contextId/${encodeComponent(name)}", JsonObject(emptyMap()),
-            ).data ?: error("deleteContextIdentityAlias")
+    private suspend fun listAliases(scope: String): ListAliasesResponseData {
+        val res = http.execute("GET", "/admin-api/alias/list/$scope").ensureSuccessful()
+        val map =
+            http.json
+                .decodeFromString<ApiEnvelope<Map<String, String>>>(res.body)
+                .data
+                .orEmpty()
+        return map.map { (name, value) -> AliasEntry(name = name, value = value) }
+    }
 
     // ---- Namespace Management ----------------------------------------------
 
@@ -932,9 +935,20 @@ class AdminApi(
     suspend fun getUsage(): JsonElement =
         rawJson("GET", "/admin-api/usage", null)
 
-    /** Node TLS certificate, PEM text (GET /admin-api/certificate). */
-    suspend fun getCertificate(): String =
-        http.execute("GET", "/admin-api/certificate").ensureSuccessful().body
+    /**
+     * The node's TLS certificate as PEM (`GET /admin-api/certificate`), or `null`
+     * when it has none.
+     *
+     * A `404 Certificate not found` is a normal answer, not a failure: the route
+     * exists on every node and only serves a file when one is configured. This
+     * used to `ensureSuccessful()` and throw, so calling it on a plain
+     * `merod init` node was an exception rather than an absence.
+     */
+    suspend fun getCertificate(): String? {
+        val res = http.execute("GET", "/admin-api/certificate")
+        if (res.status == 404) return null
+        return res.ensureSuccessful().body
+    }
 
     // ---- Group / context / namespace membership ----------------------------
 

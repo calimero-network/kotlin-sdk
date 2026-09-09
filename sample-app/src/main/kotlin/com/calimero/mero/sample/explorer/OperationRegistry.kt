@@ -4,8 +4,8 @@ import com.calimero.mero.admin.AddGroupMembersRequest
 import com.calimero.mero.admin.AdmitJoinRequest
 import com.calimero.mero.admin.CreateApplicationAliasRequest
 import com.calimero.mero.admin.CreateContextAliasRequest
-import com.calimero.mero.admin.CreateContextIdentityAliasRequest
 import com.calimero.mero.admin.CreateContextRequest
+import com.calimero.mero.admin.CreateDeviceAliasRequest
 import com.calimero.mero.admin.CreateGroupInNamespaceRequest
 import com.calimero.mero.admin.CreateGroupInvitationRequest
 import com.calimero.mero.admin.CreateGroupInvitationResult
@@ -83,7 +83,7 @@ private val healthOps =
             Fmt.json(m.admin.getUsage())
         },
         SDKOperation("adm.cert", "Health & Node", "getCertificate", "Node TLS certificate (PEM)", emptyList()) { m, _ ->
-            m.admin.getCertificate()
+            m.admin.getCertificate() ?: "this node has no certificate configured"
         },
     )
 
@@ -331,28 +331,20 @@ private val aliasOps =
         SDKOperation("al.appList", "Aliases", "listApplicationAliases", "All application aliases", emptyList()) { m, _ ->
             Fmt.json(m.admin.listApplicationAliases())
         },
-        SDKOperation(
-            "al.idList", "Aliases", "listContextIdentityAliases", "Identity aliases in a context",
-            listOf(OpField.line("contextId", "Context ID")),
-        ) { m, i -> Fmt.json(m.admin.listContextIdentityAliases(i.v("contextId"))) },
-        SDKOperation(
-            "al.idCreate", "Aliases", "createContextIdentityAlias", "Create identity alias",
-            listOf(OpField.line("contextId", "Context ID"), OpField.json("body", "Request")),
-        ) { m, i ->
-            Fmt.json(
-                m.admin.createContextIdentityAlias(
-                    i.v("contextId"), Fmt.decode<CreateContextIdentityAliasRequest>(i.v("body")),
-                ),
-            )
+        SDKOperation("al.devList", "Aliases", "listDeviceAliases", "All device aliases", emptyList()) { m, _ ->
+            Fmt.json(m.admin.listDeviceAliases())
+        },
+        SDKOperation("al.devCreate", "Aliases", "createDeviceAlias", "Create device alias", listOf(OpField.json())) { m, i ->
+            Fmt.json(m.admin.createDeviceAlias(Fmt.decode<CreateDeviceAliasRequest>(i.v("body"))))
         },
         SDKOperation(
-            "al.idLookup", "Aliases", "lookupContextIdentityAlias", "Resolve identity alias",
-            listOf(OpField.line("contextId", "Context ID"), OpField.line("name", "Alias name")),
-        ) { m, i -> Fmt.json(m.admin.lookupContextIdentityAlias(i.v("contextId"), i.v("name"))) },
+            "al.devLookup", "Aliases", "lookupDeviceAlias", "Resolve device alias",
+            listOf(OpField.line("name", "Alias name")),
+        ) { m, i -> Fmt.json(m.admin.lookupDeviceAlias(i.v("name"))) },
         SDKOperation(
-            "al.idDelete", "Aliases", "deleteContextIdentityAlias", "Delete identity alias",
-            listOf(OpField.line("contextId", "Context ID"), OpField.line("name", "Alias name")),
-        ) { m, i -> Fmt.json(m.admin.deleteContextIdentityAlias(i.v("contextId"), i.v("name"))) },
+            "al.devDelete", "Aliases", "deleteDeviceAlias", "Delete device alias",
+            listOf(OpField.line("name", "Alias name")),
+        ) { m, i -> Fmt.json(m.admin.deleteDeviceAlias(i.v("name"))) },
     )
 
 private val blobOps =

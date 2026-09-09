@@ -135,4 +135,54 @@ class RealNodeE2ETest {
             }
             Unit
         }
+
+    /**
+     * Decode-sweep every read that needs no id. One `MissingFieldException` on a
+     * field core dropped fails the whole call, and only a real body shows it —
+     * `upgradePolicy` and `MetadataRecord.updatedAt` were both found this way.
+     */
+    @Test
+    fun `every parameterless read decodes against a real node`() =
+        runBlocking {
+            assumeTrue("MERO_E2E_NODE_URL not set — skipping live-node e2e", env("MERO_E2E_NODE_URL") != null)
+            val mero = makeClient()
+            mero.authenticate(
+                Credentials(
+                    username = env("MERO_E2E_USER") ?: "dev",
+                    password = env("MERO_E2E_PASS") ?: "dev-password",
+                ),
+            )
+
+            val reads: List<Pair<String, suspend () -> Any?>> =
+                listOf(
+                    "healthCheck" to { mero.admin.healthCheck() },
+                    "isReady" to { mero.admin.isReady() },
+                    "isAuthed" to { mero.admin.isAuthed() },
+                    "getNodeIdentity" to { mero.admin.getNodeIdentity() },
+                    "listApplications" to { mero.admin.listApplications() },
+                    "listPackages" to { mero.admin.listPackages() },
+                    "getContexts" to { mero.admin.getContexts() },
+                    "listBlobs" to { mero.admin.listBlobs() },
+                    "listNamespaces" to { mero.admin.listNamespaces() },
+                    "listContextAliases" to { mero.admin.listContextAliases() },
+                    "listApplicationAliases" to { mero.admin.listApplicationAliases() },
+                    "listAccountDevices" to { mero.admin.listAccountDevices() },
+                    "listAccountApplications" to { mero.admin.listAccountApplications() },
+                    "getPeersCount" to { mero.admin.getPeersCount() },
+                    "getNetworkStatus" to { mero.admin.getNetworkStatus() },
+                    "getUsage" to { mero.admin.getUsage() },
+                    "getCertificate" to { mero.admin.getCertificate() },
+                    "getTeeInfo" to { mero.admin.getTeeInfo() },
+                    "auth.getHealth" to { mero.auth.getHealth() },
+                    "auth.getIdentity" to { mero.auth.getIdentity() },
+                    "auth.getProviders" to { mero.auth.getProviders() },
+                )
+
+            val failures =
+                reads.mapNotNull { (name, call) ->
+                    runCatching { call() }.exceptionOrNull()?.let { "$name: ${it::class.simpleName}: ${it.message}" }
+                }
+
+            assertTrue("reads that did not decode:\n" + failures.joinToString("\n"), failures.isEmpty())
+        }
 }

@@ -99,10 +99,21 @@ refused with *"not a signed application bundle"*.
 | `deleteApplicationAlias(name): DeleteAliasResponseData` | `POST /alias/delete/application/{name}` |
 | `listContextAliases(): ListAliasesResponseData` | `GET /alias/list/context` |
 | `listApplicationAliases(): ListAliasesResponseData` | `GET /alias/list/application` |
-| `listContextIdentityAliases(contextId): ListContextIdentityAliasesResponseData` | `GET /alias/list/identity/{contextId}` |
-| `createContextIdentityAlias(contextId, request): CreateContextIdentityAliasResponseData` | `POST /alias/create/identity/{contextId}` |
-| `lookupContextIdentityAlias(contextId, name): LookupContextIdentityAliasResponseData` | `POST /alias/lookup/identity/{contextId}/{name}` |
-| `deleteContextIdentityAlias(contextId, name): DeleteContextIdentityAliasResponseData` | `POST /alias/delete/identity/{contextId}/{name}` |
+| `createDeviceAlias(request): CreateAliasResponseData` | `POST /alias/create/device` |
+| `lookupDeviceAlias(name): LookupAliasResponseData` | `POST /alias/lookup/device/{name}` |
+| `deleteDeviceAlias(name): DeleteAliasResponseData` | `POST /alias/delete/device/{name}` |
+| `listDeviceAliases(): ListAliasesResponseData` | `GET /alias/list/device` |
+
+:::caution[Three scopes: context, application, **device**]
+There is no `identity/{contextId}` scope — every route under it answers **404**.
+The SDK used to offer four methods there; they are gone, replaced by the `device`
+scope core actually serves.
+
+The list routes answer a **map** — `{"data": {"<alias>": "<value>"}}`, and
+`{"data": {}}` when empty — so `ListAliasesResponseData` is a
+`List<AliasEntry>` the SDK builds from it. Modeled as `{aliases: […]}` it threw
+`MissingFieldException` on every call, empty or not.
+:::
 
 ## Namespaces
 

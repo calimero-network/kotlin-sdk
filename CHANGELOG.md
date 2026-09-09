@@ -54,6 +54,20 @@ Verified against a real `merod 0.11.0-rc.32`, and against a second one for the j
   `/contexts/:id`, so it resolves to a *different* route), and
   `updateGroupSettings` (405; its only field was `upgradePolicy`).
 
+- **The alias list routes answer a map, and there is no `identity` scope.**
+  `GET /alias/list/{context,application,device}` return
+  `{"data": {"<alias>": "<value>"}}` (`{}` when empty), not `{aliases: […]}` —
+  modeled as a list, all three list methods threw
+  `MissingFieldException: Field 'aliases' is required` on **every** call, so they
+  had never worked. And the four `alias/*/identity/{contextId}` methods are gone:
+  that scope answers 404. `device` — the scope core actually serves — is added in
+  its place (`createDeviceAlias` / `lookupDeviceAlias` / `deleteDeviceAlias` /
+  `listDeviceAliases`).
+
+- **`getCertificate()` returns `String?`.** A node with no TLS certificate answers
+  `404 Certificate not found`, which is an absence, not a failure — it used to
+  `ensureSuccessful()` and throw on any plain `merod init` node.
+
 - **`Credentials.bootstrapSecret` removed**, with `MeroClient.login`'s third
   parameter and `LoginSheet`'s `showBootstrapSecret`. `merod init` creates the
   admin account, and rc.29 parses `bootstrap_secret` only to discard it.
@@ -101,7 +115,9 @@ Response bodies captured verbatim from the live node live in
 `mero-core/src/test/resources/fixtures/`. A fixture written to match the model can
 only confirm the model agrees with itself — which is how both this and the rc.25
 `groupId`→`namespaceId` rename got past a green suite. 78 tests, and
-`RealNodeE2ETest` now drives the new surface against a real node.
+`RealNodeE2ETest` now drives the new surface against a real node, and
+**decode-sweeps every read that needs no id** — which is what caught the alias
+map and the certificate 404 after the hand-picked checks had all passed.
 
 ## Unreleased — swift-sdk parity pass
 

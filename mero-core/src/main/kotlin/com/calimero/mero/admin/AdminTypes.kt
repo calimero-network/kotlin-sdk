@@ -383,22 +383,28 @@ data class CreateApplicationAliasRequest(
     val applicationId: String,
 )
 
+/** Alias a device. `device` is the third alias scope, alongside context and application. */
 @Serializable
-data class CreateContextIdentityAliasRequest(
+data class CreateDeviceAliasRequest(
     val alias: String,
-    val identity: String,
+    val deviceId: String,
 )
 
+/**
+ * ⚠️ The list routes answer a **map**, `{"<alias>": "<value>"}`, not a list of
+ * entries. Modeled as `List<AliasEntry>` this threw
+ * `MissingFieldException: Field 'aliases' is required` on **every** call —
+ * including the empty case, which is `{"data":{}}` — so the three alias list
+ * methods had never worked. Kept as [AliasEntry] pairs for callers; the decode
+ * is the map.
+ */
 @Serializable
 data class AliasEntry(
     val name: String,
     val value: String,
 )
 
-@Serializable
-data class ListAliasesResponseData(
-    val aliases: List<AliasEntry>,
-)
+typealias ListAliasesResponseData = List<AliasEntry>
 
 typealias CreateAliasResponseData = Empty
 typealias DeleteAliasResponseData = Empty
@@ -407,18 +413,6 @@ typealias DeleteAliasResponseData = Empty
 data class LookupAliasResponseData(
     val value: String? = null,
 )
-
-// ---- Context identity aliases ----------------------------------------------
-
-typealias ListContextIdentityAliasesResponseData = ListAliasesResponseData
-typealias CreateContextIdentityAliasResponseData = Empty
-
-@Serializable
-data class LookupContextIdentityAliasResponseData(
-    val value: String? = null,
-)
-
-typealias DeleteContextIdentityAliasResponseData = Empty
 
 // ---- Shared invitation types -----------------------------------------------
 
