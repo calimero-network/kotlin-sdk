@@ -27,7 +27,7 @@ stop_all_nodes: true
 wait_timeout: 120
 
 steps:
-  - name: Install kv_store on node 1
+  - name: Install kv-store on node 1
     type: install_application
     node: calimero-node-1
     path: ./ci/merobox/res/kv-store.mpk
@@ -35,10 +35,28 @@ steps:
     outputs:
       app_id: applicationId
 
-  # Creates the context on node 1 and wires node 2 into it (pre-installs the
-  # app on node 2, invites + joins). The join protocol no longer ships the app
-  # blob, so the pre-install (auto-resolved from the step above) is what lets
-  # node 2's context state initialize instead of staying uninitialized.
+  # ⚠️ The JOINER needs the app too, and must be given it explicitly.
+  #
+  # core 0.11.0-rc.31 (#3652) made distribution registry-only: the context
+  # registration op carries `package`+`version`, and a joining node resolves those
+  # against ITS OWN registry rather than pulling the blob from the peer. This
+  # fixture's app is a dev-installed local bundle whose coordinates
+  # (com.calimero.kv-store@<core tag>) are not published anywhere, so node 2 went
+  # to apps.calimero.network, found nothing, and failed the first execution with
+  # `bytecode blob … not found in blobstore` — three steps after the join, and
+  # AFTER `wait_for_sync` had already reported the context hash converged.
+  #
+  # Installing the same bundle here gives node 2 the same ApplicationId
+  # (it is derived from package + signer, not from the install path).
+  - name: Install kv-store on node 2
+    type: install_application
+    node: calimero-node-2
+    path: ./ci/merobox/res/kv-store.mpk
+    dev: true
+
+  # Creates the context on node 1 and wires node 2 into it (invite + join). The
+  # join protocol does not ship the app blob — see the note above the node-2
+  # install for why that install, not this step, is what lets node 2 execute.
   - name: Mesh the context across node 1 + node 2
     type: create_mesh
     context_node: calimero-node-1

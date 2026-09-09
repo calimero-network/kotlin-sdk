@@ -93,6 +93,29 @@ The app comes from the same release: every core tag publishes
 vendored, so a rebuild-by-hand step cannot go stale — bumping `ci/core-version`
 moves node and app together.
 
+## ⚠️ The joining node needs the app installed too
+
+core 0.11.0-rc.31 (#3652) made distribution **registry-only**. The context
+registration op carries `package` + `version`, and a joining node resolves those
+against **its own** registry instead of pulling the blob from the peer.
+
+These fixtures dev-install a local bundle whose coordinates
+(`com.calimero.kv-store@<core tag>`) are published nowhere, so node 2 reached out
+to `apps.calimero.network`, found nothing, and failed its first execution:
+
+```
+bytecode blob c13ac279…7778ed not found in blobstore
+JSON-RPC Error: InternalError
+```
+
+Three steps after the join, and **after `wait_for_sync` reported the context hash
+converged** — governance replicated fine; only the bytecode was missing. So both
+scenarios install the bundle on node 2 as well. The ApplicationId is derived from
+package + signer, so the two installs agree.
+
+The chat scenario needs no such step, and that is the control: `com.calimero.chat`
+is really published, so node 2 resolves it from the registry the same way node 1 did.
+
 ## Bumping the core release
 
 1. Edit `ci/core-version` (`CORE_TAG` **and** `MEROD_IMAGE`, same release).
