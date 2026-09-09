@@ -21,7 +21,8 @@ coroutine you can cancel:
 val job = scope.launch {
     mero.events(contextIds = listOf(contextId)).collect { event ->
         when (event.kind) {
-            "ExecutionEvent" -> reloadMessages()
+            "StateMutation" -> reloadMessages()          // the context state moved
+            "SyncStatus" -> updateSyncIndicator(event)   // syncing / waitingForPeers / …
             else -> println("event on ${event.contextId}: ${event.kind}")
         }
     }
@@ -33,13 +34,30 @@ Each event is:
 ```kotlin
 data class ContextEvent(
     val contextId: String,
-    val kind: String,          // e.g. "ExecutionEvent"
+    val kind: String,          // "StateMutation" | "SyncStatus" | …
     val payload: JsonElement,  // raw event JSON
 )
 ```
 
-For a contract emission (`kind == "ExecutionEvent"`) the encoded contract events
-are nested under `payload`'s `data.events[].data`.
+:::caution[The kind is `StateMutation`, not `ExecutionEvent`]
+Earlier versions of this page said `ExecutionEvent`. No node sends that, so the
+branch never fired — captured verbatim from a live `merod 0.11.0-rc.32`:
+
+```json
+{"result":{"contextId":"7359dc15…","type":"StateMutation",
+  "data":{"newRoot":"b116ecf2…",
+          "events":[{"kind":"MessageSent","data":[123,34,…],"handler":null}]}}}
+{"result":{"contextId":"7359dc15…","type":"SyncStatus",
+  "data":{"syncState":{"state":"waitingForPeers"},"failureCount":0}}}
+```
+
+If you only need "something changed", don't branch at all — the chat sample just
+reloads on every event, which is why it was unaffected.
+:::
+
+For a contract emission (`kind == "StateMutation"`) the encoded contract events
+are nested under `payload`'s `data.events[].data`; each carries its own `kind`
+(`MessageSent` above) and a byte array.
 
 ## Reconnection
 

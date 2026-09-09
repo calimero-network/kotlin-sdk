@@ -73,6 +73,15 @@ envelope — unlike every route around them.
 - SDK Explorer gains an **Accounts & devices** category and entries for every new
   method, so `check-registry-parity.sh` stays green.
 
+### Docs
+
+- **The SSE event kind is `StateMutation`, not `ExecutionEvent`.** The events guide
+  showed a `when (event.kind)` branching on `"ExecutionEvent"`, which no node sends,
+  so that branch never fired. A live rc.32 node sends `StateMutation` (the context
+  state moved) and `SyncStatus`; the contract's own events sit under
+  `data.events[]`, each with its own `kind`. Captured from the wire. The chat sample
+  was unaffected because it reloads on any event rather than branching.
+
 ### Testing
 
 Response bodies captured verbatim from the live node live in

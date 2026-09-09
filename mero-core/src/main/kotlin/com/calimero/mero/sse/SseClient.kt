@@ -26,9 +26,13 @@ import okhttp3.sse.EventSourceListener
 import okhttp3.sse.EventSources
 
 /**
- * A node event pushed over SSE. [payload] is the raw event JSON — for a contract emission
- * (`kind == "ExecutionEvent"`) the events live under `data.events[].data` (a byte array carrying
- * the encoded contract event).
+ * A node event pushed over SSE. [kind] is the frame's `result.type`: a live
+ * `merod 0.11.0-rc.32` sends **`StateMutation`** (the context state moved) and
+ * **`SyncStatus`** (`syncing` / `waitingForPeers` / …). It does NOT send
+ * `ExecutionEvent`, which this doc used to name — a `when` branching on it never fired.
+ *
+ * [payload] is the raw event JSON; for a `StateMutation` the contract's own events live
+ * under `data.events[]`, each with a `kind` and a `data` byte array carrying the encoding.
  */
 data class ContextEvent(
     val contextId: String,
