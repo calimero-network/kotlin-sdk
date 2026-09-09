@@ -10,9 +10,12 @@ Verified against a real `merod 0.11.0-rc.32`, and against a second one for the j
   distribution registry-only: the node fetches from its own `[registry]`, and the
   request carries `deny_unknown_fields`, so the old body naming `url` is
   **refused** — `400 unknown field \`url\`, expected \`package\` or \`version\``.
-  `installFromRegistry(registryUrl, package, version)` loses its first argument;
-  discover versions with `listPackageVersions` / `getLatestPackageVersion`, which
-  ask the node and therefore answer for the same registry the install will use.
+  `installFromRegistry(registryUrl, package, version)` loses its first argument.
+  ⚠️ Discover versions with **`getRegistryVersions`** (the registry read), not with
+  `listPackageVersions` / `getLatestPackageVersion` — those ask the *node*, which
+  reports what it has **installed**, so for a package it has never seen they answer
+  `{"versions":[]}` / `{"version":null}`. That reads like "unpublished" and is a
+  different question.
   `InstallDevApplicationRequest` is `{path}` alone, and the path must be an
   `.mpk` — a raw `.wasm` is refused with *"not a signed application bundle"*.
 
