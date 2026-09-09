@@ -178,10 +178,13 @@ class ChatService(
     // ---- setup / install ---------------------------------------------------
 
     /**
-     * Install the chat app by coordinates. The **node** resolves them against the
-     * registry it is configured with — a client cannot name a URL since core#3652
-     * (rc.31), so version discovery asks the node too, and therefore answers for
-     * the same registry the install will use.
+     * Install the chat app: discover the version from the **registry**, then hand
+     * the node coordinates. Since core#3652 (rc.31) a client cannot name a URL —
+     * the node fetches from the registry it is configured with.
+     *
+     * Discovery has to be the registry read, not `getLatestPackageVersion`: the
+     * node's package routes report what it has **installed**, so for an app it has
+     * never seen they answer `null` / `[]`, which is not the same question.
      *
      * "not published" is reported as itself. The previous version treated an empty
      * version list as a status line and carried on, which left the UI sitting on
@@ -190,10 +193,14 @@ class ChatService(
      */
     suspend fun setup() =
         runStep("installing $PACKAGE_NAME…") {
-            val version =
-                runCatching { mero.admin.getLatestPackageVersion(PACKAGE_NAME).version }.getOrNull()
-            if (version.isNullOrEmpty()) {
-                status = "$PACKAGE_NAME is not published on this node's registry"
+            val versions = runCatching { mero.admin.getRegistryVersions(REGISTRY_URL, PACKAGE_NAME) }.getOrNull()
+            if (versions == null) {
+                status = "registry unreachable at $REGISTRY_URL"
+                return@runStep
+            }
+            val version = versions.firstOrNull()
+            if (version == null) {
+                status = "$PACKAGE_NAME is not published on $REGISTRY_URL"
                 return@runStep
             }
             val resp = mero.admin.installFromRegistry(PACKAGE_NAME, version)
@@ -546,6 +553,13 @@ class ChatService(
     private fun short(error: Exception): String = error.message ?: error.toString()
 
     companion object {
+        /**
+         * Where versions are DISCOVERED. The install itself names only coordinates
+         * and the node fetches from its own `[registry]`, so this should be the
+         * same registry the node is configured with — a mismatch shows up as a 502.
+         */
+        const val REGISTRY_URL = "https://apps.calimero.network"
+
         /**
          * ⚠️ Was `com.calimero.curb`, which is no longer published — the registry
          * answers `[]` for it. `com.calimero.chat` 3.1.1 takes the same `init`

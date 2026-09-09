@@ -194,9 +194,15 @@ class AdminApi(
      * ```
      *
      * `registryUrl` is gone with it: which registry a node trusts is the node's
-     * configuration, not a caller's argument. Use [listPackageVersions] or
-     * [getLatestPackageVersion] to discover a version — both ask the node, so they
-     * answer for the same registry the install will use.
+     * configuration (`[registry]` in `config.toml`), not a caller's argument.
+     *
+     * ⚠️ To discover a version to install, use [getRegistryVersions] — the
+     * registry read. [listPackageVersions] and [getLatestPackageVersion] ask the
+     * *node*, and a node reports only what it has **installed**: for a package it
+     * has never seen they answer `{"versions":[]}` and `{"version":null}`, not
+     * "here is what you could install". The node exposes no route naming its own
+     * registry, so point [getRegistryVersions] at the same one it is configured
+     * with; a mismatch surfaces as a `502` from the install.
      */
     suspend fun installFromRegistry(
         packageName: String,
@@ -244,6 +250,7 @@ class AdminApi(
 
     // ---- Package Management ------------------------------------------------
 
+    /** Packages this node has **installed** — not the registry's catalogue. */
     suspend fun listPackages(): ListPackagesResponseData {
         // Core returns this flat ({ packages: [...] }), not under `data`; tolerate both.
         val res = http.execute("GET", "/admin-api/packages").ensureSuccessful()
@@ -251,6 +258,11 @@ class AdminApi(
         return wire.data ?: ListPackagesResponseData(packages = wire.packages ?: emptyList())
     }
 
+    /**
+     * Versions of a package this node has **installed**. An empty list means
+     * "not installed here", never "not published" — use [getRegistryVersions] for
+     * what is available to install.
+     */
     suspend fun listPackageVersions(packageName: String): ListVersionsResponseData {
         // Core returns this flat ({ versions: [...] }), not under `data`; tolerate both.
         val res = http.execute("GET", "/admin-api/packages/${encodeComponent(packageName)}/versions").ensureSuccessful()
@@ -258,6 +270,7 @@ class AdminApi(
         return wire.data ?: ListVersionsResponseData(versions = wire.versions ?: emptyList())
     }
 
+    /** Newest **installed** version of a package. Both fields are `null` if none is. */
     suspend fun getLatestPackageVersion(packageName: String): GetLatestVersionResponseData =
         http.getJson("/admin-api/packages/${encodeComponent(packageName)}/latest")
 
