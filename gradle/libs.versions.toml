@@ -18,6 +18,7 @@ androidxTestCore = "1.6.1"
 espresso = "3.6.1"
 ktlint = "12.1.1"
 detekt = "1.23.7"
+nmcp = "1.6.2"
 
 [libraries]
 # Kotlin / coroutines
@@ -68,3 +69,8 @@ kotlin-serialization = { id = "org.jetbrains.kotlin.plugin.serialization", versi
 compose-compiler = { id = "org.jetbrains.kotlin.plugin.compose", version.ref = "kotlin" }
 ktlint = { id = "org.jlleitschuh.gradle.ktlint", version.ref = "ktlint" }
 detekt = { id = "io.gitlab.arturbosch.detekt", version.ref = "detekt" }
+# Uploads what `maven-publish` already produced to the Central Portal. Chosen over
+# com.vanniktech.maven.publish because that one requires AGP 8.13+ and this build is
+# on 8.5.2; nmcp touches no AGP classes, so it needs no toolchain bump.
+nmcp = { id = "com.gradleup.nmcp", version.ref = "nmcp" }
+nmcp-aggregation = { id = "com.gradleup.nmcp.aggregation", version.ref = "nmcp" }

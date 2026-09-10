@@ -1,8 +1,19 @@
 name: Release
 
 # Tag-driven release, mirroring the JS repos' semantic-release cadence.
-# Push a tag like `v0.1.0` to publish `com.calimero.mero:{mero-core,mero-compose}:0.1.0`
-# to GitHub Packages and cut a GitHub Release.
+# Push a tag like `v0.1.0` to publish `network.calimero:{mero-core,mero-compose}:0.1.0`
+# to Maven Central and GitHub Packages, and cut a GitHub Release.
+#
+# Central is the public target: it resolves through the `mavenCentral()` every Android
+# project already declares, with no token on the consumer side. GitHub Packages stays
+# because it needs no signing key and no Portal account, which makes it the right place
+# for a pre-release or an internal build.
+#
+# Required secrets for the Central step:
+#   MAVEN_CENTRAL_USERNAME / MAVEN_CENTRAL_PASSWORD  a Central Portal user token
+#   SIGNING_KEY                                      ASCII-armored GPG private key
+#   SIGNING_PASSWORD                                 its passphrase ('' if none)
+# Without them the Central step fails and the GitHub Packages publish still stands.
 on:
   push:
     tags:
@@ -36,6 +47,17 @@ jobs:
           GITHUB_ACTOR: ${{ github.actor }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: ./gradlew publish -PVERSION_NAME=${{ steps.version.outputs.version }} --stacktrace
+
+      # Uploaded as ONE bundle and left for a human to release in the Portal
+      # (publishingType USER_MANAGED). A Central version can never be replaced, so
+      # the last step before it becomes permanent is deliberately manual.
+      - name: Publish to Maven Central
+        env:
+          ORG_GRADLE_PROJECT_mavenCentralUsername: ${{ secrets.MAVEN_CENTRAL_USERNAME }}
+          ORG_GRADLE_PROJECT_mavenCentralPassword: ${{ secrets.MAVEN_CENTRAL_PASSWORD }}
+          ORG_GRADLE_PROJECT_signingInMemoryKey: ${{ secrets.SIGNING_KEY }}
+          ORG_GRADLE_PROJECT_signingInMemoryKeyPassword: ${{ secrets.SIGNING_PASSWORD }}
+        run: ./gradlew nmcpPublishAggregationToCentralPortal -PVERSION_NAME=${{ steps.version.outputs.version }} --stacktrace
 
       - name: Create GitHub Release
         env:
