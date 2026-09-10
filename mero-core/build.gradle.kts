@@ -3,6 +3,9 @@ plugins {
     alias(libs.plugins.kotlin.android)
     alias(libs.plugins.kotlin.serialization)
     `maven-publish`
+    signing
+    // Per-module half of the Central bundle; the root aggregates these.
+    alias(libs.plugins.nmcp)
 }
 
 android {
@@ -24,6 +27,8 @@ android {
     publishing {
         singleVariant("release") {
             withSourcesJar()
+            // Central rejects a release with no javadoc jar, even an empty one.
+            withJavadocJar()
         }
     }
 
@@ -103,5 +108,24 @@ publishing {
                 password = System.getenv("GITHUB_TOKEN") ?: providers.gradleProperty("gpr.token").orNull
             }
         }
+    }
+}
+
+// Maven Central rejects unsigned artifacts. Opted into only when a key is present, so
+// `publishToMavenLocal` and a GitHub Packages publish still work on a machine with no
+// GPG key; a Central release sets ORG_GRADLE_PROJECT_signingInMemoryKey, which Gradle
+// maps onto this project property itself. Placed after `publishing` so the publication
+// it signs already exists.
+signing {
+    val signingKey = providers.gradleProperty("signingInMemoryKey").orNull
+    if (signingKey != null) {
+        // Empty string, not null, when the key has no passphrase: the null overload
+        // resolves but builds no signatory, and the failure surfaces only when a
+        // signing task runs — "no configured signatory" at release time.
+        useInMemoryPgpKeys(
+            signingKey,
+            providers.gradleProperty("signingInMemoryKeyPassword").getOrElse(""),
+        )
+        sign(publishing.publications)
     }
 }
