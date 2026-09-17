@@ -78,8 +78,8 @@ scenario's `image:` no longer agrees with that file — a half-landed bump would
 otherwise run the *old* node and report green.
 
 ```
-CORE_TAG=0.11.0-rc.32
-MEROD_IMAGE=ghcr.io/calimero-network/merod:0.11.0-rc.32
+CORE_TAG=0.11.0-rc.38
+MEROD_IMAGE=ghcr.io/calimero-network/merod:0.11.0-rc.38
 ```
 
 `ghcr.io/calimero-network/merod` publishes **a tag per rc** (plus `-profiling`

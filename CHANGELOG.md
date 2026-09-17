@@ -1,6 +1,45 @@
 # Changelog
 
-## Unreleased — core 0.11.0-rc.32
+## Unreleased — core 0.11.0-rc.38
+
+Verified against a real `merod 0.11.0-rc.38`.
+
+### Breaking — keys core now refuses
+
+core rc.32 → rc.38 added `deny_unknown_fields` to **37** admin request structs
+that had been permissive. Nothing about this SDK changed; what changed is that
+an extra key it had been sending — tolerated and ignored for releases — became
+a 400 or 422 for the whole call.
+
+- **`CreateGroupInNamespaceRequest` is `{groupName, visibility}`.**
+  `POST /admin-api/namespaces/{id}/groups` is not the group-create body; it
+  reads `groupName` and `visibility`. This request said `name` and `groupId`,
+  and **both** are refused — `422 unknown field \`name\`, expected \`groupName\`
+  or \`visibility\``. So the only call that ever worked was the one that named
+  nothing: naming a subgroup, the reason to pass a request at all, has been
+  failing outright. The sample app's "create channel" hit exactly this.
+  `visibility` is new here and saves the follow-up
+  `setSubgroupVisibility` call.
+
+- **`requester` is gone from every request type (18 of them).** core has never
+  had such a field — not at rc.32, not at rc.38. It was omitted whenever null
+  (`explicitNulls = false`), which is why it never showed: harmless until a
+  caller set it, then a 400 for the whole call. Six types held nothing else and
+  are now empty `@Serializable class`es, so `SyncGroupRequest()` still compiles.
+
+### Tests
+
+`Rc38RequestShapeTest` asserts the **exact key set** of each body. That is the
+only assertion that catches this class of break — checking that the keys you
+care about are present passes just as happily with a fatal one beside them,
+which is how `requester` rode along on eighteen requests unnoticed.
+
+The live-node suite gained the provisioning chain: create a namespace, create a
+**named** subgroup, list it back. Everything it did before either read, or
+asserted a request shape against a mock — and a mock cannot notice that the node
+stopped accepting what the SDK sends.
+
+## Superseded — core 0.11.0-rc.32
 
 Verified against a real `merod 0.11.0-rc.32`, and against a second one for the join.
 

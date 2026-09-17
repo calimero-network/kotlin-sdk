@@ -207,10 +207,13 @@ data class CreateContextResponseData(
     val groupCreated: Boolean? = null,
 )
 
+/**
+ * Empty body. `requester` used to sit here; core has never had such a
+ * field, and since 0.11.0-rc.38 closed the request bodies an extra key is a
+ * 400 for the whole call. Kept as a type so `DeleteContextRequest()` still compiles.
+ */
 @Serializable
-data class DeleteContextRequest(
-    val requester: String? = null,
-)
+class DeleteContextRequest
 
 @Serializable
 data class DeleteContextResponseData(
@@ -612,10 +615,13 @@ data class CreateNamespaceResponseData(
     val namespaceId: String,
 )
 
+/**
+ * Empty body. `requester` used to sit here; core has never had such a
+ * field, and since 0.11.0-rc.38 closed the request bodies an extra key is a
+ * 400 for the whole call. Kept as a type so `DeleteNamespaceRequest()` still compiles.
+ */
 @Serializable
-data class DeleteNamespaceRequest(
-    val requester: String? = null,
-)
+class DeleteNamespaceRequest
 
 @Serializable
 data class DeleteNamespaceResponseData(
@@ -624,7 +630,6 @@ data class DeleteNamespaceResponseData(
 
 @Serializable
 data class CreateNamespaceInvitationRequest(
-    val requester: String? = null,
     /**
      * Clamped to 24h by core (`MAX_INVITATION_VALIDITY_SECS`, rc.29) — a longer
      * value is silently lowered, not refused. It used to default to a year.
@@ -723,10 +728,20 @@ data class JoinNamespaceResponseData(
         get() = namespaceId
 }
 
+/**
+ * Body for `POST /admin-api/namespaces/{id}/groups`.
+ *
+ * ⚠️ This route is NOT the group-create body. It reads [groupName] and
+ * [visibility], and nothing else — a `name` or a `groupId` here is a **422**
+ * from core 0.11.0-rc.38, which is every call that bothered to name the
+ * subgroup. Only the empty body ever worked.
+ */
 @Serializable
 data class CreateGroupInNamespaceRequest(
-    val groupId: String? = null,
-    val name: String? = null,
+    /** The subgroup's name. Sent as `groupName`, which is what the route reads. */
+    val groupName: String? = null,
+    /** `"open"` or `"restricted"` — lowercase; the node rejects other spellings. */
+    val visibility: String? = null,
 )
 
 @Serializable
@@ -894,10 +909,13 @@ data class GroupContextEntry(
 
 typealias ListGroupContextsResponseData = List<GroupContextEntry>
 
+/**
+ * Empty body. `requester` used to sit here; core has never had such a
+ * field, and since 0.11.0-rc.38 closed the request bodies an extra key is a
+ * 400 for the whole call. Kept as a type so `DeleteGroupRequest()` still compiles.
+ */
 @Serializable
-data class DeleteGroupRequest(
-    val requester: String? = null,
-)
+class DeleteGroupRequest
 
 @Serializable
 data class DeleteGroupResponseData(
@@ -915,19 +933,16 @@ data class GroupMemberInput(
 @Serializable
 data class AddGroupMembersRequest(
     val members: List<GroupMemberInput>,
-    val requester: String? = null,
 )
 
 @Serializable
 data class RemoveGroupMembersRequest(
     val members: List<String>,
-    val requester: String? = null,
 )
 
 @Serializable
 data class UpdateMemberRoleRequest(
     val role: String,
-    val requester: String? = null,
 )
 
 // ---- Group Capabilities & Settings -----------------------------------------
@@ -940,19 +955,16 @@ data class MemberCapabilities(
 @Serializable
 data class SetMemberCapabilitiesRequest(
     val capabilities: Int,
-    val requester: String? = null,
 )
 
 @Serializable
 data class SetDefaultCapabilitiesRequest(
     val defaultCapabilities: Int,
-    val requester: String? = null,
 )
 
 @Serializable
 data class SetSubgroupVisibilityRequest(
     val subgroupVisibility: String,
-    val requester: String? = null,
 )
 
 @Serializable
@@ -964,7 +976,6 @@ data class SetTeeAdmissionPolicyRequest(
     val allowedRtmr3: List<String>,
     val allowedTcbStatuses: List<String>,
     val acceptMock: Boolean,
-    val requester: String? = null,
 )
 
 @Serializable
@@ -1009,7 +1020,6 @@ data class MetadataRecord(
 data class SetMetadataRequest(
     val name: String? = null,
     val data: Map<String, String>? = null,
-    val requester: String? = null,
 )
 
 typealias SetGroupMetadataRequest = SetMetadataRequest
@@ -1024,10 +1034,13 @@ data class GetMetadataResponseData(
 
 // ---- Group Sync, Signing & Upgrades ----------------------------------------
 
+/**
+ * Empty body. `requester` used to sit here; core has never had such a
+ * field, and since 0.11.0-rc.38 closed the request bodies an extra key is a
+ * 400 for the whole call. Kept as a type so `SyncGroupRequest()` still compiles.
+ */
 @Serializable
-data class SyncGroupRequest(
-    val requester: String? = null,
-)
+class SyncGroupRequest
 
 @Serializable
 data class SyncGroupResponseData(
@@ -1041,7 +1054,6 @@ data class SyncGroupResponseData(
 @Serializable
 data class UpgradeGroupRequest(
     val targetApplicationId: String,
-    val requester: String? = null,
     /**
      * Fan the upgrade out to every descendant subgroup running the same app (one
      * atomic cascade op). Without it the upgrade applies to the target group only.
@@ -1062,10 +1074,13 @@ data class UpgradeGroupResponseData(
 /** `GroupUpgradeStatusResponseData` is `GroupUpgradeStatus | null`. */
 typealias GroupUpgradeStatusResponseData = GroupUpgradeStatus?
 
+/**
+ * Empty body. `requester` used to sit here; core has never had such a
+ * field, and since 0.11.0-rc.38 closed the request bodies an extra key is a
+ * 400 for the whole call. Kept as a type so `RetryGroupUpgradeRequest()` still compiles.
+ */
 @Serializable
-data class RetryGroupUpgradeRequest(
-    val requester: String? = null,
-)
+class RetryGroupUpgradeRequest
 
 /** Retry returns the same shape as upgrade. */
 typealias RetryGroupUpgradeResponseData = UpgradeGroupResponseData
@@ -1076,7 +1091,6 @@ typealias RetryGroupUpgradeResponseData = UpgradeGroupResponseData
 data class ReparentGroupRequest(
     /** 64-char id of the destination parent group. */
     val newParentId: String,
-    val requester: String? = null,
 )
 
 @Serializable
@@ -1084,16 +1098,18 @@ data class ReparentGroupResponseData(
     val reparented: Boolean,
 )
 
+/**
+ * Empty body. `requester` used to sit here; core has never had such a
+ * field, and since 0.11.0-rc.38 closed the request bodies an extra key is a
+ * 400 for the whole call. Kept as a type so `DetachContextFromGroupRequest()` still compiles.
+ */
 @Serializable
-data class DetachContextFromGroupRequest(
-    val requester: String? = null,
-)
+class DetachContextFromGroupRequest
 
 // ---- Group Invitation & Join -----------------------------------------------
 
 @Serializable
 data class CreateGroupInvitationRequest(
-    val requester: String? = null,
     /** Clamped to 24h by core (`MAX_INVITATION_VALIDITY_SECS`, rc.29). */
     val expirationTimestamp: Long? = null,
     val recursive: Boolean? = null,

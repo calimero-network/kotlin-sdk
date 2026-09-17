@@ -334,7 +334,7 @@ class ChatService(
             return
         }
         runStep("creating channel #$name…") {
-            val sg = mero.admin.createGroupInNamespace(space.id, CreateGroupInNamespaceRequest(name = name))
+            val sg = mero.admin.createGroupInNamespace(space.id, CreateGroupInNamespaceRequest(groupName = name))
             mero.admin.setSubgroupVisibility(
                 sg.groupId,
                 SetSubgroupVisibilityRequest(subgroupVisibility = if (open) "open" else "restricted"),

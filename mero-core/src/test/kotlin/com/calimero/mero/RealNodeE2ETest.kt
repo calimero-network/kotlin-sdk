@@ -1,6 +1,8 @@
 package com.calimero.mero
 
+import com.calimero.mero.admin.CreateGroupInNamespaceRequest
 import com.calimero.mero.admin.CreateNamespaceInvitationResult
+import com.calimero.mero.admin.CreateNamespaceRequest
 import com.calimero.mero.admin.SignedGroupOpenInvitation
 import com.calimero.mero.storage.MemoryTokenStore
 import kotlinx.coroutines.runBlocking
@@ -133,6 +135,52 @@ class RealNodeE2ETest {
                     )
                 }
             }
+            Unit
+        }
+
+    /**
+     * Provisioning, against the real node — the gap this suite had.
+     *
+     * Everything above either READS, or asserts a request shape against a mock.
+     * A mock cannot notice that the node stopped accepting what the SDK sends,
+     * and the reads never create anything, so the two calls an app must make
+     * before it has a context — create a namespace, create a NAMED subgroup —
+     * were covered by neither. The named subgroup had been a 422 for releases:
+     * this route reads `groupName`, and the request said `name`.
+     */
+    @Test
+    fun `the provisioning chain works on a real node`() =
+        runBlocking {
+            assumeTrue("MERO_E2E_NODE_URL not set — skipping live-node e2e", env("MERO_E2E_NODE_URL") != null)
+            val mero = makeClient()
+            mero.authenticate(
+                Credentials(
+                    username = env("MERO_E2E_USER") ?: "dev",
+                    password = env("MERO_E2E_PASS") ?: "dev-password",
+                ),
+            )
+
+            val apps = mero.admin.listApplications().apps
+            assumeTrue("no application installed on the e2e node", apps.isNotEmpty())
+
+            // 400 if the body carries `upgradePolicy`.
+            val ns = mero.admin.createNamespace(CreateNamespaceRequest(applicationId = apps[0].id, name = "e2e-ws"))
+            assertEquals(64, ns.namespaceId.length)
+
+            // 422 if the body spells the name `name`.
+            val subgroup =
+                mero.admin.createGroupInNamespace(
+                    ns.namespaceId,
+                    CreateGroupInNamespaceRequest(groupName = "e2e-room"),
+                )
+            assertTrue("the node should answer with a subgroup id", subgroup.groupId.isNotEmpty())
+
+            // And the subgroup really is there — a body the node accepted but read
+            // as unnamed would satisfy every assertion above.
+            assertTrue(
+                "the subgroup just created should be listed under its namespace",
+                mero.admin.listNamespaceGroups(ns.namespaceId).any { it.groupId == subgroup.groupId },
+            )
             Unit
         }
 

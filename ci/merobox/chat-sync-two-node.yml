@@ -26,7 +26,7 @@ description: A message sent on node 1 in a chat channel must replicate to node 2
 
 nodes:
   count: 2
-  image: ghcr.io/calimero-network/merod:0.11.0-rc.32
+  image: ghcr.io/calimero-network/merod:0.11.0-rc.38
   prefix: calimero-node
 
 nuke_on_start: true
