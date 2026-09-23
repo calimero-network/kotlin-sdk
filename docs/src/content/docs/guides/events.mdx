@@ -59,12 +59,57 @@ For a contract emission (`kind == "StateMutation"`) the encoded contract events
 are nested under `payload`'s `data.events[].data`; each carries its own `kind`
 (`MessageSent` above) and a byte array.
 
+## The token needs `context:subscribe`
+
+:::danger[core 0.11.0-rc.41 put a permission on the event transports]
+Before rc.41 (core#3942), `/sse`, `/sse/subscription` and `/sse/session/{id}`
+required **no permission at all** — any valid token could open a stream. They now
+map to `context:subscribe`, so a token minted with a narrow permission list that
+does not name it is refused with a `403` and no events ever arrive.
+
+`context:subscribe` is **not** implied by `context`: core's `ContextPermission::All`
+arm matches only another `All`. `admin` does cover it, which is what
+`mero.authenticate()` requests — so credential login is unaffected. A scoped SSO
+login must ask for it explicitly:
+
+```kotlin
+AuthLoginOptions(
+    callbackUrl = "myapp://auth-callback",
+    mode = "login",
+    permissions = listOf("context:subscribe", "context:execute"),
+)
+```
+:::
+
 ## Reconnection
 
 The stream reconnects automatically ~3 seconds after a drop and re-subscribes to
 your context ids (the node persists the session's subscriptions). You don't need
 to rebuild the flow on a transient network blip — the collector keeps delivering
 events across reconnects.
+
+A **`403` is the exception**, and it ends the flow rather than restarting it. Two
+things produce one: a token that never carried `context:subscribe`, and a refresh
+family that was revoked (core answers that with `x-auth-error` and an empty body).
+Neither is fixed by waiting, so retrying every three seconds is not resilience —
+it is a silent outage, a live-looking subscription delivering nothing while no
+exception ever reaches the collector. Instead:
+
+- a revoked family throws `AuthRevokedException` — route the user back to login;
+- any other `403` throws `HttpException(status = 403)` — the token is missing
+  `context:subscribe`.
+
+```kotlin
+scope.launch {
+    try {
+        mero.events(listOf(contextId)).collect { reload() }
+    } catch (e: AuthRevokedException) {
+        forceReLogin()
+    } catch (e: HttpException) {
+        if (e.status == 403) reportMissingSubscribeGrant()
+    }
+}
+```
 
 ## Closing the stream
 

@@ -6,6 +6,7 @@ import com.calimero.mero.http.MeroStateException
 import com.calimero.mero.http.deleteJson
 import com.calimero.mero.http.getJson
 import com.calimero.mero.http.postJson
+import com.calimero.mero.http.putJson
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.SerialName
@@ -1159,6 +1160,45 @@ class AdminApi(
             .postJson<RelinkDeviceRequest, ApiEnvelope<RelinkDeviceResponseData>>(
                 "/admin-api/account/devices/$deviceId/relink", request,
             ).data ?: error("relinkDevice")
+
+    /**
+     * Replace a device's scope outright — narrowing it, which [relinkDevice]
+     * cannot do because it is add-only (core rc.41).
+     *
+     * `PUT /admin-api/account/devices/{deviceId}/scope`, body `{scope}` and
+     * nothing else. Pass [DeviceScope.All] for every application, or
+     * [DeviceScope.Only] to name them; an empty `Only` is a `400`, deliberately,
+     * rather than the widest possible ask.
+     *
+     * ⚠️ Must run on the node holding the **account root** — only its key can
+     * sign the replacement. The device need not be online.
+     */
+    suspend fun rescopeDevice(
+        deviceId: String,
+        request: RescopeDeviceRequest,
+    ): RescopeDeviceResponseData =
+        http
+            .putJson<RescopeDeviceRequest, ApiEnvelope<RescopeDeviceResponseData>>(
+                "/admin-api/account/devices/$deviceId/scope", request,
+            ).data ?: error("rescopeDevice")
+
+    /**
+     * Name a device of this account (core rc.41), so a device list renders as
+     * something other than 64 hex characters.
+     *
+     * `PUT /admin-api/account/devices/{deviceId}/label`, body `{label}` and
+     * nothing else. The name replicates — it comes back on
+     * [AccountDevice.label] for every device of the account — and
+     * `labelEpoch` orders it against a rename made elsewhere at the same time.
+     */
+    suspend fun labelDevice(
+        deviceId: String,
+        request: LabelDeviceRequest,
+    ): LabelDeviceResponseData =
+        http
+            .putJson<LabelDeviceRequest, ApiEnvelope<LabelDeviceResponseData>>(
+                "/admin-api/account/devices/$deviceId/label", request,
+            ).data ?: error("labelDevice")
 
     /** Revoke a device from ONE namespace, rotating that namespace's group key. */
     suspend fun revokeAccountDevice(

@@ -229,6 +229,28 @@ that is where the group key rotates.
 | `pairInit(request): PairInitResponseData` | `POST /account/pair-init` |
 | `pairComplete(request): PairCompleteResponseData` | `POST /account/pair-complete` |
 | `relinkDevice(deviceId, request): RelinkDeviceResponseData` | `POST /account/devices/{deviceId}/relink` |
+| `rescopeDevice(deviceId, request): RescopeDeviceResponseData` | `PUT /account/devices/{deviceId}/scope` |
+| `labelDevice(deviceId, request): LabelDeviceResponseData` | `PUT /account/devices/{deviceId}/label` |
+
+<Aside type="tip" title="`relink` adds, `scope` replaces (core 0.11.0-rc.41)">
+`relinkDevice` is add-only, so it can widen a device's reach but never narrow it.
+`rescopeDevice` is the other direction, and a `PUT` for that reason: it replaces
+the scope outright.
+
+The body is `{"scope":"all"}` or `{"scope":{"only":["<application id>", …]}}` —
+serde's externally-tagged enum, so `DeviceScope.All` is the bare **string**
+`"all"`, not an object. Tagged rather than a list whose emptiness means
+everything (which is what `relink` uses): here an empty `only` is refused with a
+`400`, instead of the narrowest slip becoming the widest possible grant.
+
+Both routes must run on the node **holding the account root** — only its key can
+sign the change. The device is not consulted and need not be online.
+
+`labelDevice` names a device so a listing renders as something other than 64 hex
+characters. The name replicates: it comes back on `AccountDevice.label` for every
+device of the account, and `labelEpoch` orders it against a rename made elsewhere
+at the same moment.
+</Aside>
 
 <Aside type="caution" title="Three of these answer flat, not enveloped">
 `GET /account/devices`, `GET /account/applications` and
