@@ -9,6 +9,7 @@ import kotlinx.serialization.encoding.Encoder
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.intOrNull
 import kotlinx.serialization.json.jsonPrimitive
@@ -207,10 +208,13 @@ data class CreateContextResponseData(
     val groupCreated: Boolean? = null,
 )
 
+/**
+ * Empty body. `requester` used to sit here; core has never had such a
+ * field, and since 0.11.0-rc.38 closed the request bodies an extra key is a
+ * 400 for the whole call. Kept as a type so `DeleteContextRequest()` still compiles.
+ */
 @Serializable
-data class DeleteContextRequest(
-    val requester: String? = null,
-)
+class DeleteContextRequest
 
 @Serializable
 data class DeleteContextResponseData(
@@ -253,10 +257,44 @@ data class GenerateContextIdentityResponseData(
     val publicKey: String,
 )
 
+/**
+ * ⚠️ Since core 0.11.0-rc.41 (core#3941) `identities-owned` answers a different
+ * question depending on who asks, and [identitiesOf] is how the node says which.
+ * `owned` used to be a statement about the NODE — the identities it holds a
+ * signing key for. For a delegated caller that is the wrong list twice over, so
+ * it now means *"the identities **you** can act as here"*: the calling account's
+ * certified, unrevoked devices in the group owning this context.
+ *
+ * A node-owner session keeps the node-wide reading, so the same call on the same
+ * context returns different lists for different tokens. Read [identitiesOf]
+ * rather than inferring the reading from your own token.
+ */
 @Serializable
 data class GetContextIdentitiesResponseData(
     val identities: List<String>,
-)
+    /**
+     * Which reading this list is: [IDENTITIES_OF_MEMBERS] (the `/identities`
+     * roster, same for every caller), [IDENTITIES_OF_NODE] (keys this node
+     * signs with) or [IDENTITIES_OF_CALLER] (keys the CLIENT holds).
+     *
+     * `null` from a node predating rc.41, which said nothing about it. Kept a
+     * `String` rather than an enum so a reading added by a later core decodes
+     * instead of throwing — the honest answer for an older node is "it did not
+     * say", and for a newer one "something this SDK has no name for yet".
+     */
+    val identitiesOf: String? = null,
+) {
+    companion object {
+        /** Every identity that is a member of the context. */
+        const val IDENTITIES_OF_MEMBERS = "members"
+
+        /** The identities this NODE holds a signing key for. */
+        const val IDENTITIES_OF_NODE = "node"
+
+        /** The calling account's certified, unrevoked devices — keys the client holds. */
+        const val IDENTITIES_OF_CALLER = "caller"
+    }
+}
 
 // ---- Context join ----------------------------------------------------------
 
@@ -612,10 +650,13 @@ data class CreateNamespaceResponseData(
     val namespaceId: String,
 )
 
+/**
+ * Empty body. `requester` used to sit here; core has never had such a
+ * field, and since 0.11.0-rc.38 closed the request bodies an extra key is a
+ * 400 for the whole call. Kept as a type so `DeleteNamespaceRequest()` still compiles.
+ */
 @Serializable
-data class DeleteNamespaceRequest(
-    val requester: String? = null,
-)
+class DeleteNamespaceRequest
 
 @Serializable
 data class DeleteNamespaceResponseData(
@@ -624,7 +665,6 @@ data class DeleteNamespaceResponseData(
 
 @Serializable
 data class CreateNamespaceInvitationRequest(
-    val requester: String? = null,
     /**
      * Clamped to 24h by core (`MAX_INVITATION_VALIDITY_SECS`, rc.29) — a longer
      * value is silently lowered, not refused. It used to default to a year.
@@ -723,10 +763,20 @@ data class JoinNamespaceResponseData(
         get() = namespaceId
 }
 
+/**
+ * Body for `POST /admin-api/namespaces/{id}/groups`.
+ *
+ * ⚠️ This route is NOT the group-create body. It reads [groupName] and
+ * [visibility], and nothing else — a `name` or a `groupId` here is a **422**
+ * from core 0.11.0-rc.38, which is every call that bothered to name the
+ * subgroup. Only the empty body ever worked.
+ */
 @Serializable
 data class CreateGroupInNamespaceRequest(
-    val groupId: String? = null,
-    val name: String? = null,
+    /** The subgroup's name. Sent as `groupName`, which is what the route reads. */
+    val groupName: String? = null,
+    /** `"open"` or `"restricted"` — lowercase; the node rejects other spellings. */
+    val visibility: String? = null,
 )
 
 @Serializable
@@ -894,10 +944,13 @@ data class GroupContextEntry(
 
 typealias ListGroupContextsResponseData = List<GroupContextEntry>
 
+/**
+ * Empty body. `requester` used to sit here; core has never had such a
+ * field, and since 0.11.0-rc.38 closed the request bodies an extra key is a
+ * 400 for the whole call. Kept as a type so `DeleteGroupRequest()` still compiles.
+ */
 @Serializable
-data class DeleteGroupRequest(
-    val requester: String? = null,
-)
+class DeleteGroupRequest
 
 @Serializable
 data class DeleteGroupResponseData(
@@ -915,19 +968,16 @@ data class GroupMemberInput(
 @Serializable
 data class AddGroupMembersRequest(
     val members: List<GroupMemberInput>,
-    val requester: String? = null,
 )
 
 @Serializable
 data class RemoveGroupMembersRequest(
     val members: List<String>,
-    val requester: String? = null,
 )
 
 @Serializable
 data class UpdateMemberRoleRequest(
     val role: String,
-    val requester: String? = null,
 )
 
 // ---- Group Capabilities & Settings -----------------------------------------
@@ -940,19 +990,16 @@ data class MemberCapabilities(
 @Serializable
 data class SetMemberCapabilitiesRequest(
     val capabilities: Int,
-    val requester: String? = null,
 )
 
 @Serializable
 data class SetDefaultCapabilitiesRequest(
     val defaultCapabilities: Int,
-    val requester: String? = null,
 )
 
 @Serializable
 data class SetSubgroupVisibilityRequest(
     val subgroupVisibility: String,
-    val requester: String? = null,
 )
 
 @Serializable
@@ -964,7 +1011,6 @@ data class SetTeeAdmissionPolicyRequest(
     val allowedRtmr3: List<String>,
     val allowedTcbStatuses: List<String>,
     val acceptMock: Boolean,
-    val requester: String? = null,
 )
 
 @Serializable
@@ -1009,7 +1055,6 @@ data class MetadataRecord(
 data class SetMetadataRequest(
     val name: String? = null,
     val data: Map<String, String>? = null,
-    val requester: String? = null,
 )
 
 typealias SetGroupMetadataRequest = SetMetadataRequest
@@ -1024,10 +1069,13 @@ data class GetMetadataResponseData(
 
 // ---- Group Sync, Signing & Upgrades ----------------------------------------
 
+/**
+ * Empty body. `requester` used to sit here; core has never had such a
+ * field, and since 0.11.0-rc.38 closed the request bodies an extra key is a
+ * 400 for the whole call. Kept as a type so `SyncGroupRequest()` still compiles.
+ */
 @Serializable
-data class SyncGroupRequest(
-    val requester: String? = null,
-)
+class SyncGroupRequest
 
 @Serializable
 data class SyncGroupResponseData(
@@ -1041,7 +1089,6 @@ data class SyncGroupResponseData(
 @Serializable
 data class UpgradeGroupRequest(
     val targetApplicationId: String,
-    val requester: String? = null,
     /**
      * Fan the upgrade out to every descendant subgroup running the same app (one
      * atomic cascade op). Without it the upgrade applies to the target group only.
@@ -1062,10 +1109,13 @@ data class UpgradeGroupResponseData(
 /** `GroupUpgradeStatusResponseData` is `GroupUpgradeStatus | null`. */
 typealias GroupUpgradeStatusResponseData = GroupUpgradeStatus?
 
+/**
+ * Empty body. `requester` used to sit here; core has never had such a
+ * field, and since 0.11.0-rc.38 closed the request bodies an extra key is a
+ * 400 for the whole call. Kept as a type so `RetryGroupUpgradeRequest()` still compiles.
+ */
 @Serializable
-data class RetryGroupUpgradeRequest(
-    val requester: String? = null,
-)
+class RetryGroupUpgradeRequest
 
 /** Retry returns the same shape as upgrade. */
 typealias RetryGroupUpgradeResponseData = UpgradeGroupResponseData
@@ -1076,7 +1126,6 @@ typealias RetryGroupUpgradeResponseData = UpgradeGroupResponseData
 data class ReparentGroupRequest(
     /** 64-char id of the destination parent group. */
     val newParentId: String,
-    val requester: String? = null,
 )
 
 @Serializable
@@ -1084,16 +1133,18 @@ data class ReparentGroupResponseData(
     val reparented: Boolean,
 )
 
+/**
+ * Empty body. `requester` used to sit here; core has never had such a
+ * field, and since 0.11.0-rc.38 closed the request bodies an extra key is a
+ * 400 for the whole call. Kept as a type so `DetachContextFromGroupRequest()` still compiles.
+ */
 @Serializable
-data class DetachContextFromGroupRequest(
-    val requester: String? = null,
-)
+class DetachContextFromGroupRequest
 
 // ---- Group Invitation & Join -----------------------------------------------
 
 @Serializable
 data class CreateGroupInvitationRequest(
-    val requester: String? = null,
     /** Clamped to 24h by core (`MAX_INVITATION_VALIDITY_SECS`, rc.29). */
     val expirationTimestamp: Long? = null,
     val recursive: Boolean? = null,
@@ -1250,6 +1301,25 @@ data class NodeIdentity(
      * question — only the holder can certify another device into the account.
      */
     val holdsAccountRoot: Boolean? = null,
+    /**
+     * The account that withdrew this node's device (rc.41). `null` on a node no
+     * revocation has reached — the field is skipped, never sent as null, so a
+     * node predating it answers exactly as it did before.
+     *
+     * A node that reads this non-null is holding a device its account has
+     * disowned: it can still speak locally, but nothing it publishes will be
+     * accepted. Surface it rather than letting the writes fail one by one.
+     */
+    val revokedFrom: RevokedFrom? = null,
+)
+
+/** Which account withdrew this node's device, and which device it was. */
+@Serializable
+data class RevokedFrom(
+    /** Hex-encoded account id the device spoke for. */
+    val accountId: String,
+    /** Hex-encoded device id that was withdrawn. */
+    val deviceId: String,
 )
 
 // ---- Account: devices, applications, pairing (rc.27 / rc.28) ---------------
@@ -1274,6 +1344,12 @@ data class AccountDevice(
     val applications: List<String> = emptyList(),
     /** Namespaces currently holding a live binding for this device, hex. */
     val namespaces: List<String> = emptyList(),
+    /**
+     * The replicated name the account gave this device (rc.41), absent while it
+     * has none. Every device of the account reads the same one — see
+     * [AdminApi.labelDevice].
+     */
+    val label: String? = null,
 )
 
 /** ⚠️ Flat: `{"applications":[…]}`. */
@@ -1361,6 +1437,129 @@ data class RelinkOutcome(
 data class RelinkSkip(
     val namespaceId: String,
     val reason: String,
+)
+
+// ---- Account: device scope and name (rc.41) --------------------------------
+
+/**
+ * The scope half of a [RescopeDeviceRequest]: `"all"`, or `{"only":[…]}`.
+ *
+ * Tagged rather than a list whose emptiness means everything — which is the
+ * shape [RelinkDeviceRequest] uses, and there the slip (`applications = []`)
+ * is the *widest* possible ask. Here an empty [Only] is refused with a `400`
+ * instead of silently granting every application.
+ */
+@Serializable(with = DeviceScopeSerializer::class)
+sealed class DeviceScope {
+    /** Every application, now and later. On the wire: the bare string `"all"`. */
+    data object All : DeviceScope()
+
+    /**
+     * Only these applications, hex-encoded. On the wire: `{"only":["…"]}`.
+     * An empty list is refused by the node (`400 ScopeReplacementEmpty`).
+     */
+    data class Only(
+        val applications: List<String>,
+    ) : DeviceScope()
+}
+
+/**
+ * Serde's externally-tagged enum, which is a JSON **string** for a unit variant
+ * and an object for a newtype one. Hand-written because kotlinx's polymorphism
+ * cannot express that pair, and the route is `deny_unknown_fields` — a `type`
+ * discriminator beside it would be a `422` for the whole call.
+ */
+internal object DeviceScopeSerializer : KSerializer<DeviceScope> {
+    override val descriptor: SerialDescriptor = JsonElement.serializer().descriptor
+
+    override fun deserialize(decoder: Decoder): DeviceScope {
+        val element = JsonElement.serializer().deserialize(decoder)
+        (element as? JsonObject)?.let { obj ->
+            val only = obj["only"] as? JsonArray ?: error("device scope object has no `only` array")
+            return DeviceScope.Only(only.mapNotNull { it.jsonPrimitive.contentOrNull })
+        }
+        val named = element.jsonPrimitive.contentOrNull
+        require(named == "all") { "unknown device scope: $named" }
+        return DeviceScope.All
+    }
+
+    override fun serialize(
+        encoder: Encoder,
+        value: DeviceScope,
+    ) {
+        val element: JsonElement =
+            when (value) {
+                is DeviceScope.All -> JsonPrimitive("all")
+                is DeviceScope.Only ->
+                    JsonObject(
+                        mapOf("only" to JsonArray(value.applications.map { JsonPrimitive(it) })),
+                    )
+            }
+        JsonElement.serializer().serialize(encoder, element)
+    }
+}
+
+/**
+ * Replace a device's scope outright — the direction [RelinkDeviceRequest]
+ * deliberately cannot go, since relink is add-only. `PUT`, not `POST`: it
+ * replaces rather than accumulates.
+ *
+ * ⚠️ Run on the node that **holds the account root** — only its key can sign the
+ * replacement. The device itself is not consulted and need not be online.
+ */
+@Serializable
+data class RescopeDeviceRequest(
+    val scope: DeviceScope,
+)
+
+@Serializable
+data class RescopeDeviceResponseData(
+    val accountId: String,
+    val deviceId: String,
+    /** The scope after the request. Empty means every application. */
+    val applications: List<String> = emptyList(),
+    /** Namespaces the new scope no longer reaches, and whether the key rotated. */
+    val descoped: List<RescopeDescope> = emptyList(),
+    /** Namespaces the device was linked into by this call. */
+    val linkedIn: List<RelinkOutcome> = emptyList(),
+    /** Namespaces nothing was published into, and why. */
+    val skipped: List<RelinkSkip> = emptyList(),
+)
+
+@Serializable
+data class RescopeDescope(
+    val namespaceId: String,
+    /**
+     * `false` means the device stopped writing there but still holds the key it
+     * had, until an admin rotates.
+     */
+    val keyRotated: Boolean,
+)
+
+/**
+ * Name a device of this account, for a listing to render. The name replicates:
+ * every device of the account reads the same one, and it comes back on
+ * [AccountDevice.label].
+ *
+ * Run on the node holding the account root to name any device; a paired node is
+ * accepted only for that device's own id.
+ */
+@Serializable
+data class LabelDeviceRequest(
+    /** Trimmed, non-empty, bounded and free of control characters. */
+    val label: String,
+)
+
+@Serializable
+data class LabelDeviceResponseData(
+    val accountId: String,
+    val deviceId: String,
+    val label: String,
+    /**
+     * Orders this name against a rename another device of the account made at
+     * the same time. Higher wins.
+     */
+    val labelEpoch: Int,
 )
 
 /** Revoke a device from ONE namespace — this is where the group key rotates. */

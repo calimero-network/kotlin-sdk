@@ -124,6 +124,9 @@ SsoLauncher.launch(
     options = AuthLoginOptions(callbackUrl = "myapp://auth-callback", mode = "login",
                                permissions = listOf("admin")),
 )
+// ⚠️ A *scoped* permission list (anything other than "admin") must name
+// "context:subscribe" since core 0.11.0-rc.41, or /sse and /ws answer 403.
+// It is not implied by "context". See /guides/events/.
 
 // 2. In the deep-link Activity that receives myapp://auth-callback:
 val callback = Mero.parseAuthCallback(intent.dataString ?: "")

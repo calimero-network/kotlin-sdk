@@ -20,12 +20,14 @@ import com.calimero.mero.admin.InstallApplicationRequest
 import com.calimero.mero.admin.InstallDevApplicationRequest
 import com.calimero.mero.admin.JoinGroupRequest
 import com.calimero.mero.admin.JoinNamespaceRequest
+import com.calimero.mero.admin.LabelDeviceRequest
 import com.calimero.mero.admin.PairCompleteRequest
 import com.calimero.mero.admin.PairInitRequest
 import com.calimero.mero.admin.PerformIntentRequest
 import com.calimero.mero.admin.RelinkDeviceRequest
 import com.calimero.mero.admin.RemoveGroupMembersRequest
 import com.calimero.mero.admin.ReparentGroupRequest
+import com.calimero.mero.admin.RescopeDeviceRequest
 import com.calimero.mero.admin.ResyncContextRequest
 import com.calimero.mero.admin.RetryGroupUpgradeRequest
 import com.calimero.mero.admin.RevokeDeviceRequest
@@ -733,6 +735,20 @@ private val accountOps =
             "acc.relink", "Account & Devices", "relinkDevice", "Re-link a certified device",
             listOf(OpField.line("deviceId", "Device ID"), OpField.json("body", "RelinkDeviceRequest", """{}""")),
         ) { m, i -> Fmt.json(m.admin.relinkDevice(i.v("deviceId"), Fmt.decode<RelinkDeviceRequest>(i.v("body")))) },
+        SDKOperation(
+            "acc.rescope", "Account & Devices", "rescopeDevice", "Replace a device's scope (rc.41)",
+            listOf(
+                OpField.line("deviceId", "Device ID"),
+                OpField.json("body", "RescopeDeviceRequest", """{"scope":"all"}"""),
+            ),
+        ) { m, i -> Fmt.json(m.admin.rescopeDevice(i.v("deviceId"), Fmt.decode<RescopeDeviceRequest>(i.v("body")))) },
+        SDKOperation(
+            "acc.label", "Account & Devices", "labelDevice", "Name a device (rc.41)",
+            listOf(
+                OpField.line("deviceId", "Device ID"),
+                OpField.json("body", "LabelDeviceRequest", """{"label":"My phone"}"""),
+            ),
+        ) { m, i -> Fmt.json(m.admin.labelDevice(i.v("deviceId"), Fmt.decode<LabelDeviceRequest>(i.v("body")))) },
         SDKOperation(
             "acc.revoke", "Account & Devices", "revokeAccountDevice", "Revoke a device (rotates the group key)",
             listOf(OpField.line("namespaceId", "Namespace ID"), OpField.json("body", "RevokeDeviceRequest")),

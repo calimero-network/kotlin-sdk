@@ -7,5 +7,5 @@
 #
 # MEROD_IMAGE must name the SAME release as CORE_TAG. ghcr.io/calimero-network/merod
 # publishes a tag per rc — `edge` is a moving target and must not be used here.
-CORE_TAG=0.11.0-rc.32
-MEROD_IMAGE=ghcr.io/calimero-network/merod:0.11.0-rc.32
+CORE_TAG=0.11.0-rc.41
+MEROD_IMAGE=ghcr.io/calimero-network/merod:0.11.0-rc.41

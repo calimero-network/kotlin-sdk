@@ -139,11 +139,13 @@ class AdminApiRequestTest {
     fun `createGroupInNamespace posts under the namespace`() {
         val req =
             capture {
-                mero.admin.createGroupInNamespace("ns-1", CreateGroupInNamespaceRequest(name = "grp"))
+                mero.admin.createGroupInNamespace("ns-1", CreateGroupInNamespaceRequest(groupName = "grp"))
             }
         assertEquals("POST", req.method)
         assertEquals("/admin-api/namespaces/ns-1/groups", req.path)
-        assertTrue(req.body.readUtf8().contains("\"name\":\"grp\""))
+        // `groupName`, not `name`: this route is not the group-create body, and
+        // core 0.11.0-rc.38 answers `name` with a 422.
+        assertTrue(req.body.readUtf8().contains("\"groupName\":\"grp\""))
     }
 
     @Test

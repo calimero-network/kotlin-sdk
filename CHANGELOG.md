@@ -1,6 +1,117 @@
 # Changelog
 
-## Unreleased — core 0.11.0-rc.32
+## Unreleased — core 0.11.0-rc.41
+
+Pinned to `0.11.0-rc.41` in `ci/core-version`, so every node lane — the two
+merobox sync scenarios, the chat-sync scenario and the `merod`-booting e2e jobs —
+boots that release.
+
+### Breaking — the event transports now need a permission
+
+core rc.41 (core#3942) mapped `/sse`, `/sse/subscription`, `/sse/session/{id}`
+and `/ws` to **`context:subscribe`**. They required *no* permission before, so a
+token minted for any purpose at all could open a stream.
+
+- **`context:subscribe` is not implied by `context`.** core's
+  `ContextPermission::All` arm matches only another `All`. `admin` does cover it,
+  which is what `mero.authenticate()` asks for — so credential login is
+  unaffected. A **scoped** SSO login (`AuthLoginOptions.permissions`) must name
+  `context:subscribe` or every stream is refused.
+
+- **A `403` on the stream is now terminal.** `SseClient` treated every failure
+  alike and reconnected after three seconds, forever. Both of the things that
+  produce a 403 here — a token without the grant, and a revoked refresh family
+  (which core answers with `x-auth-error` and an EMPTY body) — are permanent, so
+  that loop was a silent outage: a live-looking subscription delivering nothing,
+  with no exception ever reaching the collector. A revoked family now throws
+  `AuthRevokedException`, any other 403 a plain `HttpException`. Everything that
+  is not a 403 still reconnects.
+
+  The subscription POST is covered too: the stream can open and the *subscribe*
+  still be refused, which used to read as "this context is quiet".
+
+### Added — rc.39 → rc.41 surface
+
+The admin request surface is otherwise **additive** across rc.38 → rc.41: no
+existing request struct lost, renamed or closed a field. What is new:
+
+- `rescopeDevice(deviceId, RescopeDeviceRequest)` — `PUT
+  /admin-api/account/devices/{deviceId}/scope`. The direction `relinkDevice`
+  cannot go: relink is add-only, this replaces. Body `{scope}`, where a
+  `DeviceScope` is the bare string `"all"` or `{"only":[…]}` — serde's
+  externally-tagged enum. An empty `only` is a `400`, deliberately, rather than
+  the narrowest slip becoming the widest grant. Must run on the node holding the
+  account root.
+- `labelDevice(deviceId, LabelDeviceRequest)` — `PUT
+  /admin-api/account/devices/{deviceId}/label`. Body `{label}`. The name
+  replicates and comes back on `AccountDevice.label`; `labelEpoch` orders it
+  against a rename made elsewhere at the same moment.
+- `AccountDevice.label` — the name above, `null` while a device has none.
+- `NodeIdentity.revokedFrom` — which account withdrew this node's device, `null`
+  on a node no revocation has reached. A node reading this non-null still speaks
+  locally, but nothing it publishes is accepted.
+- `GetContextIdentitiesResponseData.identitiesOf` — `members` / `node` /
+  `caller`. rc.41 made `identities-owned` mean *"the identities **you** can act
+  as here"* for a delegated caller while keeping the node-wide reading for a
+  node-owner session, so the same call on the same context answers differently
+  per token. Kept a `String` rather than an enum so a reading a later core adds
+  decodes instead of throwing; `null` from a node predating the field.
+
+### Tests
+
+`Rc41WireShapeTest` asserts the **exact key set** of both new bodies, from their
+first commit rather than after the first outage — the two routes arrived
+`deny_unknown_fields`. A `contains` assertion would pass with a fatal key beside
+it, which is how `requester` rode eighteen bodies undetected until rc.38.
+
+It also pins both directions of each added response field: the field decodes, and
+a body from a node predating it — which **omits** the key, because core skips
+rather than nulls it — still decodes, to `null`.
+
+`SseForbiddenTest` covers the three outcomes that used to be one: a bare 403
+fails the flow after exactly one attempt, a revoked family surfaces as
+`AuthRevokedException`, and a 500 still reconnects.
+
+## Superseded — core 0.11.0-rc.38
+
+Verified against a real `merod 0.11.0-rc.38`.
+
+### Breaking — keys core now refuses
+
+core rc.32 → rc.38 added `deny_unknown_fields` to **37** admin request structs
+that had been permissive. Nothing about this SDK changed; what changed is that
+an extra key it had been sending — tolerated and ignored for releases — became
+a 400 or 422 for the whole call.
+
+- **`CreateGroupInNamespaceRequest` is `{groupName, visibility}`.**
+  `POST /admin-api/namespaces/{id}/groups` is not the group-create body; it
+  reads `groupName` and `visibility`. This request said `name` and `groupId`,
+  and **both** are refused — `422 unknown field \`name\`, expected \`groupName\`
+  or \`visibility\``. So the only call that ever worked was the one that named
+  nothing: naming a subgroup, the reason to pass a request at all, has been
+  failing outright. The sample app's "create channel" hit exactly this.
+  `visibility` is new here and saves the follow-up
+  `setSubgroupVisibility` call.
+
+- **`requester` is gone from every request type (18 of them).** core has never
+  had such a field — not at rc.32, not at rc.38. It was omitted whenever null
+  (`explicitNulls = false`), which is why it never showed: harmless until a
+  caller set it, then a 400 for the whole call. Six types held nothing else and
+  are now empty `@Serializable class`es, so `SyncGroupRequest()` still compiles.
+
+### Tests
+
+`Rc38RequestShapeTest` asserts the **exact key set** of each body. That is the
+only assertion that catches this class of break — checking that the keys you
+care about are present passes just as happily with a fatal one beside them,
+which is how `requester` rode along on eighteen requests unnoticed.
+
+The live-node suite gained the provisioning chain: create a namespace, create a
+**named** subgroup, list it back. Everything it did before either read, or
+asserted a request shape against a mock — and a mock cannot notice that the node
+stopped accepting what the SDK sends.
+
+## Superseded — core 0.11.0-rc.32
 
 Verified against a real `merod 0.11.0-rc.32`, and against a second one for the join.
 
