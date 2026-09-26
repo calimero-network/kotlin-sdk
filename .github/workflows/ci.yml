@@ -41,6 +41,30 @@ jobs:
       - name: Assemble
         run: ./gradlew assembleDebug --stacktrace
 
+      # Nothing else exercises the publishing wiring until a tag is pushed, which is
+      # the worst moment to find out it is broken: a Central version can never be
+      # re-published. This builds the real bundle and runs nmcp's own validation
+      # against Central's rules — coordinates, javadoc jar, signatures, checksums —
+      # with a throwaway key and no credentials, so a broken release config fails on
+      # the pull request instead.
+      - name: Release bundle is well-formed (no credentials needed)
+        run: |
+          set -euo pipefail
+          export GNUPGHOME="$(mktemp -d)"
+          cat > "$GNUPGHOME/params" <<'EOF'
+          %no-protection
+          Key-Type: RSA
+          Key-Length: 3072
+          Name-Real: CI Bundle Check
+          Name-Email: ci@example.invalid
+          Expire-Date: 0
+          %commit
+          EOF
+          gpg --batch --pinentry-mode loopback --gen-key "$GNUPGHOME/params"
+          ORG_GRADLE_PROJECT_signingInMemoryKey="$(gpg --batch --armor --export-secret-keys ci@example.invalid)" \
+            ./gradlew nmcpZipAggregation -PVERSION_NAME=0.0.0-ci --stacktrace
+          unzip -l build/nmcp/zip/aggregation.zip
+
       # The instrumented suites don't run here (no emulator on this job), but they
       # must at least compile — otherwise a UI rename silently rots the e2e tests
       # until the nightly emulator job runs.

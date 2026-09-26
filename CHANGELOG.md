@@ -1,10 +1,23 @@
 # Changelog
 
-## Unreleased — core 0.11.0-rc.41
+## Unreleased — core 0.11.0-rc.44
 
-Pinned to `0.11.0-rc.41` in `ci/core-version`, so every node lane — the two
+Pinned to `0.11.0-rc.44` in `ci/core-version`, so every node lane — the two
 merobox sync scenarios, the chat-sync scenario and the `merod`-booting e2e jobs —
 boots that release.
+
+### rc.41 → rc.44: no wire change
+
+`calimero-server-primitives` (every admin request and response type) is
+byte-identical between rc.41 and rc.44, and no route this SDK calls moved. The
+rest is additive or server-side: delegated sessions may read the namespaces,
+groups and contexts they are in (core#4038/#4039/#4042/#4045), not-found /
+not-a-member errors answer 404/403 instead of 500 (core#4007), and
+`account/link-proof` became `account/sign-with-root` (core#3992) — never called
+here. `merod --public-intents` is now `--delegated-access` (core#4048); no script
+in this repo passes it.
+
+## Superseded — core 0.11.0-rc.41
 
 ### Breaking — the event transports now need a permission
 
