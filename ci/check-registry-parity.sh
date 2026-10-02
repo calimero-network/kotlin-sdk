@@ -55,7 +55,7 @@ while read -r m; do
   for e in "${EXCLUDED[@]}"; do [ "$m" = "$e" ] && skip=true && break; done
   $skip && continue
   # Registry entries may be qualified (e.g. rpc.execute) — match the bare tail too.
-  if ! printf '%s\n' "$reg" | grep -qE "(^|\.)${m}$"; then
+  if ! grep -qE "(^|\.)${m}$" <<< "$reg"; then
     missing="$missing $m"
   fi
 done <<< "$(methods)"
