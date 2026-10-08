@@ -20,7 +20,6 @@ suspend inline fun <reified T> execute(
     contextId: String,
     method: String,
     argsJson: JsonObject = JsonObject(emptyMap()),
-    executorPublicKey: String? = null,
 ): T
 ```
 
@@ -39,9 +38,9 @@ val post: Post = mero.rpc.execute(
 ```
 
 <Aside type="note">
-  `executorPublicKey` names the context identity executing the call. Leave it
-  `null` to use the context's default identity; set it for apps that key state on
-  the caller identity. (It is honored here — not deprecated.)
+  There is no `executorPublicKey`. Core's execute request accepts only
+  `contextId`, `method` and `argsJson` and refuses any other field, so the
+  identity a call runs as is the one the token is bound to.
 </Aside>
 
 ## `executeRaw`
@@ -49,7 +48,7 @@ val post: Post = mero.rpc.execute(
 ```kotlin
 suspend fun executeRaw(
     contextId: String, method: String,
-    argsJson: JsonObject = JsonObject(emptyMap()), executorPublicKey: String? = null,
+    argsJson: JsonObject = JsonObject(emptyMap()),
 ): JsonElement
 ```
 

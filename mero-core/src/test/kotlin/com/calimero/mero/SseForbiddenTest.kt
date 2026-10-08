@@ -101,10 +101,12 @@ class SseForbiddenTest {
             runBlocking { withTimeout(10_000) { client().events(listOf("ctx-1")).first() } }
         }
 
-        assertEquals("/sse?token=an-access-token", server.takeRequest(5, TimeUnit.SECONDS)?.path)
+        val first = server.takeRequest(5, TimeUnit.SECONDS)
+        assertEquals("/sse", first?.path)
+        assertEquals("the token rides in the header, not the URL", "Bearer an-access-token", first?.getHeader("Authorization"))
         assertEquals(
             "a non-403 must be retried",
-            "/sse?token=an-access-token",
+            "/sse",
             server.takeRequest(10, TimeUnit.SECONDS)?.path,
         )
     }

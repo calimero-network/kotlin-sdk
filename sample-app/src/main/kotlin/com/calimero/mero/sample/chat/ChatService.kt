@@ -303,7 +303,7 @@ class ChatService(
         if (executor.isNotEmpty()) {
             val info =
                 runCatching {
-                    mero.rpc.execute<ChatContextInfo>(ctx.contextId, "get_info", JsonObject(emptyMap()), executor)
+                    mero.rpc.execute<ChatContextInfo>(ctx.contextId, "get_info", JsonObject(emptyMap()))
                 }.getOrNull()
             if (info != null) {
                 name = info.name
@@ -356,7 +356,6 @@ class ChatService(
                         put("username", username)
                         put("avatar", JsonNull)
                     },
-                    ctx.memberPublicKey,
                 )
             }
             status = "channel #$name created"
@@ -376,7 +375,7 @@ class ChatService(
                     put("offset", 0)
                     put("search_term", JsonNull)
                 }
-            val page = mero.rpc.execute<ChatMessagePage>(channel.contextId, "get_messages", args, channel.executorId)
+            val page = mero.rpc.execute<ChatMessagePage>(channel.contextId, "get_messages", args)
             messages = page.messages.filter { it.deleted != true }
         } catch (e: Exception) {
             status = "load messages failed: ${short(e)}"
@@ -403,7 +402,7 @@ class ChatService(
                     put("files", JsonNull)
                     put("images", JsonNull)
                 }
-            mero.rpc.execute<ChatMessage>(channel.contextId, "send_message", args, channel.executorId)
+            mero.rpc.execute<ChatMessage>(channel.contextId, "send_message", args)
             loadMessages(channel)
         } catch (e: Exception) {
             status = "send failed: ${short(e)}"
@@ -507,7 +506,6 @@ class ChatService(
                     put("username", username)
                     put("avatar", JsonNull)
                 },
-                executor,
             )
         }
     }

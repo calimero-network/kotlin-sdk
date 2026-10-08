@@ -79,7 +79,7 @@ sealed interface NodeEvent
 
 /**
  * Server-Sent-Events subscription client — the Android analog of mero-js's SSE client (and the
- * Swift SDK's `SseClient`). Opens `GET {base}/sse?token=…` and POSTs `{base}/sse/subscription` to
+ * Swift SDK's `SseClient`). Opens `GET {base}/sse` (Bearer header) and POSTs `{base}/sse/subscription` to
  * (re)subscribe to context ids, then streams [ContextEvent]s as a cold [Flow]. Reconnects
  * automatically after a drop (the node persists session subscriptions), so a chat view can react to
  * new messages without polling.
@@ -165,7 +165,10 @@ class SseClient(
         val request =
             Request
                 .Builder()
-                .url("$base/sse?token=$accessToken")
+                .url("$base/sse")
+                // The bearer goes in the header, like every other call. Core still accepts `?token=`
+                // on `/sse` (a browser EventSource needs it), but a token in a URL ends up in logs.
+                .header("Authorization", "Bearer $accessToken")
                 .header("Accept", "text/event-stream")
                 .build()
 

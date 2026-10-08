@@ -7,6 +7,12 @@ Pinned to `0.11.0-rc.83` in `ci/core-version` (and the matching
 
 ### Breaking
 
+- `RpcClient.execute` / `executeRaw` / `executeWithMetadata` no longer take
+  `executorPublicKey`. Core's execute request is `deny_unknown_fields` with only
+  `contextId`, `method` and `argsJson`, so a call that named one was refused.
+- SSE sends the access token as `Authorization: Bearer` instead of `?token=` in
+  the URL, matching the Swift SDK and keeping tokens out of proxy logs.
+
 - **Re-login after the node upgrade.** core rc.83 added a *required* `key_id`
   claim to its JWTs, so every access and refresh token minted by an older node
   fails verification. Stored sessions are dead: apps must authenticate again.

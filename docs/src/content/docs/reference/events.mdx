@@ -46,8 +46,9 @@ migration progress, `result.groupId` rather than `result.contextId` — as
 silently drops ids the token may not observe. `groupIds` is sent only when
 non-empty, so a context-only subscription is byte-identical to before.
 
-The stream authenticates with `?token=` on `/sse`. Core rc.83 accepts a query
-token **only** on `/ws`, `/sse` and `/sse/*`; everywhere else it is a `401`.
+The stream authenticates with an `Authorization: Bearer` header on `/sse`, like
+every other call. Core rc.83 also accepts a `?token=` query on `/ws`, `/sse` and
+`/sse/*` (for browsers), but a token in a URL ends up in proxy logs.
 
 ## `ContextEvent`
 
