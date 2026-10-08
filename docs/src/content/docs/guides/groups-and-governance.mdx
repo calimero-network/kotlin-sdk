@@ -116,6 +116,7 @@ The bits (mirroring core's `MemberCapabilities`):
 | `Capabilities.CAN_DELETE_SUBGROUP` | `1 shl 6` | delete subgroups |
 | `Capabilities.CAN_MANAGE_VISIBILITY` | `1 shl 7` | change subgroup visibility |
 | `Capabilities.CAN_MANAGE_METADATA` | `1 shl 8` | edit group/member/context metadata |
+| `Capabilities.CAN_AUTHOR_ON_BEHALF` | `1 shl 9` | relay members' writes under their warrants (core rc.83; implied by nothing, not even admin) |
 
 <Aside type="note">
   `hasCap(mask, cap)` is true only when every bit of `cap` is set, so composite
@@ -156,29 +157,56 @@ Restrict which nodes may join a group to those in an approved Trusted Execution
 Environment:
 
 ```kotlin
+// Measurement form: MRTD and RTMR1–3 are all required (core rc.83), even with acceptMock.
 mero.admin.setTeeAdmissionPolicy(
     groupId,
-    SetTeeAdmissionPolicyRequest(
+    SetTeeAdmissionPolicyRequest.measurements(
         allowedMrtd = listOf("<mrtd-hex>"),
-        allowedRtmr0 = emptyList(), allowedRtmr1 = emptyList(),
-        allowedRtmr2 = emptyList(), allowedRtmr3 = emptyList(),
+        allowedRtmr1 = listOf("<rtmr1-hex>"),
+        allowedRtmr2 = listOf("<rtmr2-hex>"),
+        allowedRtmr3 = listOf("<rtmr3-hex>"),
         allowedTcbStatuses = listOf("UpToDate"),
-        acceptMock = false,           // true only for local/dev
-    )
+    ),
 )
 
-val policy = mero.admin.getTeeAdmissionPolicy(groupId)
+// Or the signed-release form: admit any release the mero-tee workflow signed.
+mero.admin.setTeeAdmissionPolicy(
+    groupId,
+    SetTeeAdmissionPolicyRequest.signedRelease(
+        allowedProfiles = listOf("locked-read-only"),
+        mode = TeeAdmissionMode.RELAY,   // admit as RelayTee (may author under warrants)
+    ),
+)
+
+val policy = mero.admin.getTeeAdmissionPolicy(groupId)   // enabled, signedRelease, mode
 ```
 
-Nodes can attest and verify quotes directly:
+Changing the policy is a **root-guarded owner op** since core rc.83: run it on a
+node holding the owner's account root, or pass `rootProof`. See
+[root-guarded owner ops](/reference/admin-api/#root-guarded-owner-ops-core-0110-rc83).
+
+Nodes can attest directly; verify the quote client-side (the node's
+`tee/verify-quote` route is gone):
 
 ```kotlin
 val teeInfo = mero.admin.getTeeInfo()
-val attest  = mero.admin.teeAttest(TeeAttestRequest(nonce = nonce))
-val verdict = mero.admin.teeVerifyQuote(
-    TeeVerifyQuoteRequest(quoteB64 = attest.quoteB64, nonce = nonce)
-)
+val attest  = mero.admin.teeAttest(TeeAttestRequest(nonce = nonce, includeCollateral = true))
+// attest.quote, attest.collateral → your DCAP verifier
 ```
+
+## Owner operations
+
+Transferring a group, repointing a namespace's admin and the owner-only delete
+need the owner account's **root** key (core rc.83):
+
+```kotlin
+val info = mero.admin.getGroupInfo(groupId)   // namespaceId + ownerOpCounter go in the proof
+mero.admin.transferOwnership(groupId, TransferOwnershipRequest(newOwner = adminAccount))
+mero.admin.ownerDeleteGroup(groupId)          // group must hold no contexts
+```
+
+Omit `rootProof` on a node that holds the root; it signs for itself. A `409`
+means the counter moved — re-read and re-sign.
 
 ## Upgrades & migration
 

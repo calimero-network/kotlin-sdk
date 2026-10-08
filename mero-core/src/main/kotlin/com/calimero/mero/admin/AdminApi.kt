@@ -1,7 +1,10 @@
 package com.calimero.mero.admin
 
+import com.calimero.mero.Capabilities
 import com.calimero.mero.auth.ApiEnvelope
 import com.calimero.mero.http.HttpClient
+import com.calimero.mero.http.HttpException
+import com.calimero.mero.http.HttpResponse
 import com.calimero.mero.http.MeroStateException
 import com.calimero.mero.http.deleteJson
 import com.calimero.mero.http.getJson
@@ -13,10 +16,14 @@ import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.encodeToString
+import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.decodeFromJsonElement
+import kotlinx.serialization.json.put
 import java.net.HttpURLConnection
 import java.net.URI
 import java.net.URL
@@ -438,10 +445,17 @@ class AdminApi(
     /**
      * Download a blob's raw bytes. `GET /admin-api/blobs/:id` streams the blob content
      * (e.g. `application/gzip`), NOT JSON. Use [listBlobs] for `{ blobId, size }` metadata.
+     *
+     * [contextId] (sent as `context_id`) names the context the blob belongs to, so an
+     * account-scoped caller is judged against that context's membership rather than
+     * refused outright.
      */
-    suspend fun getBlob(blobId: String): ByteArray =
+    suspend fun getBlob(
+        blobId: String,
+        contextId: String? = null,
+    ): ByteArray =
         http
-            .execute("GET", "/admin-api/blobs/$blobId")
+            .execute("GET", blobPath(blobId, contextId))
             .ensureSuccessful()
             .body
             .toByteArray(Charsets.ISO_8859_1)
@@ -449,10 +463,13 @@ class AdminApi(
     /**
      * Fetch a blob's metadata without downloading it. `HEAD /admin-api/blobs/:id` returns
      * the info in response headers (size via `content-length`, plus `x-blob-*`). Header
-     * names are matched case-insensitively.
+     * names are matched case-insensitively. [contextId] as for [getBlob].
      */
-    suspend fun getBlobInfo(blobId: String): GetBlobInfoResponseData {
-        val res = http.execute("HEAD", "/admin-api/blobs/$blobId").ensureSuccessful()
+    suspend fun getBlobInfo(
+        blobId: String,
+        contextId: String? = null,
+    ): GetBlobInfoResponseData {
+        val res = http.execute("HEAD", blobPath(blobId, contextId)).ensureSuccessful()
         val headers = res.headers.entries.associate { it.key.lowercase() to it.value }
         return GetBlobInfoResponseData(
             blobId = headers["x-blob-id"] ?: blobId,
@@ -608,11 +625,24 @@ class AdminApi(
             ?: error("joinNamespace")
     }
 
+    /**
+     * Create a subgroup in a namespace.
+     *
+     * ⚠️ Always sends a `visibility`. Core 0.11.0-rc.83 flipped what an absent one
+     * means — *restricted* before, **open** now — so leaving it to the node would
+     * make the same call create different subgroups on different nodes. A `null`
+     * request, or a `null` [CreateGroupInNamespaceRequest.visibility], is sent as
+     * [CreateGroupInNamespaceRequest.VISIBILITY_OPEN], rc.83's own default.
+     */
     suspend fun createGroupInNamespace(
         namespaceId: String,
         request: CreateGroupInNamespaceRequest? = null,
     ): CreateGroupInNamespaceResponseData {
-        val body = request?.let { http.json.encodeToString(it) } ?: "{}"
+        val explicit =
+            (request ?: CreateGroupInNamespaceRequest()).let {
+                if (it.visibility == null) it.copy(visibility = CreateGroupInNamespaceRequest.VISIBILITY_OPEN) else it
+            }
+        val body = http.json.encodeToString(explicit)
         val res = http.execute("POST", "/admin-api/namespaces/$namespaceId/groups", body).ensureSuccessful()
         return http.json.decodeFromString<ApiEnvelope<CreateGroupInNamespaceResponseData>>(res.body).data
             ?: error("createGroupInNamespace")
@@ -917,11 +947,17 @@ class AdminApi(
         http.postJson<TeeAttestRequest, ApiEnvelope<TeeAttestResponseData>>("/admin-api/tee/attest", request).data
             ?: error("teeAttest")
 
-    suspend fun teeVerifyQuote(request: TeeVerifyQuoteRequest): TeeVerifyQuoteResponseData =
+    /**
+     * A quote for fleet registration (core rc.83), `POST /admin-api/tee/registration-attest`.
+     * Same response shape as [teeAttest].
+     *
+     * `teeVerifyQuote` is gone: its route was removed from core before rc.41.
+     */
+    suspend fun teeRegistrationAttest(request: TeeRegistrationAttestRequest): TeeAttestResponseData =
         http
-            .postJson<TeeVerifyQuoteRequest, ApiEnvelope<TeeVerifyQuoteResponseData>>(
-                "/admin-api/tee/verify-quote", request,
-            ).data ?: error("teeVerifyQuote")
+            .postJson<TeeRegistrationAttestRequest, ApiEnvelope<TeeAttestResponseData>>(
+                "/admin-api/tee/registration-attest", request,
+            ).data ?: error("teeRegistrationAttest")
 
     // ---- Network -----------------------------------------------------------
 
@@ -936,26 +972,24 @@ class AdminApi(
     suspend fun getUsage(): JsonElement =
         rawJson("GET", "/admin-api/usage", null)
 
-    /**
-     * The node's TLS certificate as PEM (`GET /admin-api/certificate`), or `null`
-     * when it has none.
-     *
-     * A `404 Certificate not found` is a normal answer, not a failure: the route
-     * exists on every node and only serves a file when one is configured. This
-     * used to `ensureSuccessful()` and throw, so calling it on a plain
-     * `merod init` node was an exception rather than an absence.
-     */
-    suspend fun getCertificate(): String? {
-        val res = http.execute("GET", "/admin-api/certificate")
-        if (res.status == 404) return null
-        return res.ensureSuccessful().body
-    }
+    // `getCertificate` is gone: core 0.11.0-rc.83 removed `GET /admin-api/certificate`
+    // (a928b5ed4, "remove the dead certificate route").
 
     // ---- Group / context / namespace membership ----------------------------
 
-    /** Create a standalone group (POST /admin-api/groups). */
+    /**
+     * Create a standalone group (POST /admin-api/groups).
+     *
+     * ⚠️ Never put a `groupId` in the map: core 0.11.0-rc.83 derives group ids and
+     * refuses a body naming one (`deny_unknown_fields`). Prefer the typed overload.
+     */
     suspend fun createGroup(request: Map<String, JsonElement>): CreateGroupResponseData =
         http.postJson<Map<String, JsonElement>, ApiEnvelope<CreateGroupResponseData>>("/admin-api/groups", request).data
+            ?: error("createGroup")
+
+    /** Create a standalone group from the typed body. The id is derived by the node. */
+    suspend fun createGroup(request: CreateGroupRequest): CreateGroupResponseData =
+        http.postJson<CreateGroupRequest, ApiEnvelope<CreateGroupResponseData>>("/admin-api/groups", request).data
             ?: error("createGroup")
 
     /** Leave a group (POST /admin-api/groups/:group_id/leave). */
@@ -996,6 +1030,38 @@ class AdminApi(
     ): JsonElement =
         rawJson("POST", "/admin-api/groups/$groupId/issue-ownership-proof", http.json.encodeToString(request ?: emptyMap()))
 
+    /** Typed [issueOwnershipProof]. The response is flat on the wire; an enveloped one is tolerated. */
+    suspend fun issueOwnershipProof(
+        groupId: String,
+        request: IssueOwnershipProofRequest,
+    ): IssueOwnershipProofResponseData =
+        decodeFlatOrEnveloped(
+            http
+                .execute(
+                    "POST", "/admin-api/groups/$groupId/issue-ownership-proof", http.json.encodeToString(request),
+                ).ensureSuccessful()
+                .body,
+        )
+
+    /**
+     * Typed [issueNamespaceOwnershipProof]. Since core rc.83 the response carries
+     * the namespace's `founding` and the signer's `credential`, so a verifier can
+     * check the founder without holding namespace state.
+     */
+    suspend fun issueNamespaceOwnershipProof(
+        groupId: String,
+        request: IssueNamespaceOwnershipProofRequest,
+    ): IssueOwnershipProofResponseData =
+        decodeFlatOrEnveloped(
+            http
+                .execute(
+                    "POST",
+                    "/admin-api/groups/$groupId/issue-namespace-ownership-proof",
+                    http.json.encodeToString(request),
+                ).ensureSuccessful()
+                .body,
+        )
+
     /** Issue a namespace ownership proof (POST /admin-api/groups/:group_id/issue-namespace-ownership-proof). */
     suspend fun issueNamespaceOwnershipProof(
         groupId: String,
@@ -1027,6 +1093,32 @@ class AdminApi(
         rawJson("POST", "/admin-api/groups/$namespaceId/migration/abort", http.json.encodeToString(request ?: emptyMap()))
 
     // ---- Private helpers ---------------------------------------------------
+
+    private fun blobPath(
+        blobId: String,
+        contextId: String?,
+    ): String =
+        if (contextId == null) {
+            "/admin-api/blobs/$blobId"
+        } else {
+            "/admin-api/blobs/$blobId?context_id=${encodeComponent(contextId)}"
+        }
+
+    /** Decode a payload core may send flat or under `{ data }`. */
+    private inline fun <reified T> decodeFlatOrEnveloped(body: String): T {
+        val element = http.json.parseToJsonElement(body)
+        val inner = (element as? JsonObject)?.get("data")?.takeIf { it is JsonObject } ?: element
+        return http.json.decodeFromJsonElement(inner)
+    }
+
+    /** POST/PUT/DELETE a body whose response is `{}` (or `{data:{}}`) — success is the status. */
+    private suspend fun send(
+        method: String,
+        path: String,
+        body: String?,
+    ) {
+        http.execute(method, path, body).ensureSuccessful()
+    }
 
     /**
      * Core single-envelopes the record: `{ data: MetadataRecord | null }`. "No record
@@ -1126,9 +1218,32 @@ class AdminApi(
     suspend fun listAccountApplications(): AccountApplications =
         http.getJson("/admin-api/account/applications")
 
-    /** Each member of a group and the devices behind it. Flat: `{"members":[…]}`. */
-    suspend fun listMemberDevices(groupId: String): MemberDevices =
-        http.getJson("/admin-api/groups/$groupId/member-devices")
+    /**
+     * Each member of a group and the devices behind it. Flat: `{"members":[…]}`.
+     *
+     * [offset] and [limit] page through the members; both are left off the wire
+     * when `null`, so the node's own defaults (and its clamp on `limit`) apply.
+     */
+    suspend fun listMemberDevices(
+        groupId: String,
+        offset: Int? = null,
+        limit: Int? = null,
+    ): MemberDevices {
+        val query =
+            buildList {
+                offset?.let { add("offset=$it") }
+                limit?.let { add("limit=$it") }
+            }
+        val base = "/admin-api/groups/$groupId/member-devices"
+        return http.getJson(if (query.isEmpty()) base else base + "?" + query.joinToString("&"))
+    }
+
+    /** [listMemberDevices], unwrapped to the member list (mero-js `listGroupMemberDevices`). */
+    suspend fun listGroupMemberDevices(
+        groupId: String,
+        offset: Int? = null,
+        limit: Int? = null,
+    ): List<MemberDeviceGroup> = listMemberDevices(groupId, offset, limit).members
 
     /**
      * Begin pairing a device into an account.
@@ -1228,7 +1343,253 @@ class AdminApi(
                 "/admin-api/namespaces/$namespaceId/admit", request,
             ).data ?: error("admitJoin")
 
+    // ---- Reads as the account and delegated execution (rc.83) --------------
+
+    /**
+     * Read a context as the session's ACCOUNT, without minting a warrant
+     * (`POST /admin-api/contexts/{id}/query`).
+     *
+     * Needs an account-authenticated session; the account must be a member of
+     * the owning group (`403`) and the method declared read-only in the ABI
+     * (`409` — a write needs [performIntent]). A method that refuses its call is a
+     * `400` whose [com.calimero.mero.http.HttpException.errorType] is
+     * `FunctionCallError`.
+     */
+    suspend fun queryContext(
+        contextId: String,
+        request: QueryContextRequest,
+    ): QueryContextResponseData =
+        http
+            .postJson<QueryContextRequest, ApiEnvelope<QueryContextResponseData>>(
+                "/admin-api/contexts/$contextId/query", request,
+            ).data ?: QueryContextResponseData()
+
+    /**
+     * What this node can do for a member in [contextId], read before signing a
+     * warrant: the executor account and key, the release to pin, and whether it
+     * holds `CAN_AUTHOR_ON_BEHALF`. `404` when it holds no identity there or the
+     * group names no release yet.
+     */
+    suspend fun getIntentRelay(contextId: String): IntentRelayInfo =
+        http.getJson<ApiEnvelope<IntentRelayInfo>>("/admin-api/contexts/$contextId/intents").data
+            ?: error("getIntentRelay")
+
+    /**
+     * Create a context under a signed creation warrant
+     * (`POST /admin-api/groups/{id}/context-intents`). The warrant is opaque here.
+     */
+    suspend fun createContextIntent(
+        groupId: String,
+        request: CreateContextIntentRequest,
+    ): CreateContextIntentResponseData =
+        http
+            .postJson<CreateContextIntentRequest, ApiEnvelope<CreateContextIntentResponseData>>(
+                "/admin-api/groups/$groupId/context-intents", request,
+            ).data ?: error("createContextIntent")
+
+    /** Discovery for [createContextIntent]. [author] (an account id) adds `authorMayCreate`. */
+    suspend fun getContextIntentRelay(
+        groupId: String,
+        author: String? = null,
+    ): ContextIntentRelayInfo {
+        val query = author?.let { "?author=" + encodeComponent(it) }.orEmpty()
+        return http.getJson<ApiEnvelope<ContextIntentRelayInfo>>("/admin-api/groups/$groupId/context-intents$query").data
+            ?: error("getContextIntentRelay")
+    }
+
+    /** Apply a governance op under a signed governance warrant (`POST …/governance-intents`). */
+    suspend fun governanceIntent(
+        groupId: String,
+        request: GovernanceIntentRequest,
+    ): GovernanceIntentResponseData =
+        http
+            .postJson<GovernanceIntentRequest, ApiEnvelope<GovernanceIntentResponseData>>(
+                "/admin-api/groups/$groupId/governance-intents", request,
+            ).data ?: error("governanceIntent")
+
+    /** Discovery for [governanceIntent]. */
+    suspend fun getGovernanceIntentRelay(groupId: String): GovernanceIntentRelayInfo =
+        http.getJson<ApiEnvelope<GovernanceIntentRelayInfo>>("/admin-api/groups/$groupId/governance-intents").data
+            ?: error("getGovernanceIntentRelay")
+
+    /**
+     * Carry a signed presence statement (`POST …/presence-intents`). Answers `204`;
+     * refusals are `400`, `403`, `413`, `429` or `503`. `state` is always on the
+     * wire — as `null` to clear the slice.
+     */
+    suspend fun presenceIntent(
+        contextId: String,
+        request: PresenceIntentRequest,
+    ) {
+        val body =
+            buildJsonObject {
+                put("state", request.state?.let { JsonPrimitive(it) } ?: JsonNull)
+                put("seq", request.seq)
+                put("sentAtMs", request.sentAtMs)
+                put("signature", request.signature)
+                put("authorProof", request.authorProof)
+            }
+        send("POST", "/admin-api/contexts/$contextId/presence-intents", http.json.encodeToString(JsonObject.serializer(), body))
+    }
+
+    /**
+     * Where [authorDeviceKey] (base58 or 64 hex) stands in its warrant-nonce
+     * sequence in [contextId].
+     *
+     * ⚠️ Not served by core 0.11.0-rc.83: a `404` throws
+     * [WarrantNonceRouteUnavailableException] — fall back to a local counter
+     * rather than retry. The `u64` fields are read from the literal digits, never
+     * through a `Double`.
+     */
+    suspend fun getWarrantNonce(
+        contextId: String,
+        authorDeviceKey: String,
+    ): WarrantNonceState {
+        val path = "/admin-api/contexts/$contextId/warrant-nonce/${encodeComponent(authorDeviceKey)}"
+        return parseWarrantNonce(path, http.execute("GET", path))
+    }
+
+    /**
+     * [getWarrantNonce] asked the way a delegated client must: by presenting the
+     * device's own credential ([authorProof], hex borsh `AccountProof<DeviceCert>`),
+     * which self-scopes the request. Same answer, same `404` caveat.
+     */
+    suspend fun getWarrantNonceAsAuthor(
+        contextId: String,
+        authorProof: String,
+    ): WarrantNonceState {
+        val path = "/admin-api/contexts/$contextId/warrant-nonce"
+        val body = buildJsonObject { put("authorProof", authorProof) }
+        return parseWarrantNonce(path, http.execute("POST", path, http.json.encodeToString(JsonObject.serializer(), body)))
+    }
+
+    private fun parseWarrantNonce(
+        path: String,
+        res: HttpResponse,
+    ): WarrantNonceState {
+        if (res.status == 404) {
+            val cause = HttpException(res.status, res.body, res.headers, res.url)
+            throw WarrantNonceRouteUnavailableException(path, cause)
+        }
+        return parseWarrantNonceBody(res.ensureSuccessful().body, http.json)
+    }
+
+    // ---- Account root, device links, sealing (rc.83) ------------------------
+
+    /**
+     * Have this node's account root sign [AccountSignWithRootRequest.payload] under
+     * one of [AccountSignDomains] — e.g. to link the account to Calimero Cloud.
+     * Must run on the node holding the root.
+     */
+    suspend fun signWithAccountRoot(request: AccountSignWithRootRequest): AccountSignWithRootResponseData =
+        http
+            .postJson<AccountSignWithRootRequest, ApiEnvelope<AccountSignWithRootResponseData>>(
+                "/admin-api/account/sign-with-root", request,
+            ).data ?: error("signWithAccountRoot")
+
+    /**
+     * Bind a root-certified device into a namespace. `400` when a proof does not
+     * verify or the scope does not reach this namespace; `403` when the device was
+     * revoked here or the account is a member of nothing in it.
+     */
+    suspend fun linkAccountDevice(
+        namespaceId: String,
+        request: LinkAccountDeviceRequest,
+    ): LinkAccountDeviceResponseData =
+        http
+            .postJson<LinkAccountDeviceRequest, ApiEnvelope<LinkAccountDeviceResponseData>>(
+                "/admin-api/namespaces/$namespaceId/account/link-device", request,
+            ).data ?: error("linkAccountDevice")
+
+    /** Seal a small payload to a member account's root key. This node must be a member. */
+    suspend fun sealToAccount(
+        groupId: String,
+        account: String,
+        request: SealToAccountRequest,
+    ): SealedEnvelope =
+        http
+            .postJson<SealToAccountRequest, ApiEnvelope<SealedEnvelope>>(
+                "/admin-api/groups/$groupId/accounts/$account/seal", request,
+            ).data ?: error("sealToAccount")
+
+    // ---- Root-guarded owner ops (rc.83) -------------------------------------
+
+    /** Hand [groupId] to an existing admin. Owner-only, root-guarded — see [TransferOwnershipRequest]. */
+    suspend fun transferOwnership(
+        groupId: String,
+        request: TransferOwnershipRequest,
+    ) = send("POST", "/admin-api/groups/$groupId/transfer-ownership", http.json.encodeToString(request))
+
+    /** Repoint the namespace's admin pin. Owner-only, root-guarded. */
+    suspend fun changeNamespaceAdmin(
+        namespaceId: String,
+        request: ChangeNamespaceAdminRequest,
+    ) = send("POST", "/admin-api/namespaces/$namespaceId/admin", http.json.encodeToString(request))
+
+    /**
+     * Delete a group through the owner-only path: it must hold no contexts, and
+     * the op is root-guarded. [deleteGroup] is the admin-level cascading delete.
+     */
+    suspend fun ownerDeleteGroup(
+        groupId: String,
+        request: OwnerDeleteGroupRequest = OwnerDeleteGroupRequest(),
+    ) = send("POST", "/admin-api/groups/$groupId/owner-delete", http.json.encodeToString(request))
+
+    /** Which admitted TEEs may author as the TEE authority. [groupId] must be a namespace root. */
+    suspend fun setTeeAuthoringPolicy(
+        groupId: String,
+        request: SetTeeAuthoringPolicyRequest,
+    ) = send("PUT", "/admin-api/groups/$groupId/settings/tee-authoring-policy", http.json.encodeToString(request))
+
+    /**
+     * Turn TEE authorship off (the same op as an empty [setTeeAuthoringPolicy]).
+     * With no `rootProof` the DELETE carries no body and the node signs itself.
+     */
+    suspend fun disableTeeAuthoringPolicy(
+        groupId: String,
+        request: DisableTeeAuthoringPolicyRequest = DisableTeeAuthoringPolicyRequest(),
+    ) {
+        val body = request.rootProof?.let { http.json.encodeToString(request) }
+        send("DELETE", "/admin-api/groups/$groupId/settings/tee-authoring-policy", body)
+    }
+
+    // ---- Delegated authorship capability helpers ----------------------------
+
+    /**
+     * Set `CAN_AUTHOR_ON_BEHALF` in [groupId]'s **default** capabilities, so
+     * every non-admin member admitted from now on may relay a delegated write.
+     *
+     * Call it on the namespace root. Not retroactive, and it does not reach
+     * admins — use [grantAuthorship] for those. Read-modify-write, so the other
+     * default bits (notably `CAN_JOIN_OPEN_SUBGROUPS`) survive; a no-op when the
+     * bit is already set.
+     */
+    suspend fun openToDelegatedExecution(groupId: String): CapabilityChange {
+        val current = getDefaultCapabilities(groupId).toLong() and U32
+        if (Capabilities.hasCap(current, Capabilities.CAN_AUTHOR_ON_BEHALF)) return CapabilityChange(false, current)
+        val next = Capabilities.withCap(current, Capabilities.CAN_AUTHOR_ON_BEHALF)
+        setDefaultCapabilities(groupId, SetDefaultCapabilitiesRequest(defaultCapabilities = next.toInt()))
+        return CapabilityChange(true, next)
+    }
+
+    /**
+     * Grant [account] (a member's ACCOUNT id) `CAN_AUTHOR_ON_BEHALF` on [groupId],
+     * leaving its other capabilities alone. A no-op when it already holds it.
+     */
+    suspend fun grantAuthorship(
+        groupId: String,
+        account: String,
+    ): CapabilityChange {
+        val current = getMemberCapabilities(groupId, account).capabilities.toLong() and U32
+        if (Capabilities.hasCap(current, Capabilities.CAN_AUTHOR_ON_BEHALF)) return CapabilityChange(false, current)
+        val next = Capabilities.withCap(current, Capabilities.CAN_AUTHOR_ON_BEHALF)
+        setMemberCapabilities(groupId, account, SetMemberCapabilitiesRequest(capabilities = next.toInt()))
+        return CapabilityChange(true, next)
+    }
+
     private companion object {
+        private const val U32 = 0xFFFF_FFFFL
+
         /** RFC-3986 unreserved set: ALPHA / DIGIT / `-` / `.` / `_` / `~`. */
         private const val UNRESERVED = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~"
 
@@ -1246,5 +1607,48 @@ class AdminApi(
                     }
                 }
             }
+    }
+}
+
+/** What [AdminApi.openToDelegatedExecution] / [AdminApi.grantAuthorship] did. */
+data class CapabilityChange(
+    /** `false` when the bit was already set and nothing was published. */
+    val changed: Boolean,
+    /** The resulting u32 mask. */
+    val capabilities: Long,
+)
+
+/**
+ * Parse a warrant-nonce body into [WarrantNonceState]. The `u64` fields are taken
+ * from the literal JSON digits ([JsonPrimitive.content]), so a value past 2^53
+ * survives. An absent `nextNonce` is the one absence with a meaning: exhausted.
+ */
+internal fun parseWarrantNonceBody(
+    body: String,
+    json: Json,
+): WarrantNonceState {
+    val data =
+        (json.parseToJsonElement(body) as? JsonObject)?.get("data") as? JsonObject
+            ?: error("warrant-nonce response had no `data`: ${body.take(200)}")
+
+    fun u64(field: String): ULong? {
+        val value = data[field] ?: return null
+        if (value is JsonNull) return null
+        val content = (value as? JsonPrimitive)?.content
+        return content?.toULongOrNull() ?: error("warrant-nonce field `$field` is not a u64: $value")
+    }
+
+    fun str(field: String): String = (data[field] as? JsonPrimitive)?.content.orEmpty()
+
+    val contextId = str("contextId")
+    val authorDeviceKey = str("authorDeviceKey")
+    val highWater = u64("highWaterNonce")
+    val window = u64("windowWidth") ?: 0uL
+    val next = u64("nextNonce")
+    return if (next == null) {
+        WarrantNonceState.Exhausted(contextId, authorDeviceKey, highWater ?: ULong.MAX_VALUE, window)
+    } else {
+        val seen = (data["seen"] as? JsonPrimitive)?.content == "true"
+        WarrantNonceState.Open(contextId, authorDeviceKey, seen, highWater, window, next)
     }
 }

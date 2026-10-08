@@ -22,6 +22,7 @@ management**. Every method is a `suspend fun`.
 | `getProviders(): ProvidersResponse` | `GET /auth/providers` |
 | `generateTokens(request: TokenRequest): TokenResponse` | `POST /auth/token` |
 | `refreshToken(request: RefreshTokenRequest): TokenResponse` | `POST /auth/refresh` |
+| `logout(request: LogoutRequest): LogoutResponse` | `POST /auth/logout` (core rc.83) |
 | `validateToken(token: String): ValidationResult` | `HEAD /auth/validate` |
 | `revokeTokens(request: RevokeTokenRequest): RevokeTokenResponse` | `POST /admin/revoke` |
 | `generateMockTokens(request: MockTokenRequest): TokenResponse` | `POST /auth/mock-token` |
@@ -48,6 +49,39 @@ management**. Every method is a `suspend fun`.
   mero.auth.updateKeyPermissions(keyId, UpdateKeyPermissionsRequest(add = listOf("admin")))
   ```
 </Aside>
+
+<Aside type="caution" title="Re-login after upgrading the node to core 0.11.0-rc.83">
+  rc.83 added a **required** `key_id` claim to its JWTs, so every access and
+  refresh token minted by an older node fails verification. Stored sessions do
+  not survive the upgrade — the app must authenticate again. When `/auth/refresh`
+  answers `401` the SDK drops the stored bundle (an unrefreshable pair never
+  becomes refreshable), so `mero.isAuthenticated` reads `false` and the app can
+  route to login.
+
+  Refresh binds the two tokens by `key_id`: a pair from two different token
+  responses is refused ("Access and refresh tokens do not belong to the same
+  key"). The SDK always stores and sends the pair from one response; if you set
+  tokens yourself with `setTokenData`, do the same. `sub` is now an opaque user
+  id, not a key id or a username.
+</Aside>
+
+## Logout
+
+`mero.logout(clientId?)` first retires the refresh token server-side with
+`POST /auth/logout {"refresh_token": …}` (core rc.83), then revokes by
+`clientId` when given, then clears the local store. Both network steps are
+best-effort — the local clear always runs, on a node without the route or with
+the token already invalid (`401`).
+
+## Client keys
+
+`GenerateClientKeyRequest` takes `applicationId` (binds the key to one
+application) and `ttlSecs`. Since core rc.83 client keys expire — 30 days by
+default, with no non-expiring option — their tokens live shorter (access 15 min,
+refresh 7 days), and the grant is restricted: `keys:*` is never grantable, and
+`admin` only to a key bound to no context. Anything else is a `400`. A client key
+acts only on its bound contexts and groups (`403` elsewhere, including SSE
+subscribe and JSON-RPC).
 
 `generateMockTokens` mints a token pair with no provider handshake — dev nodes and
 CI only; production nodes reject it.
@@ -77,6 +111,15 @@ data class TokenRequest(
 data class TokenPayload(val accessToken: String, val refreshToken: String, val error: String? = null)
 data class TokenResponse(val data: TokenPayload, val error: String? = null)
 data class RefreshTokenRequest(val accessToken: String, val refreshToken: String)
+
+data class LogoutRequest(val refreshToken: String)        // {"refresh_token": …}
+data class LogoutResponse(val success: Boolean = false)
+
+data class GenerateClientKeyRequest(
+    val contextId: String? = null, val contextIdentity: String? = null,
+    val permissions: List<String>? = null, val targetNodeUrl: String? = null,
+    val applicationId: String? = null, val ttlSecs: Long? = null,   // rc.83
+)
 
 data class RevokeTokenRequest(val clientId: String)       // core revokes by client_id
 data class RevokeTokenResponse(val success: Boolean, val message: String)

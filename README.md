@@ -10,16 +10,16 @@ See [`ROADMAP-TASKS/task-2-android-sdk.md`] in the planning repo for the full de
 
 > **Status: transport + auth core, full Admin API, JSON-RPC, and the SSE event client — with a
 > full-feature sample app.** Apps can sign in (credentials or hosted SSO), drive the whole
-> ~110-method Admin API (contexts, groups, namespaces, invitations, registry install, root/client
+> ~140-method Admin API (contexts, groups, namespaces, invitations, registry install, root/client
 > keys and permissions), call contracts over JSON-RPC, and subscribe to live node events over SSE.
-> The sample app is an **SDK Explorer** over all 127 catalogued methods plus a native Calimero chat
+> The sample app is an **SDK Explorer** over all 156 catalogued methods plus a native Calimero chat
 > client — feature-for-feature with the Swift SDK's sample. See [Roadmap](#roadmap).
 
 ## Modules
 
 | Module         | What it is                                                                 |
 |----------------|-----------------------------------------------------------------------------|
-| `mero-core`    | The SDK: `Mero`, HTTP transport (OkHttp), `AuthApi` (incl. root/client keys + permissions), `AdminApi` (~110 methods), `RefreshCoordinator`, `TokenStore`, `RpcClient`, `SseClient`/`events()`, SSO utils, `Capabilities`. |
+| `mero-core`    | The SDK: `Mero`, HTTP transport (OkHttp), `AuthApi` (incl. root/client keys + permissions), `AdminApi` (~140 methods), `RefreshCoordinator`, `TokenStore`, `RpcClient`, `SseClient`/`events()`, SSO utils, `Capabilities`. |
 | `mero-compose` | Optional Jetpack Compose UI kit: `MeroProvider`/`useMero`, `LoginSheet`, `ConnectButton`, `MeroClient`. |
 | `mero-testkit` | Test-support: `FakeNode`, a stateful in-memory node on OkHttp MockWebServer, for driving a whole login → call → refresh → logout journey with no live node. |
 | `sample-app`   | A Compose sample with two modes: a deterministic mock login→home→RPC→logout flow (drives the instrumented UI test), and an **SDK Explorer + native chat client** that signs in to a real node and exercises the Admin API, RPC, and live SSE. |
@@ -85,9 +85,18 @@ scope.launch {
     mero.events(listOf(contextId)).collect { event -> /* e.g. re-fetch messages */ }
 }
 
-// Logout (best-effort server revoke + local clear).
+// Logout (best-effort POST /auth/logout + revoke, then local clear).
 mero.logout(clientId = null)
 ```
+
+### Core 0.11.0-rc.83: re-login after the node upgrade
+
+The SDK is pinned to core `0.11.0-rc.83` ([`ci/core-version`](ci/core-version)). That release made
+`key_id` a required JWT claim, so tokens minted by an older node no longer verify: after upgrading
+the node, users sign in again. When `/auth/refresh` answers `401` the SDK drops the stored bundle,
+so `mero.isAuthenticated` turns `false` instead of every call failing. `mero.logout()` now also
+retires the refresh token on the node (`POST /auth/logout`). See [CHANGELOG.md](CHANGELOG.md) for
+the full rc.41 → rc.83 delta.
 
 ### 401 → refresh, done right
 

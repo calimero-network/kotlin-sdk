@@ -65,10 +65,30 @@ class HttpAndAuthTest {
             )
             mero.authenticate(Credentials("a", "b"))
             assertTrue(mero.isAuthenticated)
+            server.takeRequest()
 
+            server.enqueue(MockResponse().setBody("""{"data":{"success":true}}"""))
             mero.logout()
             assertFalse(mero.isAuthenticated)
             assertNull(store.getTokens())
+
+            // The refresh token was retired server-side first (core rc.83 `POST /auth/logout`).
+            val logout = server.takeRequest()
+            assertEquals("POST", logout.method)
+            assertEquals("/auth/logout", logout.path)
+            assertEquals("""{"refresh_token":"R"}""", logout.body.readUtf8())
+        }
+
+    @Test
+    fun `logout still clears locally when the node refuses`() =
+        runBlocking {
+            server.enqueue(
+                MockResponse().setBody("""{"data":{"access_token":"A","refresh_token":"R"}}"""),
+            )
+            mero.authenticate(Credentials("a", "b"))
+            server.enqueue(MockResponse().setResponseCode(401).setBody("""{"error":"Invalid refresh token"}"""))
+            mero.logout()
+            assertFalse(mero.isAuthenticated)
         }
 
     @Test

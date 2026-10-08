@@ -8,13 +8,23 @@ sidebar:
 import { Aside } from '@astrojs/starlight/components';
 
 `mero.admin` (`AdminApi`) is the node's `/admin-api` REST surface — the full set
-(~110 methods) across applications, contexts, namespaces, groups, blobs, aliases,
+(~140 methods) across applications, contexts, namespaces, groups, blobs, aliases,
 capabilities, metadata, upgrades, accounts/devices, and TEE. Every method is a `suspend fun` over
 the shared [`HttpClient`](/get-started/quickstart/); most reads unwrap the node's
 `{ data }` envelope for you. Endpoints below are relative to `/admin-api`.
 
 List methods return the node's full result set — the admin API does not paginate,
-so there are no limit/offset/cursor parameters.
+so there are no limit/offset/cursor parameters. The one exception is
+`listMemberDevices` / `listGroupMemberDevices`, which take optional `offset` and
+`limit`.
+
+:::note[Pinned to core 0.11.0-rc.83]
+rc.83 removed `GET /certificate` (so `getCertificate` is gone), `teeVerifyQuote`
+went with its long-dead route, `CreateGroupRequest` lost `groupId` (ids are
+derived; naming one is a `400`), and an absent subgroup `visibility` now means
+**open**. Refusals answer with typed statuses — see
+[Error model](/reference/error-model/).
+:::
 
 ## Health & status
 
@@ -74,6 +84,7 @@ refused with *"not a signed application bundle"*.
 | `syncContext(contextId? = null)` | `POST /contexts/sync/{contextId?}` |
 | `resyncContext(contextId, request = ResyncContextRequest()): ResyncContextResponseData` | `POST /contexts/{contextId}/resync` |
 | `performIntent(contextId, request): PerformIntentResponseData` | `POST /contexts/{contextId}/intents` |
+| `queryContext(contextId, request): QueryContextResponseData` | `POST /contexts/{contextId}/query` |
 | `updateContextApplication(contextId, request)` | `POST /contexts/{contextId}/application` |
 | `getContextsWithExecutorsForApplication(applicationId): ContextsWithExecutorsResponseData` | `GET /contexts/with-executors/for-application/{applicationId}` |
 
@@ -84,8 +95,8 @@ refused with *"not a signed application bundle"*.
 | `uploadBlob(request): UploadBlobResponseData` | `PUT /blobs` |
 | `deleteBlob(blobId): DeleteBlobResponseData` | `DELETE /blobs/{blobId}` |
 | `listBlobs(): ListBlobsResponseData` | `GET /blobs` |
-| `getBlob(blobId): ByteArray` | `GET /blobs/{blobId}` (raw bytes) |
-| `getBlobInfo(blobId): GetBlobInfoResponseData` | `HEAD /blobs/{blobId}` |
+| `getBlob(blobId, contextId? = null): ByteArray` | `GET /blobs/{blobId}[?context_id=]` (raw bytes) |
+| `getBlobInfo(blobId, contextId? = null): GetBlobInfoResponseData` | `HEAD /blobs/{blobId}[?context_id=]` |
 
 ## Aliases
 
@@ -131,12 +142,23 @@ The list routes answer a **map** — `{"data": {"<alias>": "<value>"}}`, and
 | `leaveNamespace(namespaceId, request? = null)` | `POST /namespaces/{namespaceId}/leave` |
 | `createGroupInNamespace(namespaceId, request? = null): CreateGroupInNamespaceResponseData` | `POST /namespaces/{namespaceId}/groups` |
 | `listNamespaceGroups(namespaceId): List<SubgroupEntry>` | `GET /namespaces/{namespaceId}/groups` |
+| `changeNamespaceAdmin(namespaceId, request)` | `POST /namespaces/{namespaceId}/admin` (root-guarded) |
+| `linkAccountDevice(namespaceId, request): LinkAccountDeviceResponseData` | `POST /namespaces/{namespaceId}/account/link-device` |
+
+:::caution[Subgroups are **open** unless you ask (core 0.11.0-rc.83)]
+rc.83 flipped what an absent `visibility` means on `POST /namespaces/{id}/groups`:
+it used to create a *restricted* subgroup and now creates an **open** one. The SDK
+never leaves it to the node — `createGroupInNamespace` always sends a visibility,
+filling `CreateGroupInNamespaceRequest.VISIBILITY_OPEN` when yours is `null` — so
+the same call creates the same subgroup on any node. Pass `VISIBILITY_RESTRICTED`
+for a membership boundary.
+:::
 
 ## Group management
 
 | Method | Endpoint |
 | --- | --- |
-| `createGroup(request): CreateGroupResponseData` | `POST /groups` |
+| `createGroup(request: CreateGroupRequest): CreateGroupResponseData` | `POST /groups` (also a `Map` overload; never send `groupId`) |
 | `getGroupInfo(groupId): GroupInfoResponseData` | `GET /groups/{groupId}` |
 | `deleteGroup(groupId, request? = null): DeleteGroupResponseData` | `DELETE /groups/{groupId}` |
 | `listGroupMembers(groupId): ListGroupMembersResponseData` | `GET /groups/{groupId}/members` |
@@ -150,6 +172,22 @@ The list routes answer a **map** — `{"data": {"<alias>": "<value>"}}`, and
 | `detachContextFromGroup(groupId, contextId, request? = null)` | `POST /groups/{groupId}/contexts/{contextId}/remove` |
 | `leaveGroup(groupId, request? = null)` | `POST /groups/{groupId}/leave` |
 | `leaveContext(contextId, request? = null)` | `POST /contexts/{contextId}/leave` |
+| `transferOwnership(groupId, request)` | `POST /groups/{groupId}/transfer-ownership` (root-guarded) |
+| `ownerDeleteGroup(groupId, request = OwnerDeleteGroupRequest())` | `POST /groups/{groupId}/owner-delete` (root-guarded) |
+| `sealToAccount(groupId, account, request): SealedEnvelope` | `POST /groups/{groupId}/accounts/{account}/seal` |
+
+### Root-guarded owner ops (core 0.11.0-rc.83)
+
+`transferOwnership`, `changeNamespaceAdmin`, `ownerDeleteGroup`,
+`setTeeAdmissionPolicy` and the TEE authoring policy are **owner** operations:
+they need a proof signed by the owner account's **root** key, not just a device.
+Pass it as `rootProof` (hex borsh `SignedOwnerOp`), or call a node that holds the
+owner's root and let it sign. With neither, `403`.
+
+The proof names the group's `namespaceId` and `ownerOpCounter` — read both from
+`getGroupInfo` first. A stale counter is a **`409`**: re-read and re-sign. An
+empty `rootProof` is a `400`; omit the field instead. `ownerDeleteGroup` needs a
+group with no contexts; `deleteGroup` stays the admin-level cascading delete.
 
 ## Group invitations & join
 
@@ -158,8 +196,10 @@ The list routes answer a **map** — `{"data": {"<alias>": "<value>"}}`, and
 | `createGroupInvitation(groupId, request? = null): CreateGroupInvitationResult` | `POST /groups/{groupId}/invite` |
 | `joinGroup(request): JoinGroupResponseData` | `POST /groups/join` |
 | `joinSubgroupInheritance(groupId): JoinSubgroupInheritanceResponseData` | `POST /groups/{groupId}/join-via-inheritance` |
-| `issueOwnershipProof(groupId, request? = null): JsonElement` | `POST /groups/{groupId}/issue-ownership-proof` |
-| `issueNamespaceOwnershipProof(groupId, request? = null): JsonElement` | `POST /groups/{groupId}/issue-namespace-ownership-proof` |
+| `issueOwnershipProof(groupId, request: IssueOwnershipProofRequest): IssueOwnershipProofResponseData` | `POST /groups/{groupId}/issue-ownership-proof` |
+| `issueNamespaceOwnershipProof(groupId, request: IssueNamespaceOwnershipProofRequest): IssueOwnershipProofResponseData` | `POST /groups/{groupId}/issue-namespace-ownership-proof` (adds `founding`, `credential`) |
+| `issueOwnershipProof(groupId, request: Map? = null): JsonElement` | untyped overload |
+| `issueNamespaceOwnershipProof(groupId, request: Map? = null): JsonElement` | untyped overload |
 
 ## Group capabilities & settings
 
@@ -172,7 +212,27 @@ The list routes answer a **map** — `{"data": {"<alias>": "<value>"}}`, and
 | `getSubgroupVisibility(groupId): String` | (reads `getGroupInfo`) |
 | `setSubgroupVisibility(groupId, request)` | `PUT /groups/{groupId}/settings/subgroup-visibility` |
 | `getTeeAdmissionPolicy(groupId): GetTeeAdmissionPolicyResponseData` | `GET /groups/{groupId}/settings/tee-admission-policy` |
-| `setTeeAdmissionPolicy(groupId, request)` | `PUT /groups/{groupId}/settings/tee-admission-policy` |
+| `setTeeAdmissionPolicy(groupId, request)` | `PUT /groups/{groupId}/settings/tee-admission-policy` (root-guarded) |
+| `setTeeAuthoringPolicy(groupId, request)` | `PUT /groups/{groupId}/settings/tee-authoring-policy` (root-guarded) |
+| `disableTeeAuthoringPolicy(groupId, request = …)` | `DELETE /groups/{groupId}/settings/tee-authoring-policy` |
+| `openToDelegatedExecution(groupId): CapabilityChange` | read-modify-write of the default mask |
+| `grantAuthorship(groupId, account): CapabilityChange` | read-modify-write of one member's mask |
+
+:::caution[Two TEE admission forms (core 0.11.0-rc.83)]
+Build the request with `SetTeeAdmissionPolicyRequest.measurements(…)` or
+`.signedRelease(…)`:
+
+- **Measurements** — `allowedMrtd`, `allowedRtmr1`, `allowedRtmr2` and
+  `allowedRtmr3` must all be non-empty, even with `acceptMock` (a mock fleet
+  names the all-zero measurement). An empty list is a `400`, not a wildcard.
+- **Signed release** — admit any node release the mero-tee workflow signed, for
+  the named image `allowedProfiles` (and an optional `minReleaseVersion`). Every
+  measurement list must then be empty.
+
+Both take `mode` (`TeeAdmissionMode.REPLICA`, the default, or `RELAY`, which
+admits TEEs as `RelayTee` — able to author members' writes under their warrants)
+and `rootProof`. The GET adds `enabled`, `signedRelease` and `mode`.
+:::
 
 ## Metadata
 
@@ -191,7 +251,8 @@ The list routes answer a **map** — `{"data": {"<alias>": "<value>"}}`, and
 | --- | --- |
 | `syncGroup(groupId, request? = null): SyncGroupResponseData` | `POST /groups/{groupId}/sync` |
 | `syncGroupContexts(groupId): ListGroupContextsResponseData` | *composite — see below* |
-| `listMemberDevices(groupId): MemberDevices` | `GET /groups/{groupId}/member-devices` |
+| `listMemberDevices(groupId, offset? = null, limit? = null): MemberDevices` | `GET /groups/{groupId}/member-devices[?offset&limit]` |
+| `listGroupMemberDevices(groupId, offset? = null, limit? = null): List<MemberDeviceGroup>` | same, unwrapped |
 | `upgradeGroup(groupId, request): UpgradeGroupResponseData` | `POST /groups/{groupId}/upgrade` |
 | `getGroupUpgradeStatus(groupId): GroupUpgradeStatusResponseData` | `GET /groups/{groupId}/upgrade/status` |
 | `retryGroupUpgrade(groupId, request? = null): RetryGroupUpgradeResponseData` | `POST /groups/{groupId}/upgrade/retry` |
@@ -231,6 +292,7 @@ that is where the group key rotates.
 | `relinkDevice(deviceId, request): RelinkDeviceResponseData` | `POST /account/devices/{deviceId}/relink` |
 | `rescopeDevice(deviceId, request): RescopeDeviceResponseData` | `PUT /account/devices/{deviceId}/scope` |
 | `labelDevice(deviceId, request): LabelDeviceResponseData` | `PUT /account/devices/{deviceId}/label` |
+| `signWithAccountRoot(request): AccountSignWithRootResponseData` | `POST /account/sign-with-root` |
 
 <Aside type="tip" title="`relink` adds, `scope` replaces (core 0.11.0-rc.41)">
 `relinkDevice` is add-only, so it can widen a device's reach but never narrow it.
@@ -260,13 +322,55 @@ Decoding one as an envelope yields `null` and reads as "empty".
 </Aside>
 
 
+<Aside type="note" title="Pairing statements expire (core 0.11.0-rc.83)">
+The pairing `statement` is now 72 bytes (144 hex) and carries a timestamp:
+`pair-complete` refuses one older than 300 s. The SDK relays it opaquely.
+</Aside>
+
+## Delegated execution (core 0.11.0-rc.83)
+
+A member who cannot run the application — a device holding only a signing key —
+asks a node to act for it under a signed **warrant**. These calls take warrants
+and proofs as opaque hex; minting them is the account layer's job. On a node
+running with `delegated_access`, the routes are public (the warrant is the
+credential).
+
+| Method | Endpoint |
+| --- | --- |
+| `getIntentRelay(contextId): IntentRelayInfo` | `GET /contexts/{contextId}/intents` |
+| `createContextIntent(groupId, request): CreateContextIntentResponseData` | `POST /groups/{groupId}/context-intents` |
+| `getContextIntentRelay(groupId, author? = null): ContextIntentRelayInfo` | `GET /groups/{groupId}/context-intents[?author=]` |
+| `governanceIntent(groupId, request): GovernanceIntentResponseData` | `POST /groups/{groupId}/governance-intents` |
+| `getGovernanceIntentRelay(groupId): GovernanceIntentRelayInfo` | `GET /groups/{groupId}/governance-intents` |
+| `presenceIntent(contextId, request)` | `POST /contexts/{contextId}/presence-intents` (`204`) |
+| `getWarrantNonce(contextId, authorDeviceKey): WarrantNonceState` | `GET /contexts/{contextId}/warrant-nonce/{key}` |
+| `getWarrantNonceAsAuthor(contextId, authorProof): WarrantNonceState` | `POST /contexts/{contextId}/warrant-nonce` |
+
+Read `getIntentRelay` **before** signing: a warrant must name exactly its
+`executorAccount`, `executorKey`, `releaseBytecodeId` and `releaseVersion`, and a
+warrant naming anything else spends a nonce and is refused. `canAuthorOnBehalf:
+false` is an answer, not an error — an admin of `groupId` grants
+`Capabilities.CAN_AUTHOR_ON_BEHALF` (`openToDelegatedExecution` /
+`grantAuthorship`).
+
+:::caution[Warrant-nonce routes are newer than rc.83]
+A node without them answers `404`, which the SDK throws as
+`WarrantNonceRouteUnavailableException` — fall back to your own counter. Nonces
+are `ULong`, parsed from the literal digits, never through a `Double`.
+:::
+
 ## TEE
 
 | Method | Endpoint |
 | --- | --- |
 | `getTeeInfo(): TeeInfoResponseData` | `GET /tee/info` |
 | `teeAttest(request): TeeAttestResponseData` | `POST /tee/attest` |
-| `teeVerifyQuote(request): TeeVerifyQuoteResponseData` | `POST /tee/verify-quote` |
+| `teeRegistrationAttest(request): TeeAttestResponseData` | `POST /tee/registration-attest` |
+
+`TeeAttestRequest` takes optional `bindNodeKey`, `bindTransportKey` and
+`includeCollateral`; the response adds `boundPublicKey`, `transportPublicKey`
+and `collateral`. `teeVerifyQuote` is gone — its route was removed from core
+before rc.41.
 
 ## Network & node
 
@@ -275,7 +379,6 @@ Decoding one as an envelope yields `null` and reads as "empty".
 | `getPeersCount(): PeersCountResponseData` | `GET /peers` |
 | `getNetworkStatus(): JsonElement` | `GET /network/status` |
 | `getUsage(): JsonElement` | `GET /usage` |
-| `getCertificate(): String` | `GET /certificate` |
 
 The file also exports a top-level helper `compareSemver(a: String, b: String): Int`
 for ordering dotted version strings.
@@ -300,6 +403,8 @@ data class Namespace(
     val createdAt: Long, val name: String? = null,
     val memberCount: Int, val contextCount: Int, val subgroupCount: Int,
     val appVersion: String? = null,
+    val founding: NamespaceFounding? = null,   // rc.83: founderAccountId + salt
+    val heldOps: NamespaceHeldOps? = null,     // rc.83: ops held for a missing key
 )
 
 data class GroupInfo(
@@ -308,6 +413,7 @@ data class GroupInfo(
     val activeUpgrade: GroupUpgradeStatus? = null,
     val defaultCapabilities: Int, val subgroupVisibility: String,
     val metadata: MetadataRecord? = null, val groupStateHash: String? = null,
+    val namespaceId: String? = null, val ownerOpCounter: Long? = null,  // rc.83
 )
 
 data class BlobInfo(val blobId: String, val size: Long)  // GetBlobInfoResponseData adds hash?, mimeType?

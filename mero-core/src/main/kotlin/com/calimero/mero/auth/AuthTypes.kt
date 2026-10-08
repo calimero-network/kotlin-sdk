@@ -39,6 +39,21 @@ data class RefreshTokenRequest(
     @SerialName("refresh_token") val refreshToken: String,
 )
 
+/**
+ * `POST /auth/logout` (core rc.83): retire this session's refresh token so it
+ * can never be exchanged again. `deny_unknown_fields` — the refresh token and
+ * nothing else.
+ */
+@Serializable
+data class LogoutRequest(
+    @SerialName("refresh_token") val refreshToken: String,
+)
+
+@Serializable
+data class LogoutResponse(
+    val success: Boolean = false,
+)
+
 /** Core revokes by `client_id` (the request is `{ client_id }`). */
 @Serializable
 data class RevokeTokenRequest(
@@ -132,12 +147,29 @@ data class DeleteKeyResponse(
     val message: String = "",
 )
 
+/**
+ * `POST /admin/client-key` — mint a client key.
+ *
+ * Grant restrictions since core 0.11.0-rc.83 (a `400` "Permission cannot be
+ * granted to a client key" otherwise):
+ * - `keys:*` permissions are never grantable to a client key;
+ * - `admin` only on a key bound to no context (no [contextId], no [contextIdentity]).
+ *
+ * A client key acts only on its bound contexts and groups — elsewhere `403`, and
+ * the same scope applies to JSON-RPC and SSE subscribe. Its tokens live shorter
+ * (access 15 min, refresh 7 days), and the key itself expires: [ttlSecs]
+ * defaults to 30 days on the node, and there is no non-expiring key.
+ */
 @Serializable
 data class GenerateClientKeyRequest(
     @SerialName("context_id") val contextId: String? = null,
     @SerialName("context_identity") val contextIdentity: String? = null,
     val permissions: List<String>? = null,
     @SerialName("target_node_url") val targetNodeUrl: String? = null,
+    /** Bind the key to one application (core rc.83). */
+    @SerialName("application_id") val applicationId: String? = null,
+    /** Seconds the key stays valid. `null` takes the node's default (30 days). */
+    @SerialName("ttl_secs") val ttlSecs: Long? = null,
 )
 
 @Serializable

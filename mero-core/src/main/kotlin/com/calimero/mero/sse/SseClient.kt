@@ -9,6 +9,7 @@ import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.channelFlow
+import kotlinx.coroutines.flow.filterIsInstance
 import kotlinx.coroutines.isActive
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonElement
@@ -41,7 +42,40 @@ data class ContextEvent(
     val contextId: String,
     val kind: String,
     val payload: JsonElement,
-)
+) : NodeEvent {
+    /**
+     * For a presence (`Ephemeral`) event, the account a verified device
+     * certificate names — set when an account's presence was carried by a relay
+     * (core rc.83), `null` for a node's own presence and for every other kind.
+     */
+    val presenceAccount: String?
+        get() =
+            if (kind != KIND_EPHEMERAL) {
+                null
+            } else {
+                ((payload as? JsonObject)?.get("data") as? JsonObject)?.get("account")?.jsonPrimitive?.contentOrNull
+            }
+
+    companion object {
+        /** `result.type` of a presence update. */
+        const val KIND_EPHEMERAL = "Ephemeral"
+    }
+}
+
+/**
+ * A group-keyed event — membership changes and migration progress — delivered to
+ * a stream subscribed with `groupIds`. [kind] is `result.type` (e.g.
+ * `MemberAdded`, `MemberRoleChanged`; roles may read `RelayTee` since core rc.83),
+ * and [payload] the raw `result` JSON.
+ */
+data class GroupEvent(
+    val groupId: String,
+    val kind: String,
+    val payload: JsonElement,
+) : NodeEvent
+
+/** Either kind of event an SSE stream delivers. */
+sealed interface NodeEvent
 
 /**
  * Server-Sent-Events subscription client — the Android analog of mero-js's SSE client (and the
@@ -88,11 +122,29 @@ class SseClient(
      * any drop triggers a reconnect after [RECONNECT_DELAY_MS].
      */
     fun events(contextIds: List<String>): Flow<ContextEvent> =
+        nodeEvents(contextIds, emptyList()).filterIsInstance<ContextEvent>()
+
+    /**
+     * Cold stream of group-keyed events (membership, migration) for [groupIds].
+     * The node drops ids the token may not observe, silently.
+     */
+    fun groupEvents(groupIds: List<String>): Flow<GroupEvent> =
+        nodeEvents(emptyList(), groupIds).filterIsInstance<GroupEvent>()
+
+    /**
+     * One stream for both: context events for [contextIds] and group events for
+     * [groupIds], subscribed together on every (re)connect.
+     */
+    fun nodeEvents(
+        contextIds: List<String>,
+        groupIds: List<String>,
+    ): Flow<NodeEvent> =
         channelFlow {
+            val ids = SubscriptionIds(contextIds, groupIds)
             while (isActive) {
                 val accessToken = token()
                 if (accessToken != null) {
-                    runConnection(contextIds, accessToken)
+                    runConnection(ids, accessToken)
                 }
                 // Wait before reconnecting (or before retrying when no token was available yet). The
                 // cancellable delay exits the loop when the collector is cancelled.
@@ -105,8 +157,8 @@ class SseClient(
      * One connection attempt: open the SSE stream, subscribe on `connect`, forward events into
      * [scope] until the stream ends (server `close`, a drop, or failure). Suspends until then.
      */
-    private suspend fun ProducerScope<ContextEvent>.runConnection(
-        contextIds: List<String>,
+    private suspend fun ProducerScope<NodeEvent>.runConnection(
+        ids: SubscriptionIds,
         accessToken: String,
     ) {
         val base = baseUrl.trimEnd('/')
@@ -120,7 +172,7 @@ class SseClient(
         // Bridges the EventSource callback into structured concurrency: completes when the stream
         // ends (server `close`, drop, or failure) so the caller can reconnect.
         val done = CompletableDeferred<Unit>()
-        val listener = streamListener(base, contextIds, accessToken, done)
+        val listener = streamListener(base, ids, accessToken, done)
 
         val eventSource = EventSources.createFactory(client).newEventSource(request, listener)
         try {
@@ -130,9 +182,9 @@ class SseClient(
         }
     }
 
-    private fun ProducerScope<ContextEvent>.streamListener(
+    private fun ProducerScope<NodeEvent>.streamListener(
         base: String,
-        contextIds: List<String>,
+        ids: SubscriptionIds,
         accessToken: String,
         done: CompletableDeferred<Unit>,
     ) = object : EventSourceListener() {
@@ -151,7 +203,7 @@ class SseClient(
                         obj["session_id"]
                             ?.jsonPrimitive
                             ?.contentOrNull
-                            ?.let { subscribe(base, contextIds, it, accessToken, done) }
+                            ?.let { subscribe(base, ids, it, accessToken, done) }
                     "close" -> {
                         eventSource.cancel()
                         if (!done.isCompleted) done.complete(Unit) // reconnect
@@ -161,9 +213,13 @@ class SseClient(
             }
 
             val result = obj["result"] as? JsonObject ?: return
-            val contextId = result["contextId"]?.jsonPrimitive?.contentOrNull ?: return
             val kind = result["type"]?.jsonPrimitive?.contentOrNull ?: "event"
-            trySend(ContextEvent(contextId = contextId, kind = kind, payload = result))
+            val contextId = result["contextId"]?.jsonPrimitive?.contentOrNull
+            val groupId = result["groupId"]?.jsonPrimitive?.contentOrNull
+            when {
+                contextId != null -> trySend(ContextEvent(contextId = contextId, kind = kind, payload = result))
+                groupId != null -> trySend(GroupEvent(groupId = groupId, kind = kind, payload = result))
+            }
         }
 
         override fun onClosed(eventSource: EventSource) {
@@ -191,7 +247,7 @@ class SseClient(
      */
     private fun subscribe(
         base: String,
-        contextIds: List<String>,
+        ids: SubscriptionIds,
         sessionId: String,
         accessToken: String,
         done: CompletableDeferred<Unit>,
@@ -205,8 +261,13 @@ class SseClient(
                     buildJsonObject {
                         put(
                             "contextIds",
-                            buildJsonArray { contextIds.forEach { add(it) } },
+                            buildJsonArray { ids.contextIds.forEach { add(it) } },
                         )
+                        // Only when asked: core skips an empty list, and a node predating
+                        // group subscriptions denies the unknown key.
+                        if (ids.groupIds.isNotEmpty()) {
+                            put("groupIds", buildJsonArray { ids.groupIds.forEach { add(it) } })
+                        }
                     },
                 )
             }
@@ -247,6 +308,11 @@ class SseClient(
             HttpException(response.code, body, headers, url)
         }
     }
+
+    private data class SubscriptionIds(
+        val contextIds: List<String>,
+        val groupIds: List<String>,
+    )
 
     private companion object {
         const val RECONNECT_DELAY_MS = 3_000L

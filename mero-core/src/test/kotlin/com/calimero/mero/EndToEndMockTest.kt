@@ -82,6 +82,7 @@ class EndToEndMockTest {
             assertFalse(mero.isAuthenticated)
             assertNull(store.getTokens())
             assertEquals("no refresh on the happy path", 0, node.refreshCalls)
+            assertEquals("logout retired the refresh token on the node", 1, node.logoutCalls)
         }
 
     /**
