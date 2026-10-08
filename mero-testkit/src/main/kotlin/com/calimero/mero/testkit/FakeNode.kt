@@ -60,6 +60,16 @@ class FakeNode {
     /** Canned contract output for `/jsonrpc`, keyed by method. */
     var rpcOutputs: MutableMap<String, JsonElement> = mutableMapOf("get" to JsonPrimitive(42))
 
+    /** The last `POST /auth/token` body, verbatim (asserts the `account_proof` login shape). */
+    @Volatile var lastTokenRequestBody: String? = null
+        private set
+
+    /**
+     * The Calimero Cloud side of the fake: the cloud manager's routing reads and a hosted
+     * relay's attest / intents / query routes, answered by this same server. See [FakeCloud].
+     */
+    val cloud: FakeCloud = FakeCloud(rpcOutputs = { rpcOutputs })
+
     /** Start a [MockWebServer] wired to this node's [dispatcher]. Caller owns shutdown. */
     fun start(): MockWebServer =
         MockWebServer().apply {
@@ -90,7 +100,10 @@ class FakeNode {
         val method = request.method ?: "GET"
         val path = (request.path ?: "").substringBefore('?')
         return when (method to path) {
-            "POST" to "/auth/token" -> issueTokens()
+            "POST" to "/auth/token" -> {
+                lastTokenRequestBody = request.body.readUtf8()
+                issueTokens()
+            }
             "POST" to "/auth/refresh" -> refresh(request)
             "POST" to "/auth/logout" -> logout()
             "HEAD" to "/auth/validate" -> validate(request)
@@ -111,7 +124,9 @@ class FakeNode {
             "GET" to "/admin/identity" -> ok(identityBody())
             "GET" to "/admin-api/contexts" -> guarded(request) { ok(buildJsonObject { put("data", buildJsonObject { put("contexts", buildJsonArray { }) }) }) }
             "POST" to "/jsonrpc" -> guarded(request) { jsonrpc(request) }
-            else -> MockResponse().setResponseCode(404)
+            else ->
+                cloud.handle(method, path, request) { guarded(request) { it() } }
+                    ?: MockResponse().setResponseCode(404)
         }
     }
 

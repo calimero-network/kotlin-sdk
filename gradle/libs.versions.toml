@@ -6,6 +6,7 @@ serialization = "1.7.3"
 okhttp = "4.12.0"
 securityCrypto = "1.1.0-alpha06"
 browser = "1.8.0"
+bouncycastle = "1.78.1"
 coreKtx = "1.13.1"
 appcompat = "1.7.0"
 activityCompose = "1.9.2"
@@ -31,6 +32,9 @@ okhttp = { module = "com.squareup.okhttp3:okhttp", version.ref = "okhttp" }
 okhttp-sse = { module = "com.squareup.okhttp3:okhttp-sse", version.ref = "okhttp" }
 okhttp-logging = { module = "com.squareup.okhttp3:logging-interceptor", version.ref = "okhttp" }
 
+# Crypto: Ed25519 / X25519 below API 33 (minSdk 24 has neither in the JCA)
+bouncycastle-prov = { module = "org.bouncycastle:bcprov-jdk18on", version.ref = "bouncycastle" }
+
 # AndroidX
 androidx-core-ktx = { module = "androidx.core:core-ktx", version.ref = "coreKtx" }
 androidx-appcompat = { module = "androidx.appcompat:appcompat", version.ref = "appcompat" }
@@ -47,6 +51,7 @@ compose-ui-tooling = { module = "androidx.compose.ui:ui-tooling" }
 compose-ui-tooling-preview = { module = "androidx.compose.ui:ui-tooling-preview" }
 compose-material3 = { module = "androidx.compose.material3:material3" }
 compose-foundation = { module = "androidx.compose.foundation:foundation" }
+compose-material-icons-extended = { module = "androidx.compose.material:material-icons-extended" }
 
 # Testing
 junit = { module = "junit:junit", version.ref = "junit" }

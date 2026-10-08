@@ -1,6 +1,11 @@
 package com.calimero.mero.sample.explorer
 
 import com.calimero.mero.Mero
+import com.calimero.mero.account.CloudAccount
+import com.calimero.mero.admin.AdminApi
+import com.calimero.mero.auth.AuthApi
+import com.calimero.mero.compose.MeroClient
+import com.calimero.mero.relay.RelayClient
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 
@@ -31,6 +36,28 @@ data class OpField(
 }
 
 /**
+ * What an operation runs against: the signed-in [MeroClient]. [admin] / [auth] are the core
+ * clients pointed at the account's relay (Bearer once the relay session is minted); [relay]
+ * is the warrant client; [account] is the Cloud account layer.
+ */
+class OpEnv(
+    val client: MeroClient,
+) {
+    val account: CloudAccount get() = client.account
+    val relay: RelayClient get() = client.relay ?: error(NO_RELAY)
+    val mero: Mero get() = client.mero ?: error(NO_RELAY)
+    val admin: AdminApi get() = mero.admin
+    val auth: AuthApi get() = mero.auth
+
+    /** JSON-RPC on the relay. An account session gets 403 here — writes go through [relay]. */
+    val rpc: com.calimero.mero.rpc.RpcClient get() = mero.rpc
+
+    private companion object {
+        const val NO_RELAY = "No relay serves this account yet — redeem an invitation first."
+    }
+}
+
+/**
  * A single invokable SDK method: metadata + input fields + an async runner that returns a rendered
  * (pretty-printed) result string. 1:1 with the Swift sample's `SDKOperation`.
  */
@@ -40,7 +67,7 @@ class SDKOperation(
     val name: String,
     val summary: String,
     val fields: List<OpField>,
-    val run: suspend (Mero, Map<String, String>) -> String,
+    val run: suspend (OpEnv, Map<String, String>) -> String,
 )
 
 /** Rendering / decoding helpers shared by the operation catalog. */

@@ -15,6 +15,7 @@ import androidx.test.core.app.ActivityScenario
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
+import org.junit.Ignore
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -24,6 +25,10 @@ import org.junit.runner.RunWith
  * `AppE2ETests`. Excluded from the mock CI (run via `-Pandroid.testInstrumentationRunnerArguments`
  * with `notClass`). Reads `nodeUrl`, `user`, `pass` from the instrumentation runner arguments.
  */
+@Ignore(
+    "Drove the removed node-URL + username/password login. Mobile sign-in is Calimero Cloud only now; " +
+        "this journey needs a live wallet + relay and is to be rewritten against MockWallet or a staging account.",
+)
 @RunWith(AndroidJUnit4::class)
 class AppE2ETest {
     @get:Rule

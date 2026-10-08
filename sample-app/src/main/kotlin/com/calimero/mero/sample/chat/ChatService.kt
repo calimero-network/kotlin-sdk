@@ -1,33 +1,26 @@
 package com.calimero.mero.sample.chat
 
 import android.util.Base64
-import android.util.Log
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
-import com.calimero.mero.Mero
-import com.calimero.mero.admin.CreateContextRequest
-import com.calimero.mero.admin.CreateGroupInNamespaceRequest
-import com.calimero.mero.admin.CreateNamespaceInvitationResult
-import com.calimero.mero.admin.CreateNamespaceRequest
-import com.calimero.mero.admin.JoinNamespaceRequest
-import com.calimero.mero.admin.SetSubgroupVisibilityRequest
 import com.calimero.mero.admin.SignedGroupOpenInvitation
-import com.calimero.mero.admin.SubgroupEntry
+import com.calimero.mero.compose.MeroClient
 import com.calimero.mero.invite.InviteCodec
 import com.calimero.mero.invite.InviteLink
+import com.calimero.mero.relay.CreateContextInput
 import com.calimero.mero.sse.ContextEvent
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.emptyFlow
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
-import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.decodeFromJsonElement
 import kotlinx.serialization.json.put
 import java.util.zip.Inflater
 
@@ -65,16 +58,9 @@ data class ChatContextInfo(
 
 // ---- View models -----------------------------------------------------------
 
-data class ChatSpace(
-    val id: String,
-    val name: String,
-)
-
 data class ChatChannel(
-    val id: String,
-    val groupId: String,
     val contextId: String,
-    val executorId: String,
+    val groupId: String?,
     val name: String,
     val kind: String,
 )
@@ -145,20 +131,17 @@ data class ChatInvite(
 // ---- ChatService -----------------------------------------------------------
 
 /**
- * A native mero-chat frontend over the authenticated [Mero] client: install the app,
- * create/list spaces (namespaces) and channels (subgroup + context), send/read messages
- * (contract RPC), invite, and join. Same logic as mero-chat, in Kotlin, on the same WASM contract.
- * Compose observes its `mutableStateOf` fields directly.
+ * A mero-chat frontend over a Calimero Cloud session: every read and write goes through the
+ * account's relay. Reads use [com.calimero.mero.relay.RelayClient.call] (a session query,
+ * falling back to a warrant when the method is not a view); writes are warrants the device
+ * signs. Channels are the contexts the relay lists for this account (caller-scoped), and a
+ * space is joined by redeeming an invitation as the account
+ * ([MeroClient.joinWithInvitation]). Same `com.calimero.chat` contract as mero-chat.
  */
 class ChatService(
-    private val mero: Mero,
-    username: String,
-    displayNameOverride: String? = null,
+    private val client: MeroClient,
+    displayName: String? = null,
 ) {
-    var appId by mutableStateOf<String?>(null)
-        private set
-    var spaces by mutableStateOf<List<ChatSpace>>(emptyList())
-        private set
     var channels by mutableStateOf<List<ChatChannel>>(emptyList())
         private set
     var messages by mutableStateOf<List<ChatMessage>>(emptyList())
@@ -168,205 +151,60 @@ class ChatService(
     var busy by mutableStateOf(false)
         private set
 
-    /**
-     * The chat display name. [displayNameOverride] (the `chatUser` intent extra, set by run-app-2.sh)
-     * wins over the login user — the login user is always the admin "dev", so the harness passes
-     * dev1/dev2 to keep the two emulators distinguishable in the room.
-     */
-    val username: String = displayNameOverride?.takeIf { it.isNotEmpty() } ?: username.ifEmpty { "dev" }
+    /** The display name registered with `set_profile`. */
+    val username: String = displayName?.takeIf { it.isNotEmpty() } ?: "mobile"
 
-    // ---- setup / install ---------------------------------------------------
-
-    /**
-     * Install the chat app: discover the version from the **registry**, then hand
-     * the node coordinates. Since core#3652 (rc.31) a client cannot name a URL —
-     * the node fetches from the registry it is configured with.
-     *
-     * Discovery has to be the registry read, not `getLatestPackageVersion`: the
-     * node's package routes report what it has **installed**, so for an app it has
-     * never seen they answer `null` / `[]`, which is not the same question.
-     *
-     * "not published" is reported as itself. The previous version treated an empty
-     * version list as a status line and carried on, which left the UI sitting on
-     * the install gate saying nothing useful — precisely the state
-     * `com.calimero.curb` being unpublished put it in.
-     */
-    suspend fun setup() =
-        runStep("installing $PACKAGE_NAME…") {
-            val versions = runCatching { mero.admin.getRegistryVersions(REGISTRY_URL, PACKAGE_NAME) }.getOrNull()
-            if (versions == null) {
-                status = "registry unreachable at $REGISTRY_URL"
-                return@runStep
-            }
-            val version = versions.firstOrNull()
-            if (version == null) {
-                status = "$PACKAGE_NAME is not published on $REGISTRY_URL"
-                return@runStep
-            }
-            val resp = mero.admin.installFromRegistry(PACKAGE_NAME, version)
-            appId = resp.applicationId
-            status = "installed $PACKAGE_NAME@$version"
-            loadSpaces()
-        }
-
-    /** Adopt the chat app id if it is already installed, skipping the install gate. */
-    suspend fun detectInstalled() {
-        if (appId != null) return
-        val apps = runCatching { mero.admin.listApplications() }.getOrNull() ?: return
-        val installed = apps.apps.firstOrNull { it.packageName == PACKAGE_NAME } ?: return
-        appId = installed.id
-        status = "$PACKAGE_NAME already installed"
-        loadSpaces()
-    }
-
-    /** Live SSE event stream for a channel's context (new messages, etc.). */
-    fun eventStream(channel: ChatChannel): Flow<ContextEvent> = mero.events(listOf(channel.contextId))
-
-    // ---- spaces ------------------------------------------------------------
-
-    suspend fun loadSpaces() {
-        try {
-            // Show every namespace this node belongs to (created OR joined). We used to filter to our
-            // own app id — but an *invited* space targets the inviter's app id, which can differ,
-            // so that hid joined spaces entirely (they showed on the admin dashboard but not here).
-            spaces = mero.admin.listNamespaces().map { ChatSpace(it.namespaceId, it.name ?: "space") }
-        } catch (e: Exception) {
-            status = "load spaces failed: ${short(e)}"
-        }
-    }
-
-    suspend fun createSpace(name: String) {
-        val app = appId
-        if (app == null) {
-            status = "install the app first"
-            return
-        }
-        runStep("creating space \"$name\"…") {
-            val resp =
-                mero.admin.createNamespace(
-                    CreateNamespaceRequest(applicationId = app, name = name),
-                )
-            status = "space created: ${resp.namespaceId}"
-            loadSpaces()
-        }
-    }
+    /** Live events for a channel, once the relay session (Bearer) is up; nothing otherwise. */
+    fun eventStream(channel: ChatChannel): Flow<ContextEvent> =
+        client.mero?.takeIf { client.state.value.sessionReady }?.events(listOf(channel.contextId)) ?: emptyFlow()
 
     // ---- channels ----------------------------------------------------------
 
-    suspend fun loadChannels(space: ChatSpace) {
-        try {
-            channels = emptyList()
-            val out = mero.admin.listNamespaceGroups(space.id).mapNotNull { buildChannel(it) }
-            channels = out
-            if (out.isEmpty()) diagnoseEmptySpace()
-        } catch (e: Exception) {
-            status = "load channels failed: ${short(e)}"
+    /** The contexts this account belongs to on its relay, named by the contract's `get_info`. */
+    suspend fun loadChannels() =
+        runStep("Loading channels") {
+            val mero = client.mero ?: return@runStep
+            val contexts = mero.admin.getContexts().contexts
+            channels =
+                contexts.mapNotNull { ctx ->
+                    val info = runCatching { call<ChatContextInfo>(ctx.id, "get_info") }.getOrNull()
+                    if (info?.contextType == "Dm") return@mapNotNull null
+                    ChatChannel(ctx.id, ctx.groupId, info?.name ?: "channel", info?.contextType ?: "Channel")
+                }
+            status = if (channels.isEmpty()) "" else "${channels.size} channel(s)"
         }
-    }
 
-    /**
-     * When a joined space shows no channels, say WHY. A context executes against the group's
-     * bytecode-derived app_key, so what matters is (a) that the chat app is installed here at all and (b) that
-     * this node has a peer to sync the context state from — a joined-but-uninitialized context
-     * (hash 1111…) is almost always "0 peers", not an app-id mismatch.
-     */
-    private suspend fun diagnoseEmptySpace() {
-        val hasChatApp =
-            runCatching { mero.admin.listApplications().apps }
-                .getOrNull()
-                .orEmpty()
-                .any { it.packageName == PACKAGE_NAME }
-        val peers = runCatching { mero.admin.getPeersCount().count }.getOrNull()
-        status =
-            when {
-                !hasChatApp -> "the chat app isn't installed on this node — install it, then rejoin."
-                peers == 0 ->
-                    "Joined, but this node has 0 peers — it can't sync the channel from the inviter. " +
-                        "Make sure this node is networked to the inviter's node (swarm/bootstrap peers)."
-                else -> "No channels yet — still syncing from the inviter (${peers ?: "?"} peer(s)). Pull to refresh."
-            }
-    }
-
-    /** Resolve a subgroup to a display channel (`get_info` for name/kind); null to skip (DMs). */
-    private suspend fun buildChannel(sg: SubgroupEntry): ChatChannel? {
-        val ctx = mero.admin.listGroupContexts(sg.groupId).firstOrNull() ?: return null
-        var executor = ownedIdentity(ctx.contextId)
-        if (executor.isEmpty()) {
-            // Joined space whose context we haven't joined yet — join it so we get a member identity
-            // (otherwise it looks uninitialized), and trigger a state pull so the store root syncs.
-            runCatching { mero.admin.joinContext(ctx.contextId) }
-            runCatching { mero.admin.syncContext(ctx.contextId) }
-            executor = ownedIdentity(ctx.contextId)
-        }
-        var name = sg.name ?: ctx.name ?: "channel"
-        var kind = "Channel"
-        if (executor.isNotEmpty()) {
-            val info =
-                runCatching {
-                    mero.rpc.execute<ChatContextInfo>(ctx.contextId, "get_info", JsonObject(emptyMap()))
-                }.getOrNull()
-            if (info != null) {
-                name = info.name
-                kind = info.contextType
-            }
-        }
-        if (kind == "Dm") return null
-        return ChatChannel(ctx.contextId, sg.groupId, ctx.contextId, executor, name, kind)
-    }
-
-    private suspend fun ownedIdentity(contextId: String): String =
-        runCatching {
-            mero.admin
-                .getContextIdentitiesOwned(contextId)
-                .identities
-                .firstOrNull()
-        }.getOrNull()
-            .orEmpty()
-
+    /** Create a channel in a group the relay may create in on the account's behalf. */
     suspend fun createChannel(
-        space: ChatSpace,
+        groupId: String,
+        applicationId: String,
         name: String,
-        open: Boolean,
-    ) {
-        val app = appId
-        if (app == null) {
-            status = "install the app first"
-            return
-        }
-        runStep("creating channel #$name…") {
-            val sg = mero.admin.createGroupInNamespace(space.id, CreateGroupInNamespaceRequest(groupName = name))
-            mero.admin.setSubgroupVisibility(
-                sg.groupId,
-                SetSubgroupVisibilityRequest(subgroupVisibility = if (open) "open" else "restricted"),
+    ) = runStep("Creating #$name") {
+        val relay = client.relay ?: error("no relay")
+        val created =
+            relay.createContext(
+                CreateContextInput(
+                    groupId = groupId,
+                    applicationId = applicationId,
+                    name = name,
+                    initArgs =
+                        buildJsonObject {
+                            put("name", name)
+                            put("context_type", "Channel")
+                            put("description", "")
+                            put("created_at", System.currentTimeMillis() / MILLIS_PER_SECOND)
+                            put("creator_username", username)
+                        },
+                ),
             )
-            val ctx =
-                mero.admin.createContext(
-                    CreateContextRequest(
-                        applicationId = app,
-                        groupId = sg.groupId,
-                        initializationParams = initParams(name),
-                        name = name,
-                    ),
-                )
-            runCatching {
-                mero.rpc.execute<JsonElement>(
-                    ctx.contextId,
-                    "set_profile",
-                    buildJsonObject {
-                        put("username", username)
-                        put("avatar", JsonNull)
-                    },
-                )
-            }
-            status = "channel #$name created"
-            loadChannels(space)
-        }
+        registerProfile(created.contextId)
+        status = "Channel #$name created"
+        loadChannels()
     }
 
     // ---- messages ----------------------------------------------------------
 
     suspend fun loadMessages(channel: ChatChannel) {
-        if (channel.executorId.isEmpty()) return
         try {
             val args =
                 buildJsonObject {
@@ -375,10 +213,10 @@ class ChatService(
                     put("offset", 0)
                     put("search_term", JsonNull)
                 }
-            val page = mero.rpc.execute<ChatMessagePage>(channel.contextId, "get_messages", args)
+            val page = call<ChatMessagePage>(channel.contextId, "get_messages", args)
             messages = page.messages.filter { it.deleted != true }
         } catch (e: Exception) {
-            status = "load messages failed: ${short(e)}"
+            status = "Couldn't load messages: ${short(e)}"
         }
     }
 
@@ -386,8 +224,8 @@ class ChatService(
         channel: ChatChannel,
         text: String,
     ) {
-        if (text.isEmpty() || channel.executorId.isEmpty()) return
-        val ts = System.currentTimeMillis()
+        if (text.isEmpty()) return
+        val relay = client.relay ?: return
         try {
             val args =
                 buildJsonObject {
@@ -395,111 +233,23 @@ class ChatService(
                     put("mentions", buildJsonArray { })
                     put("mentions_usernames", buildJsonArray { })
                     put("parent_message", JsonNull)
-                    put("timestamp", ts)
-                    // No `sender_username`: com.calimero.chat's `send_message` has no such
-                    // parameter (curb's did), and an extra one panics the guest at argument
-                    // deserialization. The sender is the executing identity.
+                    put("timestamp", System.currentTimeMillis())
                     put("files", JsonNull)
                     put("images", JsonNull)
                 }
-            mero.rpc.execute<ChatMessage>(channel.contextId, "send_message", args)
+            // A write: signed as a warrant and spent by the relay as this account.
+            relay.execute(channel.contextId, "send_message", args)
             loadMessages(channel)
         } catch (e: Exception) {
-            status = "send failed: ${short(e)}"
+            status = "Couldn't send: ${short(e)}"
         }
     }
 
-    // ---- invite / join -----------------------------------------------------
-
-    suspend fun makeInvite(space: ChatSpace): String? {
-        return try {
-            val signed =
-                when (val result = mero.admin.createNamespaceInvitation(space.id)) {
-                    is CreateNamespaceInvitationResult.Single -> result.data.invitation
-                    is CreateNamespaceInvitationResult.Recursive ->
-                        result.data.invitations
-                            .firstOrNull()
-                            ?.invitation
-                }
-            if (signed == null) {
-                status = "invite: node returned no invitations"
-                return null
-            }
-            val code = ChatInvite(space.id, space.name, signed).encoded()
-            // Also grabbable from logcat — the two-emulator harness scrapes it from there.
-            Log.i(TAG, "invite code for \"${space.name}\": $code")
-            status = "invite ready — Copy or Share it"
-            code
-        } catch (e: Exception) {
-            status = "invite failed: ${short(e)}"
-            Log.w(TAG, "invite failed", e)
-            null
-        }
-    }
-
-    suspend fun joinSpace(inviteCode: String) {
-        busy = true
-        status = "Reading invite…"
-        try {
-            val invite = ChatInvite.decode(inviteCode)
-            if (invite == null) {
-                status = "✗ Invalid invite code"
-                return
-            }
-            try {
-                status = "Joining \"${invite.spaceName}\"…"
-                val joined =
-                    mero.admin.joinNamespace(
-                        invite.namespaceId,
-                        JoinNamespaceRequest(invitation = invite.invitation, groupName = invite.spaceName),
-                    )
-                val synced = syncJoinedSpace(invite, joined.namespaceId)
-                loadSpaces()
-                status =
-                    if (synced) {
-                        "✓ Joined \"${invite.spaceName}\" — ${channels.size} channel(s)"
-                    } else {
-                        "Joined \"${invite.spaceName}\". Channels still syncing — open it and pull to refresh."
-                    }
-            } catch (e: Exception) {
-                status = "✗ Join failed: ${short(e)}"
-            }
-        } finally {
-            busy = false
-        }
-    }
-
-    /**
-     * Cross-node sync is async — pull the group, then JOIN each channel's context so it is initialized
-     * on this node (the step mero-chat does, and the reason a joined space looked "uninitialized"
-     * before). Retries until the contexts arrive + join, showing progress the whole way.
-     */
-    private suspend fun syncJoinedSpace(
-        invite: ChatInvite,
-        groupId: String,
-    ): Boolean {
-        for (attempt in 1..JOIN_ATTEMPTS) {
-            status = "Syncing \"${invite.spaceName}\" from the inviter… ($attempt/$JOIN_ATTEMPTS)"
-            // SDK convenience: join + state-pull every context in the group so it initializes
-            // instead of staying uninitialized (1111…).
-            val contexts = runCatching { mero.admin.syncGroupContexts(groupId) }.getOrNull().orEmpty()
-            for (ctx in contexts) registerProfile(ctx.contextId)
-            loadSpaces()
-            spaces.firstOrNull { it.id == invite.namespaceId }?.let { space ->
-                loadChannels(space)
-                if (channels.isNotEmpty()) return true
-            }
-            delay(JOIN_RETRY_MS)
-        }
-        return false
-    }
-
-    /** Register our display name in an initialized context (`set_profile`). */
-    private suspend fun registerProfile(contextId: String) {
-        val executor = ownedIdentity(contextId)
-        if (executor.isEmpty()) return
+    /** Register our display name in a channel (`set_profile`, a warranted write). */
+    suspend fun registerProfile(contextId: String) {
+        val relay = client.relay ?: return
         runCatching {
-            mero.rpc.execute<JsonElement>(
+            relay.execute(
                 contextId,
                 "set_profile",
                 buildJsonObject {
@@ -510,27 +260,37 @@ class ChatService(
         }
     }
 
-    /** Manually re-sync a space's channels (for when cross-node sync lags). */
-    suspend fun resync(space: ChatSpace) =
-        runStep("Syncing \"${space.name}\"…") {
-            // SDK convenience: join + state-pull every context in the group.
-            runCatching { mero.admin.syncGroupContexts(space.id) }
-            loadChannels(space)
-            status = if (channels.isEmpty()) "No channels yet — still syncing" else "✓ ${channels.size} channel(s)"
+    // ---- join --------------------------------------------------------------
+
+    /** Redeem an invite code as this account: the admitting node becomes (or stays) its relay. */
+    suspend fun joinSpace(inviteCode: String) =
+        runStep("Reading invite") {
+            val invite = ChatInvite.decode(inviteCode)
+            if (invite == null) {
+                status = "That invite code could not be read."
+                return@runStep
+            }
+            status = "Joining \"${invite.spaceName}\""
+            val joined = client.joinWithInvitation(invite.namespaceId, invite.invitation)
+            status =
+                if (joined.published) {
+                    "Joined \"${invite.spaceName}\". Channels appear once the relay has synced them."
+                } else {
+                    "The relay accepted the join; it will publish shortly."
+                }
+            loadChannels()
         }
 
     // ---- helpers -----------------------------------------------------------
 
-    private fun initParams(name: String): List<Int> {
-        val obj =
-            buildJsonObject {
-                put("name", name)
-                put("context_type", "Channel")
-                put("description", "")
-                put("created_at", System.currentTimeMillis() / MILLIS_PER_SECOND)
-                put("creator_username", username)
-            }
-        return chatJson.encodeToString(JsonObject.serializer(), obj).toByteArray().map { it.toInt() and 0xFF }
+    private suspend inline fun <reified T> call(
+        contextId: String,
+        method: String,
+        args: JsonObject = JsonObject(emptyMap()),
+    ): T {
+        val relay = client.relay ?: error("no relay")
+        val out = relay.call(contextId, method, args) ?: JsonNull
+        return chatJson.decodeFromJsonElement(out)
     }
 
     private suspend fun runStep(
@@ -538,11 +298,11 @@ class ChatService(
         body: suspend () -> Unit,
     ) {
         busy = true
-        status = message
+        status = "$message…"
         try {
             body()
         } catch (e: Exception) {
-            status = "${message.replace("…", "")} failed: ${short(e)}"
+            status = "$message failed: ${short(e)}"
         } finally {
             busy = false
         }
@@ -551,23 +311,9 @@ class ChatService(
     private fun short(error: Exception): String = error.message ?: error.toString()
 
     companion object {
-        /**
-         * Where versions are DISCOVERED. The install itself names only coordinates
-         * and the node fetches from its own `[registry]`, so this should be the
-         * same registry the node is configured with — a mismatch shows up as a 502.
-         */
-        const val REGISTRY_URL = "https://apps.calimero.network"
-
-        /**
-         * ⚠️ Was `com.calimero.curb`, which is no longer published — the registry
-         * answers `[]` for it. `com.calimero.chat` 3.1.1 takes the same `init`
-         * params, but its `send_message` has no `sender_username` argument.
-         */
+        /** The chat app's package: what invite links name. */
         const val PACKAGE_NAME = "com.calimero.chat"
         private const val MESSAGE_PAGE = 50
         private const val MILLIS_PER_SECOND = 1000
-        private const val JOIN_ATTEMPTS = 6
-        private const val JOIN_RETRY_MS = 2_000L
-        private const val TAG = "MeroChat"
     }
 }

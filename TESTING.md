@@ -181,7 +181,7 @@ test in §6. There is no standalone JVM/console entry point, so `test-all.sh` ma
 
 ```bash
 ./run-app.sh            # fresh node on :4001 + sample-app on an emulator
-./run-app.sh --mock     # in-app mock (no node) — log in with anything
+./run-app.sh --mock     # in-app mock (no node): Continue with Calimero, then Approve in the mock wallet
 ./run-app.sh --help     # all flags
 ```
 
@@ -205,7 +205,8 @@ have one. Emulators share no clipboard, so move the invite with
 ## 6. Instrumented UI tests — `sample-app` (Android emulator)
 
 The Android analog of Swift's XCUITest: builds the Compose sample app and drives
-login → home → RPC → logout in the emulator against an **in-app mock** (no node).
+Cloud sign-in (mock wallet callback delivered as a `mero-sample://enrol` intent) → home →
+relay call → sign out in the emulator against an **in-app mock** (no node).
 
 ```bash
 # Boot an emulator (or let the command below reuse a running one):
@@ -229,7 +230,7 @@ Expected: `BUILD SUCCESSFUL` with the instrumented suite green. CI runs this in
 | Backend | a fake wired into the app | a real merod on `:4001` |
 | Launch | `./run-app.sh --mock` / `am start … --ez mock true` | `./run-app.sh` |
 | Instrumented tests | `instrumented.yml` (PR gate) | `android-e2e.yml` (manual/main/weekly) |
-| Log in with | any username/password | the node's admin creds (`dev` / `dev-password`) |
+| Sign in with | the in-app mock wallet (Approve / Decline) | Calimero Cloud (wallet passkey) |
 
 ### Node-backed app e2e (heavier)
 

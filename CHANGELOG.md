@@ -114,6 +114,57 @@ decodes core's own rc.83 wire fixtures (`crates/server/primitives/fixtures/wire/
 copied verbatim to `src/test/resources/fixtures/rc83/`) in both directions.
 `SseGroupEventsTest` covers group subscriptions.
 
+### Breaking — mobile sign-in is Calimero Cloud only
+
+`mero-compose` no longer signs in to a node. `LoginSheet` is one **Continue with Calimero** button:
+the person approves this device in the Calimero wallet (a passkey, in a Chrome Custom Tab), the
+wallet redirects back with a device certificate, and the app talks to the account's hosted relay.
+
+- `MeroClient` is rebuilt around `CloudAccount`: `signInWithCloud(context, callbackUrl)`,
+  `handleEnrolmentCallback(url)`, `restore()`, `joinWithInvitation(...)`, `signOut()`, and a
+  `MeroAuthState` with `account`, `device`, `relayUrl`, `sessionReady`, `relayNote` and
+  `signedInWithoutRelay`. `relay` (warrants + query) and `mero` (admin/SSE on the relay) appear once
+  connected. `MeroClient.create(context)` no longer takes a node URL.
+- Removed from `mero-compose`: `MeroClient.login(username, password)`, `startSsoLogin`,
+  `handleAuthCallback`, and the node-URL / credential fields of `LoginSheet`. `ConnectButton` now
+  takes the `callbackUrl`. Core's `Mero.authenticate(...)` and the SSO helpers stay for servers,
+  tools and tests that talk to a self-hosted node.
+
+### Added — the Cloud account layer (`mero-core`)
+
+A port of mero-js 24.5.0's delegated-account layer, byte-for-byte with core 0.11.0-rc.83 and pinned
+by mero-js's golden vectors (which are core's own fixtures):
+
+- `crypto`: `domainHash`, little-endian borsh writer, Ed25519 sign/verify and X25519 keygen over
+  Bouncy Castle (`org.bouncycastle:bcprov-jdk18on` is a new dependency: the JCA has neither below
+  API 33). `DeviceSigner` / `SeedSigner`.
+- `account`: `DeviceKeys` (Ed25519 signing + X25519 delivery pair) in a `SecureStore`
+  (`EncryptedPrefsSecureStore` / `MemorySecureStore`); `Enrolment.deviceEnrolmentUrl`,
+  `readEnrolmentCallback`, `completeDeviceEnrolment`; `DeviceCert.verify` / `parse` (a port of
+  `verifyDeviceCredential`); `CloudAccount` running the whole flow; `NamespaceOp.signMemberJoinOp`
+  (schema 24) and `joinAsAccount` / `bootstrapFromInvitation` through `POST …/namespaces/{ns}/admit`.
+  Any absolute callback URL is accepted (an https App Link or an app scheme).
+- `cloud`: `CloudClient` (`getAccountRelaysChallenge`, `getAccountRelays`, `getRoutingChallenge`,
+  `getNamespaceRouting`) with `X-Calimero-Credential/Nonce/Signature` routing proofs, and
+  `chooseRelay`.
+- `relay`: `RelayClient` — `describe` / `execute` (warrant v2 with `executorKey`,
+  `releaseBytecodeId`, `releaseVersion`), `query` and `call` (query, falling back to a warrant on
+  409), `describeCreation` / `createContext`, `describeGovernance` / `govern`, `presenceIntent`,
+  `getWarrantNonce` / `getWarrantNonceAsAuthor`. Nonces come from a per-relay `PersistedNonceSource`;
+  a warrant refused for its nonce is recovered from the relay's warrant-nonce route and re-signed
+  once. `RelayLogin` learns the relay's node key from `POST /admin-api/tee/attest` behind a
+  pluggable `RelayKeyVerifier`, then logs in (`/auth/challenge` → `/auth/token`,
+  `auth_method: account_proof`, signed `LoginStatement`) for Bearer tokens the existing admin and
+  SSE clients use.
+
+### Known gaps
+
+- **Relay node key.** The default `TlsRelayKeyVerifier` trusts TLS and checks the attestation's
+  report data binds this request's nonce and the named key; it does **not** verify the TDX DCAP
+  quote. mero-js does. Writes never depend on the key; Bearer reads and SSE do.
+- **App-scheme callbacks** work in the SDK, but the hosted wallet only redirects to `https://`
+  today. Until mero-wallet accepts app schemes, use a verified https App Link as the callback.
+
 ## Superseded — core 0.11.0-rc.44
 
 Pinned to `0.11.0-rc.44` in `ci/core-version`, so every node lane — the two

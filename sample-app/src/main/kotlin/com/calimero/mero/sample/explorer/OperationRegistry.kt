@@ -1,5 +1,6 @@
 package com.calimero.mero.sample.explorer
 
+import com.calimero.mero.account.DeviceCert
 import com.calimero.mero.admin.AccountSignWithRootRequest
 import com.calimero.mero.admin.AddGroupMembersRequest
 import com.calimero.mero.admin.AdmitJoinRequest
@@ -64,11 +65,15 @@ import com.calimero.mero.auth.RefreshTokenRequest
 import com.calimero.mero.auth.RevokeTokenRequest
 import com.calimero.mero.auth.TokenRequest
 import com.calimero.mero.auth.UpdateKeyPermissionsRequest
+import com.calimero.mero.relay.CreateContextInput
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.jsonObject
 
-// The SDK surface, one `SDKOperation` per public method the Kotlin SDK exposes. Split into
+// The SDK surface, one `SDKOperation` per public method the Kotlin SDK exposes. The Cloud,
+// Relay and Session groups run over the signed-in account; the admin groups run against the
+// account's relay with its Bearer session (an account session is caller-scoped, so admin-only
+// routes answer 403 — that is the node speaking, not the sample failing). Split into
 // per-category lists (mirrors the Swift sample). Request bodies are entered as JSON and decoded
 // into the typed request; results are pretty-printed via [Fmt].
 
@@ -892,6 +897,111 @@ private val rc83Ops =
         ) { m, i -> Fmt.json(m.admin.teeRegistrationAttest(Fmt.decode<TeeRegistrationAttestRequest>(i.v("body")))) },
     )
 
+private fun argsOf(raw: String?): JsonElement = raw?.trim()?.takeIf { it.isNotEmpty() }?.let { Fmt.pretty.parseToJsonElement(it) } ?: JsonObject(emptyMap())
+
+private fun pretty(value: JsonElement?): String = value?.let { Fmt.pretty.encodeToString(JsonElement.serializer(), it) } ?: "null"
+
+private val sessionOps =
+    listOf(
+        SDKOperation("ses.session", "Session", "account.session", "The signed-in account, device and relay", emptyList()) { e, _ ->
+            val s = e.account.session() ?: return@SDKOperation "signed out"
+            "account:  ${s.account}\ndevice:   ${s.device}\nrelay:    ${s.relayUrl ?: "none yet"}\nexecutor: ${s.executorAccount ?: "unknown"}"
+        },
+        SDKOperation("ses.cert", "Session", "verifyDeviceCredential", "Read back this device's certificate", emptyList()) { e, _ ->
+            val s = e.account.session() ?: return@SDKOperation "signed out"
+            DeviceCert.verify(s.credential).toString().replace(", ", ",\n  ")
+        },
+        SDKOperation("ses.keys", "Session", "deviceKeys", "This device's public keys", emptyList()) { e, _ ->
+            val k = e.account.deviceKeys.load() ?: return@SDKOperation "no device keys yet"
+            "signing (Ed25519):  ${k.signPublicKey}\ndelivery (X25519): ${k.kemPublicKey}"
+        },
+        SDKOperation("ses.login", "Session", "loginToRelay", "Mint an account_proof session on the relay", emptyList()) { e, _ ->
+            val t = e.account.loginToRelay()
+            "access token expires at ${t.expiresAt}"
+        },
+    )
+
+private val cloudOps =
+    listOf(
+        SDKOperation("cld.relays", "Cloud", "getAccountRelays", "Relays serving this account (routing-proven)", emptyList()) { e, _ ->
+            val s = e.account.session() ?: error("signed out")
+            e.account
+                .cloud(s)
+                .getAccountRelays(s.account)
+                .joinToString("\n\n") { it.toString() }
+                .ifEmpty { "no relays" }
+        },
+        SDKOperation("cld.choose", "Cloud", "chooseRelay", "Which relay to talk to, and why", emptyList()) { e, _ ->
+            e.account.chooseRelay().toString()
+        },
+        SDKOperation(
+            "cld.routing", "Cloud", "getNamespaceRouting", "Nodes that serve a namespace",
+            listOf(OpField.line("namespaceId", "Namespace ID")),
+        ) { e, i ->
+            e.account
+                .cloud()
+                .getNamespaceRouting(i.v("namespaceId"))
+                .toString()
+        },
+        SDKOperation("cld.nodeKey", "Cloud", "relayNodeKey", "The relay's attested node key", emptyList()) { e, _ ->
+            e.account.relayNodeKey(e.relay.relayUrl)
+        },
+    )
+
+private val relayOps =
+    listOf(
+        SDKOperation(
+            "rel.describe", "Relay", "describe", "Who executes in a context, and what a warrant pins",
+            listOf(OpField.line("contextId", "Context ID")),
+        ) { e, i -> e.relay.describe(i.v("contextId")).toString() },
+        SDKOperation(
+            "rel.call", "Relay", "call", "Read by query, or write by warrant on 409",
+            listOf(OpField.line("contextId", "Context ID"), OpField.line("method", "Method"), OpField.json("args", "argsJson", "{}")),
+        ) { e, i -> pretty(e.relay.call(i.v("contextId"), i.v("method"), argsOf(i.opt("args")))) },
+        SDKOperation(
+            "rel.query", "Relay", "query", "Run a view method (no warrant)",
+            listOf(OpField.line("contextId", "Context ID"), OpField.line("method", "Method"), OpField.json("args", "argsJson", "{}")),
+        ) { e, i -> pretty(e.relay.query(i.v("contextId"), i.v("method"), argsOf(i.opt("args")))) },
+        SDKOperation(
+            "rel.execute", "Relay", "execute", "Sign a warrant and have the relay run it",
+            listOf(OpField.line("contextId", "Context ID"), OpField.line("method", "Method"), OpField.json("args", "argsJson", "{}")),
+        ) { e, i ->
+            val r = e.relay.execute(i.v("contextId"), i.v("method"), argsOf(i.opt("args")))
+            "rootHash: ${r.rootHash}\nreturns:\n${pretty(r.returns)}"
+        },
+        SDKOperation(
+            "rel.nonce", "Relay", "getWarrantNonceAsAuthor", "Where this device's nonce sequence stands",
+            listOf(OpField.line("contextId", "Context ID")),
+        ) { e, i -> e.relay.getWarrantNonceAsAuthor(i.v("contextId")).toString() },
+        SDKOperation(
+            "rel.describeCreation", "Relay", "describeCreation", "Who would create a context in a group",
+            listOf(OpField.line("groupId", "Group ID")),
+        ) { e, i -> e.relay.describeCreation(i.v("groupId")).toString() },
+        SDKOperation(
+            "rel.createContext", "Relay", "createContext", "Create a context under a creation warrant",
+            listOf(
+                OpField.line("groupId", "Group ID"),
+                OpField.line("applicationId", "Application ID"),
+                OpField.line("name", "Name (optional)"),
+                OpField.json("initArgs", "initArgs", "{}"),
+            ),
+        ) { e, i ->
+            e.relay
+                .createContext(
+                    CreateContextInput(
+                        groupId = i.v("groupId"),
+                        applicationId = i.v("applicationId"),
+                        initArgs = argsOf(i.opt("initArgs")),
+                        name = i.opt("name"),
+                    ),
+                ).toString()
+        },
+        SDKOperation(
+            "rel.describeGovernance", "Relay", "describeGovernance", "Who would act on a group's governance",
+            listOf(OpField.line("groupId", "Group ID")),
+        ) { e, i -> e.relay.describeGovernance(i.v("groupId")).toString() },
+    )
+
 private val rpcOps =
     listOf(
         SDKOperation(
@@ -917,7 +1027,7 @@ private val rpcOps =
 
 /** The full registry, in display order. */
 val sdkOperations: List<SDKOperation> =
-    healthOps + authOps + keyOps + appOps + pkgOps + ctxOps + ctxIdOps +
+    sessionOps + cloudOps + relayOps + healthOps + authOps + keyOps + appOps + pkgOps + ctxOps + ctxIdOps +
         aliasOps + blobOps + nsOps + groupOps + memberOps + settingsOps + upgradeOps +
         accountOps + teeOps + rc83Ops + rpcOps
 

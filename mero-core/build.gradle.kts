@@ -59,6 +59,10 @@ dependencies {
 
     implementation(libs.androidx.security.crypto)
     implementation(libs.androidx.browser)
+    // Ed25519 signing and X25519 key generation for the Cloud account layer. The JCA has
+    // neither below API 33, and minSdk is 24. Only the lightweight API is used (no provider
+    // registration), so it does not clash with the platform's repackaged copy.
+    implementation(libs.bouncycastle.prov)
 
     testImplementation(libs.junit)
     testImplementation(libs.kotlinx.coroutines.test)

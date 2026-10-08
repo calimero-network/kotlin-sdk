@@ -12,18 +12,24 @@
 
         <activity
             android:name=".MainActivity"
-            android:exported="true">
+            android:exported="true"
+            android:launchMode="singleTop">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
 
-            <!-- SSO deep-link callback: node redirects to mero-sample://auth-callback#... -->
-            <intent-filter android:autoVerify="false">
+            <!--
+              Calimero Cloud sign-in callback: the wallet redirects to
+              mero-sample://enrol#credential=…&account=…&device=…&state=… (or #error=cancelled).
+              Keep in sync with MainActivity.DEFAULT_CALLBACK_URL. An https App Link works too
+              (pass it as the callbackUrl extra and add a verified filter for it).
+            -->
+            <intent-filter>
                 <action android:name="android.intent.action.VIEW" />
                 <category android:name="android.intent.category.DEFAULT" />
                 <category android:name="android.intent.category.BROWSABLE" />
-                <data android:scheme="mero-sample" android:host="auth-callback" />
+                <data android:scheme="mero-sample" android:host="enrol" />
             </intent-filter>
         </activity>
     </application>
