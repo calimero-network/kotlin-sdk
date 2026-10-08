@@ -4,24 +4,36 @@ import com.calimero.mero.Mero
 import com.calimero.mero.MeroConfig
 import com.calimero.mero.TokenData
 import com.calimero.mero.admin.SignedGroupOpenInvitation
+import com.calimero.mero.cloud.AccountHaRefusedException
 import com.calimero.mero.cloud.CloudClient
 import com.calimero.mero.cloud.RelayChoice
 import com.calimero.mero.cloud.RoutingCredential
 import com.calimero.mero.crypto.Hex
+import com.calimero.mero.http.MeroStateException
 import com.calimero.mero.http.PlainJsonHttp
 import com.calimero.mero.http.trimBase
+import com.calimero.mero.relay.ApplicationTarget
 import com.calimero.mero.relay.Audience
+import com.calimero.mero.relay.FoundNamespaceInput
+import com.calimero.mero.relay.FoundedNamespace
+import com.calimero.mero.relay.GovernanceOps
 import com.calimero.mero.relay.PersistedNonceSource
 import com.calimero.mero.relay.RelayClient
+import com.calimero.mero.relay.RelayExecutor
 import com.calimero.mero.relay.RelayKeyVerifier
 import com.calimero.mero.relay.RelayLogin
 import com.calimero.mero.relay.TlsRelayKeyVerifier
 import com.calimero.mero.storage.MemoryTokenStore
 import com.calimero.mero.storage.TokenStore
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import okhttp3.OkHttpClient
 
 /**
@@ -218,18 +230,198 @@ class CloudAccount(
                 }
             }
         }
-        val relay =
-            RelayClient(
-                relayUrl = relayUrl,
-                authorAccount = session.account,
-                authorProof = session.credential,
-                signer = deviceKeys.loadOrCreate().signer(),
-                nonces = PersistedNonceSource.forRelay(store, relayUrl),
-                executorAccount = session.executorAccount,
-                session = bearer,
-                httpClient = httpClient,
+        return RelayConnection(session, mero, relayClient(session, relayUrl, bearer), bearer)
+    }
+
+    /** A warrant client on [relayUrl] for [session], with this device's persisted nonces. */
+    private fun relayClient(
+        session: DelegatedSession,
+        relayUrl: String,
+        bearer: (suspend () -> String?)? = null,
+    ): RelayClient =
+        RelayClient(
+            relayUrl = relayUrl,
+            authorAccount = session.account,
+            authorProof = session.credential,
+            signer = deviceKeys.loadOrCreate().signer(),
+            nonces = PersistedNonceSource.forRelay(store, relayUrl),
+            executorAccount = session.executorAccount,
+            session = bearer,
+            httpClient = httpClient,
+        )
+
+    // ---- Founding ------------------------------------------------------------------------
+
+    /**
+     * Found a namespace as this account, through the relay it already uses: the account
+     * becomes founder, owner and admin, the relay is seated in it, and contexts can be
+     * created in it through the same relay straight away. Then, best-effort, asks the cloud
+     * to host it ([CloudClient.enableHaAsAccount]) so invitees with no node can find it.
+     *
+     * Port of mero-js `foundDelegatedNamespace` (plus `createNamespace`'s naming step).
+     *
+     * The relay's executor cannot be asked about a namespace that does not exist yet: its
+     * account comes from the session (the cloud names it beside the relay) or, failing that,
+     * from [knownNamespaceId] (a namespace this account already uses on the relay), and its
+     * key is always the relay's attested or pinned node key ([relayNodeKey]).
+     *
+     * @param defaultCapabilities the namespace root's default member mask (mero-react uses 231).
+     * @param application the app the namespace runs; without one no context can be created in it.
+     * @param name a display name, set with a delegated `GroupMetadataSet` (best-effort).
+     * @throws MeroStateException when no relay or executor is known, or the namespace was
+     *   founded but could not be given its [application].
+     */
+    @Suppress("LongParameterList")
+    suspend fun foundNamespace(
+        defaultCapabilities: Long? = null,
+        application: ApplicationTarget? = null,
+        name: String? = null,
+        knownNamespaceId: String? = null,
+        enableHa: Boolean = true,
+        session: DelegatedSession = requireSession(),
+    ): FoundedDelegatedNamespace {
+        val relayUrl =
+            session.relayUrl?.trimBase()
+                ?: throw MeroStateException("no relay is known for this account, so there is nowhere to found a namespace")
+        val relay = relayClient(session, relayUrl)
+        val executor = foundingExecutor(session, relay, knownNamespaceId)
+        val founded = relay.foundNamespace(FoundNamespaceInput(executor, defaultCapabilities = defaultCapabilities, application = application))
+        if (application != null && founded.applicationSet != true) {
+            // Founded, but no context can be created in it yet; the same choice can be retried.
+            throw MeroStateException(
+                "founded ${founded.namespaceId} but could not give it its application: ${founded.applicationError ?: "unknown reason"}",
             )
-        return RelayConnection(session, mero, relay, bearer)
+        }
+        val nameError =
+            name?.takeIf { it.isNotEmpty() }?.let { n ->
+                runCatching { relay.govern(founded.namespaceId, GovernanceOps.groupMetadataSetOp(name = n)) }.exceptionOrNull()?.message
+            }
+        // HA's fleet node is admitted by the founding relay, which can vouch for it only once
+        // it attested itself as the namespace's first TEE.
+        val (haEnabled, haError) =
+            when {
+                !enableHa -> false to null
+                founded.teeEnabled -> enableHaBestEffort(session, founded, relayUrl)
+                else ->
+                    false to
+                        "the relay did not attest the founding, so no fleet node could be admitted for HA" +
+                        (founded.teeError?.let { ": $it" } ?: "")
+            }
+        return FoundedDelegatedNamespace(founded, haEnabled, haError, nameError)
+    }
+
+    private suspend fun foundingExecutor(
+        session: DelegatedSession,
+        relay: RelayClient,
+        knownNamespaceId: String?,
+    ): RelayExecutor {
+        session.executorAccount?.let { return RelayExecutor(it, relayNodeKey(relay.relayUrl)) }
+        val known =
+            knownNamespaceId
+                ?: throw MeroStateException(
+                    "the executor account of this relay is not known: join a namespace on it first (and pass it as " +
+                        "knownNamespaceId), or sign in again so the cloud names the relay's account",
+                )
+        val executorKey = relayNodeKey(relay.relayUrl)
+        // Discovery is unauthenticated: it may name the account, never the key.
+        val described = relay.describeGovernance(known)
+        if (described.executorKey?.lowercase() != executorKey) {
+            throw MeroStateException(
+                "the relay's discovery names signing key ${described.executorKey}, not the relay's node key $executorKey: refusing to found through it",
+            )
+        }
+        return RelayExecutor(described.executorAccount.orEmpty(), executorKey)
+    }
+
+    private suspend fun enableHaBestEffort(
+        session: DelegatedSession,
+        founded: FoundedNamespace,
+        relayUrl: String,
+    ): Pair<Boolean, String?> =
+        try {
+            cloud(session).enableHaAsAccount(
+                namespaceId = founded.namespaceId,
+                salt = founded.salt,
+                accountId = session.account,
+                credential = session.credential,
+                relayUrl = relayUrl,
+            )
+            true to null
+        } catch (e: AccountHaRefusedException) {
+            val blocking = if (e.code == AccountHaRefusedException.HA_REQUEST_PENDING) blockingNamespace(e.bodyText) else null
+            false to (blocking?.let { "${e.advice} (waiting: $it)" } ?: e.advice)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            false to (e.message ?: e.toString())
+        }
+
+    private fun blockingNamespace(body: String): String? =
+        runCatching {
+            val o = json.parseToJsonElement(body).jsonObject
+            val id = ((o["detail"] as? JsonObject)?.get("namespace_id") ?: o["namespace_id"])?.jsonPrimitive?.contentOrNull
+            id?.lowercase()?.takeIf { Hex.isHex32(it) }
+        }.getOrNull()
+
+    // ---- Inviting ------------------------------------------------------------------------
+
+    /**
+     * Mint an invitation to [namespaceId] signed by this device, for a namespace the account
+     * founded or joined. Port of mero-react / mero-js `createAccountAdmin().createNamespaceInvitation`.
+     *
+     * The relays in the namespace (`RelayTee` members) are named as admitters, because the
+     * person who claims it may have no node and only a relay can admit them; with none, the
+     * namespace's admins. The members and the group's application are read from the relay
+     * over [connection]'s Bearer session; without one, the session relay's own account is
+     * named. When the cloud routes the namespace to nobody (not hosted), the invitation
+     * carries the relay's URL so the claimant can still find it.
+     *
+     * @throws InvitationNotClaimableException when nobody the claimant could reach would admit them.
+     */
+    @Suppress("ThrowsCount")
+    suspend fun createNamespaceInvitation(
+        namespaceId: String,
+        connection: RelayConnection? = null,
+        validForSecs: Long = Invitations.MAX_INVITATION_VALIDITY_SECS,
+        session: DelegatedSession = requireSession(),
+    ): SignedGroupOpenInvitation {
+        val ns = Hex.encode(Hex.decode(namespaceId, "namespaceId", 32))
+        val admin = connection?.takeIf { it.ensureSession() }?.mero?.admin
+        val members = admin?.let { a -> runCatching { a.listGroupMembers(ns).members }.getOrNull() }
+        val info = admin?.let { a -> runCatching { a.getGroupInfo(ns) }.getOrNull() }
+        val relays =
+            members?.filter { it.role == ROLE_RELAY_TEE }?.map { it.identity.lowercase() }
+                ?: listOfNotNull(session.executorAccount?.lowercase())
+        if (members == null && relays.isEmpty()) {
+            throw MeroStateException(
+                "cannot read the namespace's members (the relay session is not ready) and the relay's account is unknown, " +
+                    "so there is nobody to name as admitter",
+            )
+        }
+        val named = relays.ifEmpty { Invitations.defaultAdmitters(members.orEmpty()) }.toSet()
+        val nodes = runCatching { cloud(session).getNamespaceRouting(ns).nodes }.getOrNull()
+        var admitterAddrs = emptyList<String>()
+        if (nodes != null) {
+            if (nodes.isEmpty()) {
+                // Not hosted: the relay that serves this session admits through its own `/admit`.
+                val relayUrl = session.relayUrl?.trimBase()
+                if (relays.isEmpty() || relayUrl == null) throw InvitationNotClaimableException(ns, notHosted = true)
+                admitterAddrs = listOf(relayUrl)
+            } else if (nodes.none { n -> n.account?.lowercase() in named }) {
+                throw InvitationNotClaimableException(ns, notHosted = false)
+            }
+        }
+        return Invitations.signGroupInvitation(
+            groupId = ns,
+            inviterAccount = session.account,
+            signer = deviceKeys.loadOrCreate().signer(),
+            admitters = relays,
+            members = members,
+            validForSecs = validForSecs,
+            applicationId = info?.targetApplicationId?.lowercase()?.takeIf { Hex.isHex32(it) },
+            appKey = info?.appKey?.lowercase()?.takeIf { Hex.isHex32(it) },
+            admitterAddrs = admitterAddrs,
+        )
     }
 
     // ---- Joining -------------------------------------------------------------------------
@@ -297,6 +489,7 @@ class CloudAccount(
         const val KEY_PENDING_STATE = "calimero.enrol.state"
         const val KEY_NODE_KEY_PREFIX = "calimero.delegated.relay-node-key."
         const val REFRESH_MARGIN_MS = 30_000L
+        const val ROLE_RELAY_TEE = "RelayTee"
     }
 }
 
@@ -323,3 +516,35 @@ class RelayConnection internal constructor(
      */
     suspend fun ensureSession(): Boolean = bearer() != null
 }
+
+/** What [CloudAccount.foundNamespace] returns. */
+data class FoundedDelegatedNamespace(
+    /** What the relay founded: id, salt, TEE and follow-up outcomes. */
+    val founded: FoundedNamespace,
+    /** Whether the cloud agreed to host the namespace right after founding. */
+    val haEnabled: Boolean,
+    /** Why [haEnabled] is false, in words a person can act on. */
+    val haError: String? = null,
+    /** Why the display name could not be set, when one was asked for and failed. */
+    val nameError: String? = null,
+) {
+    val namespaceId: String get() = founded.namespaceId
+}
+
+/**
+ * Nobody the claimant of an invitation could reach would admit them: the namespace is not
+ * hosted in the cloud and has no relay in it ([notHosted]), or the cloud routes to none of
+ * the accounts the invitation would name.
+ */
+class InvitationNotClaimableException(
+    val namespaceId: String,
+    val notHosted: Boolean,
+) : Exception(
+        if (notHosted) {
+            "nobody could claim an invitation to $namespaceId yet: the namespace is not hosted in the cloud and has no relay in it, " +
+                "so an invitee with no node has no relay to be admitted through. Link this account to your cloud user in the wallet " +
+                "and enable HA for the namespace, then invite."
+        } else {
+            "nobody could claim an invitation to $namespaceId: the cloud routes to none of the relays or admins it would name as admitters"
+        },
+    )

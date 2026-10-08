@@ -1,5 +1,6 @@
 package com.calimero.mero.cloud
 
+import com.calimero.mero.crypto.DeviceSigner
 import com.calimero.mero.crypto.Hex
 import com.calimero.mero.http.HttpResponse
 import com.calimero.mero.http.MeroStateException
@@ -10,9 +11,11 @@ import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.booleanOrNull
+import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.longOrNull
+import kotlinx.serialization.json.put
 import okhttp3.OkHttpClient
 import java.net.URLEncoder
 
@@ -30,6 +33,7 @@ import java.net.URLEncoder
  * | [getAccountRelays] | `GET /api/cloud/accounts/{acc}/relays` + routing proof |
  * | [getRoutingChallenge] | `GET /api/cloud/namespaces/{ns}/challenge` |
  * | [getNamespaceRouting] | `GET /api/cloud/namespaces/{ns}/admitters` + routing proof |
+ * | [enableHaAsAccount] | `POST /api/cloud/accounts/{acc}/namespaces/{ns}/enable-ha` + founder's claim |
  */
 class CloudClient internal constructor(
     baseUrl: String,
@@ -125,6 +129,47 @@ class CloudClient internal constructor(
         )
     }
 
+    /**
+     * Ask the cloud to host (HA) a namespace this account founded, with no cloud session:
+     * `POST /api/cloud/accounts/{account}/namespaces/{ns}/enable-ha` `{ownership_proof}`,
+     * signed by [AccountOwnership.signAccountHaClaim]. The cloud bills the user the account
+     * is linked to in the wallet.
+     *
+     * [signer] defaults to this client's routing credential's.
+     *
+     * @throws AccountHaRefusedException for the refusals a person can act on (409/422 with
+     *   a known `error` code); any other failure as [com.calimero.mero.http.HttpException].
+     */
+    @Suppress("LongParameterList")
+    suspend fun enableHaAsAccount(
+        namespaceId: String,
+        salt: String,
+        accountId: String,
+        credential: String,
+        signer: DeviceSigner? = routingCredential?.signer,
+        relayUrl: String? = null,
+        ttlMs: Long = AccountOwnership.DEFAULT_TTL_MS,
+    ): JsonObject {
+        val key = signer ?: throw MeroStateException("enableHaAsAccount needs the device signer")
+        val proof = AccountOwnership.signAccountHaClaim(namespaceId, accountId, salt, credential, key, relayUrl, ttlMs)
+        // The path carries the ids as the claim does: lowercase hex.
+        val path =
+            "/api/cloud/accounts/${enc(accountId.lowercase())}/namespaces/${enc(namespaceId.lowercase())}/enable-ha"
+        val body = buildJsonObject { put("ownership_proof", proof.toJson()) }.toString()
+        val res = http.execute("POST", base + path, body)
+        if (res.status in ACCOUNT_HA_REFUSAL_STATUSES) {
+            refusalCode(res.body)?.takeIf { it in ACCOUNT_HA_REFUSAL_CODES }?.let { throw AccountHaRefusedException(it, res.status, res.body) }
+        }
+        res.ensureSuccessful()
+        return if (res.body.isBlank()) JsonObject(emptyMap()) else json.parseToJsonElement(res.body).jsonObject
+    }
+
+    private fun refusalCode(body: String): String? =
+        runCatching {
+            val o = json.parseToJsonElement(body).jsonObject
+            o.str("error") ?: o.str("detail") ?: (o["detail"] as? JsonObject)?.str("error")
+        }.getOrNull()
+
     private suspend fun get(
         path: String,
         headers: Map<String, String> = emptyMap(),
@@ -134,6 +179,18 @@ class CloudClient internal constructor(
     }
 
     companion object {
+        private val ACCOUNT_HA_REFUSAL_STATUSES = setOf(409, 422)
+
+        /** The `error` codes [enableHaAsAccount] maps to [AccountHaRefusedException]. */
+        val ACCOUNT_HA_REFUSAL_CODES: Set<String> =
+            setOf(
+                AccountHaRefusedException.ACCOUNT_NOT_LINKED,
+                AccountHaRefusedException.ACCOUNT_LINKED_TO_SEVERAL_USERS,
+                AccountHaRefusedException.HA_REQUEST_PENDING,
+                AccountHaRefusedException.UNKNOWN_RELAY,
+                AccountHaRefusedException.RELAY_NOT_DIALABLE,
+            )
+
         /** The hosted cloud manager. */
         const val DEFAULT_BASE_URL = "https://manager.cloud.calimero.network"
 
@@ -238,3 +295,39 @@ data class CloudNamespaceRouting(
     val servable: Boolean,
     val writable: Boolean,
 )
+
+/**
+ * The cloud refused [CloudClient.enableHaAsAccount] for a reason a person can act on.
+ * [code] is the cloud's `error`, verbatim; the namespace stays founded either way.
+ */
+class AccountHaRefusedException(
+    val code: String,
+    val status: Int,
+    val bodyText: String,
+) : Exception("the cloud refused to host the namespace (HTTP $status): $code") {
+    /** What to tell a person, in words they can act on. */
+    val advice: String get() = ADVICE[code] ?: code
+
+    companion object {
+        const val ACCOUNT_NOT_LINKED = "account_not_linked"
+        const val ACCOUNT_LINKED_TO_SEVERAL_USERS = "account_linked_to_several_users"
+        const val HA_REQUEST_PENDING = "ha_request_pending"
+        const val UNKNOWN_RELAY = "unknown_relay"
+        const val RELAY_NOT_DIALABLE = "relay_not_dialable"
+
+        /** mero-js `HA_REFUSAL_MESSAGES`. */
+        val ADVICE: Map<String, String> =
+            mapOf(
+                ACCOUNT_NOT_LINKED to "link this account to your cloud user in the wallet so invitees can find this namespace",
+                ACCOUNT_LINKED_TO_SEVERAL_USERS to
+                    "this account is linked to more than one cloud user, so the cloud cannot tell whose plan hosts the namespace: " +
+                    "unlink it from all but one in the wallet",
+                HA_REQUEST_PENDING to
+                    "another namespace of this account is still waiting to be hosted; the cloud hosts one new namespace at a time " +
+                    "without a cloud sign-in. Sign in to the cloud and turn off hosting for the waiting namespace, or wait until it is hosted",
+                UNKNOWN_RELAY to "the cloud does not run the relay this namespace was founded on, so it cannot host it",
+                RELAY_NOT_DIALABLE to
+                    "the relay this namespace was founded on has not reported its address to the cloud yet; try enabling hosting again shortly",
+            )
+    }
+}

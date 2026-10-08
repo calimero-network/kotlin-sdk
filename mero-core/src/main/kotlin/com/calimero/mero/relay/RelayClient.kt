@@ -3,6 +3,7 @@ package com.calimero.mero.relay
 import com.calimero.mero.crypto.DeviceSigner
 import com.calimero.mero.crypto.Hex
 import com.calimero.mero.crypto.SeedSigner
+import com.calimero.mero.crypto.randomBytes
 import com.calimero.mero.http.HttpResponse
 import com.calimero.mero.http.PlainJsonHttp
 import com.calimero.mero.http.trimBase
@@ -37,6 +38,7 @@ import java.util.concurrent.ConcurrentHashMap
  * | [call] | [query], falling back to [execute] when the node answers 409 (not a view) |
  * | [describeCreation] / [createContext] | `GET`/`POST /admin-api/groups/{g}/context-intents` |
  * | [describeGovernance] / [govern] | `GET`/`POST /admin-api/groups/{g}/governance-intents` |
+ * | [foundNamespace] | `POST /admin-api/groups/{foundedNamespaceId}/governance-intents` (genesis) |
  * | [presenceIntent] | `POST /admin-api/contexts/{ctx}/presence-intents` |
  * | [getWarrantNonce] / [getWarrantNonceAsAuthor] | `GET /…/warrant-nonce/{key}` / `POST /…/warrant-nonce` |
  *
@@ -291,6 +293,77 @@ class RelayClient
                         signer = signer,
                     ),
                 )
+            return postGovernance(groupId, op, warrant)
+        }
+
+        /**
+         * Found a namespace through the relay, with the author as its founder, owner and
+         * admin: how an account with no node gets a namespace at all. Port of mero-js
+         * `RelayClient.foundNamespace`.
+         *
+         * The author signs the exact genesis ([GovernanceOps.namespaceCreatedOp], carrying its
+         * own credential and the salt) under a root-plane governance warrant scoped to
+         * [GovernanceOps.foundedNamespaceId]`(author, salt)`, so the relay can neither pick
+         * another id nor found it for anyone else. The relay is seated as the founding relay,
+         * so later [govern], [createContext] and [execute] calls in the namespace work through
+         * it straight away; a TEE relay also admits itself as its first TEE ([FoundedNamespace.teeEnabled]).
+         *
+         * The executor cannot be learned from the relay first (the namespace does not exist
+         * yet), so it comes from [FoundNamespaceInput.executor] only: the relay's account and
+         * its attested or pinned node key, never a discovery answer.
+         *
+         * The application and the default capability mask, when asked for, follow as ordinary
+         * [govern] calls on the new namespace. They are reported, not thrown: the namespace is
+         * founded whatever happens to them.
+         */
+        suspend fun foundNamespace(input: FoundNamespaceInput): FoundedNamespace {
+            val executor = checkedExecutor(input.executor.executorAccount, input.executor.executorKey)
+            val salt = input.salt?.let { Hex.encode(Hex.decode(it, "salt", 32)) } ?: Hex.encode(randomBytes(32))
+            val namespaceId = GovernanceOps.foundedNamespaceId(authorAccount, salt)
+            val op = GovernanceOps.namespaceCreatedOp(authorAccount, authorProof, salt)
+            // Encoded (and so validated) before anything is signed: a refused mask costs no nonce.
+            val capabilitiesOp = input.defaultCapabilities?.let { GovernanceOps.defaultCapabilitiesSetOp(it) }
+            val applicationOp =
+                input.application?.let { GovernanceOps.targetApplicationSetOp(it.applicationId, it.packageName, it.version) }
+
+            val warrant =
+                Warrants.signGovernanceWarrant(
+                    GovernanceWarrantInput(
+                        scope = namespaceId,
+                        op = op,
+                        authorAccount = authorAccount,
+                        executor = executor.first,
+                        executorKey = executor.second,
+                        nonce = nonces.next(),
+                        notAfter = notAfter(),
+                        signer = signer,
+                    ),
+                )
+            val data = postGovernance(namespaceId, op, warrant)
+            var founded = FoundedNamespace(namespaceId = data.groupId, salt = salt, teeEnabled = data.teeEnabled == true, teeError = data.teeError)
+            // The application first: without it the namespace can hold no context at all.
+            if (applicationOp != null) {
+                founded =
+                    runCatching { govern(founded.namespaceId, applicationOp) }.fold(
+                        { founded.copy(applicationSet = true) },
+                        { founded.copy(applicationSet = false, applicationError = it.message ?: it.toString()) },
+                    )
+            }
+            if (capabilitiesOp != null) {
+                founded =
+                    runCatching { govern(founded.namespaceId, capabilitiesOp) }.fold(
+                        { founded.copy(defaultCapabilitiesSet = true) },
+                        { founded.copy(defaultCapabilitiesSet = false, defaultCapabilitiesError = it.message ?: it.toString()) },
+                    )
+            }
+            return founded
+        }
+
+        private suspend fun postGovernance(
+            groupId: String,
+            op: GovernanceOp,
+            warrant: String,
+        ): GovernResult {
             val body =
                 buildJsonObject {
                     put("warrant", warrant)
@@ -327,23 +400,23 @@ class RelayClient
         suspend fun getWarrantNonce(
             contextId: String,
             authorDeviceKey: String = signer.publicKey,
-        ): WarrantNonceState {
+        ): RelayWarrantNonceState {
             val res = raw("GET", "/admin-api/contexts/${enc(contextId)}/warrant-nonce/${enc(authorDeviceKey)}", null, authed = true)
-            return WarrantNonceState.parse(res.ensureSuccessful().body)
+            return RelayWarrantNonceState.parse(res.ensureSuccessful().body)
         }
 
         /** Where this device stands, proven by the [authorProof] rather than named by key. */
-        suspend fun getWarrantNonceAsAuthor(contextId: String): WarrantNonceState {
+        suspend fun getWarrantNonceAsAuthor(contextId: String): RelayWarrantNonceState {
             val body = buildJsonObject { put("authorProof", authorProof) }
             val res = raw("POST", "/admin-api/contexts/${enc(contextId)}/warrant-nonce", body, authed = true)
-            return WarrantNonceState.parse(res.ensureSuccessful().body)
+            return RelayWarrantNonceState.parse(res.ensureSuccessful().body)
         }
 
         /** Advance [nonces] past what the relay has seen from this device in [contextId]. */
         suspend fun recoverNonce(contextId: String) {
             when (val state = getWarrantNonceAsAuthor(contextId)) {
-                is WarrantNonceState.Open -> nonces.advanceTo(state.nextNonce)
-                is WarrantNonceState.Exhausted -> throw WarrantNonceExhaustedException(contextId)
+                is RelayWarrantNonceState.Open -> nonces.advanceTo(state.nextNonce)
+                is RelayWarrantNonceState.Exhausted -> throw WarrantNonceExhaustedException(contextId)
             }
         }
 
@@ -505,6 +578,52 @@ data class GovernResult(
     val groupId: String,
     val teeEnabled: Boolean? = null,
     val teeError: String? = null,
+)
+
+/** A relay's account and the one key of it a warrant may name. */
+data class RelayExecutor(
+    val executorAccount: String,
+    val executorKey: String,
+)
+
+/** The application a founded namespace runs: its id, and the registry `package@version` the relay resolves. */
+data class ApplicationTarget(
+    val applicationId: String,
+    val packageName: String,
+    val version: String,
+)
+
+/** Input to [RelayClient.foundNamespace]. */
+data class FoundNamespaceInput(
+    /** The relay's account and node key (pinned or attested). Never a discovery answer. */
+    val executor: RelayExecutor,
+    /** 32 bytes hex; random when null (one account founds many namespaces by varying it). */
+    val salt: String? = null,
+    /**
+     * The namespace root's default capability mask, set right after founding. A namespace
+     * is founded with core's minimal default (`CAN_JOIN_OPEN_SUBGROUPS` only).
+     * [GovernanceOps.CAN_AUTHOR_ON_BEHALF] is refused before anything is signed.
+     */
+    val defaultCapabilities: Long? = null,
+    /** The application the namespace runs; without one no context can be created in it. */
+    val application: ApplicationTarget? = null,
+)
+
+/** A namespace founded through a relay. */
+data class FoundedNamespace(
+    /** `foundedNamespaceId(author, salt)`, hex. */
+    val namespaceId: String,
+    /** The salt it was derived with. `(founder, salt)` reproduces the id: keep it to prove founding (HA). */
+    val salt: String,
+    /** Whether the relay admitted itself as the namespace's first TEE. */
+    val teeEnabled: Boolean,
+    val teeError: String? = null,
+    /** Present only when a mask was asked for. */
+    val defaultCapabilitiesSet: Boolean? = null,
+    val defaultCapabilitiesError: String? = null,
+    /** Present only when an application was asked for. */
+    val applicationSet: Boolean? = null,
+    val applicationError: String? = null,
 )
 
 /** The relay refused an intent (400/403). [retryable] when the reason names the nonce. */

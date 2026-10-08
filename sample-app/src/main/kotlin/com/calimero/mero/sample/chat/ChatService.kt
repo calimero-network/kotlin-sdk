@@ -4,10 +4,12 @@ import android.util.Base64
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import com.calimero.mero.account.ApplicationIds
 import com.calimero.mero.admin.SignedGroupOpenInvitation
 import com.calimero.mero.compose.MeroClient
 import com.calimero.mero.invite.InviteCodec
 import com.calimero.mero.invite.InviteLink
+import com.calimero.mero.relay.ApplicationTarget
 import com.calimero.mero.relay.CreateContextInput
 import com.calimero.mero.sse.ContextEvent
 import kotlinx.coroutines.flow.Flow
@@ -180,6 +182,16 @@ class ChatService(
         applicationId: String,
         name: String,
     ) = runStep("Creating #$name") {
+        openChannel(groupId, applicationId, name)
+        status = "Channel #$name created"
+        loadChannels()
+    }
+
+    private suspend fun openChannel(
+        groupId: String,
+        applicationId: String,
+        name: String,
+    ) {
         val relay = client.relay ?: error("no relay")
         val created =
             relay.createContext(
@@ -198,8 +210,6 @@ class ChatService(
                 ),
             )
         registerProfile(created.contextId)
-        status = "Channel #$name created"
-        loadChannels()
     }
 
     // ---- messages ----------------------------------------------------------
@@ -260,6 +270,50 @@ class ChatService(
         }
     }
 
+    // ---- spaces ------------------------------------------------------------
+
+    /** The invite minted last (after creating a space, or on request), for the share sheet. */
+    var lastInvite by mutableStateOf<ChatInvite?>(null)
+        private set
+
+    /** Forget [lastInvite] once it has been shown. */
+    fun clearInvite() {
+        lastInvite = null
+    }
+
+    /**
+     * Found a new space as this account: resolve mero-chat's application from the registry,
+     * found a namespace running it through the account's relay (named, with the default
+     * member mask so invitees can create channels and invite), open a `#general` channel in
+     * it and mint an invite to share.
+     */
+    suspend fun createSpace(name: String) =
+        runStep("Creating \"$name\"") {
+            val app = ApplicationIds.resolveFromRegistry(PACKAGE_NAME)
+            val result =
+                client.foundNamespace(
+                    application = ApplicationTarget(app.applicationId, app.packageName, app.version),
+                    name = name,
+                )
+            openChannel(result.namespaceId, app.applicationId, DEFAULT_CHANNEL)
+            lastInvite = ChatInvite(result.namespaceId, name, client.createNamespaceInvitation(result.namespaceId))
+            loadChannels()
+            status =
+                if (result.haEnabled) {
+                    "Created \"$name\". Share the invite to bring people in."
+                } else {
+                    "Created \"$name\". Invitees may not find it yet: ${result.haError}"
+                }
+        }
+
+    /** Mint an invite to the space [channel] lives in (its namespace), signed by this device. */
+    suspend fun inviteTo(channel: ChatChannel) =
+        runStep("Creating an invite") {
+            val namespaceId = channel.groupId ?: error("this channel's space is not known")
+            lastInvite = ChatInvite(namespaceId, channel.name, client.createNamespaceInvitation(namespaceId))
+            status = ""
+        }
+
     // ---- join --------------------------------------------------------------
 
     /** Redeem an invite code as this account: the admitting node becomes (or stays) its relay. */
@@ -315,5 +369,6 @@ class ChatService(
         const val PACKAGE_NAME = "com.calimero.chat"
         private const val MESSAGE_PAGE = 50
         private const val MILLIS_PER_SECOND = 1000
+        private const val DEFAULT_CHANNEL = "general"
     }
 }

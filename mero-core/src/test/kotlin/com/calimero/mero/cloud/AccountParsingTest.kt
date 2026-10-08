@@ -5,7 +5,7 @@ import com.calimero.mero.account.EnrolmentException
 import com.calimero.mero.account.NamespaceOp
 import com.calimero.mero.admin.SignedGroupOpenInvitation
 import com.calimero.mero.crypto.readU32le
-import com.calimero.mero.relay.WarrantNonceState
+import com.calimero.mero.relay.RelayWarrantNonceState
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
@@ -63,14 +63,14 @@ class AccountParsingTest {
     @Test
     fun `parses a warrant nonce past 2^53 without rounding, and exhaustion`() {
         val open =
-            WarrantNonceState.parse(
+            RelayWarrantNonceState.parse(
                 """{"data":{"contextId":"c","authorDeviceKey":"k","seen":true,"highWaterNonce":18446744073709551614,"nextNonce":18446744073709551615,"windowWidth":64}}""",
-            ) as WarrantNonceState.Open
+            ) as RelayWarrantNonceState.Open
         assertEquals(ULong.MAX_VALUE, open.nextNonce)
         assertEquals(ULong.MAX_VALUE - 1u, open.highWaterNonce)
         assertTrue(open.seen)
-        val exhausted = WarrantNonceState.parse("""{"data":{"contextId":"c","authorDeviceKey":"k","seen":true,"windowWidth":64}}""")
-        assertTrue(exhausted is WarrantNonceState.Exhausted)
+        val exhausted = RelayWarrantNonceState.parse("""{"data":{"contextId":"c","authorDeviceKey":"k","seen":true,"windowWidth":64}}""")
+        assertTrue(exhausted is RelayWarrantNonceState.Exhausted)
     }
 
     @Test

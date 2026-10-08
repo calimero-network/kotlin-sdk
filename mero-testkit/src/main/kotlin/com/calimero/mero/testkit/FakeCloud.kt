@@ -57,6 +57,22 @@ class FakeCloud internal constructor(
     /** The `nextNonce` the warrant-nonce route reports. */
     @Volatile var nextNonce: Long = 1
 
+    /** Whether the relay reports it attested a founding (`teeEnabled`), which gates HA. */
+    @Volatile var teeOnFounding: Boolean = true
+
+    /** When non-null, `enable-ha` is refused 409 with this `error` code. */
+    @Volatile var haRefusal: String? = null
+
+    /** When false, the cloud routes namespaces to nobody (not hosted). */
+    @Volatile var namespacesRouted: Boolean = true
+
+    /** What `GET /admin-api/groups/{g}/members` lists (besides the relay itself, a `RelayTee`). */
+    val groupMembers: MutableList<Pair<String, String>> = CopyOnWriteArrayList()
+
+    /** The application a group reports (`targetApplicationId`) and its `appKey`. */
+    var groupApplicationId: String = "88".repeat(32)
+    var groupAppKey: String = "99".repeat(32)
+
     /** Everything that arrived on a cloud or relay route, in order. */
     val requests: MutableList<Recorded> = CopyOnWriteArrayList()
 
@@ -134,6 +150,22 @@ class FakeCloud internal constructor(
                     },
                 )
             }
+            method == "POST" &&
+                seg.size == 7 &&
+                seg.take(3) == listOf("api", "cloud", "accounts") &&
+                seg[4] == "namespaces" &&
+                seg[6] == "enable-ha" -> {
+                record()
+                haRefusal?.let { code ->
+                    return MockResponse().setResponseCode(409).setBody(buildJsonObject { put("error", code) }.toString())
+                }
+                ok(
+                    buildJsonObject {
+                        put("status", "enabled")
+                        put("namespace_id", seg[5])
+                    },
+                )
+            }
             method == "GET" && seg.size == 5 && seg.take(3) == listOf("api", "cloud", "namespaces") && seg[4] == "admitters" -> {
                 record()
                 ok(
@@ -142,19 +174,21 @@ class FakeCloud internal constructor(
                         put(
                             "admitters",
                             buildJsonArray {
-                                add(
-                                    buildJsonObject {
-                                        put("peer_id", "12D3KooWFakeRelay")
-                                        put("account", relayAccount)
-                                        put("relay_url", base)
-                                        put("admit_url", "$base/admin-api/namespaces/${seg[3]}/admit")
-                                        put("status", "active")
-                                        put("fresh", true)
-                                        put("can_admit", true)
-                                        put("authorship_ready", true)
-                                        put("can_execute", true)
-                                    },
-                                )
+                                if (namespacesRouted) {
+                                    add(
+                                        buildJsonObject {
+                                            put("peer_id", "12D3KooWFakeRelay")
+                                            put("account", relayAccount)
+                                            put("relay_url", base)
+                                            put("admit_url", "$base/admin-api/namespaces/${seg[3]}/admit")
+                                            put("status", "active")
+                                            put("fresh", true)
+                                            put("can_admit", true)
+                                            put("authorship_ready", true)
+                                            put("can_execute", true)
+                                        },
+                                    )
+                                }
                             },
                         )
                         put("servable", true)
@@ -265,6 +299,90 @@ class FakeCloud internal constructor(
                     ),
                 )
             }
+            // ---- relay: governance + group reads ------------------------------------------------
+            seg.size == 4 && seg[0] == "admin-api" && seg[1] == "groups" && seg[3] == "governance-intents" && method == "GET" -> {
+                record()
+                ok(
+                    buildJsonObject {
+                        put(
+                            "data",
+                            buildJsonObject {
+                                put("executorAccount", relayAccount)
+                                put("executorKey", executorKey)
+                                put("groupId", seg[2])
+                                put("canActOnBehalf", true)
+                            },
+                        )
+                    },
+                )
+            }
+            seg.size == 4 && seg[0] == "admin-api" && seg[1] == "groups" && seg[3] == "governance-intents" && method == "POST" -> {
+                record()
+                val genesis =
+                    recorded.bodyJson
+                        ?.get("op")
+                        ?.jsonPrimitive
+                        ?.contentOrNull
+                        ?.startsWith("09") == true
+                ok(
+                    buildJsonObject {
+                        put(
+                            "data",
+                            buildJsonObject {
+                                put("groupId", seg[2])
+                                if (genesis) put("teeEnabled", teeOnFounding)
+                            },
+                        )
+                    },
+                )
+            }
+            seg.size == 3 && seg[0] == "admin-api" && seg[1] == "groups" && method == "GET" ->
+                guard {
+                    record()
+                    ok(
+                        buildJsonObject {
+                            put(
+                                "data",
+                                buildJsonObject {
+                                    put("groupId", seg[2])
+                                    put("appKey", groupAppKey)
+                                    put("targetApplicationId", groupApplicationId)
+                                    put("memberCount", groupMembers.size + 1)
+                                    put("contextCount", 0)
+                                    put("defaultCapabilities", 231)
+                                    put("subgroupVisibility", "open")
+                                },
+                            )
+                        },
+                    )
+                }
+            seg.size == 4 && seg[0] == "admin-api" && seg[1] == "groups" && seg[3] == "members" && method == "GET" ->
+                guard {
+                    record()
+                    ok(
+                        buildJsonObject {
+                            put(
+                                "members",
+                                buildJsonArray {
+                                    groupMembers.forEach { (identity, role) ->
+                                        add(
+                                            buildJsonObject {
+                                                put("identity", identity)
+                                                put("role", role)
+                                            },
+                                        )
+                                    }
+                                    add(
+                                        buildJsonObject {
+                                            put("identity", relayAccount)
+                                            put("role", "RelayTee")
+                                        },
+                                    )
+                                },
+                            )
+                        },
+                    )
+                }
             seg.size == 4 && seg[0] == "admin-api" && seg[1] == "namespaces" && seg[3] == "admit" && method == "POST" -> {
                 record()
                 ok(buildJsonObject { put("data", buildJsonObject { put("published", true) }) })

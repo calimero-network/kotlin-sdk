@@ -74,7 +74,7 @@ class PersistedNonceSource(
 }
 
 /** Where a device stands in its warrant-nonce sequence in one context (core rc.83 `warrant-nonce` route). */
-sealed class WarrantNonceState {
+sealed class RelayWarrantNonceState {
     abstract val contextId: String
     abstract val authorDeviceKey: String
 
@@ -85,20 +85,20 @@ sealed class WarrantNonceState {
         val nextNonce: ULong,
         val seen: Boolean,
         val highWaterNonce: ULong?,
-    ) : WarrantNonceState()
+    ) : RelayWarrantNonceState()
 
     /** Every nonce is spent: the device must re-key to write here again. */
     data class Exhausted(
         override val contextId: String,
         override val authorDeviceKey: String,
-    ) : WarrantNonceState()
+    ) : RelayWarrantNonceState()
 
     companion object {
         /**
          * Parse the route's body. u64 fields are read from the **text**, never through a
          * double, so a nonce past 2^53 survives; an absent `nextNonce` means exhausted.
          */
-        fun parse(body: String): WarrantNonceState {
+        fun parse(body: String): RelayWarrantNonceState {
             val data = body.substringAfter("\"data\"", missingDelimiterValue = "")
             require(data.isNotEmpty()) { "warrant-nonce response had no `data`: ${body.take(200)}" }
 

@@ -1,5 +1,6 @@
 package com.calimero.mero.sample.explorer
 
+import com.calimero.mero.account.ApplicationIds
 import com.calimero.mero.account.DeviceCert
 import com.calimero.mero.admin.AccountSignWithRootRequest
 import com.calimero.mero.admin.AddGroupMembersRequest
@@ -65,7 +66,16 @@ import com.calimero.mero.auth.RefreshTokenRequest
 import com.calimero.mero.auth.RevokeTokenRequest
 import com.calimero.mero.auth.TokenRequest
 import com.calimero.mero.auth.UpdateKeyPermissionsRequest
+import com.calimero.mero.compose.MeroClient
+import com.calimero.mero.crypto.Hex
+import com.calimero.mero.relay.ApplicationTarget
 import com.calimero.mero.relay.CreateContextInput
+import com.calimero.mero.relay.FoundNamespaceInput
+import com.calimero.mero.relay.GovernanceMemberRole
+import com.calimero.mero.relay.GovernanceOp
+import com.calimero.mero.relay.GovernanceOpKind
+import com.calimero.mero.relay.GovernanceOps
+import com.calimero.mero.relay.RelayExecutor
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.jsonObject
@@ -946,6 +956,65 @@ private val cloudOps =
         SDKOperation("cld.nodeKey", "Cloud", "relayNodeKey", "The relay's attested node key", emptyList()) { e, _ ->
             e.account.relayNodeKey(e.relay.relayUrl)
         },
+        SDKOperation(
+            "cld.enableHa", "Cloud", "enableHaAsAccount", "Ask the cloud to host a namespace this account founded",
+            listOf(OpField.line("namespaceId", "Namespace ID"), OpField.line("salt", "Founding salt (hex)")),
+        ) { e, i ->
+            val s = e.account.session() ?: error("signed out")
+            pretty(e.account.cloud(s).enableHaAsAccount(i.v("namespaceId"), i.v("salt"), s.account, s.credential, relayUrl = s.relayUrl))
+        },
+        SDKOperation(
+            "cld.registry", "Cloud", "resolveFromRegistry", "An app's id, version and publisher from the registry",
+            listOf(OpField.line("package", "Package", "com.calimero.chat")),
+        ) { _, i -> ApplicationIds.resolveFromRegistry(i.opt("package") ?: "com.calimero.chat").toString() },
+    )
+
+private val spaceOps =
+    listOf(
+        SDKOperation(
+            "spc.found", "Spaces", "foundNamespace", "Found a namespace as this account (+ app, mask, name, HA)",
+            listOf(
+                OpField.line("package", "App package (optional)", "com.calimero.chat"),
+                OpField.line("name", "Name (optional)"),
+                OpField.line("capabilities", "Default capabilities", "231"),
+            ),
+        ) { e, i ->
+            val app =
+                i.opt("package")?.let { pkg ->
+                    ApplicationIds.resolveFromRegistry(pkg).let { ApplicationTarget(it.applicationId, it.packageName, it.version) }
+                }
+            val r = e.client.foundNamespace(app, i.opt("capabilities")?.toLong() ?: MeroClient.DEFAULT_SPACE_CAPABILITIES, i.opt("name"))
+            "namespace: ${r.namespaceId}\nsalt:      ${r.founded.salt}\ntee:       ${r.founded.teeEnabled}\n" +
+                "app set:   ${r.founded.applicationSet}\nmask set:  ${r.founded.defaultCapabilitiesSet}\n" +
+                "hosted:    ${r.haEnabled}${r.haError?.let { "\n  $it" }.orEmpty()}"
+        },
+        SDKOperation(
+            "spc.invite", "Spaces", "createNamespaceInvitation", "Mint an invitation signed by this device",
+            listOf(OpField.line("namespaceId", "Namespace ID")),
+        ) { e, i -> Fmt.json(e.client.createNamespaceInvitation(i.v("namespaceId"))) },
+        SDKOperation(
+            "spc.nsId", "Spaces", "foundedNamespaceId", "The id a founder + salt derive",
+            listOf(OpField.line("founder", "Founder account"), OpField.line("salt", "Salt (hex)")),
+        ) { _, i -> GovernanceOps.foundedNamespaceId(i.v("founder"), i.v("salt")) },
+        SDKOperation(
+            "spc.addMember", "Spaces", "memberAddedOp", "Add an account to a group (delegated governance)",
+            listOf(OpField.line("groupId", "Group ID"), OpField.line("member", "Member account"), OpField.line("role", "Role", "Member")),
+        ) { e, i ->
+            val op = GovernanceOps.memberAddedOp(i.v("member"), GovernanceMemberRole.valueOf(i.opt("role") ?: "Member"))
+            e.relay.govern(i.v("groupId"), op).toString()
+        },
+        SDKOperation(
+            "spc.name", "Spaces", "groupMetadataSetOp", "Name a group (delegated governance)",
+            listOf(OpField.line("groupId", "Group ID"), OpField.line("name", "Name")),
+        ) { e, i -> e.relay.govern(i.v("groupId"), GovernanceOps.groupMetadataSetOp(name = i.v("name"))).toString() },
+        SDKOperation(
+            "spc.subgroup", "Spaces", "subgroupCreation", "Create a restricted subgroup of a namespace",
+            listOf(OpField.line("namespaceId", "Namespace ID")),
+        ) { e, i ->
+            val s = e.account.session() ?: error("signed out")
+            val created = GovernanceOps.subgroupCreation(i.v("namespaceId"), restricted = true, admin = s.account)
+            e.relay.govern(i.v("namespaceId"), created.op).toString()
+        },
     )
 
 private val relayOps =
@@ -1000,6 +1069,17 @@ private val relayOps =
             "rel.describeGovernance", "Relay", "describeGovernance", "Who would act on a group's governance",
             listOf(OpField.line("groupId", "Group ID")),
         ) { e, i -> e.relay.describeGovernance(i.v("groupId")).toString() },
+        SDKOperation(
+            "rel.govern", "Relay", "govern", "Publish an encoded governance op under a warrant",
+            listOf(OpField.line("groupId", "Group ID"), OpField.line("kind", "Plane", "group"), OpField.line("op", "Op bytes (hex)")),
+        ) { e, i ->
+            val kind = if (i.v("kind") == "root") GovernanceOpKind.ROOT else GovernanceOpKind.GROUP
+            e.relay.govern(i.v("groupId"), GovernanceOp(kind, Hex.decodeUnsized(i.v("op"), "op"))).toString()
+        },
+        SDKOperation(
+            "rel.found", "Relay", "foundNamespace", "Found a namespace (genesis) naming the relay's executor",
+            listOf(OpField.line("executorAccount", "Relay account"), OpField.line("executorKey", "Relay node key")),
+        ) { e, i -> e.relay.foundNamespace(FoundNamespaceInput(RelayExecutor(i.v("executorAccount"), i.v("executorKey")))).toString() },
     )
 
 private val rpcOps =
@@ -1027,7 +1107,7 @@ private val rpcOps =
 
 /** The full registry, in display order. */
 val sdkOperations: List<SDKOperation> =
-    sessionOps + cloudOps + relayOps + healthOps + authOps + keyOps + appOps + pkgOps + ctxOps + ctxIdOps +
+    sessionOps + cloudOps + spaceOps + relayOps + healthOps + authOps + keyOps + appOps + pkgOps + ctxOps + ctxIdOps +
         aliasOps + blobOps + nsOps + groupOps + memberOps + settingsOps + upgradeOps +
         accountOps + teeOps + rc83Ops + rpcOps
 

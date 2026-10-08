@@ -130,6 +130,21 @@ wallet redirects back with a device certificate, and the app talks to the accoun
   takes the `callbackUrl`. Core's `Mero.authenticate(...)` and the SSO helpers stay for servers,
   tools and tests that talk to a self-hosted node.
 
+### Added — founding spaces and inviting as a Cloud account
+
+- `relay.GovernanceOps`: every delegable governance op encoder mero-js exports (`memberAddedOp`,
+  `memberRemovedOp`, `targetApplicationSetOp`, `defaultCapabilitiesSetOp`, `groupMetadataSetOp`,
+  `subgroupCreation`, `namespaceCreatedOp`, `foundedNamespaceId`, ...), pinned by core's vectors.
+- `RelayClient.foundNamespace` (the `NamespaceCreatedV2` genesis, then application and mask);
+  `CloudAccount.foundNamespace` (executor from the attested relay key, name, best-effort HA via the
+  new `CloudClient.enableHaAsAccount` and its signed founder claim, `AccountHaRefusedException`).
+- `Invitations.signGroupInvitation` and `CloudAccount.createNamespaceInvitation`: invitations
+  signed by the device key, with relay admitters and the not-hosted `admitter_addrs` fallback.
+- `ApplicationIds` (`applicationIdForBundle`, `resolveFromRegistry`).
+- `MeroClient.foundNamespace` / `createNamespaceInvitation`; the sample chat creates a space and
+  shares an invite.
+- Renamed `relay.WarrantNonceState` to `RelayWarrantNonceState` (no clash with `admin.WarrantNonceState`).
+
 ### Added — the Cloud account layer (`mero-core`)
 
 A port of mero-js 24.5.0's delegated-account layer, byte-for-byte with core 0.11.0-rc.83 and pinned

@@ -1,5 +1,6 @@
 package com.calimero.mero.sample.chat
 
+import android.content.Intent
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
@@ -20,11 +21,15 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.AddCircleOutline
 import androidx.compose.material.icons.outlined.ArrowUpward
 import androidx.compose.material.icons.outlined.ChatBubbleOutline
+import androidx.compose.material.icons.outlined.ContentCopy
 import androidx.compose.material.icons.outlined.GroupAdd
 import androidx.compose.material.icons.outlined.Info
+import androidx.compose.material.icons.outlined.PersonAddAlt
 import androidx.compose.material.icons.outlined.Refresh
+import androidx.compose.material.icons.outlined.Share
 import androidx.compose.material.icons.outlined.Tag
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
@@ -44,7 +49,10 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -86,6 +94,7 @@ fun ChatScreen(
     } else {
         Messages(service, channel, onBack = { open = null })
     }
+    service.lastInvite?.let { invite -> InviteDialog(invite, onDismiss = service::clearInvite) }
 }
 
 @Composable
@@ -96,12 +105,16 @@ private fun ChannelList(
 ) {
     val scope = rememberCoroutineScope()
     var joining by remember { mutableStateOf(false) }
+    var creating by remember { mutableStateOf(false) }
     Column(Modifier.fillMaxSize().background(Cal.bg)) {
         TopBar(
             title = "Chat",
             subtitle = "Channels your account belongs to",
             onBack = onClose,
             actions = {
+                IconButton(onClick = { creating = true }, modifier = Modifier.testTag("chatNewSpace")) {
+                    Icon(Icons.Outlined.AddCircleOutline, contentDescription = "New space", tint = Cal.textDim)
+                }
                 IconButton(onClick = { joining = true }) {
                     Icon(Icons.Outlined.GroupAdd, contentDescription = "Join with an invite", tint = Cal.textDim)
                 }
@@ -122,8 +135,13 @@ private fun ChannelList(
                     EmptyState(
                         icon = Icons.Outlined.ChatBubbleOutline,
                         title = "No channels yet",
-                        body = "Join a space with an invite code. Its channels show up here once the relay has them.",
-                        action = { CalPrimaryButton("Join with an invite", onClick = { joining = true }) },
+                        body = "Start a space of your own and invite people, or join one with an invite code.",
+                        action = {
+                            Column(verticalArrangement = Arrangement.spacedBy(8.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                                CalPrimaryButton("Create a space", onClick = { creating = true }, icon = Icons.Outlined.AddCircleOutline)
+                                CalSecondaryButton("Join with an invite", onClick = { joining = true }, icon = Icons.Outlined.GroupAdd)
+                            }
+                        },
                     )
                 }
             } else {
@@ -137,6 +155,15 @@ private fun ChannelList(
                 }
             }
         }
+    }
+    if (creating) {
+        NewSpaceDialog(
+            onDismiss = { creating = false },
+            onCreate = { name ->
+                creating = false
+                scope.launch { service.createSpace(name) }
+            },
+        )
     }
     if (joining) {
         JoinDialog(
@@ -246,7 +273,18 @@ private fun Messages(
     if (info) {
         AlertDialog(
             onDismissRequest = { info = false },
-            confirmButton = { CalSecondaryButton("Close", onClick = { info = false }) },
+            confirmButton = {
+                CalPrimaryButton(
+                    "Invite people",
+                    onClick = {
+                        info = false
+                        scope.launch { service.inviteTo(channel) }
+                    },
+                    enabled = channel.groupId != null,
+                    icon = Icons.Outlined.PersonAddAlt,
+                )
+            },
+            dismissButton = { CalSecondaryButton("Close", onClick = { info = false }) },
             title = { Text("Technical details", color = Cal.text) },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -344,6 +382,80 @@ private fun JoinDialog(
         },
         confirmButton = { CalPrimaryButton("Join", onClick = { onJoin(code.trim()) }, enabled = code.isNotBlank()) },
         dismissButton = { CalSecondaryButton("Cancel", onClick = onDismiss) },
+    )
+}
+
+@Composable
+private fun NewSpaceDialog(
+    onDismiss: () -> Unit,
+    onCreate: (String) -> Unit,
+) {
+    var name by remember { mutableStateOf("") }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        containerColor = Cal.surface,
+        title = { Text("Create a space", color = Cal.text) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Text(
+                    "Your account founds the space through its relay and owns it. It starts with a #general channel, " +
+                        "and you get an invite to share.",
+                    color = Cal.textDim,
+                    fontSize = 14.sp,
+                )
+                CalTextField(name, { name = it }, "Name", placeholder = "Team", modifier = Modifier.testTag("spaceName"))
+            }
+        },
+        confirmButton = { CalPrimaryButton("Create", onClick = { onCreate(name.trim()) }, enabled = name.isNotBlank()) },
+        dismissButton = { CalSecondaryButton("Cancel", onClick = onDismiss) },
+    )
+}
+
+@Composable
+private fun InviteDialog(
+    invite: ChatInvite,
+    onDismiss: () -> Unit,
+) {
+    val context = LocalContext.current
+    val clipboard = LocalClipboardManager.current
+    val link = remember(invite) { invite.shareableLink() }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        containerColor = Cal.surface,
+        title = { Text("Invite to ${invite.spaceName}", color = Cal.text) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Text(
+                    "Anyone with this link can join for the next 24 hours. It is signed by this device.",
+                    color = Cal.textDim,
+                    fontSize = 14.sp,
+                )
+                IdField("Invite link", link, modifier = Modifier.testTag("inviteLink"))
+            }
+        },
+        confirmButton = {
+            CalPrimaryButton(
+                "Share",
+                onClick = {
+                    val send =
+                        Intent(Intent.ACTION_SEND)
+                            .setType("text/plain")
+                            .putExtra(Intent.EXTRA_TEXT, link)
+                    context.startActivity(Intent.createChooser(send, "Share invite"))
+                },
+                icon = Icons.Outlined.Share,
+            )
+        },
+        dismissButton = {
+            CalSecondaryButton(
+                "Copy",
+                onClick = {
+                    clipboard.setText(AnnotatedString(link))
+                    onDismiss()
+                },
+                icon = Icons.Outlined.ContentCopy,
+            )
+        },
     )
 }
 

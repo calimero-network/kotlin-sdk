@@ -5,11 +5,13 @@ import com.calimero.mero.Mero
 import com.calimero.mero.account.CloudAccount
 import com.calimero.mero.account.EncryptedPrefsSecureStore
 import com.calimero.mero.account.EnrolmentException
+import com.calimero.mero.account.FoundedDelegatedNamespace
 import com.calimero.mero.account.JoinResult
 import com.calimero.mero.account.RelayConnection
 import com.calimero.mero.account.WalletLauncher
 import com.calimero.mero.admin.SignedGroupOpenInvitation
 import com.calimero.mero.cloud.CloudClient
+import com.calimero.mero.relay.ApplicationTarget
 import com.calimero.mero.relay.RelayClient
 import com.calimero.mero.storage.EncryptedPrefsTokenStore
 import com.calimero.mero.storage.MemoryTokenStore
@@ -166,6 +168,21 @@ class MeroClient(
         return result
     }
 
+    /**
+     * Found a namespace (a "space") as this account through its relay, give it [application]
+     * and [defaultCapabilities], name it, and ask the cloud to host it so invitees can find
+     * it. See [CloudAccount.foundNamespace].
+     */
+    suspend fun foundNamespace(
+        application: ApplicationTarget? = null,
+        defaultCapabilities: Long? = DEFAULT_SPACE_CAPABILITIES,
+        name: String? = null,
+    ): FoundedDelegatedNamespace = account.foundNamespace(defaultCapabilities = defaultCapabilities, application = application, name = name)
+
+    /** Mint an invitation to [namespaceId], signed by this device. See [CloudAccount.createNamespaceInvitation]. */
+    suspend fun createNamespaceInvitation(namespaceId: String): SignedGroupOpenInvitation =
+        account.createNamespaceInvitation(namespaceId, _connection.value)
+
     /** Sign out: drop the relay session and the persisted account session. */
     suspend fun signOut(forgetDevice: Boolean = false) {
         runCatching { _connection.value?.mero?.clearToken() }
@@ -210,6 +227,12 @@ class MeroClient(
     }
 
     companion object {
+        /**
+         * The default member mask mero-react founds a space with: create contexts, invite,
+         * join open subgroups, create subgroups, manage visibility and metadata (231).
+         */
+        const val DEFAULT_SPACE_CAPABILITIES: Long = 231L
+
         /**
          * The on-device client: keys, session and nonces in a Keystore-backed
          * [EncryptedPrefsSecureStore], relay tokens in an [EncryptedPrefsTokenStore].
