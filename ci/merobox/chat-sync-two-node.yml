@@ -68,7 +68,12 @@ steps:
       mentions: []
       mentions_usernames: []
       parent_message: null
-      timestamp: 1721800001000
+      # SECONDS since epoch, not milliseconds. com.calimero.chat >= 3.1.29
+      # refuses a timestamp past the node clock + skew, comparing it against
+      # env::time_now()/1e9 — a millisecond value reads as ~54,000 years ahead
+      # ("Timestamp 1721800001000 is too far in the future"). A fixed past
+      # value always passes that check.
+      timestamp: 1721800001
       files: null
       images: null
 
