@@ -88,9 +88,9 @@ val name = raw.jsonObject["name"]?.jsonPrimitive?.content
 ```
 
 <Aside type="note">
-  `execute` takes an optional `executorPublicKey` — the context identity making
-  the call. Leave it out to use the context's default identity; set it for apps
-  that key state on the caller identity.
+  A call runs as the identity the token is bound to. There is no
+  `executorPublicKey`: core refuses any field beyond `contextId`, `method` and
+  `argsJson`.
 </Aside>
 
 ## Handling contract errors

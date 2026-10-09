@@ -3,7 +3,7 @@ package com.calimero.mero
 /**
  * Member capability bitmask constants — mirrors core's `MemberCapabilities`
  * (crates/context/config/src/lib.rs). The per-member value is a u32 bitmask. Core currently assigns
- * bits 0..=8 (the entries below); bits 9 and above are unassigned and may be claimed by a future
+ * bits 0..=9 (the entries below); bits 10 and above are unassigned and may be claimed by a future
  * core release, so applications MUST NOT repurpose them.
  *
  * Pure port of mero-js `capabilities.ts`. The mask is carried as a [Long] to keep the full unsigned
@@ -20,6 +20,14 @@ object Capabilities {
     const val CAN_DELETE_SUBGROUP: Long = 64L // 1 shl 6
     const val CAN_MANAGE_VISIBILITY: Long = 128L // 1 shl 7
     const val CAN_MANAGE_METADATA: Long = 256L // 1 shl 8
+
+    /**
+     * May relay members' writes under their signed warrants (delegated execution). Implied by
+     * nothing — not membership, not admin — so every group is authorship-closed until an admin
+     * grants it: per member, or in the group's default mask for members admitted later. See
+     * `AdminApi.openToDelegatedExecution` and `AdminApi.grantAuthorship`.
+     */
+    const val CAN_AUTHOR_ON_BEHALF: Long = 512L // 1 shl 9
 
     private const val U32_MASK = 0xFFFF_FFFFL
 

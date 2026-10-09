@@ -33,6 +33,23 @@ val job = scope.launch {
 job.cancel()   // closes the SSE stream
 ```
 
+## Group events (core 0.11.0-rc.83)
+
+```kotlin
+fun groupEvents(groupIds: List<String>): Flow<GroupEvent>
+fun nodeEvents(contextIds: List<String>, groupIds: List<String>): Flow<NodeEvent>
+```
+
+Subscribing with `groupIds` delivers group-keyed frames — membership changes and
+migration progress, `result.groupId` rather than `result.contextId` — as
+`GroupEvent(groupId, kind, payload)`. Roles in them may read `RelayTee`. The node
+silently drops ids the token may not observe. `groupIds` is sent only when
+non-empty, so a context-only subscription is byte-identical to before.
+
+The stream authenticates with an `Authorization: Bearer` header on `/sse`, like
+every other call. Core rc.83 also accepts a `?token=` query on `/ws`, `/sse` and
+`/sse/*` (for browsers), but a token in a URL ends up in proxy logs.
+
 ## `ContextEvent`
 
 ```kotlin
@@ -47,6 +64,10 @@ The discriminator is the frame's `result.type`. A live `merod 0.11.0-rc.32` send
 **`StateMutation`** (the context state moved) and **`SyncStatus`**
 (`syncing` / `waitingForPeers` / …). It does **not** send `ExecutionEvent`, which
 earlier versions of this page named — a `when` branching on it never fired.
+
+A presence update (`kind == "Ephemeral"`) carried by a relay for an account
+names that account; read it as `event.presenceAccount` (`null` for a node's own
+presence).
 
 For a contract emission (`kind == "StateMutation"`) the encoded contract events
 live under `payload`'s `data.events[].data`, each with its own `kind`.

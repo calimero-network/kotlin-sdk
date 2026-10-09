@@ -50,6 +50,8 @@ class FakeNode {
         private set
     var refreshCalls = 0
         private set
+    var logoutCalls = 0
+        private set
     var rpcCalls = 0
         private set
     var protectedCalls = 0
@@ -90,6 +92,7 @@ class FakeNode {
         return when (method to path) {
             "POST" to "/auth/token" -> issueTokens()
             "POST" to "/auth/refresh" -> refresh(request)
+            "POST" to "/auth/logout" -> logout()
             "HEAD" to "/auth/validate" -> validate(request)
             "GET" to "/auth/health" ->
                 ok(
@@ -113,6 +116,13 @@ class FakeNode {
     }
 
     // ---- Handlers --------------------------------------------------------------------------
+
+    /** `POST /auth/logout` (core rc.83): retire the refresh token, so a replay of it is reuse. */
+    private fun logout(): MockResponse =
+        synchronized(lock) {
+            logoutCalls++
+            ok(buildJsonObject { put("data", buildJsonObject { put("success", true) }) })
+        }
 
     private fun issueTokens(): MockResponse =
         synchronized(lock) {

@@ -4,17 +4,21 @@ import com.calimero.mero.admin.AdminApi
 import com.calimero.mero.auth.AuthApi
 import com.calimero.mero.auth.AuthCallbackResult
 import com.calimero.mero.auth.AuthLoginOptions
+import com.calimero.mero.auth.LogoutRequest
 import com.calimero.mero.auth.RefreshCoordinator
 import com.calimero.mero.auth.RefreshTokenRequest
 import com.calimero.mero.auth.RevokeTokenRequest
 import com.calimero.mero.auth.TokenRequest
 import com.calimero.mero.http.AuthInterceptor
 import com.calimero.mero.http.HttpClient
+import com.calimero.mero.http.HttpException
 import com.calimero.mero.http.MeroStateException
 import com.calimero.mero.http.OkHttpTransport
 import com.calimero.mero.http.TokenAuthenticator
 import com.calimero.mero.rpc.RpcClient
 import com.calimero.mero.sse.ContextEvent
+import com.calimero.mero.sse.GroupEvent
+import com.calimero.mero.sse.NodeEvent
 import com.calimero.mero.sse.SseClient
 import com.calimero.mero.storage.MemoryTokenStore
 import com.calimero.mero.storage.TokenStore
@@ -49,10 +53,20 @@ class Mero(
         RefreshCoordinator(
             tokenStore = store,
             refreshCall = { bundle ->
+                // Always the pair from ONE token response: core rc.83 binds a refresh to the
+                // access token's `key_id`, and a mismatched pair is a 401 ("Access and refresh
+                // tokens do not belong to the same key"). A rejected refresh can never succeed
+                // later — a pre-rc.83 pair lacks `key_id` altogether — so drop the bundle and
+                // let the app re-authenticate rather than retry it on every call.
                 val response =
-                    auth.refreshToken(
-                        RefreshTokenRequest(accessToken = bundle.accessToken, refreshToken = bundle.refreshToken),
-                    )
+                    try {
+                        auth.refreshToken(
+                            RefreshTokenRequest(accessToken = bundle.accessToken, refreshToken = bundle.refreshToken),
+                        )
+                    } catch (e: HttpException) {
+                        if (e.status == HTTP_UNAUTHORIZED) store.clear()
+                        throw e
+                    }
                 val access = response.data.accessToken
                 TokenData(
                     accessToken = access,
@@ -121,6 +135,26 @@ class Mero(
         ).events(contextIds)
 
     /**
+     * Group-keyed events (membership changes, migration progress) for [groupIds], over the same
+     * auto-reconnecting SSE as [events]. The node silently drops ids the token may not observe.
+     */
+    fun groupEvents(groupIds: List<String>): Flow<GroupEvent> = sseClient().groupEvents(groupIds)
+
+    /** Context and group events on one stream, subscribed together on every (re)connect. */
+    fun nodeEvents(
+        contextIds: List<String>,
+        groupIds: List<String>,
+    ): Flow<NodeEvent> = sseClient().nodeEvents(contextIds, groupIds)
+
+    private fun sseClient(): SseClient =
+        SseClient(
+            baseUrl = config.baseUrl,
+            token = { store.getTokens()?.accessToken },
+            client = sseHttpClient,
+            json = json,
+        )
+
+    /**
      * Authenticate with credentials. Builds the exact mero-js request body:
      * `auth_method=user_password`, `client_name=mero-kotlin-sdk`, `permissions=[admin]`.
      *
@@ -186,11 +220,21 @@ class Mero(
     }
 
     /**
-     * Full logout: best-effort server-side revocation (when a `client_id` is known) followed by a
-     * local token clear. The local clear always runs even if revocation fails, mirroring mero-react's
-     * `logout()` (which clears storage unconditionally).
+     * Full logout: retire the refresh token server-side (`POST /auth/logout`, core rc.83), revoke
+     * the client's tokens when a `client_id` is known, then clear the local store.
+     *
+     * Both network steps are best-effort: the local clear always runs even if they fail (an
+     * unreachable node, a pre-rc.83 node without the route, a token already invalid), mirroring
+     * mero-react's `logout()`, which clears storage unconditionally.
      */
     suspend fun logout(clientId: String? = null) {
+        store.getTokens()?.refreshToken?.takeIf { it.isNotBlank() }?.let { refresh ->
+            try {
+                auth.logout(LogoutRequest(refreshToken = refresh))
+            } catch (_: Exception) {
+                // Never let a failed server-side logout block the local clear.
+            }
+        }
         if (clientId != null) {
             try {
                 auth.revokeTokens(RevokeTokenRequest(clientId = clientId))
@@ -203,6 +247,7 @@ class Mero(
 
     companion object {
         private const val ONE_HOUR_MS = 3_600_000L
+        private const val HTTP_UNAUTHORIZED = 401
 
         /** Parse an SSO callback URL's hash fragment. */
         @JvmStatic

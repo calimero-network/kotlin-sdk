@@ -219,7 +219,6 @@ class RealNodeE2ETest {
                     "getPeersCount" to { mero.admin.getPeersCount() },
                     "getNetworkStatus" to { mero.admin.getNetworkStatus() },
                     "getUsage" to { mero.admin.getUsage() },
-                    "getCertificate" to { mero.admin.getCertificate() },
                     "getTeeInfo" to { mero.admin.getTeeInfo() },
                     "auth.getHealth" to { mero.auth.getHealth() },
                     "auth.getIdentity" to { mero.auth.getIdentity() },

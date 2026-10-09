@@ -36,6 +36,16 @@ class AuthApi(
     suspend fun refreshToken(request: RefreshTokenRequest): TokenResponse =
         http.postJson("/auth/refresh", request)
 
+    /**
+     * Retire a refresh token server-side (`POST /auth/logout`, core rc.83), so a
+     * copy that leaked can never mint another access token. `401` when the token
+     * is already invalid. Prefer [com.calimero.mero.Mero.logout], which calls
+     * this best-effort and always clears the local store.
+     */
+    suspend fun logout(request: LogoutRequest): LogoutResponse =
+        http.postJson<LogoutRequest, ApiEnvelope<LogoutResponse>>("/auth/logout", request).data
+            ?: LogoutResponse(success = true)
+
     /** Mint a token pair without a provider handshake (CI/testing only). */
     suspend fun generateMockTokens(request: MockTokenRequest): TokenResponse =
         http.postJson("/auth/mock-token", request)

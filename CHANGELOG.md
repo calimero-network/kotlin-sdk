@@ -1,6 +1,120 @@
 # Changelog
 
-## Unreleased — core 0.11.0-rc.44
+## Unreleased — core 0.11.0-rc.83
+
+Pinned to `0.11.0-rc.83` in `ci/core-version` (and the matching
+`ghcr.io/calimero-network/merod:0.11.0-rc.83` image in every merobox scenario).
+
+### Breaking
+
+- `RpcClient.execute` / `executeRaw` / `executeWithMetadata` no longer take
+  `executorPublicKey`. Core's execute request is `deny_unknown_fields` with only
+  `contextId`, `method` and `argsJson`, so a call that named one was refused.
+- SSE sends the access token as `Authorization: Bearer` instead of `?token=` in
+  the URL, matching the Swift SDK and keeping tokens out of proxy logs.
+
+- **Re-login after the node upgrade.** core rc.83 added a *required* `key_id`
+  claim to its JWTs, so every access and refresh token minted by an older node
+  fails verification. Stored sessions are dead: apps must authenticate again.
+  The SDK now drops the stored bundle when `/auth/refresh` answers `401` (an
+  unrefreshable pair never becomes refreshable), so `isAuthenticated` turns
+  `false` instead of every call failing the same way. Refresh always sends the
+  access/refresh pair from **one** token response — rc.83 refuses a pair whose
+  `key_id`s differ ("Access and refresh tokens do not belong to the same key").
+- **`AdminApi.getCertificate()` removed.** core removed `GET
+  /admin-api/certificate` (a928b5ed4).
+- **`AdminApi.teeVerifyQuote()` and `TeeVerifyQuoteRequest` /
+  `TeeVerifyQuoteResponseData` removed.** `POST /admin-api/tee/verify-quote` was
+  removed from core before rc.41 and has answered 404 since.
+- **`CreateGroupRequest.groupId` removed.** Group ids are derived now (a
+  namespace root's from its founder and a salt, a subgroup's from its create),
+  and the body is `deny_unknown_fields`, so naming one is a `400`. A new typed
+  `createGroup(CreateGroupRequest)` overload sits beside the map one; do not put
+  `groupId` in the map either.
+- **Subgroup visibility is always sent.** rc.83 flipped what an absent
+  `visibility` means on `POST /namespaces/{id}/groups` — *restricted* before,
+  **open** now. `createGroupInNamespace` therefore always names one, filling
+  `"open"` (`CreateGroupInNamespaceRequest.VISIBILITY_OPEN`) when the request
+  leaves it `null`, so the same call creates the same subgroup on every node.
+  Ask for `VISIBILITY_RESTRICTED` for a membership boundary. A `null` request
+  used to send `{}`; it now sends `{"visibility":"open"}`.
+- **TEE admission policy validation is stricter (node-side).** In the
+  measurement form `allowedMrtd`, `allowedRtmr1`, `allowedRtmr2` and
+  `allowedRtmr3` must all be non-empty, even with `acceptMock`. Changing the
+  policy is a root-guarded owner op (see below).
+
+### Added — auth
+
+- `AuthApi.logout(LogoutRequest)` — `POST /auth/logout {refresh_token}` retires
+  the refresh token server-side. `Mero.logout()` calls it first, best-effort,
+  then revokes by `clientId` when given, then always clears the local store.
+- `GenerateClientKeyRequest.applicationId` / `ttlSecs`. Client keys now expire
+  (30 days by default, no non-expiring key), cannot be granted `keys:*`, and get
+  `admin` only when bound to no context.
+
+### Added — admin surface
+
+- Reads as the account: `queryContext(contextId, QueryContextRequest)`.
+- Delegated execution (types and raw calls; minting warrants is the account
+  layer's job): `getIntentRelay` → `IntentRelayInfo` (`executorKey`,
+  `releaseBytecodeId`, `releaseVersion`, `grantedOnGroupId`),
+  `createContextIntent` / `getContextIntentRelay`, `governanceIntent` /
+  `getGovernanceIntentRelay`, `presenceIntent`.
+- `getWarrantNonce` / `getWarrantNonceAsAuthor` → `WarrantNonceState`
+  (`Open(nextNonce: ULong)` / `Exhausted`), u64-exact. **Not served by rc.83**:
+  a `404` throws `WarrantNonceRouteUnavailableException`.
+- Account root and devices: `signWithAccountRoot` (`/account/sign-with-root`,
+  `AccountSignDomains`), `linkAccountDevice`, `sealToAccount` → `SealedEnvelope`.
+- Root-guarded owner ops, each with an optional `rootProof`:
+  `transferOwnership`, `changeNamespaceAdmin`, `ownerDeleteGroup`,
+  `setTeeAuthoringPolicy` / `disableTeeAuthoringPolicy`. A stale owner-op
+  counter is a `409` — re-read `GroupInfo.ownerOpCounter` and re-sign.
+- TEE admission policy, union form: `SetTeeAdmissionPolicyRequest.measurements(…)`
+  and `.signedRelease(…)`, plus `mode` (`TeeAdmissionMode.REPLICA` / `RELAY`) and
+  `rootProof`. The rc.41 positional constructor still compiles. The GET adds
+  `enabled`, `signedRelease`, `mode`.
+- `teeAttest` flags `bindNodeKey` / `bindTransportKey` / `includeCollateral`;
+  the response adds `boundPublicKey`, `transportPublicKey`, `collateral`.
+  `teeRegistrationAttest` (`POST /tee/registration-attest`).
+- `openToDelegatedExecution(groupId)` / `grantAuthorship(groupId, account)` —
+  read-modify-write helpers for the new `Capabilities.CAN_AUTHOR_ON_BEHALF`
+  (`1 shl 9`).
+- `listGroupMemberDevices`, and `offset` / `limit` paging on `listMemberDevices`.
+- `getBlob` / `getBlobInfo` take an optional `contextId` (`?context_id=`).
+- Typed ownership proofs: `issueOwnershipProof(groupId, IssueOwnershipProofRequest)`
+  and `issueNamespaceOwnershipProof(groupId, IssueNamespaceOwnershipProofRequest)`
+  → `IssueOwnershipProofResponseData` (with `founding` and `credential`). The
+  map-based overloads remain.
+- Response fields: `Namespace.founding` / `heldOps`,
+  `CreateNamespaceResponseData.founding`, `GroupInfo.namespaceId` /
+  `ownerOpCounter`. `GroupRoles` names the role strings, including the new
+  `RelayTee`.
+
+### Added — errors, RPC, events
+
+- `HttpException.errorMessage` / `errorType` / `errorData` / `authError`. core
+  now answers refusals with typed statuses (400/403/404/409/503 instead of a
+  blanket 500), and `/intents` / `/query` method errors carry JSON-RPC's
+  `type` / `data` beside `error`.
+- `ReadOnlyWriteRefusedException` (a `RpcException`) for JSON-RPC's new
+  `ReadOnlyWriteRefused`: this node's role in the context is read-only, so the
+  write was discarded.
+- `RpcClient.executeWithMetadata` → `RpcExecution(returns, transport = "node")`,
+  mero-js's shape.
+- SSE group subscriptions: `Mero.groupEvents(groupIds)` / `nodeEvents(contextIds,
+  groupIds)` deliver `GroupEvent`s (`result.groupId` frames). `groupIds` is sent
+  only when non-empty. `ContextEvent.presenceAccount` reads the relayed account
+  on presence events. The stream still authenticates with `?token=`, which rc.83
+  keeps accepting on `/sse` (and only there, `/ws` aside).
+
+### Tests
+
+`Rc83WireShapeTest` asserts exact request key sets for every new body and
+decodes core's own rc.83 wire fixtures (`crates/server/primitives/fixtures/wire/`,
+copied verbatim to `src/test/resources/fixtures/rc83/`) in both directions.
+`SseGroupEventsTest` covers group subscriptions.
+
+## Superseded — core 0.11.0-rc.44
 
 Pinned to `0.11.0-rc.44` in `ci/core-version`, so every node lane — the two
 merobox sync scenarios, the chat-sync scenario and the `merod`-booting e2e jobs —

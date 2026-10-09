@@ -1,9 +1,12 @@
 package com.calimero.mero.sample.explorer
 
+import com.calimero.mero.admin.AccountSignWithRootRequest
 import com.calimero.mero.admin.AddGroupMembersRequest
 import com.calimero.mero.admin.AdmitJoinRequest
+import com.calimero.mero.admin.ChangeNamespaceAdminRequest
 import com.calimero.mero.admin.CreateApplicationAliasRequest
 import com.calimero.mero.admin.CreateContextAliasRequest
+import com.calimero.mero.admin.CreateContextIntentRequest
 import com.calimero.mero.admin.CreateContextRequest
 import com.calimero.mero.admin.CreateDeviceAliasRequest
 import com.calimero.mero.admin.CreateGroupInNamespaceRequest
@@ -16,14 +19,18 @@ import com.calimero.mero.admin.DeleteContextRequest
 import com.calimero.mero.admin.DeleteGroupRequest
 import com.calimero.mero.admin.DeleteNamespaceRequest
 import com.calimero.mero.admin.DetachContextFromGroupRequest
+import com.calimero.mero.admin.GovernanceIntentRequest
 import com.calimero.mero.admin.InstallApplicationRequest
 import com.calimero.mero.admin.InstallDevApplicationRequest
 import com.calimero.mero.admin.JoinGroupRequest
 import com.calimero.mero.admin.JoinNamespaceRequest
 import com.calimero.mero.admin.LabelDeviceRequest
+import com.calimero.mero.admin.LinkAccountDeviceRequest
 import com.calimero.mero.admin.PairCompleteRequest
 import com.calimero.mero.admin.PairInitRequest
 import com.calimero.mero.admin.PerformIntentRequest
+import com.calimero.mero.admin.PresenceIntentRequest
+import com.calimero.mero.admin.QueryContextRequest
 import com.calimero.mero.admin.RelinkDeviceRequest
 import com.calimero.mero.admin.RemoveGroupMembersRequest
 import com.calimero.mero.admin.ReparentGroupRequest
@@ -31,6 +38,8 @@ import com.calimero.mero.admin.RescopeDeviceRequest
 import com.calimero.mero.admin.ResyncContextRequest
 import com.calimero.mero.admin.RetryGroupUpgradeRequest
 import com.calimero.mero.admin.RevokeDeviceRequest
+import com.calimero.mero.admin.RootGuardedOpRequest
+import com.calimero.mero.admin.SealToAccountRequest
 import com.calimero.mero.admin.SetContextMetadataRequest
 import com.calimero.mero.admin.SetDefaultCapabilitiesRequest
 import com.calimero.mero.admin.SetGroupMetadataRequest
@@ -38,9 +47,11 @@ import com.calimero.mero.admin.SetMemberCapabilitiesRequest
 import com.calimero.mero.admin.SetMemberMetadataRequest
 import com.calimero.mero.admin.SetSubgroupVisibilityRequest
 import com.calimero.mero.admin.SetTeeAdmissionPolicyRequest
+import com.calimero.mero.admin.SetTeeAuthoringPolicyRequest
 import com.calimero.mero.admin.SyncGroupRequest
 import com.calimero.mero.admin.TeeAttestRequest
-import com.calimero.mero.admin.TeeVerifyQuoteRequest
+import com.calimero.mero.admin.TeeRegistrationAttestRequest
+import com.calimero.mero.admin.TransferOwnershipRequest
 import com.calimero.mero.admin.UpdateContextApplicationRequest
 import com.calimero.mero.admin.UpdateMemberRoleRequest
 import com.calimero.mero.admin.UpgradeGroupRequest
@@ -83,9 +94,6 @@ private val healthOps =
         },
         SDKOperation("adm.usage", "Health & Node", "getUsage", "Storage / usage stats", emptyList()) { m, _ ->
             Fmt.json(m.admin.getUsage())
-        },
-        SDKOperation("adm.cert", "Health & Node", "getCertificate", "Node TLS certificate (PEM)", emptyList()) { m, _ ->
-            m.admin.getCertificate() ?: "this node has no certificate configured"
         },
     )
 
@@ -705,9 +713,6 @@ private val teeOps =
         SDKOperation("tee.attest", "TEE", "teeAttest", "Request an attestation quote", listOf(OpField.json())) { m, i ->
             Fmt.json(m.admin.teeAttest(Fmt.decode<TeeAttestRequest>(i.v("body"))))
         },
-        SDKOperation("tee.verify", "TEE", "teeVerifyQuote", "Verify an attestation quote", listOf(OpField.json())) { m, i ->
-            Fmt.json(m.admin.teeVerifyQuote(Fmt.decode<TeeVerifyQuoteRequest>(i.v("body"))))
-        },
     )
 
 private val accountOps =
@@ -759,6 +764,134 @@ private val accountOps =
         ) { m, i -> Fmt.json(m.admin.admitJoin(i.v("namespaceId"), Fmt.decode<AdmitJoinRequest>(i.v("body")))) },
     )
 
+// Core 0.11.0-rc.83: root-guarded owner ops, account-root signing, and the delegated-execution
+// surface (intent discovery and raw intent calls — warrants are minted elsewhere).
+private val rc83Ops =
+    listOf(
+        SDKOperation(
+            "ctx.query", "Delegated & Owner Ops", "queryContext", "Read a context as the session's account",
+            listOf(OpField.line("contextId", "Context ID"), OpField.json("body", "QueryContextRequest", """{"method":"get","argsJson":{}}""")),
+        ) { m, i -> Fmt.json(m.admin.queryContext(i.v("contextId"), Fmt.decode<QueryContextRequest>(i.v("body")))) },
+        SDKOperation(
+            "ctx.intentRelay", "Delegated & Owner Ops", "getIntentRelay", "What this node can relay in a context",
+            listOf(OpField.line("contextId", "Context ID")),
+        ) { m, i -> Fmt.json(m.admin.getIntentRelay(i.v("contextId"))) },
+        SDKOperation(
+            "ctx.warrantNonce", "Delegated & Owner Ops", "getWarrantNonce", "An author device's next warrant nonce",
+            listOf(OpField.line("contextId", "Context ID"), OpField.line("deviceKey", "Author device key")),
+        ) { m, i -> m.admin.getWarrantNonce(i.v("contextId"), i.v("deviceKey")).toString() },
+        SDKOperation(
+            "ctx.warrantNonceAuthor", "Delegated & Owner Ops", "getWarrantNonceAsAuthor", "Warrant nonce, asked with the author's proof",
+            listOf(OpField.line("contextId", "Context ID"), OpField.line("authorProof", "Author proof (hex)")),
+        ) { m, i -> m.admin.getWarrantNonceAsAuthor(i.v("contextId"), i.v("authorProof")).toString() },
+        SDKOperation(
+            "ctx.presenceIntent", "Delegated & Owner Ops", "presenceIntent", "Carry a signed presence statement",
+            listOf(
+                OpField.line("contextId", "Context ID"),
+                OpField.line("state", "State (hex, empty to clear)"),
+                OpField.line("seq", "Sequence"),
+                OpField.line("sentAtMs", "Sent at (ms)"),
+                OpField.line("signature", "Signature (hex)"),
+                OpField.line("authorProof", "Author proof (hex)"),
+            ),
+        ) { m, i ->
+            m.admin.presenceIntent(
+                i.v("contextId"),
+                PresenceIntentRequest(
+                    state = i.opt("state"),
+                    seq = i.v("seq").toLong(),
+                    sentAtMs = i.v("sentAtMs").toLong(),
+                    signature = i.v("signature"),
+                    authorProof = i.v("authorProof"),
+                ),
+            )
+            "presence carried"
+        },
+        SDKOperation(
+            "grp.contextIntent", "Delegated & Owner Ops", "createContextIntent", "Create a context under a creation warrant",
+            listOf(OpField.line("groupId", "Group ID"), OpField.json("body", "CreateContextIntentRequest")),
+        ) { m, i -> Fmt.json(m.admin.createContextIntent(i.v("groupId"), Fmt.decode<CreateContextIntentRequest>(i.v("body")))) },
+        SDKOperation(
+            "grp.contextIntentRelay", "Delegated & Owner Ops", "getContextIntentRelay", "Discovery for delegated context creation",
+            listOf(OpField.line("groupId", "Group ID"), OpField.line("author", "Author account (optional)")),
+        ) { m, i -> Fmt.json(m.admin.getContextIntentRelay(i.v("groupId"), i.opt("author"))) },
+        SDKOperation(
+            "grp.governanceIntent", "Delegated & Owner Ops", "governanceIntent", "Apply a governance op under a warrant",
+            listOf(OpField.line("groupId", "Group ID"), OpField.json("body", "GovernanceIntentRequest")),
+        ) { m, i -> Fmt.json(m.admin.governanceIntent(i.v("groupId"), Fmt.decode<GovernanceIntentRequest>(i.v("body")))) },
+        SDKOperation(
+            "grp.governanceIntentRelay", "Delegated & Owner Ops", "getGovernanceIntentRelay", "Discovery for delegated governance",
+            listOf(OpField.line("groupId", "Group ID")),
+        ) { m, i -> Fmt.json(m.admin.getGovernanceIntentRelay(i.v("groupId"))) },
+        SDKOperation(
+            "grp.openDelegated", "Delegated & Owner Ops", "openToDelegatedExecution", "Grant CAN_AUTHOR_ON_BEHALF by default",
+            listOf(OpField.line("groupId", "Group ID (namespace root)")),
+        ) { m, i -> m.admin.openToDelegatedExecution(i.v("groupId")).toString() },
+        SDKOperation(
+            "grp.grantAuthorship", "Delegated & Owner Ops", "grantAuthorship", "Grant one member CAN_AUTHOR_ON_BEHALF",
+            listOf(OpField.line("groupId", "Group ID"), OpField.line("account", "Member account")),
+        ) { m, i -> m.admin.grantAuthorship(i.v("groupId"), i.v("account")).toString() },
+        SDKOperation(
+            "grp.transferOwnership", "Delegated & Owner Ops", "transferOwnership", "Hand a group to another admin",
+            listOf(OpField.line("groupId", "Group ID"), OpField.json("body", "TransferOwnershipRequest")),
+        ) { m, i ->
+            m.admin.transferOwnership(i.v("groupId"), Fmt.decode<TransferOwnershipRequest>(i.v("body")))
+            "ownership transferred"
+        },
+        SDKOperation(
+            "ns.changeAdmin", "Delegated & Owner Ops", "changeNamespaceAdmin", "Repoint the namespace admin",
+            listOf(OpField.line("namespaceId", "Namespace ID"), OpField.json("body", "ChangeNamespaceAdminRequest")),
+        ) { m, i ->
+            m.admin.changeNamespaceAdmin(i.v("namespaceId"), Fmt.decode<ChangeNamespaceAdminRequest>(i.v("body")))
+            "namespace admin changed"
+        },
+        SDKOperation(
+            "grp.ownerDelete", "Delegated & Owner Ops", "ownerDeleteGroup", "Owner-only delete of an empty group",
+            listOf(OpField.line("groupId", "Group ID"), OpField.json("body", "RootGuardedOpRequest (optional)", "")),
+        ) { m, i ->
+            m.admin.ownerDeleteGroup(i.v("groupId"), Fmt.decode<RootGuardedOpRequest>(i.v("body")))
+            "group deleted"
+        },
+        SDKOperation(
+            "grp.teeAuthoring", "Delegated & Owner Ops", "setTeeAuthoringPolicy", "Which TEEs may author",
+            listOf(OpField.line("groupId", "Group ID"), OpField.json("body", "SetTeeAuthoringPolicyRequest", """{"allowedMrtd":[]}""")),
+        ) { m, i ->
+            m.admin.setTeeAuthoringPolicy(i.v("groupId"), Fmt.decode<SetTeeAuthoringPolicyRequest>(i.v("body")))
+            "authoring policy set"
+        },
+        SDKOperation(
+            "grp.teeAuthoringOff", "Delegated & Owner Ops", "disableTeeAuthoringPolicy", "Turn TEE authorship off",
+            listOf(OpField.line("groupId", "Group ID"), OpField.json("body", "RootGuardedOpRequest (optional)", "")),
+        ) { m, i ->
+            m.admin.disableTeeAuthoringPolicy(i.v("groupId"), Fmt.decode<RootGuardedOpRequest>(i.v("body")))
+            "authoring policy disabled"
+        },
+        SDKOperation(
+            "acc.signWithRoot", "Delegated & Owner Ops", "signWithAccountRoot", "Sign a payload with the account root",
+            listOf(OpField.json("body", "AccountSignWithRootRequest", """{"domain":"mdma.account-login","payload":""}""")),
+        ) { m, i -> Fmt.json(m.admin.signWithAccountRoot(Fmt.decode<AccountSignWithRootRequest>(i.v("body")))) },
+        SDKOperation(
+            "acc.linkDevice", "Delegated & Owner Ops", "linkAccountDevice", "Bind a certified device into a namespace",
+            listOf(OpField.line("namespaceId", "Namespace ID"), OpField.json("body", "LinkAccountDeviceRequest")),
+        ) { m, i -> Fmt.json(m.admin.linkAccountDevice(i.v("namespaceId"), Fmt.decode<LinkAccountDeviceRequest>(i.v("body")))) },
+        SDKOperation(
+            "acc.seal", "Delegated & Owner Ops", "sealToAccount", "Seal bytes to a member's root key",
+            listOf(
+                OpField.line("groupId", "Group ID"),
+                OpField.line("account", "Member account"),
+                OpField.json("body", "SealToAccountRequest", """{"plaintext":""}"""),
+            ),
+        ) { m, i -> Fmt.json(m.admin.sealToAccount(i.v("groupId"), i.v("account"), Fmt.decode<SealToAccountRequest>(i.v("body")))) },
+        SDKOperation(
+            "acc.groupMemberDevices", "Delegated & Owner Ops", "listGroupMemberDevices", "Member accounts and their devices",
+            listOf(OpField.line("groupId", "Group ID")),
+        ) { m, i -> Fmt.json(m.admin.listGroupMemberDevices(i.v("groupId"))) },
+        SDKOperation(
+            "tee.registrationAttest", "TEE", "teeRegistrationAttest", "Attestation quote for fleet registration",
+            listOf(OpField.json("body", "TeeRegistrationAttestRequest", """{"nonce":""}""")),
+        ) { m, i -> Fmt.json(m.admin.teeRegistrationAttest(Fmt.decode<TeeRegistrationAttestRequest>(i.v("body")))) },
+    )
+
 private val rpcOps =
     listOf(
         SDKOperation(
@@ -786,7 +919,7 @@ private val rpcOps =
 val sdkOperations: List<SDKOperation> =
     healthOps + authOps + keyOps + appOps + pkgOps + ctxOps + ctxIdOps +
         aliasOps + blobOps + nsOps + groupOps + memberOps + settingsOps + upgradeOps +
-        accountOps + teeOps + rpcOps
+        accountOps + teeOps + rc83Ops + rpcOps
 
 /** Categories in display order (as first seen in [sdkOperations]). */
 val sdkCategories: List<String> = sdkOperations.map { it.category }.distinct()

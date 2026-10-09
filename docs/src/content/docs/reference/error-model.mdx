@@ -24,6 +24,10 @@ open class HttpException(
     val url: String,
 ) : MeroException("HTTP $status ($url)") {
     val isAuthError: Boolean   // status == 401 || status == 403
+    val errorMessage: String?  // body's "error", when the body is core's JSON shape
+    val errorType: String?     // body's "type", e.g. "FunctionCallError" (rc.83)
+    val errorData: JsonElement? // body's "data" beside the type
+    val authError: String?     // the x-auth-error header
 }
 
 // Terminal auth failure — the refresh-token family was reused or revoked.
@@ -34,9 +38,13 @@ class AuthRevokedException(
 ) : HttpException(status, bodyText, headers, url)
 
 // JSON-RPC error returned by a WASM contract (from mero.rpc).
-class RpcException(
+open class RpcException(
     val code: Int, message: String, val type: String? = null, val data: JsonElement? = null,
 ) : MeroException(message)
+
+// core rc.83: this node's role in the context is read-only (ReadOnly, ReadOnlyTee,
+// RelayTee), so the write was discarded — nothing committed, signed or published.
+class ReadOnlyWriteRefusedException(val contextId: String?, …) : RpcException(…)
 
 // Transport failure with no HTTP response (DNS, reset, timeout).
 class NetworkException(message: String, cause: Throwable? = null) : MeroException(message, cause)
@@ -50,6 +58,31 @@ catches it — catch `AuthRevokedException` **first** to distinguish it. Other
 cases include `EmptyResponseException`-style states surfaced via `MeroException`
 subtypes for empty bodies, failed authentication, and decode failures.
 
+## Typed refusals (core 0.11.0-rc.83)
+
+Core stopped answering most refusals with a blanket `500`. The body kept its
+shape — `{"error": "<message>"}` — but the **status** now says what happened:
+
+| Status | Means |
+| --- | --- |
+| `400` | Invalid input, invitation or proof; TEE policy invalid; an empty `rootProof` |
+| `403` | Not a member or admin; owner-proof refused; a client key used outside its bindings |
+| `404` | Unknown device, upgrade or context; a namespace outside an account's scope |
+| `409` | Already exists; stale nonce or state hash; **stale owner-op counter** (re-read, re-sign) |
+| `503` | Authority undecidable; join key delivery timed out |
+
+`HttpException.errorMessage` reads the `error` text without parsing `bodyText`
+yourself. The method-error routes — `queryContext` and `performIntent` — add
+JSON-RPC's pair beside it: `{"error": …, "type": "FunctionCallError", "data":
+"<the method's message>"}`, read as `errorType` / `errorData`. A `400` there is
+the app refusing the call; the node is healthy.
+
+JSON-RPC itself gained `ReadOnlyWriteRefused`, thrown as
+`ReadOnlyWriteRefusedException`. Retrying on the same node cannot help: write
+through a node holding a writing role, or through a relay under a warrant. A
+scoped token also needs `context:execute` for the call since rc.83, or the
+refusal is a `FunctionCallError` naming it.
+
 ## Handling pattern
 
 Catch most-specific first:
@@ -58,11 +91,15 @@ Catch most-specific first:
 import com.calimero.mero.http.AuthRevokedException
 import com.calimero.mero.http.HttpException
 import com.calimero.mero.http.NetworkException
+import com.calimero.mero.rpc.ReadOnlyWriteRefusedException
 import com.calimero.mero.rpc.RpcException
 
 try {
     val result: MyResult = mero.rpc.execute(contextId = ctx, method = "get_value")
     return result
+} catch (e: ReadOnlyWriteRefusedException) {
+    // this node may read the context but not write it
+    println("read-only here: ${e.contextId}")
 } catch (e: RpcException) {
     // contract-level error — the WASM returned an error object
     println("contract error ${e.code}: ${e.message}")
@@ -70,8 +107,12 @@ try {
     // refresh token reused/revoked — session is over
     promptSignIn()
 } catch (e: HttpException) {
-    // transport-level error — 4xx/5xx
-    if (e.status == 403) println("permission denied") else println("HTTP ${e.status}")
+    // transport-level error — 4xx/5xx, typed since rc.83
+    when (e.status) {
+        403 -> println("permission denied: ${e.errorMessage}")
+        409 -> println("conflict — re-read and retry: ${e.errorMessage}")
+        else -> println("HTTP ${e.status}: ${e.errorMessage ?: e.bodyText}")
+    }
 } catch (e: NetworkException) {
     // offline / DNS / reset
 }
@@ -84,6 +125,11 @@ retries the request once (see
 [the token lifecycle](/get-started/authentication/#the-token-lifecycle)). You
 only see a `401 HttpException` if the refresh itself fails. If the token was
 reused or revoked, you get an `AuthRevokedException` instead.
+
+A `401` from `/auth/refresh` itself means the stored pair can never be refreshed
+— the typical case is a session minted before the node moved to core rc.83, whose
+tokens lack the now-required `key_id`. The SDK clears the store when that happens,
+so `mero.isAuthenticated` turns `false`; send the user to login.
 
 ## Retries & timeouts
 

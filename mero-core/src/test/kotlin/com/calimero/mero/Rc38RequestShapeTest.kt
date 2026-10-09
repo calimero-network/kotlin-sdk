@@ -100,11 +100,15 @@ class Rc38RequestShapeTest {
         assertEquals(setOf("groupName", "visibility"), keysOf(req))
     }
 
-    /** Passing nothing must stay an empty object — the one shape that always worked. */
+    /**
+     * Passing nothing sends `visibility` alone. It used to be the empty object,
+     * but core 0.11.0-rc.83 flipped what an absent visibility means (restricted →
+     * open), so the SDK now always names it — see `Rc83WireShapeTest`.
+     */
     @Test
-    fun `createGroupInNamespace with no request sends an empty body`() {
+    fun `createGroupInNamespace with no request names only the visibility`() {
         val req = capture { mero.admin.createGroupInNamespace("ns-1") }
-        assertEquals(emptySet<String>(), keysOf(req))
+        assertEquals(setOf("visibility"), keysOf(req))
     }
 
     /**

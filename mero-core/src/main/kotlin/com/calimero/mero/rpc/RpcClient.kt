@@ -7,7 +7,9 @@ import kotlinx.serialization.Serializable
 import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.decodeFromJsonElement
 import kotlinx.serialization.json.int
 import kotlinx.serialization.json.jsonPrimitive
@@ -15,13 +17,56 @@ import kotlinx.serialization.json.put
 
 /**
  * A JSON-RPC 2.0 error returned by the node. Port of mero-js `RpcError`.
+ *
+ * [type] / [data] are core's `ExecutionError` tag and payload, e.g.
+ * `FunctionCallError` with the method's message. Since core 0.11.0-rc.83 a
+ * scoped token also needs `context:execute` for the call, or the refusal is a
+ * `FunctionCallError` saying so.
  */
-class RpcException(
+open class RpcException(
     val code: Int,
     message: String,
     val type: String? = null,
     val data: JsonElement? = null,
 ) : MeroException(message)
+
+/**
+ * The call wrote state, and this node's role in the context is read-only
+ * (`ReadOnly`, `ReadOnlyTee` or `RelayTee`), so the writes were **discarded**:
+ * nothing was committed, signed or published (core 0.11.0-rc.83,
+ * `{"type":"ReadOnlyWriteRefused","data":{"context_id":…}}`). Reads on the same
+ * node still succeed. Retrying here cannot help — write through a node holding a
+ * writing role, or through a relay under a warrant.
+ *
+ * A subclass of [RpcException], so existing handlers keep catching it.
+ */
+class ReadOnlyWriteRefusedException(
+    /** The context the write was refused in, as the node named it. */
+    val contextId: String?,
+    code: Int,
+    message: String,
+    data: JsonElement?,
+) : RpcException(code, message, TYPE, data) {
+    companion object {
+        /** The `type` tag core sends. */
+        const val TYPE = "ReadOnlyWriteRefused"
+    }
+}
+
+/**
+ * The result of [RpcClient.executeWithMetadata]: the decoded output plus which
+ * transport carried it. Mirrors mero-js's `{ returns, transport }`, so code
+ * written against a node-or-relay abstraction reads the same shape.
+ */
+data class RpcExecution<T>(
+    val returns: T,
+    /** Always [TRANSPORT_NODE] here: this client talks to a node's `/jsonrpc`. */
+    val transport: String = TRANSPORT_NODE,
+) {
+    companion object {
+        const val TRANSPORT_NODE = "node"
+    }
+}
 
 /** Summary of the owner-driven `migrate_my_entries` convert (counts are u32). */
 @Serializable
@@ -58,10 +103,9 @@ class RpcClient(
         contextId: String,
         method: String,
         argsJson: JsonObject = JsonObject(emptyMap()),
-        executorPublicKey: String? = null,
         deserializer: DeserializationStrategy<T>,
     ): T {
-        val output = executeRaw(contextId, method, argsJson, executorPublicKey)
+        val output = executeRaw(contextId, method, argsJson)
         return http.json.decodeFromJsonElement(deserializer, output)
     }
 
@@ -70,21 +114,19 @@ class RpcClient(
         contextId: String,
         method: String,
         argsJson: JsonObject = JsonObject(emptyMap()),
-        executorPublicKey: String? = null,
-    ): T = http.json.decodeFromJsonElement(executeRaw(contextId, method, argsJson, executorPublicKey))
+    ): T = http.json.decodeFromJsonElement(executeRaw(contextId, method, argsJson))
 
     /**
      * Execute and return the raw `result.output` [JsonElement] without decoding.
      *
-     * [executorPublicKey] is the context identity executing the call; omitted from the request when
-     * null (the node then uses the context's default/owning identity). Apps like mero-chat key their
-     * state on the caller identity and require it. (== mero-swift-sdk `RpcClient.execute`.)
+     * There is no `executorPublicKey`: core's execute request is `deny_unknown_fields` with only
+     * `contextId`, `method` and `argsJson`, so naming one was a refusal. The call runs as the
+     * identity the token is bound to. (== mero-swift-sdk `RpcClient.execute`.)
      */
     suspend fun executeRaw(
         contextId: String,
         method: String,
         argsJson: JsonObject = JsonObject(emptyMap()),
-        executorPublicKey: String? = null,
     ): JsonElement {
         val body =
             buildJsonObject {
@@ -97,7 +139,6 @@ class RpcClient(
                         put("contextId", contextId)
                         put("method", method)
                         put("argsJson", argsJson)
-                        if (executorPublicKey != null) put("executorPublicKey", executorPublicKey)
                     },
                 )
             }
@@ -109,15 +150,32 @@ class RpcClient(
         val parsed = http.json.decodeFromString<JsonRpcResponse>(res.body)
 
         parsed.error?.let { err ->
-            throw RpcException(
-                code = err.code ?: -1,
-                message = err.message ?: err.type ?: "RPC error",
-                type = err.type,
-                data = err.data,
-            )
+            val code = err.code ?: -1
+            val message = err.message ?: err.type ?: "RPC error"
+            if (err.type == ReadOnlyWriteRefusedException.TYPE) {
+                val contextId =
+                    (err.data as? JsonObject)
+                        ?.let { it["context_id"] ?: it["contextId"] }
+                        ?.let { (it as? JsonPrimitive)?.contentOrNull }
+                val readable =
+                    err.message ?: "write refused on context '$contextId': this node's role in the context is " +
+                        "read-only, so its writes are discarded"
+                throw ReadOnlyWriteRefusedException(contextId, code, readable, err.data)
+            }
+            throw RpcException(code = code, message = message, type = err.type, data = err.data)
         }
         return parsed.result?.get("output") ?: JsonObject(emptyMap())
     }
+
+    /**
+     * [execute], returned with the transport that carried it — the shape mero-js's
+     * `executeWithMetadata` returns, for code shared with a relay transport.
+     */
+    suspend inline fun <reified T> executeWithMetadata(
+        contextId: String,
+        method: String,
+        argsJson: JsonObject = JsonObject(emptyMap()),
+    ): RpcExecution<T> = RpcExecution(execute<T>(contextId, method, argsJson))
 
     /** One-tap owner-driven convert: re-signs the caller's identity-gated entries to the schema. */
     suspend fun migrateMyEntries(contextId: String): MigrateMyEntriesSummary =

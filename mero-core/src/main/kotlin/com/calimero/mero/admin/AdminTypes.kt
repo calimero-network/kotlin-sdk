@@ -1,5 +1,6 @@
 package com.calimero.mero.admin
 
+import com.calimero.mero.http.MeroException
 import kotlinx.serialization.KSerializer
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
@@ -628,6 +629,47 @@ data class Namespace(
     val subgroupCount: Int,
     /** The release the target application was built from, e.g. `0.11.0-rc.32`. */
     val appVersion: String? = null,
+    /**
+     * What the namespace id was derived from (core rc.83): the id is
+     * `domain_hash("calimero.namespace.id.v1", [founder, salt])`. `null` on a node
+     * that does not hold it, or predates derived ids.
+     */
+    val founding: NamespaceFounding? = null,
+    /**
+     * Group ops this node logged but holds unapplied, because their group's
+     * history is sealed under a key it lacks (core rc.83). What explains a
+     * subgroup that looks stale here and current elsewhere. `null` when nothing
+     * is held, and on nodes that predate the field.
+     */
+    val heldOps: NamespaceHeldOps? = null,
+)
+
+/**
+ * The founder and salt a namespace id was derived from. Neither is secret, and
+ * the salt cannot be replayed for another account: the id commits to the founder.
+ */
+@Serializable
+data class NamespaceFounding(
+    /** Hex `AccountId` of the founder. */
+    val founderAccountId: String,
+    /** Hex 32-byte salt. */
+    val salt: String,
+)
+
+/** The group ops a namespace holds unapplied on the node that answered. */
+@Serializable
+data class NamespaceHeldOps(
+    val ops: List<NamespaceHeldOp> = emptyList(),
+    /** Holds past the node's listing bound, counted but not listed. */
+    val untracked: Long = 0,
+)
+
+@Serializable
+data class NamespaceHeldOp(
+    /** Hex id of the namespace op in the governance DAG. */
+    val deltaId: String,
+    /** Hex id of the group whose sealed history it waits on. */
+    val groupId: String,
 )
 
 typealias ListNamespacesResponseData = List<Namespace>
@@ -648,6 +690,8 @@ data class CreateNamespaceRequest(
 @Serializable
 data class CreateNamespaceResponseData(
     val namespaceId: String,
+    /** What the new id was derived from (core rc.83). `null` from an older node. */
+    val founding: NamespaceFounding? = null,
 )
 
 /**
@@ -770,14 +814,32 @@ data class JoinNamespaceResponseData(
  * [visibility], and nothing else — a `name` or a `groupId` here is a **422**
  * from core 0.11.0-rc.38, which is every call that bothered to name the
  * subgroup. Only the empty body ever worked.
+ *
+ * ⚠️ **The node's default flipped in core 0.11.0-rc.83**: an absent
+ * `visibility` used to create a *restricted* subgroup and now creates an
+ * **open** one. So the SDK never leaves it to the node: [AdminApi.createGroupInNamespace]
+ * always sends a visibility, filling [VISIBILITY_OPEN] when this is `null`, so
+ * the same call creates the same kind of subgroup on every node version. Ask
+ * for [VISIBILITY_RESTRICTED] to get a membership boundary.
  */
 @Serializable
 data class CreateGroupInNamespaceRequest(
     /** The subgroup's name. Sent as `groupName`, which is what the route reads. */
     val groupName: String? = null,
-    /** `"open"` or `"restricted"` — lowercase; the node rejects other spellings. */
+    /**
+     * [VISIBILITY_OPEN] or [VISIBILITY_RESTRICTED] — lowercase; the node rejects
+     * other spellings. `null` is sent as [VISIBILITY_OPEN].
+     */
     val visibility: String? = null,
-)
+) {
+    companion object {
+        /** Members of the parent inherit into it (core rc.83's default). */
+        const val VISIBILITY_OPEN = "open"
+
+        /** A membership boundary: each member is added explicitly. */
+        const val VISIBILITY_RESTRICTED = "restricted"
+    }
+}
 
 @Serializable
 data class CreateGroupInNamespaceResponseData(
@@ -792,11 +854,17 @@ data class SubgroupEntry(
 
 // ---- Groups ----------------------------------------------------------------
 
-/** `upgradePolicy` dropped here too — see [CreateNamespaceRequest]. */
+/**
+ * `upgradePolicy` dropped here too — see [CreateNamespaceRequest].
+ *
+ * ⚠️ `groupId` is **gone** (core 0.11.0-rc.83). Group ids are derived now — a
+ * namespace root's from its founder and a salt, a subgroup's from its create —
+ * and the body is `deny_unknown_fields`, so a caller-chosen id is a `400`, not
+ * a suggestion.
+ */
 @Serializable
 data class CreateGroupRequest(
     val applicationId: String,
-    val groupId: String? = null,
     val appKey: String? = null,
     val name: String? = null,
     val parentGroupId: String? = null,
@@ -917,10 +985,26 @@ data class GroupInfo(
     val metadata: MetadataRecord? = null,
     /** Hex digest of the group's governance state, for comparing two replicas. */
     val groupStateHash: String? = null,
+    /**
+     * The namespace this group belongs to, hex (core rc.83). A root-guarded owner
+     * op's proof names it. `null` from an older node.
+     */
+    val namespaceId: String? = null,
+    /**
+     * How many root-guarded owner ops this group has applied (core rc.83). A
+     * `rootProof` must name exactly this value; a stale one is a `409` — re-read
+     * and re-sign. `null` from an older node.
+     */
+    val ownerOpCounter: Long? = null,
 )
 
 typealias GroupInfoResponseData = GroupInfo
 
+/**
+ * One member of a group. [role] is kept a `String` so a role a later core adds
+ * decodes rather than throws: core rc.83 sends `Admin`, `Member`, `ReadOnly`,
+ * `ReadOnlyTee` and `RelayTee` — see [GroupRoles].
+ */
 @Serializable
 data class GroupMember(
     val identity: String,
@@ -1002,26 +1086,137 @@ data class SetSubgroupVisibilityRequest(
     val subgroupVisibility: String,
 )
 
+/**
+ * Which attested TEEs a namespace admits, and as what.
+ *
+ * Since core 0.11.0-rc.83 the policy has **two forms**, and the node accepts one
+ * or the other:
+ *
+ * - **Measurements** ([measurements]): `allowedMrtd`, `allowedRtmr1`,
+ *   `allowedRtmr2` and `allowedRtmr3` must **all** be non-empty — even with
+ *   `acceptMock`, where a mock fleet names the all-zero measurement. An empty
+ *   list is a `400`, not a wildcard. `allowedRtmr0` stays optional.
+ * - **Signed release** ([signedRelease]): admit any node release the mero-tee
+ *   workflow signed, for the named image profiles. Every measurement list must
+ *   then be empty.
+ *
+ * `allowedTcbStatuses`, `acceptMock`, [mode] and [rootProof] apply to both.
+ *
+ * Changing the policy is a **root-guarded owner op** (rc.83): pass [rootProof],
+ * or call a node that holds the owner's account root, or get a `403`.
+ *
+ * The positional constructor is the rc.41 measurement form, kept so existing
+ * callers compile.
+ */
 @Serializable
 data class SetTeeAdmissionPolicyRequest(
-    val allowedMrtd: List<String>,
-    val allowedRtmr0: List<String>,
-    val allowedRtmr1: List<String>,
-    val allowedRtmr2: List<String>,
-    val allowedRtmr3: List<String>,
-    val allowedTcbStatuses: List<String>,
-    val acceptMock: Boolean,
+    val allowedMrtd: List<String> = emptyList(),
+    val allowedRtmr0: List<String> = emptyList(),
+    val allowedRtmr1: List<String> = emptyList(),
+    val allowedRtmr2: List<String> = emptyList(),
+    val allowedRtmr3: List<String> = emptyList(),
+    val allowedTcbStatuses: List<String> = emptyList(),
+    val acceptMock: Boolean = false,
+    /** The signed-release form. Set it only with every measurement list empty. */
+    val signedRelease: SignedReleaseTeePolicy? = null,
+    /**
+     * [TeeAdmissionMode.REPLICA] (`ReadOnlyTee`, the node's default) or
+     * [TeeAdmissionMode.RELAY] (`RelayTee`: may also author members' writes
+     * under their warrants). Setting it converts the TEEs already admitted.
+     */
+    val mode: String? = null,
+    /** Hex borsh `SignedOwnerOp` — the owner's root proof. Omit, never send empty. */
+    val rootProof: String? = null,
+) {
+    companion object {
+        /**
+         * The measurement form. Every list but [allowedRtmr0] must be non-empty.
+         * Add a root proof with `.copy(rootProof = …)`.
+         */
+        fun measurements(
+            allowedMrtd: List<String>,
+            allowedRtmr1: List<String>,
+            allowedRtmr2: List<String>,
+            allowedRtmr3: List<String>,
+            allowedRtmr0: List<String> = emptyList(),
+            allowedTcbStatuses: List<String> = emptyList(),
+            acceptMock: Boolean = false,
+            mode: String? = null,
+        ): SetTeeAdmissionPolicyRequest =
+            SetTeeAdmissionPolicyRequest(
+                allowedMrtd = allowedMrtd,
+                allowedRtmr0 = allowedRtmr0,
+                allowedRtmr1 = allowedRtmr1,
+                allowedRtmr2 = allowedRtmr2,
+                allowedRtmr3 = allowedRtmr3,
+                allowedTcbStatuses = allowedTcbStatuses,
+                acceptMock = acceptMock,
+                mode = mode,
+            )
+
+        /** The signed-release form: admit signed releases of these image profiles. */
+        fun signedRelease(
+            allowedProfiles: List<String>,
+            minReleaseVersion: String? = null,
+            allowedTcbStatuses: List<String> = emptyList(),
+            acceptMock: Boolean = false,
+            mode: String? = null,
+            rootProof: String? = null,
+        ): SetTeeAdmissionPolicyRequest =
+            SetTeeAdmissionPolicyRequest(
+                allowedTcbStatuses = allowedTcbStatuses,
+                acceptMock = acceptMock,
+                signedRelease = SignedReleaseTeePolicy(allowedProfiles, minReleaseVersion),
+                mode = mode,
+                rootProof = rootProof,
+            )
+    }
+}
+
+/** Admit TEEs running a release the mero-tee workflow signed, for these image profiles. */
+@Serializable
+data class SignedReleaseTeePolicy(
+    /** Image profiles to admit, e.g. `locked-read-only`. Must name at least one. */
+    val allowedProfiles: List<String>,
+    /** The oldest release admitted (`2.3.72`), or any signed release when `null`. */
+    val minReleaseVersion: String? = null,
 )
+
+/** The role an admission policy admits attested TEEs with (core rc.83). */
+object TeeAdmissionMode {
+    /** `ReadOnlyTee`: replicates and anchors sync, never relays writes. The default. */
+    const val REPLICA = "replica"
+
+    /** `RelayTee`: a replica that may also author members' writes under their warrants. */
+    const val RELAY = "relay"
+}
 
 @Serializable
 data class GetTeeAdmissionPolicyResponseData(
+    val allowedMrtd: List<String> = emptyList(),
+    val allowedRtmr0: List<String> = emptyList(),
+    val allowedRtmr1: List<String> = emptyList(),
+    val allowedRtmr2: List<String> = emptyList(),
+    val allowedRtmr3: List<String> = emptyList(),
+    val allowedTcbStatuses: List<String> = emptyList(),
+    val acceptMock: Boolean = false,
+    /** Whether a policy is set at all (core rc.83). `null` from an older node. */
+    val enabled: Boolean? = null,
+    /** Set when the policy admits by signed release; the measurement lists are then empty. */
+    val signedRelease: SignedReleaseTeePolicy? = null,
+    /** [TeeAdmissionMode] the policy admits with. `null` from a node predating modes. */
+    val mode: String? = null,
+)
+
+/**
+ * Which admitted TEEs may author as the TEE authority (core rc.83). An empty
+ * [allowedMrtd] turns TEE authorship off. The group must be a namespace root.
+ * Root-guarded, like [SetTeeAdmissionPolicyRequest]. The node exposes no read-back.
+ */
+@Serializable
+data class SetTeeAuthoringPolicyRequest(
     val allowedMrtd: List<String>,
-    val allowedRtmr0: List<String>,
-    val allowedRtmr1: List<String>,
-    val allowedRtmr2: List<String>,
-    val allowedRtmr3: List<String>,
-    val allowedTcbStatuses: List<String>,
-    val acceptMock: Boolean,
+    val rootProof: String? = null,
 )
 
 // ---- Group / member / context metadata -------------------------------------
@@ -1201,10 +1396,27 @@ data class TeeInfoResponseData(
     val mrtd: String,
 )
 
+/**
+ * `POST /admin-api/tee/attest`. The three flags are additive (core rc.83) and
+ * default to `false` on the node; `null` leaves them off the wire.
+ */
 @Serializable
 data class TeeAttestRequest(
     val nonce: String,
     val applicationId: String? = null,
+    /** Bind the node's signing key into the quote's report data ([TeeAttestResponseData.boundPublicKey]). */
+    val bindNodeKey: Boolean? = null,
+    /** Bind the sealed-transport key, returned as [TeeAttestResponseData.transportPublicKey]. */
+    val bindTransportKey: Boolean? = null,
+    /** Return the DCAP collateral a verifier needs beside the quote. */
+    val includeCollateral: Boolean? = null,
+)
+
+/** `POST /admin-api/tee/registration-attest` (core rc.83): a quote for fleet registration. */
+@Serializable
+data class TeeRegistrationAttestRequest(
+    /** 32 bytes, hex. */
+    val nonce: String,
 )
 
 @Serializable
@@ -1248,25 +1460,20 @@ data class Quote(
     val certificationData: JsonElement? = null,
 )
 
+/**
+ * `teeVerifyQuote` is gone: `POST /admin-api/tee/verify-quote` was removed from
+ * core before rc.41 and answered 404 ever since. Verify the quote client-side.
+ */
 @Serializable
 data class TeeAttestResponseData(
     val quoteB64: String,
     val quote: Quote,
-)
-
-@Serializable
-data class TeeVerifyQuoteRequest(
-    val quoteB64: String,
-    val nonce: String,
-    val expectedApplicationHash: String? = null,
-)
-
-@Serializable
-data class TeeVerifyQuoteResponseData(
-    val quoteVerified: Boolean,
-    val nonceVerified: Boolean,
-    val applicationHashVerified: Boolean? = null,
-    val quote: Quote,
+    /** The node key bound into the report data, when `bindNodeKey` was asked. */
+    val boundPublicKey: String? = null,
+    /** The sealed-transport key bound into the report data, when `bindTransportKey` was asked. */
+    val transportPublicKey: String? = null,
+    /** DCAP collateral, raw, when `includeCollateral` was asked. */
+    val collateral: JsonElement? = null,
 )
 
 // ---- Network ---------------------------------------------------------------
@@ -1641,4 +1848,343 @@ data class PerformIntentRequest(
 data class PerformIntentResponseData(
     val rootHash: String,
     val returns: JsonElement? = null,
+)
+
+// ---- Roles (core rc.83) ----------------------------------------------------
+
+/**
+ * The role strings core sends on [GroupMember.role] and group events. Strings,
+ * not an enum, so a role a later core adds decodes rather than throws.
+ */
+object GroupRoles {
+    const val ADMIN = "Admin"
+    const val MEMBER = "Member"
+    const val READ_ONLY = "ReadOnly"
+
+    /** An attested TEE replica: replicates and anchors sync, writes nothing. */
+    const val READ_ONLY_TEE = "ReadOnlyTee"
+
+    /**
+     * An attested TEE relay (core rc.83): a replica that may also author
+     * members' writes under their signed warrants. A JSON-RPC write on a node
+     * holding this role is refused with `ReadOnlyWriteRefused` — its own writes
+     * are discarded, like a `ReadOnly` member's.
+     */
+    const val RELAY_TEE = "RelayTee"
+}
+
+// ---- Reads as the account (core rc.83) -------------------------------------
+
+/**
+ * A read of a context run as the session's ACCOUNT, without a warrant. The
+ * method must be declared read-only in the app's ABI (`409` otherwise).
+ */
+@Serializable
+data class QueryContextRequest(
+    val method: String,
+    /** Always sent — core has no default for it. Pass `JsonObject(emptyMap())` for no arguments. */
+    val argsJson: JsonElement,
+)
+
+@Serializable
+data class QueryContextResponseData(
+    /** The method's own return value. */
+    val returns: JsonElement? = null,
+)
+
+// ---- Delegated execution: discovery (core rc.83) ---------------------------
+
+/**
+ * `GET /admin-api/contexts/{id}/intents`: what this node can do for a member in
+ * a context, read **before** minting a warrant. A warrant spends a nonce, and
+ * one naming the wrong executor, key or release is unspendable.
+ *
+ * `404` means the node holds no identity in the context, or its group names no
+ * release yet.
+ */
+@Serializable
+data class IntentRelayInfo(
+    /** The account a warrant for this node must name as `executor`, 64 hex. */
+    val executorAccount: String,
+    /** The signing key a warrant must name as `executor_key`. A re-key voids unspent warrants. */
+    val executorKey: String,
+    /**
+     * Whether this node holds `CAN_AUTHOR_ON_BEHALF` on the owning group.
+     * `false` is an answer, and the default — an admin of [groupId] grants it.
+     */
+    val canAuthorOnBehalf: Boolean,
+    /** The group whose admin must grant that capability, 64 hex. */
+    val groupId: String,
+    /** The group the capability was actually granted on, when it is an ancestor. */
+    val grantedOnGroupId: String? = null,
+    /** The release blob the group names: the warrant's `release_bytecode_id`, 64 hex. */
+    val releaseBytecodeId: String,
+    /** That release's semver: the warrant's `release_version`. */
+    val releaseVersion: String,
+)
+
+/**
+ * `POST /admin-api/groups/{id}/context-intents`: create a context under a signed
+ * `ContextCreationWarrant`. The warrant and proof are opaque here — minting them
+ * is the account layer's job.
+ */
+@Serializable
+data class CreateContextIntentRequest(
+    /** Hex borsh `ContextCreationWarrant`. */
+    val warrant: String,
+    /** Hex borsh `AccountProof<DeviceCert>` of the author. */
+    val authorProof: String,
+    /** The `init` arguments; the warrant commits to their bytes. */
+    val initArgs: JsonElement,
+)
+
+@Serializable
+data class CreateContextIntentResponseData(
+    val contextId: String,
+    val groupId: String,
+    val memberPublicKey: String,
+)
+
+/** `GET /admin-api/groups/{id}/context-intents[?author=]`: discovery for context creation. */
+@Serializable
+data class ContextIntentRelayInfo(
+    val executorAccount: String,
+    val executorKey: String,
+    val groupId: String,
+    val canCreateOnBehalf: Boolean,
+    /** Present only when `author` was asked: whether that account may create here. */
+    val authorMayCreate: Boolean? = null,
+)
+
+/** `POST /admin-api/groups/{id}/governance-intents`: a governance op under a `GovernanceWarrant`. */
+@Serializable
+data class GovernanceIntentRequest(
+    /** Hex borsh `GovernanceWarrant`. */
+    val warrant: String,
+    /** Hex borsh `AccountProof<DeviceCert>` of the author. */
+    val authorProof: String,
+    /** Hex borsh `GroupOp` or `RootOp`, as the warrant's `kind` says. */
+    val op: String,
+)
+
+@Serializable
+data class GovernanceIntentResponseData(
+    val groupId: String,
+    val teeEnabled: Boolean? = null,
+    val teeError: String? = null,
+)
+
+/** `GET /admin-api/groups/{id}/governance-intents`: discovery for governance. */
+@Serializable
+data class GovernanceIntentRelayInfo(
+    val executorAccount: String,
+    val executorKey: String,
+    val groupId: String,
+    val canActOnBehalf: Boolean,
+)
+
+/**
+ * `POST /admin-api/contexts/{id}/presence-intents`: a signed presence statement
+ * carried by a relay. Answers `204` with no body.
+ */
+data class PresenceIntentRequest(
+    /** Hex presence slice, or `null` to clear it. Always sent, as `null` when absent. */
+    val state: String?,
+    val seq: Long,
+    val sentAtMs: Long,
+    /** 64-byte ed25519 signature over the `calimero/presence/1` statement, hex. */
+    val signature: String,
+    /** Hex borsh `AccountProof<DeviceCert>` of the author. */
+    val authorProof: String,
+)
+
+// ---- Warrant nonces --------------------------------------------------------
+
+/**
+ * Where an author device stands in its warrant-nonce sequence in one context.
+ *
+ * ⚠️ **Not served by core 0.11.0-rc.83** — the routes are newer than this pin,
+ * and a node without them answers `404`, which [AdminApi.getWarrantNonce] turns
+ * into [WarrantNonceRouteUnavailableException]. Fall back to your own counter.
+ *
+ * Nonces are `u64`, held as [ULong]: a value past 2^53 must not round through a
+ * `Double` on its way past, or the nonce looks ordinary and is refused forever.
+ */
+sealed class WarrantNonceState {
+    abstract val contextId: String
+    abstract val authorDeviceKey: String
+    abstract val seen: Boolean
+    abstract val highWaterNonce: ULong?
+    abstract val windowWidth: ULong
+
+    /** Mint the next warrant at [nextNonce]. */
+    data class Open(
+        override val contextId: String,
+        override val authorDeviceKey: String,
+        override val seen: Boolean,
+        override val highWaterNonce: ULong?,
+        override val windowWidth: ULong,
+        val nextNonce: ULong,
+    ) : WarrantNonceState()
+
+    /** `u64::MAX` is spent: this device can mint no further warrant here. */
+    data class Exhausted(
+        override val contextId: String,
+        override val authorDeviceKey: String,
+        override val highWaterNonce: ULong?,
+        override val windowWidth: ULong,
+    ) : WarrantNonceState() {
+        override val seen: Boolean get() = true
+    }
+}
+
+/** The node answered the warrant-nonce route with `404`: it does not serve it. */
+class WarrantNonceRouteUnavailableException(
+    val path: String,
+    cause: Throwable,
+) : MeroException(
+        "this node does not serve warrant-nonce discovery (404 on $path); fall back to a local nonce counter",
+        cause,
+    )
+
+// ---- Account root and device links (core rc.83) ----------------------------
+
+/**
+ * `POST /admin-api/account/sign-with-root`: have the node's account root sign a
+ * payload for an external verifier (e.g. Calimero Cloud). The signature proves
+ * possession of the root and nothing else.
+ */
+@Serializable
+data class AccountSignWithRootRequest(
+    /** One of [AccountSignDomains]. */
+    val domain: String,
+    /** Hex, at most 4096 bytes decoded. */
+    val payload: String,
+)
+
+/** The domains `sign-with-root` accepts. */
+object AccountSignDomains {
+    const val ACCOUNT_LINK = "mdma.account-link"
+    const val ACCOUNT_LOGIN = "mdma.account-login"
+    const val ACCOUNT_RECOVERY = "mdma.account-recovery"
+}
+
+@Serializable
+data class AccountSignWithRootResponseData(
+    /** 64 hex. */
+    val rootPublicKey: String,
+    /** Base64 ed25519 signature. */
+    val signature: String,
+    /** 64 hex. */
+    val accountId: String,
+)
+
+/**
+ * `POST /admin-api/namespaces/{id}/account/link-device`: bind a root-certified
+ * device into a namespace. Both values are hex borsh and root-signed.
+ */
+@Serializable
+data class LinkAccountDeviceRequest(
+    /** Hex borsh `AccountProof<DeviceCert>`. */
+    val credential: String,
+    /** Hex borsh `AccountProof<DeviceScope>`. */
+    val scope: String,
+)
+
+@Serializable
+data class LinkAccountDeviceResponseData(
+    val accountId: String,
+    val deviceId: String,
+    /** `true` when the device was already bound here; nothing was published. */
+    val alreadyBound: Boolean,
+)
+
+/** `POST /admin-api/groups/{id}/accounts/{account}/seal`: seal bytes to a member's root key. */
+@Serializable
+data class SealToAccountRequest(
+    /** Hex, at most 64 KiB decoded. */
+    val plaintext: String,
+)
+
+@Serializable
+data class SealedEnvelope(
+    val accountRootEpoch: Long,
+    val ephemeralPublicKey: String,
+    val nonce: String,
+    val ciphertext: String,
+)
+
+// ---- Root-guarded owner ops (core rc.83) -----------------------------------
+
+/**
+ * Owner-only ops need a proof signed by the owner account's **root** key:
+ * `rootProof`, hex borsh `SignedOwnerOp`. It binds the account, the group's
+ * `namespaceId`, the group, the op, the root epoch and the group's
+ * `ownerOpCounter` — read both from [AdminApi.getGroupInfo] first.
+ *
+ * Omit it on a node that holds the owner's root, which signs for itself; with
+ * neither, `403`. An empty string is a `400` — omit the field instead. A stale
+ * counter is a `409`: re-read and re-sign.
+ */
+@Serializable
+data class TransferOwnershipRequest(
+    /** Hex `AccountId` of the new owner, who must already be an admin. */
+    val newOwner: String,
+    val rootProof: String? = null,
+)
+
+/** Repoint a namespace's admin pin. Root-guarded; see [TransferOwnershipRequest]. */
+@Serializable
+data class ChangeNamespaceAdminRequest(
+    /** Hex `AccountId` of the new admin, a member of the namespace root. */
+    val newAdmin: String,
+    val rootProof: String? = null,
+)
+
+/**
+ * Body of the owner-only delete and of `DELETE …/tee-authoring-policy`.
+ * Root-guarded; see [TransferOwnershipRequest].
+ */
+@Serializable
+data class RootGuardedOpRequest(
+    val rootProof: String? = null,
+)
+
+typealias OwnerDeleteGroupRequest = RootGuardedOpRequest
+typealias DisableTeeAuthoringPolicyRequest = RootGuardedOpRequest
+
+// ---- Ownership proofs (typed in core rc.83) --------------------------------
+
+@Serializable
+data class IssueOwnershipProofRequest(
+    val audience: String,
+    val contextId: String,
+    val subject: String,
+    /** Hex, 32..128 characters. */
+    val nonce: String,
+    val expiresAtMs: Long,
+)
+
+@Serializable
+data class IssueNamespaceOwnershipProofRequest(
+    val audience: String,
+    val subject: String,
+    /** Hex, 32..128 characters. */
+    val nonce: String,
+    val expiresAtMs: Long,
+)
+
+/** Flat on the wire (no `data` envelope). */
+@Serializable
+data class IssueOwnershipProofResponseData(
+    /** 64 hex. */
+    val signerPublicKey: String,
+    /** Base64. */
+    val signedPayload: String,
+    /** Base64. */
+    val signature: String,
+    /** The namespace's founding, on a namespace proof (rc.83). */
+    val founding: NamespaceFounding? = null,
+    /** Hex borsh `AccountProof<DeviceCert>` of the signer, on a namespace proof (rc.83). */
+    val credential: String? = null,
 )
