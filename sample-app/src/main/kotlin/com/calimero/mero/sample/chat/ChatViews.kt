@@ -3,7 +3,6 @@ package com.calimero.mero.sample.chat
 import android.content.Intent
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -11,31 +10,34 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.automirrored.filled.Send
-import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.outlined.AddCircleOutline
+import androidx.compose.material.icons.outlined.ArrowUpward
+import androidx.compose.material.icons.outlined.ChatBubbleOutline
+import androidx.compose.material.icons.outlined.ContentCopy
+import androidx.compose.material.icons.outlined.GroupAdd
+import androidx.compose.material.icons.outlined.Info
+import androidx.compose.material.icons.outlined.PersonAddAlt
+import androidx.compose.material.icons.outlined.Refresh
+import androidx.compose.material.icons.outlined.Share
+import androidx.compose.material.icons.outlined.Tag
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -51,7 +53,6 @@ import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.AnnotatedString
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -60,31 +61,22 @@ import com.calimero.mero.sample.ui.CalCard
 import com.calimero.mero.sample.ui.CalPrimaryButton
 import com.calimero.mero.sample.ui.CalSecondaryButton
 import com.calimero.mero.sample.ui.CalTextField
+import com.calimero.mero.sample.ui.EmptyState
+import com.calimero.mero.sample.ui.Hairline
+import com.calimero.mero.sample.ui.IdField
+import com.calimero.mero.sample.ui.ListRow
+import com.calimero.mero.sample.ui.TopBar
 import com.calimero.mero.sample.ui.screenPad
 import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
-private sealed interface ChatRoute {
-    data object Spaces : ChatRoute
-
-    data class Channels(
-        val space: ChatSpace,
-    ) : ChatRoute
-
-    data class Messages(
-        val space: ChatSpace,
-        val channel: ChatChannel,
-    ) : ChatRoute
-}
-
 /**
- * Chat home: routes spaces → channels → messages, with the install gate up front.
+ * Chat home: the account's channels, then a channel's messages.
  *
- * [autoJoinInvite] is the e2e hook (the `invite` launch extra, Android analog of the Swift sample's
- * `E2E_JOIN`): when set, the screen installs the chat app and joins that invite on open, so the multi-user
- * harness can hand a guest an invite without typing it.
+ * [autoJoinInvite] is the e2e hook (the `invite` launch extra): when set, the screen redeems
+ * that invite as the account on open.
  */
 @Composable
 fun ChatScreen(
@@ -92,608 +84,391 @@ fun ChatScreen(
     onClose: () -> Unit,
     autoJoinInvite: String? = null,
 ) {
-    var route by remember { mutableStateOf<ChatRoute>(ChatRoute.Spaces) }
-
+    var open by remember { mutableStateOf<ChatChannel?>(null) }
     LaunchedEffect(Unit) {
-        if (!autoJoinInvite.isNullOrEmpty() && service.appId == null) {
-            service.setup()
-            service.joinSpace(autoJoinInvite)
-        } else {
-            // Skip the install gate if the chat app is already installed on this node.
-            service.detectInstalled()
-        }
+        if (!autoJoinInvite.isNullOrEmpty()) service.joinSpace(autoJoinInvite) else service.loadChannels()
     }
-
-    when (val current = route) {
-        is ChatRoute.Spaces ->
-            ChatSpacesScreen(
-                service = service,
-                onOpen = { route = ChatRoute.Channels(it) },
-                onClose = onClose,
-            )
-        is ChatRoute.Channels ->
-            ChatChannelsScreen(
-                service = service,
-                space = current.space,
-                onOpen = { route = ChatRoute.Messages(current.space, it) },
-                onBack = { route = ChatRoute.Spaces },
-            )
-        is ChatRoute.Messages ->
-            ChatMessagesScreen(
-                service = service,
-                channel = current.channel,
-                onBack = { route = ChatRoute.Channels(current.space) },
-            )
+    val channel = open
+    if (channel == null) {
+        ChannelList(service, onOpen = { open = it }, onClose = onClose)
+    } else {
+        Messages(service, channel, onBack = { open = null })
     }
+    service.lastInvite?.let { invite -> InviteDialog(invite, onDismiss = service::clearInvite) }
 }
 
 @Composable
-private fun ChatSpacesScreen(
+private fun ChannelList(
     service: ChatService,
-    onOpen: (ChatSpace) -> Unit,
+    onOpen: (ChatChannel) -> Unit,
     onClose: () -> Unit,
 ) {
     val scope = rememberCoroutineScope()
-    var showNewSpace by remember { mutableStateOf(false) }
-    var showJoin by remember { mutableStateOf(false) }
-    var menuOpen by remember { mutableStateOf(false) }
-
-    LaunchedEffect(service.appId) { if (service.appId != null) service.loadSpaces() }
-
-    Box(Modifier.fillMaxSize().background(Cal.bg)) {
-        Column(Modifier.fillMaxSize()) {
-            Row(Modifier.padding(horizontal = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-                TextButton(onClick = onClose) { Text("Close", color = Cal.lime) }
-                Text("Chat", color = Cal.text, fontWeight = FontWeight.SemiBold)
-                Spacer(Modifier.weight(1f))
-                if (service.appId != null) {
-                    Box {
-                        IconButton(onClick = { menuOpen = true }, modifier = Modifier.testTag("chatAdd")) {
-                            Icon(Icons.Default.Add, "add", tint = Cal.lime)
-                        }
-                        DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
-                            DropdownMenuItem(
-                                text = { Text("New space") },
-                                onClick = {
-                                    menuOpen = false
-                                    showNewSpace = true
-                                },
-                            )
-                            DropdownMenuItem(
-                                text = { Text("Join existing space") },
-                                onClick = {
-                                    menuOpen = false
-                                    showJoin = true
-                                },
-                            )
-                            HorizontalDivider()
-                            DropdownMenuItem(
-                                text = { Text("Refresh") },
-                                onClick = {
-                                    menuOpen = false
-                                    scope.launch { service.loadSpaces() }
-                                },
-                            )
-                        }
-                    }
-                }
-            }
-            Column(Modifier.padding(horizontal = screenPad, vertical = 14.dp)) {
-                StatusLine(service.status)
-                if (service.appId == null) {
-                    InstallGate(service)
-                } else {
-                    SpacesList(service, onOpen)
-                }
-            }
-        }
-        if (service.busy) BusyOverlay(service.status)
-    }
-
-    if (showNewSpace) {
-        NameDialog("New space", "Space name", onDismiss = { showNewSpace = false }) { name ->
-            showNewSpace = false
-            scope.launch { service.createSpace(name) }
-        }
-    }
-    if (showJoin) {
-        JoinDialog(service, onDismiss = { showJoin = false })
-    }
-}
-
-/** Dimmed, blocking progress overlay carrying the service's current status message. */
-@Composable
-private fun BusyOverlay(status: String) {
-    Box(
-        Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.55f)),
-        contentAlignment = Alignment.Center,
-    ) {
-        Column(
-            Modifier
-                .width(280.dp)
-                .clip(RoundedCornerShape(16.dp))
-                .background(Cal.surface)
-                .border(1.dp, Cal.border, RoundedCornerShape(16.dp))
-                .padding(22.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(12.dp),
-        ) {
-            CircularProgressIndicator(color = Cal.lime)
-            Text(status.ifEmpty { "Working…" }, color = Cal.text, fontSize = 13.sp)
-        }
-    }
-}
-
-@Composable
-private fun StatusLine(status: String) {
-    if (status.isNotEmpty()) {
-        Text(status, color = Cal.textDim, fontSize = 12.sp, modifier = Modifier.fillMaxWidth())
-    }
-}
-
-@Composable
-private fun InstallGate(service: ChatService) {
-    val scope = rememberCoroutineScope()
-    Column(
-        Modifier.fillMaxSize().padding(24.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-    ) {
-        Spacer(Modifier.weight(1f))
-        Text("mero-chat", color = Cal.text, fontWeight = FontWeight.Bold, fontSize = 22.sp)
-        Text(
-            "Install the chat app (com.calimero.chat) from the registry to start.",
-            color = Cal.textDim,
-            fontSize = 13.sp,
-        )
-        CalPrimaryButton(
-            text = "Install mero-chat",
-            onClick = { scope.launch { service.setup() } },
-            enabled = !service.busy,
-            modifier = Modifier.fillMaxWidth().testTag("installChat"),
-        )
-        Spacer(Modifier.weight(1f))
-    }
-}
-
-@Composable
-private fun SpacesList(
-    service: ChatService,
-    onOpen: (ChatSpace) -> Unit,
-) {
-    LazyColumn(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        if (service.spaces.isEmpty()) {
-            item { Text("No spaces yet. Tap + to create one.", color = Cal.textDim, fontSize = 13.sp) }
-        }
-        items(service.spaces, key = { it.id }) { space ->
-            Row(
-                Modifier
-                    .fillMaxWidth()
-                    .clip(RoundedCornerShape(12.dp))
-                    .background(Cal.surface)
-                    .border(1.dp, Cal.border, RoundedCornerShape(12.dp))
-                    .clickable { onOpen(space) }
-                    .padding(14.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Text("#", color = Cal.lime, fontWeight = FontWeight.Bold)
-                Text(
-                    space.name,
-                    color = Cal.text,
-                    fontWeight = FontWeight.SemiBold,
-                    modifier = Modifier.padding(start = 10.dp),
-                )
-                Spacer(Modifier.weight(1f))
-                Text("›", color = Cal.textDim)
-            }
-        }
-    }
-}
-
-@Composable
-private fun ChatChannelsScreen(
-    service: ChatService,
-    space: ChatSpace,
-    onOpen: (ChatChannel) -> Unit,
-    onBack: () -> Unit,
-) {
-    val scope = rememberCoroutineScope()
-    var showNew by remember { mutableStateOf(false) }
-    var menuOpen by remember { mutableStateOf(false) }
-    var invite by remember { mutableStateOf<String?>(null) }
-    var inviteError by remember { mutableStateOf(false) }
-
-    LaunchedEffect(space.id) { service.loadChannels(space) }
-
+    var joining by remember { mutableStateOf(false) }
+    var creating by remember { mutableStateOf(false) }
     Column(Modifier.fillMaxSize().background(Cal.bg)) {
-        ChannelsHeader(
-            service = service,
-            space = space,
-            menuOpen = menuOpen,
-            onMenu = { menuOpen = it },
-            onBack = onBack,
-            onNewChannel = { showNew = true },
-            onInvite = { code -> if (code != null) invite = code else inviteError = true },
-        )
-        Column(Modifier.padding(horizontal = screenPad, vertical = 14.dp)) {
-            if (service.status.isNotEmpty()) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    if (service.busy) {
-                        CircularProgressIndicator(
-                            color = Cal.lime,
-                            strokeWidth = 2.dp,
-                            modifier = Modifier.size(14.dp).padding(end = 8.dp),
-                        )
-                    }
-                    Text(service.status, color = Cal.textDim, fontSize = 12.sp)
+        TopBar(
+            title = "Chat",
+            subtitle = "Channels your account belongs to",
+            onBack = onClose,
+            actions = {
+                IconButton(onClick = { creating = true }, modifier = Modifier.testTag("chatNewSpace")) {
+                    Icon(Icons.Outlined.AddCircleOutline, contentDescription = "New space", tint = Cal.textDim)
                 }
-                Spacer(Modifier.size(10.dp))
-            }
+                IconButton(onClick = { joining = true }) {
+                    Icon(Icons.Outlined.GroupAdd, contentDescription = "Join with an invite", tint = Cal.textDim)
+                }
+                IconButton(onClick = { scope.launch { service.loadChannels() } }) {
+                    Icon(Icons.Outlined.Refresh, contentDescription = "Refresh", tint = Cal.textDim)
+                }
+            },
+        )
+        if (service.busy) LinearProgressIndicator(Modifier.fillMaxWidth(), color = Cal.accentInk, trackColor = Cal.border)
+        LazyColumn(
+            Modifier.fillMaxSize().padding(horizontal = screenPad),
+            verticalArrangement = Arrangement.spacedBy(16.dp),
+        ) {
+            item { Spacer(Modifier.size(4.dp)) }
+            if (service.status.isNotEmpty()) item { Text(service.status, color = Cal.textFaint, fontSize = 13.sp) }
             if (service.channels.isEmpty() && !service.busy) {
-                EmptyChannelsCard { scope.launch { service.resync(space) } }
-                Spacer(Modifier.size(10.dp))
-            }
-            LazyColumn(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                items(service.channels, key = { it.id }) { ch ->
-                    Row(
-                        Modifier
-                            .fillMaxWidth()
-                            .clip(RoundedCornerShape(12.dp))
-                            .background(Cal.surface)
-                            .border(1.dp, Cal.border, RoundedCornerShape(12.dp))
-                            .clickable { onOpen(ch) }
-                            .padding(13.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Text("#", color = Cal.lime)
-                        Text(
-                            ch.name,
-                            color = Cal.text,
-                            fontWeight = FontWeight.SemiBold,
-                            modifier = Modifier.padding(start = 10.dp),
-                        )
-                        Spacer(Modifier.weight(1f))
-                        Text("›", color = Cal.textDim)
+                item {
+                    EmptyState(
+                        icon = Icons.Outlined.ChatBubbleOutline,
+                        title = "No channels yet",
+                        body = "Start a space of your own and invite people, or join one with an invite code.",
+                        action = {
+                            Column(verticalArrangement = Arrangement.spacedBy(8.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                                CalPrimaryButton("Create a space", onClick = { creating = true }, icon = Icons.Outlined.AddCircleOutline)
+                                CalSecondaryButton("Join with an invite", onClick = { joining = true }, icon = Icons.Outlined.GroupAdd)
+                            }
+                        },
+                    )
+                }
+            } else {
+                item {
+                    CalCard(padding = 0.dp) {
+                        service.channels.forEachIndexed { i, ch ->
+                            if (i > 0) Hairline()
+                            ListRow(Icons.Outlined.Tag, ch.name, ch.kind, onClick = { onOpen(ch) })
+                        }
                     }
                 }
             }
         }
     }
-
-    if (showNew) {
-        NameDialog("New channel", "channel-name", onDismiss = { showNew = false }) { name ->
-            showNew = false
-            scope.launch { service.createChannel(space, name, open = true) }
-        }
-    }
-    invite?.let { code -> InviteSheet(code, space.name) { invite = null } }
-    if (inviteError) {
-        AlertDialog(
-            onDismissRequest = { inviteError = false },
-            title = { Text("Couldn't create invite") },
-            text = { Text(service.status.ifEmpty { "The node did not return an invitation." }) },
-            confirmButton = { TextButton(onClick = { inviteError = false }) { Text("OK") } },
+    if (creating) {
+        NewSpaceDialog(
+            onDismiss = { creating = false },
+            onCreate = { name ->
+                creating = false
+                scope.launch { service.createSpace(name) }
+            },
         )
     }
-}
-
-/** Back / title / refresh / overflow bar for a space's channel list. */
-@Composable
-private fun ChannelsHeader(
-    service: ChatService,
-    space: ChatSpace,
-    menuOpen: Boolean,
-    onMenu: (Boolean) -> Unit,
-    onBack: () -> Unit,
-    onNewChannel: () -> Unit,
-    onInvite: (String?) -> Unit,
-) {
-    val scope = rememberCoroutineScope()
-    Row(Modifier.padding(horizontal = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-        IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "back", tint = Cal.lime) }
-        Text(space.name, color = Cal.text, fontWeight = FontWeight.SemiBold)
-        Spacer(Modifier.weight(1f))
-        IconButton(
-            onClick = { scope.launch { service.loadChannels(space) } },
-            modifier = Modifier.testTag("channelRefresh"),
-        ) { Icon(Icons.Default.Refresh, "refresh", tint = Cal.lime) }
-        Box {
-            IconButton(onClick = { onMenu(true) }, modifier = Modifier.testTag("channelAdd")) {
-                Icon(Icons.Default.Add, "add", tint = Cal.lime)
-            }
-            DropdownMenu(expanded = menuOpen, onDismissRequest = { onMenu(false) }) {
-                DropdownMenuItem(text = { Text("New channel") }, onClick = {
-                    onMenu(false)
-                    onNewChannel()
-                })
-                DropdownMenuItem(
-                    text = { Text("Invite people") },
-                    onClick = {
-                        onMenu(false)
-                        scope.launch { onInvite(service.makeInvite(space)) }
-                    },
-                )
-                DropdownMenuItem(
-                    text = { Text("Sync now") },
-                    onClick = {
-                        onMenu(false)
-                        scope.launch { service.resync(space) }
-                    },
-                )
-            }
-        }
-    }
-}
-
-/** Shown when a space has no channels — usually a joined space still syncing from the inviter. */
-@Composable
-private fun EmptyChannelsCard(onSync: () -> Unit) {
-    CalCard {
-        Text("No channels yet.", color = Cal.text, fontSize = 14.sp)
-        Spacer(Modifier.size(6.dp))
-        Text(
-            "If you just joined, channels sync from the inviter — tap Sync. Or create one with +.",
-            color = Cal.textDim,
-            fontSize = 12.sp,
-        )
-        Spacer(Modifier.size(10.dp))
-        CalSecondaryButton(
-            text = "Sync now",
-            onClick = onSync,
-            modifier = Modifier.fillMaxWidth().testTag("syncNow"),
+    if (joining) {
+        JoinDialog(
+            onDismiss = { joining = false },
+            onJoin = { code ->
+                joining = false
+                scope.launch { service.joinSpace(code) }
+            },
         )
     }
 }
 
 @Composable
-private fun ChatMessagesScreen(
+@Suppress("LongMethod")
+private fun Messages(
     service: ChatService,
     channel: ChatChannel,
     onBack: () -> Unit,
 ) {
     val scope = rememberCoroutineScope()
     var draft by remember { mutableStateOf("") }
+    var info by remember { mutableStateOf(false) }
     val listState = rememberLazyListState()
 
-    LaunchedEffect(channel.id) {
-        // Live updates over SSE — reload messages on each node event for this context (no polling).
-        // Cancelling the effect closes the stream.
+    LaunchedEffect(channel.contextId) {
+        service.registerProfile(channel.contextId)
         service.loadMessages(channel)
-        runCatching {
-            service.eventStream(channel).collect { service.loadMessages(channel) }
-        }
     }
-    // Keep the newest message in view, like the Swift sample's ScrollViewReader.
+    LaunchedEffect(channel.contextId) {
+        runCatching { service.eventStream(channel).collect { service.loadMessages(channel) } }
+    }
     LaunchedEffect(service.messages.size) {
-        if (service.messages.isNotEmpty()) listState.animateScrollToItem(service.messages.lastIndex)
+        if (service.messages.isNotEmpty()) listState.animateScrollToItem(service.messages.size - 1)
     }
 
-    Column(Modifier.fillMaxSize().background(Cal.bg)) {
-        Row(Modifier.padding(horizontal = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-            IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "back", tint = Cal.lime) }
-            Text("#${channel.name}", color = Cal.text, fontWeight = FontWeight.SemiBold)
-        }
+    Column(Modifier.fillMaxSize().background(Cal.bg).imePadding()) {
+        TopBar(
+            title = "#${channel.name}",
+            subtitle = "${service.messages.size} messages",
+            onBack = onBack,
+            actions = {
+                IconButton(onClick = { info = true }) {
+                    Icon(Icons.Outlined.Info, contentDescription = "Channel details", tint = Cal.textDim)
+                }
+            },
+        )
         LazyColumn(
-            Modifier.weight(1f).fillMaxWidth().padding(horizontal = screenPad, vertical = 12.dp),
             state = listState,
-            verticalArrangement = Arrangement.spacedBy(14.dp),
+            modifier = Modifier.weight(1f).fillMaxWidth().padding(horizontal = screenPad),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
-            items(service.messages, key = { it.id }) { message -> MessageRow(message) }
+            item { Spacer(Modifier.size(6.dp)) }
+            if (service.messages.isEmpty()) {
+                item {
+                    EmptyState(Icons.Outlined.ChatBubbleOutline, "No messages yet", "Say hello to start the conversation.")
+                }
+            }
+            items(service.messages, key = { it.id }) { MessageBubble(it, mine = it.senderUsername == service.username) }
+            item { Spacer(Modifier.size(6.dp)) }
         }
-        Row(Modifier.fillMaxWidth().padding(10.dp), verticalAlignment = Alignment.CenterVertically) {
-            CalTextField(draft, { draft = it }, "Message #${channel.name}", Modifier.weight(1f).testTag("messageField"))
+        Hairline()
+        Row(
+            Modifier.fillMaxWidth().background(Cal.surface).padding(horizontal = screenPad, vertical = 10.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            OutlinedTextField(
+                value = draft,
+                onValueChange = { draft = it },
+                placeholder = { Text("Message #${channel.name}", color = Cal.textFaint) },
+                shape = RoundedCornerShape(20.dp),
+                modifier = Modifier.weight(1f).testTag("chatComposer"),
+                colors =
+                    OutlinedTextFieldDefaults.colors(
+                        focusedContainerColor = Cal.surfaceSunken,
+                        unfocusedContainerColor = Cal.surfaceSunken,
+                        focusedBorderColor = Cal.text,
+                        unfocusedBorderColor = Color.Transparent,
+                        cursorColor = Cal.text,
+                    ),
+            )
+            Spacer(Modifier.width(8.dp))
             IconButton(
                 onClick = {
-                    val text = draft
+                    val text = draft.trim()
                     draft = ""
                     scope.launch { service.sendMessage(channel, text) }
                 },
                 enabled = draft.isNotBlank(),
-                modifier = Modifier.testTag("sendMessage"),
-            ) { Icon(Icons.AutoMirrored.Filled.Send, "send", tint = Cal.lime) }
+                modifier =
+                    Modifier
+                        .size(40.dp)
+                        .clip(CircleShape)
+                        .background(if (draft.isNotBlank()) Cal.lime else Cal.lime.copy(alpha = 0.5f))
+                        .testTag("chatSend"),
+            ) {
+                Icon(Icons.Outlined.ArrowUpward, contentDescription = "Send", tint = Cal.onLime)
+            }
         }
+        Text(
+            "Posting as ${service.username}",
+            color = Cal.textFaint,
+            fontSize = 12.sp,
+            modifier = Modifier.fillMaxWidth().background(Cal.surface).padding(start = screenPad, bottom = 8.dp),
+        )
+    }
+
+    if (info) {
+        AlertDialog(
+            onDismissRequest = { info = false },
+            confirmButton = {
+                CalPrimaryButton(
+                    "Invite people",
+                    onClick = {
+                        info = false
+                        scope.launch { service.inviteTo(channel) }
+                    },
+                    enabled = channel.groupId != null,
+                    icon = Icons.Outlined.PersonAddAlt,
+                )
+            },
+            dismissButton = { CalSecondaryButton("Close", onClick = { info = false }) },
+            title = { Text("Technical details", color = Cal.text) },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    IdField("Context", channel.contextId)
+                    channel.groupId?.let { IdField("Group", it) }
+                }
+            },
+            containerColor = Cal.surface,
+        )
     }
 }
 
 @Composable
-private fun MessageRow(message: ChatMessage) {
-    val name = message.senderUsername.ifEmpty { message.sender.take(6) }
-    Row(verticalAlignment = Alignment.Top) {
-        ChatAvatar(name)
-        Column(Modifier.padding(start = 10.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(name, color = Cal.text, fontWeight = FontWeight.SemiBold)
+private fun MessageBubble(
+    message: ChatMessage,
+    mine: Boolean,
+) {
+    val shape =
+        if (mine) {
+            RoundedCornerShape(14.dp, 14.dp, 4.dp, 14.dp)
+        } else {
+            RoundedCornerShape(14.dp, 14.dp, 14.dp, 4.dp)
+        }
+    Row(Modifier.fillMaxWidth(), horizontalArrangement = if (mine) Arrangement.End else Arrangement.Start) {
+        if (!mine) {
+            Avatar(message.senderUsername.ifEmpty { message.sender })
+            Spacer(Modifier.width(8.dp))
+        }
+        Column(horizontalAlignment = if (mine) Alignment.End else Alignment.Start) {
+            if (!mine) {
                 Text(
-                    shortTime(message.timestamp),
-                    color = Cal.textDim,
-                    fontSize = 11.sp,
-                    modifier = Modifier.padding(start = 6.dp),
+                    message.senderUsername.ifEmpty { message.sender.take(SENDER_PREFIX) },
+                    color = toneOf(message.senderUsername).second,
+                    fontSize = 12.5.sp,
+                    fontWeight = FontWeight.SemiBold,
                 )
             }
-            Text(message.text, color = Cal.text.copy(alpha = 0.92f))
+            Box(
+                Modifier
+                    .widthIn(max = 280.dp)
+                    .clip(shape)
+                    .background(if (mine) Cal.lime else Cal.surface)
+                    .border(1.dp, if (mine) Cal.limeEdge else Cal.border, shape)
+                    .padding(horizontal = 12.dp, vertical = 10.dp),
+            ) {
+                Text(message.text, color = Cal.text, fontSize = 15.sp, lineHeight = 21.sp)
+            }
+            if (message.timestamp > 0) Text(shortTime(message.timestamp), color = Cal.textFaint, fontSize = 12.sp)
         }
     }
 }
 
-/** A colored initials avatar — the color is a deterministic (djb2) hash of the display name. */
 @Composable
-private fun ChatAvatar(
-    name: String,
-    size: Int = 34,
-) {
-    val initials =
-        name
-            .split(" ")
-            .take(2)
-            .mapNotNull { it.firstOrNull()?.toString() }
-            .joinToString("")
-            .ifEmpty { name.take(1) }
-            .uppercase()
-    Box(
-        Modifier.size(size.dp).clip(CircleShape).background(avatarColor(name)),
-        contentAlignment = Alignment.Center,
-    ) { Text(initials, color = Cal.bg, fontWeight = FontWeight.Bold, fontSize = (size * 0.4).sp) }
+private fun Avatar(name: String) {
+    val (bg, fg) = toneOf(name)
+    Box(Modifier.size(28.dp).clip(CircleShape).background(bg), contentAlignment = Alignment.Center) {
+        Text(name.take(1).uppercase(), color = fg, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+    }
 }
 
-private val avatarPalette =
+/** Deterministic avatar tone (forum `index.css` tones), by name hash. */
+private fun toneOf(name: String): Pair<Color, Color> =
+    TONES[Math.floorMod(name.hashCode(), TONES.size)]
+
+private val TONES =
     listOf(
-        Color(0xFFA5FF11), Color(0xFFFF7A00), Color(0xFF38BDF8), Color(0xFFF472B6),
-        Color(0xFFA78BFA), Color(0xFF34D399), Color(0xFFFBBF24),
+        Color(0xFFF0FFD6) to Color(0xFF4A7300),
+        Color(0xFFE6EEFB) to Color(0xFF1D4F9F),
+        Color(0xFFFBE9E4) to Color(0xFF9A3412),
+        Color(0xFFEFE8FB) to Color(0xFF5B3AA8),
+        Color(0xFFFDF3DC) to Color(0xFF8A5300),
+        Color(0xFFE2F4F1) to Color(0xFF116A5C),
     )
 
-private fun avatarColor(name: String): Color {
-    var hash = 5381L
-    for (byte in name.toByteArray()) hash = (hash shl 5) + hash + byte
-    val index = ((hash % avatarPalette.size) + avatarPalette.size) % avatarPalette.size
-    return avatarPalette[index.toInt()]
-}
-
-@Composable
-private fun NameDialog(
-    title: String,
-    placeholder: String,
-    onDismiss: () -> Unit,
-    onConfirm: (String) -> Unit,
-) {
-    var text by remember { mutableStateOf("") }
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text(title) },
-        text = { CalTextField(text, { text = it }, placeholder, Modifier.testTag("createField")) },
-        confirmButton = { TextButton(onClick = { onConfirm(text) }) { Text("Create") } },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
-    )
-}
-
-/**
- * Paste-an-invite dialog. Single-line: an invite code is one line, so a one-liner avoids stray line
- * breaks that could mangle the code, and a Paste button makes the (long, unreadable) code easy to
- * drop in. Dismisses itself once the join reports success.
- */
 @Composable
 private fun JoinDialog(
-    service: ChatService,
+    onDismiss: () -> Unit,
+    onJoin: (String) -> Unit,
+) {
+    var code by remember { mutableStateOf("") }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        containerColor = Cal.surface,
+        title = { Text("Join a space", color = Cal.text) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Text(
+                    "Paste an invite code or link. Your account is admitted through a node the invitation names, " +
+                        "which becomes your relay if you have none yet.",
+                    color = Cal.textDim,
+                    fontSize = 14.sp,
+                )
+                CalTextField(code, { code = it }, "Invite", singleLine = false, mono = true)
+            }
+        },
+        confirmButton = { CalPrimaryButton("Join", onClick = { onJoin(code.trim()) }, enabled = code.isNotBlank()) },
+        dismissButton = { CalSecondaryButton("Cancel", onClick = onDismiss) },
+    )
+}
+
+@Composable
+private fun NewSpaceDialog(
+    onDismiss: () -> Unit,
+    onCreate: (String) -> Unit,
+) {
+    var name by remember { mutableStateOf("") }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        containerColor = Cal.surface,
+        title = { Text("Create a space", color = Cal.text) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Text(
+                    "Your account founds the space through its relay and owns it. It starts with a #general channel, " +
+                        "and you get an invite to share.",
+                    color = Cal.textDim,
+                    fontSize = 14.sp,
+                )
+                CalTextField(name, { name = it }, "Name", placeholder = "Team", modifier = Modifier.testTag("spaceName"))
+            }
+        },
+        confirmButton = { CalPrimaryButton("Create", onClick = { onCreate(name.trim()) }, enabled = name.isNotBlank()) },
+        dismissButton = { CalSecondaryButton("Cancel", onClick = onDismiss) },
+    )
+}
+
+@Composable
+private fun InviteDialog(
+    invite: ChatInvite,
     onDismiss: () -> Unit,
 ) {
-    val scope = rememberCoroutineScope()
+    val context = LocalContext.current
     val clipboard = LocalClipboardManager.current
-    var text by remember { mutableStateOf("") }
-
+    val link = remember(invite) { invite.shareableLink() }
     AlertDialog(
-        onDismissRequest = { if (!service.busy) onDismiss() },
-        title = { Text("Join a space") },
+        onDismissRequest = onDismiss,
+        containerColor = Cal.surface,
+        title = { Text("Invite to ${invite.spaceName}", color = Cal.text) },
         text = {
-            Column {
-                Text("Paste an invite code", color = Cal.text, fontWeight = FontWeight.SemiBold)
-                Spacer(Modifier.size(8.dp))
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    CalTextField(
-                        text,
-                        { text = it },
-                        "invite code",
-                        Modifier.weight(1f).testTag("joinField"),
-                        enabled = !service.busy,
-                    )
-                    IconButton(
-                        onClick = { clipboard.getText()?.text?.let { text = it } },
-                        enabled = !service.busy,
-                        modifier = Modifier.testTag("pasteInvite"),
-                    ) { Text("📋") }
-                }
-                if (service.status.isNotEmpty()) {
-                    Spacer(Modifier.size(8.dp))
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        if (service.busy) {
-                            CircularProgressIndicator(
-                                color = Cal.lime,
-                                strokeWidth = 2.dp,
-                                modifier = Modifier.size(14.dp).padding(end = 8.dp),
-                            )
-                        }
-                        Text(
-                            service.status,
-                            color = if (service.status.startsWith("✗")) Cal.error else Cal.textDim,
-                            fontSize = 12.sp,
-                        )
-                    }
-                }
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Text(
+                    "Anyone with this link can join for the next 24 hours. It is signed by this device.",
+                    color = Cal.textDim,
+                    fontSize = 14.sp,
+                )
+                IdField("Invite link", link, modifier = Modifier.testTag("inviteLink"))
             }
         },
         confirmButton = {
-            TextButton(
+            CalPrimaryButton(
+                "Share",
                 onClick = {
-                    scope.launch {
-                        // Strip any whitespace/newlines a paste may have introduced.
-                        service.joinSpace(text.trim())
-                        if (service.status.startsWith("✓")) onDismiss()
-                    }
+                    val send =
+                        Intent(Intent.ACTION_SEND)
+                            .setType("text/plain")
+                            .putExtra(Intent.EXTRA_TEXT, link)
+                    context.startActivity(Intent.createChooser(send, "Share invite"))
                 },
-                enabled = !service.busy && text.isNotBlank(),
-            ) { Text(if (service.busy) "Joining…" else "Join space") }
+                icon = Icons.Outlined.Share,
+            )
         },
-        dismissButton = { TextButton(onClick = onDismiss, enabled = !service.busy) { Text("Close") } },
-    )
-}
-
-/** Shows a generated invite code with Copy and Share, mirroring the Swift `InviteSheet`. */
-@Composable
-private fun InviteSheet(
-    text: String,
-    spaceName: String,
-    onDone: () -> Unit,
-) {
-    val clipboard = LocalClipboardManager.current
-    val context = LocalContext.current
-    var copied by remember { mutableStateOf(false) }
-
-    AlertDialog(
-        onDismissRequest = onDone,
-        title = { Text("Invite") },
-        text = {
-            Column {
-                Text(
-                    "Share this invite code so someone can join \"$spaceName\".",
-                    color = Cal.textDim,
-                    fontSize = 13.sp,
-                )
-                Spacer(Modifier.size(10.dp))
-                Box(
-                    Modifier
-                        .heightIn(max = 220.dp)
-                        .clip(RoundedCornerShape(10.dp))
-                        .background(Cal.surface2)
-                        .border(1.dp, Cal.border, RoundedCornerShape(10.dp))
-                        .verticalScroll(rememberScrollState())
-                        .padding(12.dp),
-                ) {
-                    Text(text, color = Cal.text, fontFamily = FontFamily.Monospace, fontSize = 12.sp)
-                }
-            }
-        },
-        confirmButton = { TextButton(onClick = onDone) { Text("Done") } },
         dismissButton = {
-            Row {
-                TextButton(
-                    onClick = {
-                        clipboard.setText(AnnotatedString(text))
-                        copied = true
-                    },
-                ) { Text(if (copied) "Copied" else "Copy") }
-                TextButton(
-                    onClick = {
-                        val send =
-                            Intent(Intent.ACTION_SEND).apply {
-                                type = "text/plain"
-                                putExtra(Intent.EXTRA_TEXT, text)
-                            }
-                        context.startActivity(Intent.createChooser(send, "Share invite"))
-                    },
-                ) { Text("Share") }
-            }
+            CalSecondaryButton(
+                "Copy",
+                onClick = {
+                    clipboard.setText(AnnotatedString(link))
+                    onDismiss()
+                },
+                icon = Icons.Outlined.ContentCopy,
+            )
         },
     )
 }
 
-private val timeFormat = SimpleDateFormat("HH:mm", Locale.US)
+private val timeFormat = SimpleDateFormat("HH:mm", Locale.getDefault())
 
-private fun shortTime(milliseconds: Long): String = timeFormat.format(Date(milliseconds))
+/**
+ * mero-chat (3.1.29+) stores message timestamps in seconds. Older messages may still carry
+ * milliseconds, so anything already past the seconds range is taken as-is.
+ */
+private fun shortTime(timestamp: Long): String =
+    timeFormat.format(Date(if (timestamp < SECONDS_RANGE_LIMIT) timestamp * MILLIS_PER_SECOND else timestamp))
+
+private const val SECONDS_RANGE_LIMIT = 100_000_000_000L
+private const val MILLIS_PER_SECOND = 1000L
+
+private const val SENDER_PREFIX = 8

@@ -1,6 +1,6 @@
 ---
 title: Authentication
-description: Direct credential login and hosted SSO deep-link login, plus the single-flight token lifecycle that refreshes access tokens transparently.
+description: Sign in with Calimero Cloud on mobile (wallet passkey, device certificate, hosted relay), plus credential and SSO login for self-hosted nodes and the single-flight token lifecycle.
 sidebar:
   order: 2
 ---
@@ -8,13 +8,133 @@ sidebar:
 import { Aside } from '@astrojs/starlight/components';
 import SeqDiagram from '../../../components/SeqDiagram.astro';
 
-Every call mero-kotlin makes carries a JWT access token. There are two ways to
-obtain one — direct credentials and hosted SSO — and the SDK keeps it fresh for
-you.
+On a phone, people **sign in with their Calimero account**. There is no node URL,
+username or password: the person approves this device in the Calimero wallet, and
+the app then talks to the hosted relay that serves their account. That is the only
+sign-in the Compose UI kit offers.
 
-## Direct credentials
+Code that talks to a node you run yourself — a server, a tool, a test — can still
+log in to it with credentials or hosted SSO; see
+[Self-hosted nodes](#self-hosted-nodes) below.
 
-For first-party apps, exchange a username and password for a token bundle.
+## Sign in with Calimero (mobile)
+
+The flow mirrors mero-react's Cloud tab, without a browser page of its own:
+
+1. The app makes (once) an **Ed25519 signing key** and an **X25519 key-delivery
+   key** for this device and keeps them in `EncryptedSharedPreferences`. The
+   secrets never leave the phone.
+2. It opens `https://wallet.cloud.calimero.network/account-enroll?enrol-device=…&enrol-kem=…&callback-url=…&state=…`
+   in a Chrome Custom Tab. The person approves with the passkey that holds their
+   account.
+3. The wallet redirects to the callback with
+   `#credential=…&account=…&device=…&state=…` — a certificate over **this
+   device's** keys, signed by the account root. The SDK verifies it locally
+   (`DeviceCert.verify`): the root signed it, it names the account that root
+   derives, it certifies the keys this app holds, and the `state` is the one sent.
+4. It asks the cloud manager which relay serves the account
+   (`GET /api/cloud/accounts/{account}/relays`, proven by signing a fresh
+   challenge with the device key).
+5. It learns the relay's node key from `POST /admin-api/tee/attest` and logs in
+   (`/auth/challenge` → `/auth/token`, `auth_method: account_proof`) for Bearer
+   tokens. Admin reads and live events use those; **writes are warrants** the
+   device signs and the relay spends (`POST /admin-api/contexts/{ctx}/intents`).
+
+```kotlin
+// Compose
+val client = remember { MeroClient.create(context) }
+LaunchedEffect(Unit) { client.restore() }              // reconnect a saved session
+
+MeroProvider(client) {
+    val state by client.state.collectAsStateWithLifecycle()
+    when {
+        !state.isAuthenticated -> LoginSheet(callbackUrl = "myapp://calimero-enrol")
+        state.signedInWithoutRelay -> NoRelayYet(state.relayNote)   // redeem an invitation
+        else -> MyApp(client.relay!!)
+    }
+}
+
+// In the Activity whose intent filter receives the callback:
+override fun onNewIntent(intent: Intent) {
+    super.onNewIntent(intent)
+    val url = intent.data?.toString() ?: return
+    lifecycleScope.launch { client.handleEnrolmentCallback(url) }
+}
+```
+
+Without Compose, `CloudAccount` is the same flow step by step:
+
+```kotlin
+val account = CloudAccount(EncryptedPrefsSecureStore(context))
+val walletUrl = account.beginEnrolment("myapp://calimero-enrol")   // open in a Custom Tab
+// …the callback arrives…
+val session = account.completeEnrolment(callbackUrl)               // verified, relay found
+val connection = account.connect(session!!)
+connection.relay.execute(contextId, "send_message", buildJsonObject { put("text", "hi") })
+val messages = connection.relay.call(contextId, "get_messages")    // read by query, 409 → warrant
+```
+
+<SeqDiagram
+  id="d-cloud"
+  title="Sign in with Calimero"
+  lanes={[
+    { label: 'Your app', color: '#3fb950' },
+    { label: 'Wallet (Custom Tab)', color: '#a371f7' },
+    { label: 'Cloud manager', color: '#58a6ff' },
+    { label: 'Relay', color: '#a5ff11' },
+  ]}
+  steps={[
+    { from: 0, to: 1, label: 'account-enroll?enrol-device&enrol-kem&callback-url&state' },
+    { from: 1, to: 1, label: 'passkey: certify this device' },
+    { from: 1, to: 0, label: 'callback #credential&account&device&state', dashed: true },
+    { from: 0, to: 0, label: 'verify certificate + state' },
+    { from: 0, to: 2, label: 'GET /accounts/{a}/relays (routing proof)' },
+    { from: 2, to: 0, label: 'relay_url, executor_account', dashed: true },
+    { from: 0, to: 3, label: 'POST /admin-api/tee/attest → node key' },
+    { from: 0, to: 3, label: '/auth/challenge → /auth/token (account_proof)' },
+    { from: 3, to: 0, label: 'Bearer tokens', dashed: true },
+    { type: 'divider', label: 'writes: warrants · reads: query · events: SSE' },
+  ]}
+/>
+
+### The callback URL
+
+Any absolute URL the app receives works on the SDK side: an **https App Link**
+(verified with Digital Asset Links) or an **app scheme** such as
+`myapp://calimero-enrol`. The wallet appends the answer as a fragment, so the
+callback itself must not contain `#`.
+
+<Aside type="caution">
+  The hosted wallet currently redirects only to `https://` callbacks. App-scheme
+  callbacks need a pending wallet change; until then, ship a verified App Link.
+</Aside>
+
+### Signed in, without a relay
+
+A new account is a member of nothing, so no relay serves it yet. That is still a
+successful sign-in: `state.signedInWithoutRelay` is `true` and `state.relayNote`
+explains it. Redeeming an invitation admits the account and gives it a relay:
+
+```kotlin
+client.joinWithInvitation(namespaceId, invitation)   // signs a MemberJoined op, POST …/admit
+```
+
+### The relay's node key
+
+The login statement names the relay's node key, which mero-js learns from the
+relay's TEE attestation and verifies as a TDX DCAP quote. On Android this sits
+behind `RelayKeyVerifier`. The default `TlsRelayKeyVerifier` trusts the TLS
+connection and checks that the attestation binds this request's nonce and the
+named key; it does **not** verify the quote itself yet. Supply your own verifier to
+`CloudAccount(relayKeyVerifier = …)` to tighten that. Warranted writes do not
+depend on the node key.
+
+## Self-hosted nodes
+
+### Direct credentials
+
+For servers, tools and tests that talk to a node you run, exchange a username and
+password for a token bundle. (Not offered by the Compose UI kit.)
 
 ```kotlin
 mero.authenticate(Credentials(username = "alice", password = "s3cr3t"))
@@ -105,7 +225,7 @@ config extends that guarantee across processes via an exclusive file lock.
   [error model](/reference/error-model/).
 </Aside>
 
-## Hosted SSO (deep link)
+## Hosted SSO for a self-hosted node (deep link)
 
 For hosted login, open the node's login URL, and feed the callback deep link back
 in — the native analog of the web redirect flow. On Android, `SsoLauncher` opens

@@ -90,8 +90,11 @@ default). Implement the `TokenStore` interface to use your own.
 A separate module with a `MeroClient` view-model (exposing a
 `StateFlow<MeroAuthState>`) plus a `MeroProvider`/`useMero` pair and drop-in
 `LoginSheet` / `ConnectButton` composables — the analog of mero-react's
-`MeroProvider`/`useMero` + `LoginModal`. See
-[the Compose frontend guide](/guides/compose-frontend/).
+`MeroProvider`/`useMero` + `LoginModal`. Its sign-in is Calimero Cloud only:
+the wallet certifies a device key, and the app talks to the account's hosted relay
+through the `account` / `cloud` / `relay` packages of `mero-core`. See
+[the Compose frontend guide](/guides/compose-frontend/) and
+[Authentication](/get-started/authentication/).
 
 ## Dependencies
 
@@ -102,8 +105,9 @@ Small and coroutine-native:
 | OkHttp (+ `okhttp-sse`) | all HTTP requests and the SSE stream |
 | kotlinx.serialization | JSON coding of wire types |
 | kotlinx.coroutines | `suspend` calls and the `Flow` event stream |
-| AndroidX Security | the `EncryptedPrefsTokenStore` |
-| AndroidX Browser | the SSO Custom Tab (`SsoLauncher`) |
+| AndroidX Security | the `EncryptedPrefsTokenStore` and the account `EncryptedPrefsSecureStore` (device keys) |
+| AndroidX Browser | the wallet Custom Tab (`WalletLauncher`) and the node SSO tab (`SsoLauncher`) |
+| Bouncy Castle (`bcprov-jdk18on`) | Ed25519 / X25519 for device keys and warrants (the JCA has neither below API 33) |
 | Jetpack Compose | the optional `mero-compose` layer |
 
 Kotlin 2.x, Android minSdk 24 / compileSdk 34.

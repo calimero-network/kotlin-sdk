@@ -1,6 +1,6 @@
 ---
 title: Compose Frontend
-description: mero-compose — the MeroClient view-model plus MeroProvider/useMero and drop-in LoginSheet/ConnectButton composables, the analog of mero-react's MeroProvider + useMero.
+description: mero-compose — Cloud-only sign-in for Compose apps. The MeroClient view-model, MeroProvider/useMero, and the drop-in "Continue with Calimero" LoginSheet and ConnectButton.
 sidebar:
   order: 5
 ---
@@ -12,7 +12,10 @@ import Figure from '../../../components/Figure.astro';
 SDK — a `MeroClient` view-model exposing a `StateFlow<MeroAuthState>`, a
 `MeroProvider`/`useMero` pair for passing it down the tree, and ready-made
 `LoginSheet` / `ConnectButton` composables. It's the analog of mero-react's
-`MeroProvider`/`useMero` + `LoginModal`.
+`MeroProvider`/`useMero` + `LoginModal` in its **Cloud** mode: sign-in is
+"Continue with Calimero" and nothing else — no node URL, username or password.
+See [Authentication](/get-started/authentication/#sign-in-with-calimero-mobile)
+for what happens underneath.
 
 Add the optional dependency (see [install](/get-started/quickstart/#install)):
 
@@ -30,14 +33,21 @@ import com.calimero.mero.compose.*
 
 @Composable
 fun App(context: Context) {
-    // Production factory: EncryptedPrefs token store + cross-process refresh lock
-    val client = remember { MeroClient.create(context, baseUrl = "https://your-node.example") }
+    // Production factory: device keys + session in EncryptedSharedPreferences
+    val client = remember { MeroClient.create(context) }
+    LaunchedEffect(Unit) { client.restore() }          // reconnect a saved session
 
     MeroProvider(client) {
         val c = useMero()               // the client, anywhere in the tree
         val state by c.state.collectAsStateWithLifecycle()
-        if (state.isAuthenticated) HomeScreen() else LoginSheet()
+        if (state.isAuthenticated) HomeScreen() else LoginSheet(callbackUrl = "myapp://calimero-enrol")
     }
+}
+
+// The Activity that owns the callback intent filter forwards the wallet's redirect:
+override fun onNewIntent(intent: Intent) {
+    super.onNewIntent(intent)
+    intent.data?.toString()?.let { lifecycleScope.launch { client.handleEnrolmentCallback(it) } }
 }
 ```
 
@@ -64,8 +74,8 @@ fun App(context: Context) {
       <text x="150" y="188" fill="#f0883e" font-size="9">false</text>
       <rect x="70" y="200" width="220" height="60" rx="8" fill="#58a6ff14" stroke="#58a6ff50" />
       <text x="180" y="224" text-anchor="middle" fill="#58a6ff" font-size="11.5" font-weight="600">LoginSheet()</text>
-      <text x="180" y="241" text-anchor="middle" fill="#9aa4b2" font-size="9">node URL · username · password</text>
-      <text x="180" y="253" text-anchor="middle" fill="#9aa4b2" font-size="9">→ client.login(...)</text>
+      <text x="180" y="241" text-anchor="middle" fill="#9aa4b2" font-size="9">Continue with Calimero</text>
+      <text x="180" y="253" text-anchor="middle" fill="#9aa4b2" font-size="9">→ client.signInWithCloud(...)</text>
     </g>
 
     <g class="seq-step" style="--step-i:3">
@@ -73,78 +83,73 @@ fun App(context: Context) {
       <text x="536" y="188" fill="#3fb950" font-size="9">true</text>
       <rect x="430" y="200" width="220" height="60" rx="8" fill="#3fb95014" stroke="#3fb95050" />
       <text x="540" y="224" text-anchor="middle" fill="#3fb950" font-size="11.5" font-weight="600">your Home screen</text>
-      <text x="540" y="241" text-anchor="middle" fill="#9aa4b2" font-size="9">session info · run RPC</text>
-      <text x="540" y="253" text-anchor="middle" fill="#9aa4b2" font-size="9">ConnectButton → logout()</text>
+      <text x="540" y="241" text-anchor="middle" fill="#9aa4b2" font-size="9">client.relay · client.mero</text>
+      <text x="540" y="253" text-anchor="middle" fill="#9aa4b2" font-size="9">ConnectButton → signOut()</text>
     </g>
   </svg>
 </Figure>
 
 ## `MeroClient`
 
-A plain (non-composable) class wrapping a `Mero`, exposing one observable state
-flow. `MeroAuthState` carries `isAuthenticated`, `isLoading`, `nodeUrl`,
-`applicationId`, `contextId`, `contextIdentity`, and `error`.
+A plain (non-composable) class wrapping a `CloudAccount`, exposing one observable
+state flow. `MeroAuthState` carries `isAuthenticated`, `isLoading`, `account`,
+`device`, `relayUrl`, `sessionReady` (a Bearer session on the relay exists),
+`relayNote`, `cancelled` and `error`, plus `signedInWithoutRelay`.
 
 ```kotlin
 class MeroClient(
-    val mero: Mero,
-    baseUrl: String,
-    allowedNodeUrls: List<String> = emptyList(),
+    val account: CloudAccount,
+    tokenStore: TokenStore = MemoryTokenStore(),
+    launchWallet: (Context, String) -> Unit = WalletLauncher::launch,   // a Custom Tab
 ) {
     val state: StateFlow<MeroAuthState>
-    val rpc: RpcClient                       // passthrough to mero.rpc
+    val relay: RelayClient?        // warranted writes, reads by query
+    val mero: Mero?                // admin / events on the relay (Bearer)
 
-    suspend fun login(username: String, password: String)
-    fun startSsoLogin(context: Context, options: AuthLoginOptions)   // opens a Custom Tab
-    fun handleAuthCallback(url: String): Boolean                     // parse + adopt SSO tokens
-    suspend fun logout(clientId: String? = null)
+    fun signInWithCloud(context: Context, callbackUrl: String)
+    suspend fun handleEnrolmentCallback(url: String): Boolean
+    suspend fun restore()
+    suspend fun joinWithInvitation(namespaceId: String, invitation: SignedGroupOpenInvitation): JoinResult
+    suspend fun signOut(forgetDevice: Boolean = false)
 
     companion object {
-        // Production factory: EncryptedPrefs store + cross-process refresh lock.
-        fun create(context: Context, baseUrl: String, allowedNodeUrls: List<String> = emptyList()): MeroClient
+        fun create(context: Context, cloudBaseUrl: String = …, walletUrl: String = …): MeroClient
     }
 }
 ```
 
-`handleAuthCallback` trust-checks the callback's `node_url` against `baseUrl` /
-`allowedNodeUrls` before adopting the tokens, so a malicious deep link can't point
-you at another node. Construct `MeroClient(mero, baseUrl)` directly with a
-pre-built `Mero` (e.g. a `MemoryTokenStore`) in tests.
+`handleEnrolmentCallback` verifies the certificate against this device's own keys
+and the `state` it sent before storing anything, so a crafted deep link cannot sign
+the app in to someone else's account. A declined approval sets `cancelled`, not
+`error`.
 
 ## Drop-in composables
 
-Both default their `client` to `useMero()`, so inside a `MeroProvider` you can
-drop them in with no arguments:
+Both default their `client` to `useMero()`:
 
 | Composable | Purpose |
 | --- | --- |
 | `MeroProvider(client) { … }` | provides the `MeroClient` via a `CompositionLocal` |
 | `useMero()` | reads the provided client (throws if no provider above) |
-| `LoginSheet(showBootstrapSecret, onAuthenticated)` | credential form → `client.login(...)` |
-| `ConnectButton(clientId, onConnect)` | "Connect" when signed out, "Log out" when signed in |
+| `LoginSheet(callbackUrl, onAuthenticated, colors)` | "Continue with Calimero" → `client.signInWithCloud(...)` |
+| `ConnectButton(callbackUrl, onConnect)` | "Continue with Calimero" when signed out, "Sign out" when signed in |
 
 ```kotlin
 LoginSheet(
-    showBootstrapSecret = true,          // shows the first-login setup-code field
+    callbackUrl = "myapp://calimero-enrol",
     onAuthenticated = { /* navigate home */ },
 )
 
-ConnectButton(onConnect = { /* open your login sheet */ })
+ConnectButton(callbackUrl = "myapp://calimero-enrol")
 ```
 
-## SSO from Compose
-
-```kotlin
-val client = useMero()
-// kick off hosted login (opens a Custom Tab)
-client.startSsoLogin(context, AuthLoginOptions(callbackUrl = "myapp://auth-callback", mode = "login"))
-
-// in the deep-link Activity that receives myapp://auth-callback:
-val ok = client.handleAuthCallback(intent.dataString ?: "")
-```
+`LoginSheet` uses the light Calimero tokens by default; pass `LoginSheetColors(...)`
+to restyle it.
 
 <Aside type="note">
-  For tests or a mock backend, build a `Mero` with a `MemoryTokenStore` and pass
-  it to `MeroClient(mero, baseUrl)` directly. A full Compose sample — plus an
-  instrumented UI test against an in-app mock backend — lives in `sample-app`.
+  For tests or a mock backend, build a `CloudAccount(MemorySecureStore(), cloudBaseUrl = …)`
+  against `mero-testkit`'s `FakeNode` (whose `cloud` routes play the cloud manager
+  and the relay), and pass a `launchWallet` that answers instead of opening a
+  browser. `sample-app`'s mock mode and its instrumented `LoginFlowTest` do exactly
+  that.
 </Aside>
