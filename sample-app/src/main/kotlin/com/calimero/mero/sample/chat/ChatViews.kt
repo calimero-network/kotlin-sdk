@@ -461,6 +461,14 @@ private fun InviteDialog(
 
 private val timeFormat = SimpleDateFormat("HH:mm", Locale.getDefault())
 
-private fun shortTime(milliseconds: Long): String = timeFormat.format(Date(milliseconds))
+/**
+ * mero-chat (3.1.29+) stores message timestamps in seconds. Older messages may still carry
+ * milliseconds, so anything already past the seconds range is taken as-is.
+ */
+private fun shortTime(timestamp: Long): String =
+    timeFormat.format(Date(if (timestamp < SECONDS_RANGE_LIMIT) timestamp * MILLIS_PER_SECOND else timestamp))
+
+private const val SECONDS_RANGE_LIMIT = 100_000_000_000L
+private const val MILLIS_PER_SECOND = 1000L
 
 private const val SENDER_PREFIX = 8

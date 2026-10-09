@@ -243,7 +243,7 @@ class ChatService(
                     put("mentions", buildJsonArray { })
                     put("mentions_usernames", buildJsonArray { })
                     put("parent_message", JsonNull)
-                    put("timestamp", System.currentTimeMillis())
+                    put("timestamp", System.currentTimeMillis() / MILLIS_PER_SECOND)
                     put("files", JsonNull)
                     put("images", JsonNull)
                 }
