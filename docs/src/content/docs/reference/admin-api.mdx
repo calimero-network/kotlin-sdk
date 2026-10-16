@@ -190,6 +190,20 @@ The proof names the group's `namespaceId` and `ownerOpCounter` — read both fro
 empty `rootProof` is a `400`; omit the field instead. `ownerDeleteGroup` needs a
 group with no contexts; `deleteGroup` stays the admin-level cascading delete.
 
+Each also has a **root-signer overload** that reads the counter, encodes the op and
+mints `rootProof` itself (see [Signing offline](/guides/signing/)). Each overload
+takes `keyEpoch: Long = 0` and `chain: List<String> = emptyList()` for a root that was
+handed off:
+
+| Method | Signs |
+| --- | --- |
+| `transferOwnership(groupId, newOwner, root)` | `transferOwnershipOp(newOwner)` |
+| `changeNamespaceAdmin(namespaceId, newAdmin, root)` | `adminChangedOp(newAdmin)`, a root op on the namespace root |
+| `ownerDeleteGroup(groupId, root)` | `groupDeleteOp()` |
+| `setTeeAuthoringPolicy(groupId, allowedMrtd, root)` | `teeAuthoringPolicyOp(allowedMrtd)` |
+| `disableTeeAuthoringPolicy(groupId, root)` | `teeAuthoringPolicyOp(emptyList())` |
+| `setTeeAdmissionPolicy(groupId, request, root)` | `teeAdmissionPolicyOpOf(request)` |
+
 ## Group invitations & join
 
 | Method | Endpoint |
@@ -294,6 +308,7 @@ that is where the group key rotates.
 | `rescopeDevice(deviceId, request): RescopeDeviceResponseData` | `PUT /account/devices/{deviceId}/scope` |
 | `labelDevice(deviceId, request): LabelDeviceResponseData` | `PUT /account/devices/{deviceId}/label` |
 | `signWithAccountRoot(request): AccountSignWithRootResponseData` | `POST /account/sign-with-root` |
+| `linkAccountDevice(namespaceId, credential, root, applications, scopeEpoch)` | `POST /namespaces/{namespaceId}/account/link-device`, with the scope signed here by `root` ([`signDeviceScope`](/guides/signing/#device-scopes-linking-a-device-without-a-node)) |
 
 <Aside type="tip" title="`relink` adds, `scope` replaces (core 0.11.0-rc.41)">
 `relinkDevice` is add-only, so it can widen a device's reach but never narrow it.

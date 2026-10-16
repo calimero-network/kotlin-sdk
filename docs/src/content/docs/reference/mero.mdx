@@ -134,8 +134,17 @@ data class MeroConfig(
     val timeoutMs: Long = 10_000,        // connect/read/write; default 10s
     val tokenStore: TokenStore? = null,  // defaults to in-memory when null
     val refreshLockFile: File? = null,   // cross-process refresh lock; null = in-process only
+    val requestProof: ProofSigner? = null, // sign each request (X-Calimero-Proof); see below
 )
 ```
+
+`requestProof` signs every request with a device key: its method, its path and query,
+and its exact body, sent as `X-Calimero-Proof`. It is mero-js's
+`MeroJsConfig.requestProof`. Build one with `createProofSigner(ProofCredential(...))`
+or `createProofSigner(ProofSignerOptions(...))`. With a proof configured, the HTTP
+clients do not follow redirects, and a 3xx throws `ProofRedirectRefusedException`. SSE
+and the WebSocket send the session token when there is one, and the proof otherwise.
+See [request proofs](/guides/signing/#request-proofs-x-calimero-proof).
 
 ### `Credentials`
 

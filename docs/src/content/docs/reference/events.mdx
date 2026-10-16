@@ -74,6 +74,13 @@ live under `payload`'s `data.events[].data`, each with its own `kind`.
 
 ## `mero.sse` — `SseConnection`
 
+With `authorize` set (for example `createProofAuthorizer(ProofCredential(...))`), every
+`GET /sse` and subscription POST carries the headers it returns for that request's
+method, path and body, in place of the Bearer token. A proof-carrying request never
+follows a redirect, and the 3xx is reported on `errors` as
+`ProofRedirectRefusedException`. `SseClient` and `WsClient` (for the `GET /ws` upgrade)
+take the same hook. See [request proofs](/guides/signing/#request-proofs-x-calimero-proof).
+
 ```kotlin
 class SseConnection(
     baseUrl: String,
@@ -81,6 +88,8 @@ class SseConnection(
     client: OkHttpClient = OkHttpClient(),
     json: Json = …,
     reconnectDelayMs: Long = 3_000,
+    now: () -> Long = System::currentTimeMillis,
+    authorize: RequestAuthorizer? = null,      // per-request headers (a request proof); wins over token
 ) {
     val events: SharedFlow<NodeEvent>          // hot; collect before connect()
     val contextEvents: Flow<ContextEvent>
@@ -149,7 +158,7 @@ on an inherited Open-subgroup join; `MigrationProgress.total` is the fleet cohor
 
 ```kotlin
 @ExperimentalMeroApi
-class WsClient(baseUrl: String, token: suspend () -> String?, client: OkHttpClient = OkHttpClient(), …) {
+class WsClient(baseUrl: String, token: suspend () -> String?, client: OkHttpClient = OkHttpClient(), …, authorize: RequestAuthorizer? = null) {
     val events: SharedFlow<NodeEvent>
     val connects: SharedFlow<Unit>
     val errors: SharedFlow<Throwable>

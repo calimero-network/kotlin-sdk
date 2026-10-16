@@ -15,7 +15,7 @@ See [`ROADMAP-TASKS/task-2-android-sdk.md`] in the planning repo for the full de
 > a node with credentials, drive the whole
 > ~140-method Admin API (contexts, groups, namespaces, invitations, registry install, root/client
 > keys and permissions), call contracts over JSON-RPC, and subscribe to live node events over SSE.
-> The sample app is an **SDK Explorer** over all 188 catalogued methods plus a native Calimero chat
+> The sample app is an **SDK Explorer** over all 194 catalogued methods plus a native Calimero chat
 > client — feature-for-feature with the Swift SDK's sample. See [Roadmap](#roadmap).
 
 ## Modules
@@ -213,6 +213,9 @@ node-bound token persistence, error classification and local-node discovery. A l
 - [x] **M4.7** — mero-js parity: long-lived SSE connection with live subscriptions and
   typed group events, experimental WebSocket client, ephemeral presence (node and
   device-signed relay presence).
+- [x] **M4.8** — mero-js parity: signing primitives. Owner-op root proofs (and root-signed
+  owner-op calls), BIP39 account roots with store-held root signers, cloud link/login
+  proofs, device scopes, and request proofs (`X-Calimero-Proof`) on HTTP, SSE and WebSocket.
 - [ ] DCAP / TDX quote verification for the relay node key (today: TLS + binding checks).
 - [ ] **M5** — More Compose hooks (`useSubscription`, `useMigrationStatus`, …).
 - [ ] **M6** — Maven Central publishing, version-aligned to the mero-js contract.

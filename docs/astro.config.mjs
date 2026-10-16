@@ -66,6 +66,8 @@ export default defineConfig({
             'guides/events',
             'guides/presence',
             'guides/groups-and-governance',
+            'guides/account-roots',
+            'guides/signing',
             'guides/blobs',
             'guides/compose-frontend',
           ],

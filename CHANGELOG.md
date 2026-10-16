@@ -100,6 +100,61 @@ Pinned to `0.11.0-rc.83` in `ci/core-version` (and the matching
 - SDK Explorer: a **Presence** category (`presence.set`, `presence.clear`,
   `publishPresence`, `ephemeral.set`).
 
+### Added — signing primitives (mero-js parity)
+
+- **Owner-op root proofs** (`com.calimero.mero.ownerop`, mero-js `owner-op`): `OwnerOpKind` /
+  `OWNER_OP_KIND`, `OwnerOpPlane`, `OwnerOp`, the encoders `transferOwnershipOp`,
+  `groupDeleteOp`, `adminChangedOp`, `teeAuthoringPolicyOp`, `teeAdmissionPolicyOp`,
+  `teeReleaseAdmissionPolicyOp` (+ `TeeAdmissionPolicyOpInput`,
+  `TeeReleaseAdmissionPolicyOpInput`, `teeAdmissionPolicyOpOf(request)`), `ownerOpDigest`,
+  `ownerOpSigningPayload`, `signOwnerOpProof(OwnerOpProofInput)` — the hex borsh of core's
+  `SignedOwnerOp` (`AccountProof<OwnerOpAuthorization>`) — and `rootGuardedOpBytes`, pinned to
+  core's `owner_op.rs` and `root_guarded_vectors_are_stable` vectors.
+- **Root-signed owner ops**: `AdminApi.transferOwnership(groupId, newOwner, root)`,
+  `changeNamespaceAdmin(namespaceId, newAdmin, root)`, `ownerDeleteGroup(groupId, root)`,
+  `setTeeAuthoringPolicy(groupId, allowedMrtd, root)`, `disableTeeAuthoringPolicy(groupId, root)`
+  and `setTeeAdmissionPolicy(groupId, request, root)` read `namespaceId` / `ownerOpCounter`,
+  encode the op the node builds and mint `rootProof` with the root `DeviceSigner` (optional
+  `keyEpoch` / `chain`); `AdminApi.mintRootProof(groupId, op, root)` is the shared step. The
+  `rootProof`-taking forms are unchanged.
+- **Account roots** (mero-js `account/account.ts` + `wordlist.ts`): `ENGLISH_WORDLIST` (BIP39,
+  checked against its canonical SHA-256), `generateAccountRoot()` (24 words; the entropy *is*
+  the Ed25519 seed — no PBKDF2, no BIP32, exactly as mero-js), `accountRootFromPhrase`,
+  `accountRootFromSecret`, `AccountRoot` / `RecoverableAccountRoot`, `AccountRootSigner` /
+  `NewAccountRootSigner` (a `DeviceSigner` with no `secret`; the seed is kept only in a
+  `SecureStore` by `AccountRootKeyStore` and read per signature — `EncryptedPrefsSecureStore`
+  on a device, since AndroidKeyStore has no Ed25519 below API 33), `createAccountRootSigner`,
+  `accountRootSignerFromPhrase`, `resolveRoot` / `resolveRootPair` / `ResolvedRoot`, and
+  `signAccountLink` / `signAccountLogin` (`AccountLinkInput` / `AccountLoginInput`; standard
+  base64, reproducing mdma's verifier vector).
+- **Device scopes** (mero-js `device-cert/device-scope.ts`): `signDeviceScope(DeviceScopeInput)`
+  and `deviceScopePayload`, pinned to core's `DeviceScope::sign` vectors, and
+  `AdminApi.linkAccountDevice(namespaceId, credential, root, applications, scopeEpoch)`, which
+  signs the scope for the device the credential names. (`rescopeDevice` takes no signature:
+  core runs it on the node holding the root.)
+- **Request proofs** (mero-js `request/` + `request-proof/`): `requestBodyHash`, `signRequest`
+  (`RequestSigInput`), `callerProof` (`CallerProofInput`), `createProofSigner`
+  (`ProofSignerOptions`, or a `ProofCredential` for the two-link chain), `signRequestProof`
+  (`RequestProofInput`), `REQUEST_PROOF_HEADER` (`X-Calimero-Proof`), `createProofAuthorizer`,
+  `proofAuthorizerOf`, `signedPath`, `carriesProof`, `ProofRequest` / `RequestToAuthorize`,
+  `ProofSigner` and `RequestAuthorizer`, pinned to core's `request_wire_fixture` and
+  `proof_auth` (`chain_for(1, key(7))`) vectors.
+- **`MeroConfig.requestProof`** (mero-js `MeroJsConfig.requestProof`): a
+  `RequestProofInterceptor` signs each request's method, request-line path and query (base
+  path included) and exact body. With a proof configured the OkHttp clients do not follow
+  redirects, and a 3xx answering a proof-carrying request throws
+  `ProofRedirectRefusedException` (status `0`, `redirectStatus`, `location`) — mero-js
+  `refuseProofRedirect`. A signing failure surfaces as itself, not as a `NetworkException`.
+- `SseClient`, `SseConnection` and `WsClient` take an `authorize: RequestAuthorizer` hook
+  (called for `GET /sse`, each subscription POST over its body, and the `GET /ws` upgrade);
+  `Mero` wires it to send the session token when there is one and the proof otherwise.
+- `signerFromSecret(secret, label)` and `resolveSigner(secret, signer, label)` (mero-js
+  `signer.ts`); `SeedSigner` takes an error `label`, and its `toString` names its public key.
+- SDK Explorer: a **Signing** category (`generateAccountRoot`, `accountRootFromPhrase`,
+  `signOwnerOpProof`, root-signed `transferOwnership`, `signDeviceScope`, `signRequestProof`).
+- Docs: [Account roots](docs/src/content/docs/guides/account-roots.mdx) and
+  [Signing offline](docs/src/content/docs/guides/signing.mdx) guides.
+
 ### Changed — events and presence
 
 - An SSE `401` whose `x-auth-error` is `token_reuse` / `token_revoked` now ends the
