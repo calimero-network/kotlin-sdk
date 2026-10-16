@@ -5,6 +5,7 @@ import com.calimero.mero.auth.AuthApi
 import com.calimero.mero.auth.AuthCallbackResult
 import com.calimero.mero.auth.AuthLoginOptions
 import com.calimero.mero.auth.LogoutRequest
+import com.calimero.mero.auth.PendingAuthStates
 import com.calimero.mero.auth.RefreshCoordinator
 import com.calimero.mero.auth.RefreshTokenRequest
 import com.calimero.mero.auth.RevokeTokenRequest
@@ -249,19 +250,29 @@ class Mero(
         private const val ONE_HOUR_MS = 3_600_000L
         private const val HTTP_UNAUTHORIZED = 401
 
-        /** Parse an SSO callback URL's hash fragment. */
+        /**
+         * Parse an SSO callback URL's hash fragment. Null unless it answers a login begun with
+         * [buildAuthLoginUrl] (single use, expires) — see [com.calimero.mero.auth.parseAuthCallback].
+         */
         @JvmStatic
-        fun parseAuthCallback(url: String): AuthCallbackResult? =
+        @JvmOverloads
+        fun parseAuthCallback(
+            url: String,
+            allowUnsolicited: Boolean = false,
+            pending: PendingAuthStates = PendingAuthStates.shared,
+        ): AuthCallbackResult? =
             com.calimero.mero.auth
-                .parseAuthCallback(url)
+                .parseAuthCallback(url, allowUnsolicited, pending)
 
-        /** Build the node's SSO login URL. */
+        /** Build the node's SSO login URL, recording the login in [pending]. */
         @JvmStatic
+        @JvmOverloads
         fun buildAuthLoginUrl(
             nodeUrl: String,
             options: AuthLoginOptions,
+            pending: PendingAuthStates = PendingAuthStates.shared,
         ): String =
             com.calimero.mero.auth
-                .buildAuthLoginUrl(nodeUrl, options)
+                .buildAuthLoginUrl(nodeUrl, options, pending)
     }
 }
