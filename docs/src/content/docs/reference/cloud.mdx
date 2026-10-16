@@ -1,0 +1,100 @@
+---
+title: CloudClient
+description: Every CloudClient method and the cloud manager route it calls, the link and connect helpers, and the cloud error types.
+sidebar:
+  order: 8
+---
+
+`com.calimero.mero.cloud`. A port of mero-js `src/cloud/`. For the flows, see the
+[Calimero Cloud guide](/guides/cloud/).
+
+```kotlin
+CloudClient(
+    baseUrl = CloudClient.DEFAULT_BASE_URL,      // https://manager.cloud.calimero.network
+    routingCredential = null,                    // device certificate + key, for routing reads
+    httpClient = PlainJsonHttp.defaultClient(),
+    sessionToken = null,                         // a stored token (expiresAt = 0)
+    onSession = null,                            // (CloudLoginSession?) -> Unit
+    sessionStore = null,                         // CloudSessionStore(SecureStore)
+)
+```
+
+## Session
+
+| method | route | auth |
+|---|---|---|
+| `getSession()`, `isSignedIn` | (local) | none |
+| `signInWithGoogle(idToken)` | `POST /api/auth/google` | anonymous |
+| `getAccountLoginChallenge()` | `GET /api/auth/account/challenge` | anonymous |
+| `submitAccountLogin(AccountLoginProof)` | `POST /api/auth/account` | anonymous |
+| `signInWithAccount(rootSecret \| DeviceSigner)` | the two above | anonymous |
+| `refreshSession()` | `POST /api/auth/refresh` | session |
+| `signOut()` | `POST /api/auth/logout` | session |
+
+## Owned resources and HA
+
+| method | route |
+|---|---|
+| `getMyNamespaces()` | `GET /api/cloud/me/namespaces` |
+| `getNamespaceRelays(ns)`, `findExecutingRelay(ns)` | `GET /api/cloud/me/namespaces/{ns}/relays` |
+| `getMyMachines()` | `GET /api/cloud/me/machines` |
+| `claimNamespace(ns, proof)` | `POST /api/cloud/namespaces/claim` |
+| `enableNamespaceHa(ns, admitterAddrs?)` | `POST /api/cloud/namespaces/{ns}/enable-ha` |
+| `enableFoundedNamespaceHa(ns, AccountOwnershipProof)` | `POST /api/cloud/me/namespaces/{ns}/enable-ha` |
+| `disableNamespaceHa(ns)` | `POST /api/cloud/namespaces/{ns}/disable-ha` |
+| `enableHaUrl(HaPageOptions)`, `disableHaUrl(…)` | the `/enable-ha`, `/disable-ha` pages |
+
+`CloudClient.pickExecutingRelay(relays)` returns the first relay with `canExecute`, a URL
+and an executor account.
+
+## Account linking
+
+| method | route | auth |
+|---|---|---|
+| `getAccountLinkChallenge()` | `GET /api/cloud/me/accounts/challenge` | session |
+| `submitAccountLink(AccountLinkProof)` | `POST /api/cloud/me/accounts` | session |
+| `linkAccount(rootSecret \| DeviceSigner)` | the two above | session |
+| `getMyAccounts()` | `GET /api/cloud/me/accounts` | session |
+| `linkAccountWithGrant(grant, rootSecret?, signer?)` | `POST /api/cloud/accounts/link` | anonymous |
+| `CloudClient.accountLinkHandoff(accountId, callbackUrl, portalUrl, pending)` | (builds the portal URL) | none |
+| `CloudClient.readAccountLinkCallback(href, pending)` | (reads the fragment) | none |
+
+`CloudLink` holds `cloudLinkUrl`, `readCloudLinkCallback`, `completeCloudLink` and
+`withoutLinkState`. `PendingCloudLinks` is the single-use state store, kept under the
+`calimero.cloud.link.pending` key in mero-js's shape. `callbackIsForeign(returnTo,
+pageOrigin)` compares origins.
+
+## Device-proven reads
+
+| method | route |
+|---|---|
+| `getAccountRelaysChallenge(acc)`, `getAccountRelays(acc)` | `GET /api/cloud/accounts/{acc}/challenge` · `relays` |
+| `getRoutingChallenge(ns)`, `getNamespaceRouting(ns)`, `findAdmitter(ns, admitters)` | `GET /api/cloud/namespaces/{ns}/challenge` · `admitters` |
+| `enableHaAsAccount(ns, salt, acc, credential, …)` | `POST /api/cloud/accounts/{acc}/namespaces/{ns}/enable-ha` |
+
+## Claims
+
+- `signAccountOwnershipClaim(ns, account, salt, subject, credential, signer)` creates the
+  session route's founder claim (`ACCOUNT_OWNERSHIP_AUDIENCE` = `mdma:enable-ha-namespace`).
+- `AccountOwnership.signAccountHaClaim(…)` creates the anonymous route's claim
+  (`ACCOUNT_HA_AUDIENCE`). It has no `subject` and may carry an optional `relay_url`.
+- `admitterAddrsFromNetworkStatus(status)` turns a node's network status into the
+  addresses `enableNamespaceHa` takes.
+
+## Connect
+
+- `connectCloud(ConnectCloudOptions)` and `connectCloudWithAccount(ConnectCloudWithAccountOptions)`
+  return a `CloudConnection` with `cloud`, `relay`, `namespaceId`, `namespace`, `relayInfo`,
+  `client` (a `RelayConnection`), `canSubscribe` and `execute(…)`.
+- `CloudWebLauncher` (Android) has `enableHA`, `disableHA`, `beginCloudLink`,
+  `openAccountLinkHandoff` and `open`. Each opens its page in a Custom Tab.
+
+## Errors
+
+| type | when | `classifyError` |
+|---|---|---|
+| `AccountHaRefusedException` (an `HttpException`) | the cloud refused anonymous HA. It is thrown as one of `AccountNotLinkedException`, `AccountLinkedToSeveralUsersException`, `HaRequestPendingException` (409) or `UnknownRelayException`, `RelayNotDialableException` (422); `refusal: HaRefusal`, `advice` | by status, message = advice |
+| `CloudNotReadyException` | `connectCloud` has no namespace or relay to use yet | `UNAVAILABLE` |
+| `CloudLinkDeclinedException` | the person declined the link, or the cloud refused it (`reason`) | `FORBIDDEN` |
+| `UnexpectedCloudLinkException` | a link grant this app did not ask for | `UNKNOWN` |
+| `MeroStateException` | a session route was called with nobody signed in | `UNKNOWN` |

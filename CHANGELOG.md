@@ -155,6 +155,51 @@ Pinned to `0.11.0-rc.83` in `ci/core-version` (and the matching
 - Docs: [Account roots](docs/src/content/docs/guides/account-roots.mdx) and
   [Signing offline](docs/src/content/docs/guides/signing.mdx) guides.
 
+### Added — Calimero Cloud sessions and account linking (mero-js parity)
+
+- **`CloudClient` session half** (mero-js `cloud-client.ts`): `signInWithGoogle`,
+  `signInWithAccount` (root secret or signer) / `getAccountLoginChallenge` /
+  `submitAccountLogin`, `refreshSession`, `signOut` (clears locally even when the server call
+  fails), `getSession()` / `isSignedIn`, rolling refresh from `x-mdma-session-refresh`, and
+  the new constructor parameters `sessionToken`, `onSession` and `sessionStore`
+  (`CloudSessionStore` over any `SecureStore`). The session type is `CloudLoginSession`
+  (+ `CloudUser`), so it does not clash with `DelegatedSession`. Session routes refuse
+  locally with `MeroStateException` when nobody is signed in.
+- `getMyNamespaces`, `getNamespaceRelays` (`CloudRelay` with `canExecute`, `teeRole`,
+  `admission`, `join`), `findExecutingRelay` / `CloudClient.pickExecutingRelay`,
+  `getMyMachines` and `findAdmitter`. mero-js `getMyNode` is **not** ported: it is
+  deprecated there and reads a retired ledger.
+- HA: `claimNamespace`, `enableNamespaceHa(ns, admitterAddrs)`,
+  `enableFoundedNamespaceHa`, `disableNamespaceHa`, `enableHaUrl` / `disableHaUrl`
+  (the `/enable-ha` and `/disable-ha` pages), `readHaPageCallback`, and
+  `admitterAddrsFromNetworkStatus`. `signAccountOwnershipClaim` and
+  `ACCOUNT_OWNERSHIP_AUDIENCE` (`mdma:enable-ha-namespace`) sign the session route's claim.
+- Account linking: `linkAccount`, `getAccountLinkChallenge`, `submitAccountLink`,
+  `linkAccountWithGrant` (anonymous), `getMyAccounts`, `CloudClient.accountLinkHandoff` /
+  `readAccountLinkCallback`, and `CloudLink.cloudLinkUrl` / `readCloudLinkCallback` /
+  `completeCloudLink` / `withoutLinkState`, over a single-use, account-bound, 10-minute
+  `PendingCloudLinks` store (mero-js `link-state.ts` key and shape). A grant this app did
+  not ask for is refused (`UnexpectedCloudLinkException` / `"unexpected_callback"`).
+  `callbackIsForeign(returnTo, pageOrigin)`.
+- `CloudWebLauncher` (Android) opens the HA pages and the link consent page in a Custom Tab:
+  `enableHA`, `disableHA`, `beginCloudLink`, `openAccountLinkHandoff`.
+- **`connectCloud(ConnectCloudOptions)` / `connectCloudWithAccount(...)`** (mero-js
+  `connect.ts`) return a `CloudConnection` (`cloud`, `relay`, `namespaceId`, `namespace`,
+  `relayInfo`, `client`, `canSubscribe`, `execute`). `client` is the existing
+  `RelayConnection`, built over the same `RelayClient`. When nothing can be built yet, they
+  throw `CloudNotReadyException` with mero-js's messages. The `seal` option is not ported
+  yet: the sealed transport comes separately.
+- Errors: `AccountHaRefusedException` now extends `HttpException` (existing `catch` blocks
+  still work) and is thrown as one of `AccountNotLinkedException`,
+  `AccountLinkedToSeveralUsersException`, `HaRequestPendingException`,
+  `UnknownRelayException` or `RelayNotDialableException`, readable as a typed `HaRefusal`.
+  It maps by status as well as code (409 vs 422), as mero-js does. `classifyError` reads
+  `CloudNotReadyException` as `UNAVAILABLE` and `CloudLinkDeclinedException` as `FORBIDDEN`.
+- `FakeCloud` serves `/api/auth/*`, `/api/cloud/me/*`, claim, enable/disable-ha and
+  `/api/cloud/accounts/link`, with Bearer checks and an opt-in rolling refresh.
+- Docs: [Calimero Cloud](docs/src/content/docs/guides/cloud.mdx) guide and
+  [CloudClient](docs/src/content/docs/reference/cloud.mdx) reference.
+
 ### Changed — events and presence
 
 - An SSE `401` whose `x-auth-error` is `token_reuse` / `token_revoked` now ends the

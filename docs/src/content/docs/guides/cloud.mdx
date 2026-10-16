@@ -1,0 +1,178 @@
+---
+title: Calimero Cloud
+description: Sign in to Calimero Cloud as a user or as an account, find the relay that serves a namespace, turn hosting (HA) on and off, link accounts to a cloud login, and connect with one call.
+sidebar:
+  order: 8
+---
+
+import { Aside } from '@astrojs/starlight/components';
+
+A phone usually reaches the cloud as a **device**: the wallet certifies its key, and
+`CloudAccount` proves reads with that certificate (see
+[Cloud sign-in](/get-started/authentication/)). This page covers the other half of
+`CloudClient`: the cloud **login** a person signs in to, what it owns, and how an account
+gets linked to it. It is a port of mero-js `src/cloud/` (`cloud-client.ts`, `connect.ts`,
+`link-redirect.ts`, `link-state.ts`, `account-ownership.ts`), against the same cloud
+manager routes.
+
+## Sign in
+
+```kotlin
+import com.calimero.mero.cloud.*
+
+val sessions = CloudSessionStore(EncryptedPrefsSecureStore(context, "mero_cloud"))
+val cloud = CloudClient(sessionStore = sessions, onSession = { s -> Log.d("cloud", "session now ${s?.user}") })
+
+if (!cloud.isSignedIn) {
+    cloud.signInWithGoogle(googleIdToken)          // the app owns the Google flow
+    // or, as the account itself, with its root:
+    cloud.signInWithAccount(rootSigner)            // an AccountRootSigner, or the 64-hex secret
+}
+cloud.getSession()                                 // CloudLoginSession(sessionToken, expiresAt (s), user)
+```
+
+- A session is a 7-day token with a rolling refresh. The cloud rotates it on activity
+  (`x-mdma-session-refresh`), and the client adopts the new token on every response,
+  writes it to `sessionStore` and calls `onSession`. Construct the next `CloudClient` with
+  the same store and it starts signed in.
+- `signInWithAccount` fetches a challenge, signs it with the root (`signAccountLogin`) and
+  posts only the public key and the signature. A `403` means the signature did not verify
+  **or** the account is not linked to a cloud login. For a root that signs somewhere else,
+  use `getAccountLoginChallenge()` and then `submitAccountLogin(proof)`.
+- `refreshSession()` refreshes on demand. `signOut()` revokes the session on the server
+  and forgets it locally, even when the server call fails.
+- A route that needs a session refuses locally, with `MeroStateException`, before it
+  sends anything.
+
+## What the login owns
+
+```kotlin
+val namespaces = cloud.getMyNamespaces()           // CloudNamespace(namespaceId, haStatus, contexts, …)
+val relays = cloud.getNamespaceRelays(nsId)        // CloudRelay: canExecute, teeRole, admission, join, …
+val relay = cloud.findExecutingRelay(nsId)         // the first one a warrant can be spent at, or null
+val machines = cloud.getMyMachines()               // per machine, only your namespaces on it
+```
+
+`CloudRelay.canExecute` is the cloud's own verdict. A `RelayTee` relays and a
+`ReadOnlyTee` replica never does, whatever grant it holds. Filter on it before you sign a
+warrant. `join` carries the relay's own report of a refused join, in the admitters'
+words. `nodeKey` is `null` until the cloud publishes relay node keys (mdma #312).
+
+<Aside>
+mero-js `getMyNode` is not ported. It is deprecated there, and it reads a ledger nothing
+has written since the v1 retirement. Use `getMyMachines`.
+</Aside>
+
+## Hosting a namespace (HA)
+
+| call | route |
+|---|---|
+| `claimNamespace(ns, proof)` | `POST /api/cloud/namespaces/claim`: pass merod's `issueNamespaceOwnershipProof` answer verbatim |
+| `enableNamespaceHa(ns, admitterAddrs)` | `POST /api/cloud/namespaces/{ns}/enable-ha` |
+| `enableFoundedNamespaceHa(ns, claim)` | `POST /api/cloud/me/namespaces/{ns}/enable-ha`, with `signAccountOwnershipClaim(…, subject = login email, …)` |
+| `disableNamespaceHa(ns)` | `POST /api/cloud/namespaces/{ns}/disable-ha` (the fleet nodes self-leave and purge) |
+| `enableHaAsAccount(…)` | `POST /api/cloud/accounts/{a}/namespaces/{ns}/enable-ha`, with no session (what `CloudAccount.foundNamespace` uses) |
+
+`admitterAddrs` tells the first fleet node where to dial the owner's node:
+`admitterAddrsFromNetworkStatus(mero.admin.getNetworkStatus())`. Pass `null` to keep what
+the cloud already holds.
+
+The no-session route refuses in five ways a person can act on. Each refusal is its own
+`AccountHaRefusedException` subclass and reads back as a `HaRefusal`:
+
+```kotlin
+try {
+    cloud.enableHaAsAccount(ns, salt, account, credential)
+} catch (e: AccountHaRefusedException) {   // still an HttpException
+    when (e.refusal) {
+        HaRefusal.ACCOUNT_NOT_LINKED -> askToLink()            // AccountNotLinkedException
+        HaRefusal.HA_REQUEST_PENDING -> showWaiting()          // HaRequestPendingException
+        else -> show(e.advice)
+    }
+}
+```
+
+The cloud's `/enable-ha` and `/disable-ha` **pages** are the hand-driven flows that mero-js
+opens with `window.open`. On Android, `CloudWebLauncher` opens them in a Custom Tab:
+
+```kotlin
+CloudWebLauncher.enableHA(context, cloud, HaPageOptions(groupId, contextId, redirectUrl = "myapp://ha"))
+// in the deep-link Activity:
+readHaPageCallback(intent.dataString!!, "myapp://ha")?.let { refreshNamespaces() }
+```
+
+The page defines no return fields today, so the callback only tells you the person is
+back. Read the outcome with `getMyNamespaces()`.
+
+## Link an account to a cloud login
+
+The cloud bills hosting to the login an account is linked to. Linking needs a signature
+from the account root.
+
+**Signed in, holding the root.** Call `cloud.linkAccount(root)`. It fetches a single-use
+challenge, signs it with `signAccountLink` and posts the proof. A re-link of the same
+account returns `alreadyLinked = true`. `getMyAccounts()` lists the linked accounts and the
+plan's limit. For a root held elsewhere, use `getAccountLinkChallenge()` and then
+`submitAccountLink(proof)`.
+
+**Holding the root, with no cloud session.** This is the usual case for an app. Send the
+person to the cloud's consent page. The cloud redirects back with a **grant** in the URL
+fragment, and you spend the grant with the root:
+
+```kotlin
+// Show the account id first: the consent screen is the only check that they meant it.
+CloudWebLauncher.beginCloudLink(context, accountId, returnTo = "myapp://link")
+
+// in the deep-link Activity:
+val grant = CloudLink.readCloudLinkCallback(intent.dataString!!)   // null on an ordinary link
+    ?: return
+CloudLink.completeCloudLink(grant, rootSigner)                     // anonymous POST /api/cloud/accounts/link
+```
+
+- Each begun link is remembered in `PendingCloudLinks`. A link is single use, is bound to
+  the account it named, and lasts 10 minutes. `readCloudLinkCallback` throws
+  `UnexpectedCloudLinkException` for a grant this app did not ask for, because the
+  redirect URL can be forwarded. It throws `CloudLinkDeclinedException` when the person
+  declined. The default store is in memory. Set
+  `PendingCloudLinks.shared = PendingCloudLinks(EncryptedPrefsSecureStore(context, "mero_cloud_link"))`
+  so a link survives the process dying while the tab is open.
+- `completeCloudLink` refuses a grant for an account other than the one the root derives,
+  and it does so before it sends anything.
+- `CloudClient.accountLinkHandoff(accountId, callbackUrl)` and `readAccountLinkCallback(href)`
+  are the same flow in mero-js's other shape. They return `error = "unexpected_callback"`
+  instead of throwing.
+- `callbackIsForeign(returnTo, pageOrigin)` reports whether an answer goes to an origin
+  other than the one that asked. A wallet can show that to the person who approves.
+
+## Connect in one call
+
+`connectCloud` signs in, picks the namespace, reads its relays once and hands back a
+connection that writes through the first relay that executes:
+
+```kotlin
+val connection = connectCloud(
+    ConnectCloudOptions(
+        authorAccount = session.account,
+        authorProof = session.credential,
+        signer = deviceKeys.signer(),
+        sessionStore = sessions,            // or sessionToken = …, or googleIdToken = …
+        nonceStore = EncryptedPrefsSecureStore(context),
+    ),
+)
+connection.execute(contextId, "set", args)  // straight to the relay: the cloud never sees the call
+connection.client                           // the same RelayConnection CloudAccount.connect returns
+```
+
+`connectCloudWithAccount(ConnectCloudWithAccountOptions(rootSecret or root, authorProof, signer, …))`
+signs in as the account instead of a login. The author defaults to the account the root
+derives.
+
+When a connection cannot be built, both functions throw `CloudNotReadyException`. Its
+message names the step that is missing: claim a namespace, pick one of several, enable HA,
+wait for a relay, set the TEE admission policy to `mode: relay`, or grant
+`CAN_AUTHOR_ON_BEHALF`. `classifyError` reports it as `UNAVAILABLE`.
+
+`connection.canSubscribe` is false while the relay's node key is unknown. Writes still work
+then, but `connection.client.mero` cannot log in to observe. Pass `relayNodeKey` if you
+have the key. mero-js's `seal` option is not ported yet: the sealed relay transport comes
+separately.

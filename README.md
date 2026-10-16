@@ -22,7 +22,7 @@ See [`ROADMAP-TASKS/task-2-android-sdk.md`] in the planning repo for the full de
 
 | Module         | What it is                                                                 |
 |----------------|-----------------------------------------------------------------------------|
-| `mero-core`    | The SDK: the Cloud account layer (`account`, `cloud`, `relay`, `crypto` packages: `CloudAccount`, device keys, enrolment, `CloudClient`, `RelayClient`, warrants), plus `Mero`, HTTP transport (OkHttp), `AuthApi` (incl. root/client keys + permissions), `AdminApi` (~140 methods), `RefreshCoordinator`, `TokenStore` (node-bound bundles), `RpcClient`, `SseClient`/`events()` + the long-lived `SseConnection` (`Mero.sse`, live subscribe/unsubscribe, typed migration/membership/app-version events), an experimental `WsClient`, ephemeral presence (`Mero.ephemeral`, device-signed `RelayPresenceClient`), `Capabilities` (+ presets, `capMask`/`capNames`), `classifyError`, local-node discovery, SSO with single-use callback state. |
+| `mero-core`    | The SDK: the Cloud account layer (`account`, `cloud`, `relay`, `crypto` packages: `CloudAccount`, device keys, enrolment, `CloudClient` (device-proven routing plus cloud login sessions, HA and account linking), `connectCloud`, `RelayClient`, warrants), plus `Mero`, HTTP transport (OkHttp), `AuthApi` (incl. root/client keys + permissions), `AdminApi` (~140 methods), `RefreshCoordinator`, `TokenStore` (node-bound bundles), `RpcClient`, `SseClient`/`events()` + the long-lived `SseConnection` (`Mero.sse`, live subscribe/unsubscribe, typed migration/membership/app-version events), an experimental `WsClient`, ephemeral presence (`Mero.ephemeral`, device-signed `RelayPresenceClient`), `Capabilities` (+ presets, `capMask`/`capNames`), `classifyError`, local-node discovery, SSO with single-use callback state. |
 | `mero-compose` | Optional Jetpack Compose UI kit, Cloud sign-in: `MeroClient` (`signInWithCloud`, `handleEnrolmentCallback`, plus a development-only `login(nodeUrl, username, password)`), `LoginSheet` ("Continue with Calimero"), `ConnectButton`, `MeroProvider`/`useMero`. |
 | `mero-testkit` | Test-support: `FakeNode`, a stateful in-memory node on OkHttp MockWebServer, and `FakeCloud` (its cloud-manager + hosted-relay routes), for driving whole sign-in → call → sign-out journeys with no live service. |
 | `sample-app`   | A Compose sample in the light Calimero style: Cloud sign-in, a native chat client and an **SDK Explorer** over the relay session, plus a deterministic mock mode that drives the instrumented UI test. |
@@ -216,6 +216,9 @@ node-bound token persistence, error classification and local-node discovery. A l
 - [x] **M4.8** — mero-js parity: signing primitives. Owner-op root proofs (and root-signed
   owner-op calls), BIP39 account roots with store-held root signers, cloud link/login
   proofs, device scopes, and request proofs (`X-Calimero-Proof`) on HTTP, SSE and WebSocket.
+- [x] **M4.9** — mero-js parity: Calimero Cloud login sessions (Google or account root),
+  owned namespaces, relays and machines, HA (API and Custom Tab pages), account linking
+  (direct and through the consent page), `connectCloud` / `connectCloudWithAccount`.
 - [ ] DCAP / TDX quote verification for the relay node key (today: TLS + binding checks).
 - [ ] **M5** — More Compose hooks (`useSubscription`, `useMigrationStatus`, …).
 - [ ] **M6** — Maven Central publishing, version-aligned to the mero-js contract.
