@@ -22,6 +22,7 @@ import com.calimero.mero.sse.GroupEvent
 import com.calimero.mero.sse.NodeEvent
 import com.calimero.mero.sse.SseClient
 import com.calimero.mero.storage.MemoryTokenStore
+import com.calimero.mero.storage.NodeBoundTokenStore
 import com.calimero.mero.storage.TokenStore
 import kotlinx.coroutines.flow.Flow
 import kotlinx.serialization.json.Json
@@ -37,6 +38,11 @@ import java.util.concurrent.TimeUnit
  * The [TokenStore] is the single source of truth for the current bundle (in-memory by default);
  * every read/write of tokens goes through it, so the reactive 401→refresh path re-reads the store
  * inside its lock and never replays a consumed refresh token.
+ *
+ * Tokens are bound to the node that issued them ([TokenData.nodeOrigin], [nodeOriginOf]): a
+ * bundle in the store that another node issued — or one persisted before the tag existed — is
+ * ignored, so a store shared between clients for different nodes never leaks one node's
+ * tokens to another.
  */
 class Mero(
     private val config: MeroConfig,
@@ -48,7 +54,9 @@ class Mero(
             encodeDefaults = false
         }
 
-    private val store: TokenStore = config.tokenStore ?: MemoryTokenStore()
+    // Every read and write goes through the node-bound view: what this client persists is
+    // tagged with the node's origin, and another node's bundle in a shared store reads as empty.
+    private val store: TokenStore = NodeBoundTokenStore(config.tokenStore ?: MemoryTokenStore(), nodeOriginOf(config.baseUrl))
 
     private val coordinator =
         RefreshCoordinator(
@@ -215,7 +223,10 @@ class Mero(
     /** True if a token bundle is present. */
     val isAuthenticated: Boolean get() = store.getTokens() != null
 
-    /** Drop the current tokens (logout). Does not call the network — see [logout] for a full logout. */
+    /**
+     * Drop the current tokens (logout). Does not call the network — see [logout] for a full logout.
+     * A bundle another node's client wrote into a shared store is left alone.
+     */
     fun clearToken() {
         store.clear()
     }

@@ -3,6 +3,8 @@ package com.calimero.mero
 import com.calimero.mero.storage.TokenStore
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
+import okhttp3.HttpUrl
+import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import java.io.File
 
 /**
@@ -54,4 +56,26 @@ data class TokenData(
     @SerialName("access_token") val accessToken: String,
     @SerialName("refresh_token") val refreshToken: String,
     @SerialName("expires_at") val expiresAt: Long,
+    /**
+     * Origin and path prefix of the node that issued the bundle ([nodeOriginOf]), as mero-js
+     * stores it. [Mero] tags what it persists and ignores a stored bundle for another node — or
+     * one with no tag, written before this field existed — so tokens are never sent to a node
+     * that did not issue them. Optional, so older bundles still decode. [Mero.getTokenData]
+     * returns bundles without it.
+     */
+    @SerialName("node_origin") val nodeOrigin: String? = null,
 )
+
+/**
+ * The key a token bundle is bound to: the node's origin (`scheme://host[:port]`, default port
+ * omitted, host lower-cased) plus its path prefix without trailing slashes — so two nodes
+ * behind one host (`https://host/node1`, `https://host/node2`) stay apart, and
+ * `https://host/node1/` is the same node as `https://host/node1`. A URL that is not http(s)
+ * keys as itself. Port of mero-js `nodeKeyOf`.
+ */
+fun nodeOriginOf(baseUrl: String): String {
+    val url = baseUrl.toHttpUrlOrNull() ?: return baseUrl
+    val host = if (url.host.contains(':')) "[${url.host}]" else url.host
+    val port = if (url.port == HttpUrl.defaultPort(url.scheme)) "" else ":${url.port}"
+    return "${url.scheme}://$host$port${url.encodedPath.trimEnd('/')}"
+}

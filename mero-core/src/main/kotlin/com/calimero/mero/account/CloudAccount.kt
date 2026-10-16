@@ -222,11 +222,12 @@ class CloudAccount(
         val mero = Mero(MeroConfig(baseUrl = relayUrl, tokenStore = tokenStore))
         val bearer: suspend () -> String? = {
             loginMutex.withLock {
-                val current = tokenStore.getTokens()
+                // Through `mero`, not the raw store: the bundle is bound to the relay's origin.
+                val current = mero.getTokenData()
                 if (current != null && current.expiresAt - System.currentTimeMillis() > REFRESH_MARGIN_MS) {
                     current.accessToken
                 } else {
-                    runCatching { loginToRelay(session) }.getOrNull()?.also { tokenStore.setTokens(it) }?.accessToken
+                    runCatching { loginToRelay(session) }.getOrNull()?.also { mero.setTokenData(it) }?.accessToken
                 }
             }
         }
