@@ -1,6 +1,7 @@
 package com.calimero.mero.compose
 
 import android.content.Context
+import com.calimero.mero.Capabilities
 import com.calimero.mero.Mero
 import com.calimero.mero.account.CloudAccount
 import com.calimero.mero.account.EncryptedPrefsSecureStore
@@ -229,9 +230,10 @@ class MeroClient(
     companion object {
         /**
          * The default member mask mero-react founds a space with: create contexts, invite,
-         * join open subgroups, create subgroups, manage visibility and metadata (231).
+         * join open subgroups, create and delete subgroups and manage their visibility
+         * (231, [Capabilities.Presets.COLLABORATOR]).
          */
-        const val DEFAULT_SPACE_CAPABILITIES: Long = 231L
+        const val DEFAULT_SPACE_CAPABILITIES: Long = Capabilities.Presets.COLLABORATOR
 
         /**
          * The on-device client: keys, session and nonces in a Keystore-backed
