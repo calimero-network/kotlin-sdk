@@ -1,6 +1,7 @@
 package com.calimero.mero.testkit
 
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonArray
@@ -124,7 +125,11 @@ class FakeNode {
             "GET" to "/admin-api/health" -> ok(buildJsonObject { put("data", buildJsonObject { put("status", "alive") }) })
             "GET" to "/auth/providers" -> ok(providersBody())
             "GET" to "/admin/identity" -> ok(identityBody())
-            "GET" to "/admin-api/contexts" -> guarded(request) { ok(buildJsonObject { put("data", buildJsonObject { put("contexts", buildJsonArray { }) }) }) }
+            "GET" to "/admin-api/contexts" ->
+                guarded(request) {
+                    cloud.recordRequest(method, path, request)
+                    ok(buildJsonObject { put("data", buildJsonObject { put("contexts", JsonArray(cloud.listedContexts.toList())) }) })
+                }
             "POST" to "/jsonrpc" -> guarded(request) { jsonrpc(request) }
             else ->
                 cloud.handle(method, path, request) { guarded(request) { it() } }
@@ -214,9 +219,16 @@ class FakeNode {
         return if (reason != null) unauthorized(reason) else handler()
     }
 
-    /** Returns the `x-auth-error` reason if the request's bearer is not valid, else null. */
+    /**
+     * Returns the `x-auth-error` reason if the request's bearer is not valid, else null. A
+     * request with no `Authorization` but an `X-Calimero-Proof` passes when
+     * [FakeCloud.acceptProofs] is on (the fake does not verify the proof, only that one came).
+     */
     private fun authError(request: RecordedRequest): String? =
         synchronized(lock) {
+            if (request.getHeader("Authorization") == null && request.getHeader("X-Calimero-Proof") != null) {
+                return if (cloud.acceptProofs) null else "missing_token"
+            }
             if (familyRevoked) return "token_reuse"
             val bearer = request.getHeader("Authorization") ?: ""
             if (bearer != "Bearer $accessToken") return "token_expired"

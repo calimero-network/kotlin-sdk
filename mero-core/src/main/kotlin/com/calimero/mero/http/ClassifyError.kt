@@ -1,6 +1,9 @@
 package com.calimero.mero.http
 
+import com.calimero.mero.account.InvitationNotClaimableException
 import com.calimero.mero.account.JoinException
+import com.calimero.mero.account.NoRelayException
+import com.calimero.mero.account.NotForAccountException
 import com.calimero.mero.admin.WarrantNonceRouteUnavailableException
 import com.calimero.mero.cloud.AccountHaRefusedException
 import com.calimero.mero.cloud.CloudLinkDeclinedException
@@ -128,6 +131,9 @@ data class ClassifiedError(
  * - [CloudLinkDeclinedException] (the account link was declined): [ErrorKind.FORBIDDEN];
  *   [CloudNotReadyException] (no namespace or relay to connect to yet): [ErrorKind.UNAVAILABLE],
  *   retryable — Swift `linkDeclined` / `cloudNotReady`.
+ * - [NotForAccountException] (a node-only call on an account's admin): [ErrorKind.FORBIDDEN];
+ *   [NoRelayException] (an account with no relay yet) and [InvitationNotClaimableException]:
+ *   [ErrorKind.UNAVAILABLE], retryable — Swift `notForAccount` / `noRelay` / `invitationNotClaimable`.
  * - Anything else (an RPC method error, a state error): [ErrorKind.UNKNOWN], retryable.
  */
 fun classifyError(error: Throwable?): ClassifiedError {
@@ -137,6 +143,9 @@ fun classifyError(error: Throwable?): ClassifiedError {
             error is ReadOnlyWriteRefusedException -> ErrorKind.FORBIDDEN
             error is CloudLinkDeclinedException -> ErrorKind.FORBIDDEN
             error is CloudNotReadyException -> ErrorKind.UNAVAILABLE
+            error is NotForAccountException -> ErrorKind.FORBIDDEN
+            error is NoRelayException -> ErrorKind.UNAVAILABLE
+            error is InvitationNotClaimableException -> ErrorKind.UNAVAILABLE
             error is WarrantNonceExhaustedException -> ErrorKind.CONFLICT
             status != null -> ErrorKind.forStatus(status)
             error is IOException || error is TimeoutCancellationException -> ErrorKind.UNREACHABLE

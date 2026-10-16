@@ -76,20 +76,8 @@ open class AccountHaRefusedException(
         const val UNKNOWN_RELAY = "unknown_relay"
         const val RELAY_NOT_DIALABLE = "relay_not_dialable"
 
-        /** mero-js `HA_REFUSAL_MESSAGES`. */
-        val ADVICE: Map<String, String> =
-            mapOf(
-                ACCOUNT_NOT_LINKED to "link this account to your cloud user in the wallet so invitees can find this namespace",
-                ACCOUNT_LINKED_TO_SEVERAL_USERS to
-                    "this account is linked to more than one cloud user, so the cloud cannot tell whose plan hosts the namespace: " +
-                    "unlink it from all but one in the wallet",
-                HA_REQUEST_PENDING to
-                    "another namespace of this account is still waiting to be hosted; the cloud hosts one new namespace at a time " +
-                    "without a cloud sign-in. Sign in to the cloud and turn off hosting for the waiting namespace, or wait until it is hosted",
-                UNKNOWN_RELAY to "the cloud does not run the relay this namespace was founded on, so it cannot host it",
-                RELAY_NOT_DIALABLE to
-                    "the relay this namespace was founded on has not reported its address to the cloud yet; try enabling hosting again shortly",
-            )
+        /** mero-js `HA_REFUSAL_MESSAGES` — the same map as [com.calimero.mero.account.HA_REFUSAL_MESSAGES]. */
+        val ADVICE: Map<String, String> get() = com.calimero.mero.account.HA_REFUSAL_MESSAGES
 
         private val LENIENT = Json { isLenient = true }
 

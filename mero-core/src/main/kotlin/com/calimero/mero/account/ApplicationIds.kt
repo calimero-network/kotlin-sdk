@@ -76,8 +76,7 @@ object ApplicationIds {
         val url = "${registryUrl.trimBase()}/api/v2/bundles?package=${URLEncoder.encode(packageName, "UTF-8")}"
         val res = http.execute("GET", url)
         if (!res.isSuccessful) throw MeroStateException("the registry has no $packageName (HTTP ${res.status})")
-        val parsed = runCatching { json.parseToJsonElement(res.body) }.getOrNull()
-        val bundles = (parsed as? JsonArray)?.mapNotNull { runCatching { json.decodeFromJsonElement(RegistryBundle.serializer(), it) }.getOrNull() }.orEmpty()
+        val bundles = parseBundles(res.body)
         val live = bundles.filter { !it.yanked }
         val signers = live.mapNotNull { it.signerId?.ifEmpty { null } }.distinct()
         if (signers.size > 1) {
@@ -89,6 +88,12 @@ object ApplicationIds {
         val signerId =
             latest.signerId?.ifEmpty { null } ?: throw MeroStateException("the registry names no publisher for $packageName ${latest.appVersion}")
         return ResolvedApplication(applicationIdForBundle(packageName, signerId), packageName, signerId, latest.appVersion!!)
+    }
+
+    /** The bundles a registry listing body names; an entry that does not decode is skipped. */
+    internal fun parseBundles(body: String): List<RegistryBundle> {
+        val parsed = runCatching { json.parseToJsonElement(body) }.getOrNull()
+        return (parsed as? JsonArray)?.mapNotNull { runCatching { json.decodeFromJsonElement(RegistryBundle.serializer(), it) }.getOrNull() }.orEmpty()
     }
 
     private fun newer(

@@ -164,7 +164,7 @@ class TlsRelayKeyVerifier(
                 throw RelayKeyRefusedException("the relay's quote is not base64: ${e.message}")
             }
         val (reportData, mock) = RelayAttest.reportDataOf(quote)
-        if (mock && !(allowMock || isLoopback(relayUrl))) {
+        if (mock && !(allowMock || isLoopbackRelay(relayUrl))) {
             throw RelayKeyRefusedException("the relay answered with a MOCK quote, which proves nothing about the hardware")
         }
         if (!reportData.copyOfRange(0, 32).contentEquals(nonce)) {
@@ -175,11 +175,16 @@ class TlsRelayKeyVerifier(
         }
         return nodeKey
     }
+}
 
-    private fun isLoopback(url: String): Boolean {
-        val host = runCatching { URI(url).host }.getOrNull()?.trim('[', ']') ?: return false
-        return host == "localhost" || host == "127.0.0.1" || host == "::1" || host == "10.0.2.2"
-    }
+/**
+ * Whether [url] is a local rig: `localhost`, `127.0.0.1`, `::1`, or the Android emulator's
+ * host alias `10.0.2.2`. Such a relay answers mock quotes and takes the request proof as a
+ * node does (mero-js `isLoopback`, plus the emulator alias).
+ */
+internal fun isLoopbackRelay(url: String): Boolean {
+    val host = runCatching { URI(url).host }.getOrNull()?.trim('[', ']') ?: return false
+    return host == "localhost" || host == "127.0.0.1" || host == "::1" || host == "10.0.2.2"
 }
 
 /**

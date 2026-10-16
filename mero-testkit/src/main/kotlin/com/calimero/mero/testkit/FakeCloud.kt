@@ -1,6 +1,7 @@
 package com.calimero.mero.testkit
 
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
@@ -107,6 +108,44 @@ class FakeCloud internal constructor(
     /** When non-null, `POST /api/cloud/accounts/link` is refused 403 with this `detail` (a spent grant). */
     @Volatile var grantRefusal: String? = null
 
+    // ---- delegated accounts: listings, discovery and failure modes ------------------------
+
+    /** Whether a request carrying only an `X-Calimero-Proof` (no Bearer) passes the guard. Unverified. */
+    @Volatile var acceptProofs: Boolean = true
+
+    /** What `GET /admin-api/contexts` lists (raw `ContextWithGroup` objects): the caller's contexts. */
+    val listedContexts: MutableList<JsonObject> = CopyOnWriteArrayList()
+
+    /** What `GET /admin-api/namespaces` lists (raw `Namespace` objects): the caller's namespaces. */
+    val listedNamespaces: MutableList<JsonObject> = CopyOnWriteArrayList()
+
+    /** `GET /admin-api/contexts/{ctx}/group` answers: context → group. */
+    val contextGroups: MutableMap<String, String> = java.util.concurrent.ConcurrentHashMap()
+
+    /** `GET /admin-api/groups/{g}` reports this namespace for a group (else the group itself). */
+    val groupNamespaces: MutableMap<String, String> = java.util.concurrent.ConcurrentHashMap()
+
+    /** When non-null, `POST /admin-api/tee/attest` answers this status (a 5xx: unavailable). */
+    @Volatile var attestStatus: Int? = null
+
+    /** When true, the attestation binds another key than [nodeKey] (refused by the verifier). */
+    @Volatile var attestBindsWrongKey: Boolean = false
+
+    /** When non-null, the next governance intent is refused with this status and body `{"error": second}`. */
+    @Volatile var refuseNextGovernance: Pair<Int, String>? = null
+
+    /** What `GET /api/v2/bundles?package=…` lists (the app registry), raw. */
+    val registryBundles: MutableList<JsonObject> = CopyOnWriteArrayList()
+
+    /** Record a request handled outside [handle] (for [FakeNode]'s own guarded routes). */
+    internal fun recordRequest(
+        method: String,
+        path: String,
+        request: RecordedRequest,
+    ) {
+        requests.add(Recorded(method, path, request.headers.names().associateWith { request.getHeader(it).orEmpty() }, request.body.readUtf8()))
+    }
+
     /** Everything that arrived on a cloud or relay route, in order. */
     val requests: MutableList<Recorded> = CopyOnWriteArrayList()
 
@@ -123,7 +162,7 @@ class FakeCloud internal constructor(
     /** The recorded requests whose path ends with [suffix]. */
     fun recorded(suffix: String): List<Recorded> = requests.filter { it.path.endsWith(suffix) }
 
-    @Suppress("LongMethod", "CyclomaticComplexMethod")
+    @Suppress("LongMethod", "CyclomaticComplexMethod", "ReturnCount")
     internal fun handle(
         method: String,
         path: String,
@@ -238,13 +277,15 @@ class FakeCloud internal constructor(
             // ---- relay: attestation + login --------------------------------------------------
             method == "POST" && path == "/admin-api/tee/attest" -> {
                 record()
+                attestStatus?.let { return MockResponse().setResponseCode(it) }
                 val nonceHex =
                     recorded.bodyJson
                         ?.get("nonce")
                         ?.jsonPrimitive
                         ?.contentOrNull
                         .orEmpty()
-                val quote = MOCK_QUOTE_HEADER + hexBytes(nonceHex) + keyBinding(hexBytes(nodeKey))
+                val bound = if (attestBindsWrongKey) "00".repeat(32) else nodeKey
+                val quote = MOCK_QUOTE_HEADER + hexBytes(nonceHex) + keyBinding(hexBytes(bound))
                 ok(
                     buildJsonObject {
                         put(
@@ -356,18 +397,25 @@ class FakeCloud internal constructor(
             }
             seg.size == 4 && seg[0] == "admin-api" && seg[1] == "groups" && seg[3] == "governance-intents" && method == "POST" -> {
                 record()
-                val genesis =
+                refuseNextGovernance?.let { (status, reason) ->
+                    refuseNextGovernance = null
+                    return MockResponse().setResponseCode(status).setBody(buildJsonObject { put("error", reason) }.toString())
+                }
+                val op =
                     recorded.bodyJson
                         ?.get("op")
                         ?.jsonPrimitive
                         ?.contentOrNull
-                        ?.startsWith("09") == true
+                        .orEmpty()
+                val genesis = op.startsWith("09")
+                // A subgroup's create (`RootOp::GroupCreated`, tag 0, 129 bytes) answers the new group, as core does.
+                val created = if (op.startsWith("00") && op.length == GROUP_CREATED_HEX_LEN) op.substring(2, 66) else null
                 ok(
                     buildJsonObject {
                         put(
                             "data",
                             buildJsonObject {
-                                put("groupId", seg[2])
+                                put("groupId", created ?: seg[2])
                                 if (genesis) put("teeEnabled", teeOnFounding)
                             },
                         )
@@ -383,6 +431,7 @@ class FakeCloud internal constructor(
                                 "data",
                                 buildJsonObject {
                                     put("groupId", seg[2])
+                                    put("namespaceId", groupNamespaces[seg[2]] ?: seg[2])
                                     put("appKey", groupAppKey)
                                     put("targetApplicationId", groupApplicationId)
                                     put("memberCount", groupMembers.size + 1)
@@ -421,6 +470,54 @@ class FakeCloud internal constructor(
                         },
                     )
                 }
+            // ---- relay: delegated context creation ------------------------------------------
+            seg.size == 4 && seg[0] == "admin-api" && seg[1] == "groups" && seg[3] == "context-intents" && method == "GET" -> {
+                record()
+                ok(
+                    buildJsonObject {
+                        put(
+                            "data",
+                            buildJsonObject {
+                                put("executorAccount", relayAccount)
+                                put("executorKey", executorKey)
+                                put("groupId", seg[2])
+                                put("canCreateOnBehalf", true)
+                                put("authorMayCreate", true)
+                            },
+                        )
+                    },
+                )
+            }
+            seg.size == 4 && seg[0] == "admin-api" && seg[1] == "groups" && seg[3] == "context-intents" && method == "POST" -> {
+                record()
+                val contextId = "%064x".format(nextRoot())
+                ok(
+                    buildJsonObject {
+                        put(
+                            "data",
+                            buildJsonObject {
+                                put("contextId", contextId)
+                                put("groupId", seg[2])
+                                put("memberPublicKey", "")
+                            },
+                        )
+                    },
+                )
+            }
+            seg.size == 2 && seg[0] == "admin-api" && seg[1] == "namespaces" && method == "GET" ->
+                guard {
+                    record()
+                    ok(buildJsonObject { put("data", JsonArray(listedNamespaces.toList())) })
+                }
+            seg.size == 4 && seg[0] == "admin-api" && seg[1] == "contexts" && seg[3] == "group" && method == "GET" ->
+                guard {
+                    record()
+                    ok(buildJsonObject { put("data", contextGroups[seg[2]]?.let { JsonPrimitive(it) } ?: JsonNull) })
+                }
+            method == "GET" && path == "/api/v2/bundles" -> {
+                record()
+                ok(JsonArray(registryBundles.toList()))
+            }
             seg.size == 4 && seg[0] == "admin-api" && seg[1] == "namespaces" && seg[3] == "admit" && method == "POST" -> {
                 record()
                 ok(buildJsonObject { put("data", buildJsonObject { put("published", true) }) })
@@ -683,6 +780,7 @@ class FakeCloud internal constructor(
 
     private companion object {
         val MOCK_QUOTE_HEADER = "MOCK_TDX_QUOTE_V1".encodeToByteArray()
+        const val GROUP_CREATED_HEX_LEN = 2 * (1 + 32 + 32 + 1 + 32 + 32)
         val KEY_BINDING_DOMAIN = "calimero.tee-attest.key-binding.v1".encodeToByteArray()
         const val B64 = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"
 

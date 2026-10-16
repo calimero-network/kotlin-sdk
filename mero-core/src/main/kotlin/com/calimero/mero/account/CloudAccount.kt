@@ -4,38 +4,36 @@ import com.calimero.mero.Mero
 import com.calimero.mero.MeroConfig
 import com.calimero.mero.TokenData
 import com.calimero.mero.admin.SignedGroupOpenInvitation
-import com.calimero.mero.cloud.AccountHaRefusedException
 import com.calimero.mero.cloud.CloudClient
 import com.calimero.mero.cloud.RelayChoice
 import com.calimero.mero.cloud.RoutingCredential
 import com.calimero.mero.crypto.Hex
+import com.calimero.mero.http.HttpException
 import com.calimero.mero.http.MeroStateException
+import com.calimero.mero.http.NetworkException
 import com.calimero.mero.http.PlainJsonHttp
 import com.calimero.mero.http.trimBase
 import com.calimero.mero.presence.RelayPresenceClient
 import com.calimero.mero.relay.ApplicationTarget
 import com.calimero.mero.relay.Audience
-import com.calimero.mero.relay.FoundNamespaceInput
 import com.calimero.mero.relay.FoundedNamespace
 import com.calimero.mero.relay.GovernanceOps
 import com.calimero.mero.relay.PersistedNonceSource
 import com.calimero.mero.relay.RelayClient
-import com.calimero.mero.relay.RelayExecutor
+import com.calimero.mero.relay.RelayKeyRefusedException
 import com.calimero.mero.relay.RelayKeyVerifier
 import com.calimero.mero.relay.RelayLogin
 import com.calimero.mero.relay.TlsRelayKeyVerifier
 import com.calimero.mero.storage.MemoryTokenStore
 import com.calimero.mero.storage.TokenStore
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
-import kotlinx.serialization.json.JsonObject
-import kotlinx.serialization.json.contentOrNull
-import kotlinx.serialization.json.jsonObject
-import kotlinx.serialization.json.jsonPrimitive
 import okhttp3.OkHttpClient
+import java.util.concurrent.ConcurrentHashMap
 
 /**
  * A signed-in Cloud account on this device: who it is, the certificate that proves this
@@ -75,21 +73,27 @@ data class DelegatedSession(
  */
 @Suppress("LongParameterList")
 class CloudAccount(
-    private val store: SecureStore,
+    internal val store: SecureStore,
     val cloudBaseUrl: String = CloudClient.DEFAULT_BASE_URL,
     val walletUrl: String = Enrolment.DEFAULT_WALLET_URL,
-    private val relayKeyVerifier: RelayKeyVerifier = TlsRelayKeyVerifier(),
-    private val clientName: String = "mero-kotlin-sdk",
-    private val audience: Audience = Audience.Cli,
-    private val httpClient: OkHttpClient = PlainJsonHttp.defaultClient(),
+    internal val relayKeyVerifier: RelayKeyVerifier = TlsRelayKeyVerifier(),
+    internal val clientName: String = "mero-kotlin-sdk",
+    internal val audience: Audience = Audience.Cli,
+    internal val httpClient: OkHttpClient = PlainJsonHttp.defaultClient(),
 ) {
     private val json = Json { ignoreUnknownKeys = true }
     private val loginMutex = Mutex()
 
+    /** Guards read-modify-writes of the relay map and group-namespace records ([RelayMap]). */
+    internal val relayMapLock = Any()
+
+    /** Group → namespace pairs learned in this process, per account, whatever the store kept. */
+    internal val learnedGroupNamespaces = ConcurrentHashMap<String, ConcurrentHashMap<String, String>>()
+
     /** This device's keys. */
     val deviceKeys: DeviceKeyStore = DeviceKeyStore(store)
 
-    private val relayLogin: RelayLogin get() = RelayLogin(relayKeyVerifier, clientName, audience, httpClient = httpClient)
+    internal val relayLogin: RelayLogin get() = RelayLogin(relayKeyVerifier, clientName, audience, httpClient = httpClient)
 
     /** The persisted session, or null when signed out. */
     fun session(): DelegatedSession? =
@@ -98,7 +102,7 @@ class CloudAccount(
     /** True when a session is persisted. */
     val isSignedIn: Boolean get() = session() != null
 
-    private fun saveSession(session: DelegatedSession) = store.put(KEY_SESSION, json.encodeToString(DelegatedSession.serializer(), session))
+    internal fun saveSession(session: DelegatedSession) = store.put(KEY_SESSION, json.encodeToString(DelegatedSession.serializer(), session))
 
     // ---- Enrolment -----------------------------------------------------------------------
 
@@ -174,30 +178,98 @@ class CloudAccount(
         CloudClient.chooseRelay(cloud(session).getAccountRelays(session.account))
 
     /** A [CloudClient] proving reads with this device's certificate. */
-    fun cloud(session: DelegatedSession = requireSession()): CloudClient =
-        CloudClient(cloudBaseUrl, RoutingCredential(session.credential, deviceKeys.loadOrCreate().signer()), httpClient)
+    fun cloud(session: DelegatedSession = requireSession()): CloudClient = cloud(session, cloudBaseUrl)
+
+    internal fun cloud(
+        session: DelegatedSession,
+        baseUrl: String,
+    ): CloudClient = CloudClient(baseUrl, RoutingCredential(session.credential, deviceKeys.loadOrCreate().signer()), httpClient)
 
     // ---- Relay ---------------------------------------------------------------------------
 
     /**
      * The relay's node key: pinned from an earlier attestation, or attested now and pinned.
-     * Throws when the relay is unreachable or its attestation is refused.
+     * Throws when the relay is unreachable or its attestation is refused; [attemptRelayNodeKey]
+     * says which, and [learnRelayNodeKey] waits an unreachable one out.
      */
-    suspend fun relayNodeKey(relayUrl: String): String {
-        val key = KEY_NODE_KEY_PREFIX + relayUrl.trimBase()
-        store.get(key)?.takeIf { Hex.isHex32(it) }?.let { return it }
-        val nodeKey = relayLogin.attestNodeKey(relayUrl)
-        store.put(key, nodeKey)
-        return nodeKey
-    }
+    suspend fun relayNodeKey(relayUrl: String): String =
+        when (val attempt = attemptRelayNodeKey(relayUrl)) {
+            is RelayNodeKeyAttempt.Learned -> attempt.nodeKey
+            is RelayNodeKeyAttempt.Unavailable -> throw attempt.error
+            is RelayNodeKeyAttempt.Refused -> throw attempt.error
+        }
 
     /** Pin a relay's node key learned out of band (e.g. from its operator). */
     fun pinRelayNodeKey(
         relayUrl: String,
         nodeKey: String,
     ) {
-        require(Hex.isHex32(nodeKey.lowercase())) { "nodeKey must be 64 hex characters" }
-        store.put(KEY_NODE_KEY_PREFIX + relayUrl.trimBase(), nodeKey.lowercase())
+        require(Hex.isHex32(nodeKey.trim().lowercase())) { "nodeKey must be 64 hex characters" }
+        store.put(KEY_NODE_KEY_PREFIX + relayUrl.trimBase(), nodeKey.trim().lowercase())
+    }
+
+    /** The key pinned for [relayUrl], or null when none (or a malformed one) is. mero-js `readPinnedRelayNodeKey`. */
+    fun readPinnedRelayNodeKey(relayUrl: String): String? =
+        runCatching { store.get(KEY_NODE_KEY_PREFIX + relayUrl.trimBase()) }.getOrNull()?.takeIf { Hex.isHex32(it) }
+
+    /**
+     * One attempt at [relayUrl]'s node key, and what became of it — mero-js
+     * `attemptRelayNodeKey`: the pinned key, or else learned from the relay's attestation (judged
+     * by this account's [RelayKeyVerifier]) and pinned. [RelayNodeKeyAttempt.Unavailable] when
+     * something on the way did not answer (the relay unreachable, or answering non-2xx);
+     * [RelayNodeKeyAttempt.Refused] when the relay answered and its proof did not hold.
+     *
+     * [fresh] skips the pin and attests now, for a step that hands the relay something it keeps
+     * (founding a namespace through it): a pin was checked on some earlier day.
+     */
+    suspend fun attemptRelayNodeKey(
+        relayUrl: String,
+        fresh: Boolean = false,
+    ): RelayNodeKeyAttempt {
+        if (!fresh) readPinnedRelayNodeKey(relayUrl)?.let { return RelayNodeKeyAttempt.Learned(it) }
+        return try {
+            val nodeKey = relayLogin.attestNodeKey(relayUrl).trim().lowercase()
+            if (!Hex.isHex32(nodeKey)) throw RelayKeyRefusedException("the verifier returned no well-formed node key")
+            runCatching { store.put(KEY_NODE_KEY_PREFIX + relayUrl.trimBase(), nodeKey) }
+            RelayNodeKeyAttempt.Learned(nodeKey)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: NetworkException) {
+            RelayNodeKeyAttempt.Unavailable(e)
+        } catch (e: HttpException) {
+            RelayNodeKeyAttempt.Unavailable(e)
+        } catch (e: Exception) {
+            RelayNodeKeyAttempt.Refused(e)
+        }
+    }
+
+    /**
+     * [relayUrl]'s node key from one attempt, or null when it did not learn it, for whatever
+     * reason (mero-js `resolveRelayNodeKey`). Callers that must end up with it use [learnRelayNodeKey].
+     */
+    suspend fun resolveRelayNodeKey(relayUrl: String): String? = (attemptRelayNodeKey(relayUrl) as? RelayNodeKeyAttempt.Learned)?.nodeKey
+
+    /**
+     * [relayUrl]'s node key, however long the way to it is down — mero-js `learnRelayNodeKey`.
+     * An unavailable attempt is retried after each of [retryMs] in turn (then every last one —
+     * [RELAY_NODE_KEY_RETRY_MS] settles at 30 s) until the key is learned or the calling coroutine
+     * is cancelled. A refusal ends it at once with `null`: a quote that did not verify is an
+     * answer, and asking again is not how it becomes a different one.
+     */
+    suspend fun learnRelayNodeKey(
+        relayUrl: String,
+        retryMs: List<Long> = RELAY_NODE_KEY_RETRY_MS,
+    ): String? {
+        require(retryMs.isNotEmpty()) { "retryMs needs at least one wait" }
+        var failures = 0
+        while (true) {
+            when (val attempt = attemptRelayNodeKey(relayUrl)) {
+                is RelayNodeKeyAttempt.Learned -> return attempt.nodeKey
+                is RelayNodeKeyAttempt.Refused -> return null
+                is RelayNodeKeyAttempt.Unavailable -> delay(retryMs[minOf(failures, retryMs.size - 1)])
+            }
+            failures++
+        }
     }
 
     /** Log in to the session's relay with the device certificate. */
@@ -245,23 +317,19 @@ class CloudAccount(
     // ---- Founding ------------------------------------------------------------------------
 
     /**
-     * Found a namespace as this account, through the relay it already uses: the account
-     * becomes founder, owner and admin, the relay is seated in it, and contexts can be
-     * created in it through the same relay straight away. Then, best-effort, asks the cloud
-     * to host it ([CloudClient.enableHaAsAccount]) so invitees with no node can find it.
-     *
-     * Port of mero-js `foundDelegatedNamespace` (plus `createNamespace`'s naming step).
-     *
-     * The relay's executor cannot be asked about a namespace that does not exist yet: its
-     * account comes from the session (the cloud names it beside the relay) or, failing that,
-     * from [knownNamespaceId] (a namespace this account already uses on the relay), and its
-     * key is always the relay's attested or pinned node key ([relayNodeKey]).
+     * Found a namespace as this account, through the relay it already uses, and give it a
+     * display [name] — [foundDelegatedNamespace] plus `createNamespace`'s naming step: the
+     * account becomes founder, owner and admin, the relay is seated in it, and contexts can be
+     * created in it through the same relay straight away. Then, best-effort, the cloud is asked
+     * to host it so invitees with no node can find it.
      *
      * @param defaultCapabilities the namespace root's default member mask (mero-react uses 231).
      * @param application the app the namespace runs; without one no context can be created in it.
      * @param name a display name, set with a delegated `GroupMetadataSet` (best-effort).
-     * @throws MeroStateException when no relay or executor is known, or the namespace was
-     *   founded but could not be given its [application].
+     * @param knownNamespaceId a namespace this account already uses on the relay, to learn the
+     *   relay's executor account from when the session does not name it.
+     * @throws MeroStateException when no relay or executor is known, the relay's attestation
+     *   failed, or the namespace was founded but could not be given its [application].
      */
     @Suppress("LongParameterList")
     suspend fun foundNamespace(
@@ -272,88 +340,15 @@ class CloudAccount(
         enableHa: Boolean = true,
         session: DelegatedSession = requireSession(),
     ): FoundedDelegatedNamespace {
-        val relayUrl =
-            session.relayUrl?.trimBase()
-                ?: throw MeroStateException("no relay is known for this account, so there is nowhere to found a namespace")
-        val relay = relayClient(session, relayUrl)
-        val executor = foundingExecutor(session, relay, knownNamespaceId)
-        val founded = relay.foundNamespace(FoundNamespaceInput(executor, defaultCapabilities = defaultCapabilities, application = application))
-        if (application != null && founded.applicationSet != true) {
-            // Founded, but no context can be created in it yet; the same choice can be retried.
-            throw MeroStateException(
-                "founded ${founded.namespaceId} but could not give it its application: ${founded.applicationError ?: "unknown reason"}",
-            )
-        }
+        val founded = foundDelegatedNamespace(session, defaultCapabilities, application, knownNamespaceId, enableHa)
         val nameError =
             name?.takeIf { it.isNotEmpty() }?.let { n ->
-                runCatching { relay.govern(founded.namespaceId, GovernanceOps.groupMetadataSetOp(name = n)) }.exceptionOrNull()?.message
+                runCatching {
+                    delegatedGovernance(session, founded.namespaceId, founded.namespaceId, GovernanceOps.groupMetadataSetOp(name = n))
+                }.exceptionOrNull()?.message
             }
-        // HA's fleet node is admitted by the founding relay, which can vouch for it only once
-        // it attested itself as the namespace's first TEE.
-        val (haEnabled, haError) =
-            when {
-                !enableHa -> false to null
-                founded.teeEnabled -> enableHaBestEffort(session, founded, relayUrl)
-                else ->
-                    false to
-                        "the relay did not attest the founding, so no fleet node could be admitted for HA" +
-                        (founded.teeError?.let { ": $it" } ?: "")
-            }
-        return FoundedDelegatedNamespace(founded, haEnabled, haError, nameError)
+        return founded.copy(nameError = nameError)
     }
-
-    private suspend fun foundingExecutor(
-        session: DelegatedSession,
-        relay: RelayClient,
-        knownNamespaceId: String?,
-    ): RelayExecutor {
-        session.executorAccount?.let { return RelayExecutor(it, relayNodeKey(relay.relayUrl)) }
-        val known =
-            knownNamespaceId
-                ?: throw MeroStateException(
-                    "the executor account of this relay is not known: join a namespace on it first (and pass it as " +
-                        "knownNamespaceId), or sign in again so the cloud names the relay's account",
-                )
-        val executorKey = relayNodeKey(relay.relayUrl)
-        // Discovery is unauthenticated: it may name the account, never the key.
-        val described = relay.describeGovernance(known)
-        if (described.executorKey?.lowercase() != executorKey) {
-            throw MeroStateException(
-                "the relay's discovery names signing key ${described.executorKey}, not the relay's node key $executorKey: refusing to found through it",
-            )
-        }
-        return RelayExecutor(described.executorAccount.orEmpty(), executorKey)
-    }
-
-    private suspend fun enableHaBestEffort(
-        session: DelegatedSession,
-        founded: FoundedNamespace,
-        relayUrl: String,
-    ): Pair<Boolean, String?> =
-        try {
-            cloud(session).enableHaAsAccount(
-                namespaceId = founded.namespaceId,
-                salt = founded.salt,
-                accountId = session.account,
-                credential = session.credential,
-                relayUrl = relayUrl,
-            )
-            true to null
-        } catch (e: AccountHaRefusedException) {
-            val blocking = if (e.code == AccountHaRefusedException.HA_REQUEST_PENDING) blockingNamespace(e.bodyText) else null
-            false to (blocking?.let { "${e.advice} (waiting: $it)" } ?: e.advice)
-        } catch (e: CancellationException) {
-            throw e
-        } catch (e: Exception) {
-            false to (e.message ?: e.toString())
-        }
-
-    private fun blockingNamespace(body: String): String? =
-        runCatching {
-            val o = json.parseToJsonElement(body).jsonObject
-            val id = ((o["detail"] as? JsonObject)?.get("namespace_id") ?: o["namespace_id"])?.jsonPrimitive?.contentOrNull
-            id?.lowercase()?.takeIf { Hex.isHex32(it) }
-        }.getOrNull()
 
     // ---- Inviting ------------------------------------------------------------------------
 
@@ -365,8 +360,9 @@ class CloudAccount(
      * person who claims it may have no node and only a relay can admit them; with none, the
      * namespace's admins. The members and the group's application are read from the relay
      * over [connection]'s Bearer session; without one, the session relay's own account is
-     * named. When the cloud routes the namespace to nobody (not hosted), the invitation
-     * carries the relay's URL so the claimant can still find it.
+     * named. The invitation carries no address: a claimant finds its admitter through the
+     * cloud's routing only, so a namespace the cloud lists no node for cannot be claimed and
+     * is refused here rather than failing in the claimant's hands.
      *
      * @throws InvitationNotClaimableException when nobody the claimant could reach would admit them.
      */
@@ -391,16 +387,13 @@ class CloudAccount(
             )
         }
         val named = relays.ifEmpty { Invitations.defaultAdmitters(members.orEmpty()) }.toSet()
+        // A lookup that fails does not block minting: the claimant's own lookup will say what is wrong.
         val nodes = runCatching { cloud(session).getNamespaceRouting(ns).nodes }.getOrNull()
-        var admitterAddrs = emptyList<String>()
         if (nodes != null) {
-            if (nodes.isEmpty()) {
-                // Not hosted: the relay that serves this session admits through its own `/admit`.
-                val relayUrl = session.relayUrl?.trimBase()
-                if (relays.isEmpty() || relayUrl == null) throw InvitationNotClaimableException(ns, notHosted = true)
-                admitterAddrs = listOf(relayUrl)
-            } else if (nodes.none { n -> n.account?.lowercase() in named }) {
-                throw InvitationNotClaimableException(ns, notHosted = false)
+            // An address on the invitation is unsigned, so a relay the cloud does not list cannot stand in.
+            if (nodes.isEmpty()) throw InvitationNotClaimableException(ns, InvitationNotClaimableReason.NOT_HOSTED)
+            if (nodes.none { n -> n.account?.lowercase() in named }) {
+                throw InvitationNotClaimableException(ns, InvitationNotClaimableReason.NO_NAMED_NODE)
             }
         }
         return Invitations.signGroupInvitation(
@@ -412,7 +405,6 @@ class CloudAccount(
             validForSecs = validForSecs,
             applicationId = info?.targetApplicationId?.lowercase()?.takeIf { Hex.isHex32(it) },
             appKey = info?.appKey?.lowercase()?.takeIf { Hex.isHex32(it) },
-            admitterAddrs = admitterAddrs,
         )
     }
 
@@ -420,46 +412,79 @@ class CloudAccount(
 
     /**
      * Redeem an invitation as this account: find an admitting node the invitation names
-     * (via the cloud), sign this device's join and have that node publish it. The node
-     * becomes the account's relay when it had none. Mirrors mero-js `joinAsAccount`.
+     * (via the cloud), sign this device's join and have that node publish it. The node is
+     * remembered as the namespace's relay ([rememberRelay]), and becomes the account's relay
+     * when it had none. For the step-typed outcome use [bootstrapFromInvitation]; to move the
+     * session onto the joined relay as mero-js does, use the `joinAsAccount(session, …, onJoined)`
+     * extension.
      *
-     * @throws JoinException naming the step that failed.
+     * @throws JoinException naming the step that failed, with its HTTP status when it had one.
      */
     suspend fun joinAsAccount(
         namespaceId: String,
         invitation: SignedGroupOpenInvitation,
         nodeUrl: String? = null,
-    ): JoinResult = bootstrapFromInvitation(namespaceId, invitation, nodeUrl)
+    ): JoinResult {
+        val session = requireSession()
+        return when (val outcome = bootstrapFromInvitation(namespaceId, invitation, nodeUrl, session)) {
+            is BootstrapResult.Failure -> throw JoinException(outcome.step, outcome.reason, outcome.status)
+            is BootstrapResult.Success -> {
+                val relayUrl = checkNotNull(outcome.session.relayUrl)
+                rememberRelay(session.account, relayUrl, namespaceId = namespaceId)
+                val updated =
+                    if (session.relayUrl == null) {
+                        session.copy(relayUrl = relayUrl, executorAccount = outcome.relay?.admitterAccount?.takeIf { Hex.isHex32(it) })
+                    } else {
+                        session
+                    }
+                saveSession(updated)
+                JoinResult(namespaceId, relayUrl, outcome.published, updated)
+            }
+        }
+    }
 
-    /** [joinAsAccount] under its mero-js name. */
+    /**
+     * Resolve a node from the invitation, present the signed join to it, and return the
+     * session to connect with — mero-js `bootstrapFromInvitation`. Persists nothing.
+     *
+     * The node is [nodeUrl] when given (one the caller knows: an operator's, a local rig —
+     * never one read off the invitation), else the cloud's routing for the namespace
+     * intersected with the invitation's signed admitters ([Join.resolveRelayFromInvitation]).
+     *
+     * Never throws for an expected failure: [BootstrapResult.Failure] names the step —
+     * [JoinStep.NO_CREDENTIAL] when no account is signed in on this device.
+     */
     suspend fun bootstrapFromInvitation(
         namespaceId: String,
         invitation: SignedGroupOpenInvitation,
         nodeUrl: String? = null,
-    ): JoinResult {
-        val session = requireSession()
-        val resolved =
-            if (nodeUrl != null) {
-                null
-            } else {
-                Join.resolveRelayFromInvitation(cloud(session), namespaceId, invitation)
-            }
-        val relayUrl = nodeUrl?.trimBase() ?: resolved!!.relayUrl
-        val admitUrl = resolved?.admitUrl ?: "$relayUrl/admin-api/namespaces/$namespaceId/admit"
-        val nonce = PersistedNonceSource(store, "calimero.delegated.joinnonce.${session.account}").next()
-        val published =
-            Join.joinWithNode(
-                PlainJsonHttp(httpClient), admitUrl, namespaceId, invitation, session.account, session.credential,
-                deviceKeys.loadOrCreate().signer(), nonce,
+        session: DelegatedSession? = session(),
+        cloudBaseUrl: String = this.cloudBaseUrl,
+    ): BootstrapResult {
+        if (session == null) {
+            return BootstrapResult.Failure(
+                JoinStep.NO_CREDENTIAL,
+                "This device holds no enrolled account, so there is nothing to admit: sign in with Calimero Cloud first.",
             )
-        val updated =
-            if (session.relayUrl == null) {
-                session.copy(relayUrl = relayUrl, executorAccount = resolved?.admitterAccount?.takeIf { Hex.isHex32(it) })
-            } else {
-                session
-            }
-        saveSession(updated)
-        return JoinResult(namespaceId, relayUrl, published, updated)
+        }
+        return try {
+            val resolved = if (nodeUrl != null) null else Join.resolveRelayFromInvitation(cloud(session, cloudBaseUrl), namespaceId, invitation)
+            val relayUrl = nodeUrl?.trimBase() ?: checkNotNull(resolved).relayUrl
+            val admitUrl = resolved?.admitUrl ?: Join.admitUrlOn(relayUrl, namespaceId)
+            val nonce = PersistedNonceSource(store, "calimero.delegated.joinnonce.${session.account}").next()
+            val published =
+                Join.joinWithNode(
+                    PlainJsonHttp(httpClient), admitUrl, namespaceId, invitation, session.account, session.credential,
+                    deviceKeys.loadOrCreate().signer(), nonce,
+                )
+            BootstrapResult.Success(
+                session = DelegatedSession(session.account, session.device, session.credential, relayUrl = relayUrl),
+                relay = resolved,
+                published = published,
+            )
+        } catch (e: JoinException) {
+            BootstrapResult.Failure(e.step, e.message.orEmpty(), e.status)
+        }
     }
 
     // ---- Sign out ------------------------------------------------------------------------
@@ -474,9 +499,9 @@ class CloudAccount(
         if (forgetDevice) deviceKeys.clear()
     }
 
-    private fun requireSession(): DelegatedSession = session() ?: error("not signed in with Calimero Cloud")
+    internal fun requireSession(): DelegatedSession = session() ?: error("not signed in with Calimero Cloud")
 
-    private companion object {
+    internal companion object {
         const val KEY_SESSION = "calimero.delegated.connection"
         const val KEY_PENDING_STATE = "calimero.enrol.state"
         const val KEY_NODE_KEY_PREFIX = "calimero.delegated.relay-node-key."
@@ -566,20 +591,41 @@ data class FoundedDelegatedNamespace(
     val namespaceId: String get() = founded.namespaceId
 }
 
+/** Why [InvitationNotClaimableException] refused — mero-js `InvitationNotClaimableError.reason`. */
+enum class InvitationNotClaimableReason(
+    /** mero-js's spelling. */
+    val wire: String,
+) {
+    /** The cloud lists no node holding the namespace. A relay it does not list cannot stand in: an address on the invitation is unsigned. */
+    NOT_HOSTED("not-hosted"),
+
+    /** The cloud's nodes are not among the admitters the invitation would name. */
+    NO_NAMED_NODE("no-named-node"),
+}
+
 /**
- * Nobody the claimant of an invitation could reach would admit them: the namespace is not
- * hosted in the cloud and has no relay in it ([notHosted]), or the cloud routes to none of
- * the accounts the invitation would name.
+ * Nobody the claimant of an invitation could reach would admit them — mero-js
+ * `InvitationNotClaimableError`. A claimant with no node finds its admitter through the cloud's
+ * routing intersected with the invitation's signed admitters, so an invitation the cloud routes
+ * to none of them can only fail in their hands.
  */
 class InvitationNotClaimableException(
     val namespaceId: String,
-    val notHosted: Boolean,
+    val reason: InvitationNotClaimableReason,
 ) : Exception(
-        if (notHosted) {
-            "nobody could claim an invitation to $namespaceId yet: the namespace is not hosted in the cloud and has no relay in it, " +
-                "so an invitee with no node has no relay to be admitted through. Link this account to your cloud user in the wallet " +
-                "and enable HA for the namespace, then invite."
-        } else {
-            "nobody could claim an invitation to $namespaceId: the cloud routes to none of the relays or admins it would name as admitters"
+        when (reason) {
+            InvitationNotClaimableReason.NOT_HOSTED ->
+                "nobody could claim an invitation to $namespaceId yet: the cloud lists no node holding the namespace, so an " +
+                    "invitee with no node of their own has no relay to be admitted through."
+            InvitationNotClaimableReason.NO_NAMED_NODE ->
+                "nobody could claim an invitation to $namespaceId: the cloud routes to none of the relays or admins it would " +
+                    "name as admitters"
         },
-    )
+    ) {
+    /** The earlier boolean form of [reason]. */
+    constructor(namespaceId: String, notHosted: Boolean) :
+        this(namespaceId, if (notHosted) InvitationNotClaimableReason.NOT_HOSTED else InvitationNotClaimableReason.NO_NAMED_NODE)
+
+    /** Whether the reason is [InvitationNotClaimableReason.NOT_HOSTED]. */
+    val notHosted: Boolean get() = reason == InvitationNotClaimableReason.NOT_HOSTED
+}
