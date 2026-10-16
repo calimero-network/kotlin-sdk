@@ -1785,6 +1785,15 @@ data class RevokeDeviceResponseData(
     val revokedIn: List<RevocationOutcome> = emptyList(),
 )
 
+/** [AdminApi.listNamespaceRevokedDevices]: core `NamespaceRevokedDevicesApiResponse`. */
+@Serializable
+data class NamespaceRevokedDevices(
+    /** Device ids (64 hex) revoked in the namespace. */
+    val revokedDevices: List<String> = emptyList(),
+    /** Hex `sha256(account ‖ device)` of each device its own account withdrew in the namespace. */
+    val withdrawnSlots: List<String> = emptyList(),
+)
+
 @Serializable
 data class RevocationOutcome(
     val namespaceId: String,

@@ -123,6 +123,9 @@ private val authOps =
         SDKOperation("auth.providers", "Auth & Identity", "getProviders", "Available auth providers", emptyList()) { m, _ ->
             Fmt.json(m.auth.getProviders())
         },
+        SDKOperation("auth.loginPage", "Auth & Identity", "getLoginPage", "GET /auth/login (the hosted login UI, as HTML)", emptyList()) { m, _ ->
+            m.auth.getLoginPage().take(4_000)
+        },
         SDKOperation(
             "auth.gen", "Auth & Identity", "generateTokens", "POST /auth/token (provider handshake)",
             listOf(OpField.json()),
@@ -773,6 +776,10 @@ private val accountOps =
             "acc.revoke", "Account & Devices", "revokeAccountDevice", "Revoke a device (rotates the group key)",
             listOf(OpField.line("namespaceId", "Namespace ID"), OpField.json("body", "RevokeDeviceRequest")),
         ) { m, i -> Fmt.json(m.admin.revokeAccountDevice(i.v("namespaceId"), Fmt.decode<RevokeDeviceRequest>(i.v("body")))) },
+        SDKOperation(
+            "acc.revokedList", "Account & Devices", "listNamespaceRevokedDevices", "Revoked devices and withdrawn slots",
+            listOf(OpField.line("namespaceId", "Namespace ID")),
+        ) { m, i -> Fmt.json(m.admin.listNamespaceRevokedDevices(i.v("namespaceId"))) },
         SDKOperation(
             "acc.admit", "Account & Devices", "admitJoin", "Publish a keyholder's join",
             listOf(OpField.line("namespaceId", "Namespace ID"), OpField.json("body", "AdmitJoinRequest")),

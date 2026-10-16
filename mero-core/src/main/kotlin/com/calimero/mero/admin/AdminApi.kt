@@ -1325,6 +1325,15 @@ class AdminApi(
                 "/admin-api/namespaces/$namespaceId/account/revoke", request,
             ).data ?: error("revokeAccountDevice")
 
+    /**
+     * The devices revoked in a namespace and the slots their own accounts withdrew
+     * (`GET /admin-api/namespaces/{id}/revoked-devices`). A subgroup id resolves to its
+     * namespace. `403` unless this node's account is bound in the namespace. The handler
+     * serializes the payload directly — no `{ data }` envelope.
+     */
+    suspend fun listNamespaceRevokedDevices(namespaceId: String): NamespaceRevokedDevices =
+        http.getJson("/admin-api/namespaces/${encodeComponent(namespaceId)}/revoked-devices")
+
     // ---- Direct admission (rc.29) ------------------------------------------
 
     /**
