@@ -68,6 +68,7 @@ import com.calimero.mero.auth.TokenRequest
 import com.calimero.mero.auth.UpdateKeyPermissionsRequest
 import com.calimero.mero.compose.MeroClient
 import com.calimero.mero.crypto.Hex
+import com.calimero.mero.ephemeral.RawCodec
 import com.calimero.mero.relay.ApplicationTarget
 import com.calimero.mero.relay.CreateContextInput
 import com.calimero.mero.relay.FoundNamespaceInput
@@ -1112,11 +1113,46 @@ private val rpcOps =
         ) { m, i -> "pending = ${m.rpc.countMyPending(i.v("contextId"))}" },
     )
 
+// Presence: an account's (device-signed through its relay) and a node's own (`set_ephemeral`).
+// Live presence and events are read by the chat screen, not a form.
+private val presenceOps =
+    listOf(
+        SDKOperation(
+            "pre.set", "Presence", "presence.set", "Set this account's presence (signed, resent every 2.5 s)",
+            listOf(OpField.line("contextId", "Context ID"), OpField.json("state", "State (any JSON)", "{\"typing\":true}")),
+        ) { e, i ->
+            val presence = e.client.presence ?: error("No relay connection")
+            presence.set(i.v("contextId"), i.v("state").encodeToByteArray(), RawCodec)
+            "presence set; resending until cleared"
+        },
+        SDKOperation(
+            "pre.clear", "Presence", "presence.clear", "Retract this account's presence",
+            listOf(OpField.line("contextId", "Context ID")),
+        ) { e, i ->
+            (e.client.presence ?: error("No relay connection")).clear(i.v("contextId"))
+            "presence retracted"
+        },
+        SDKOperation(
+            "pre.publish", "Presence", "publishPresence", "Sign and post one presence update (no heartbeat)",
+            listOf(OpField.line("contextId", "Context ID"), OpField.line("state", "State (text, empty to retract)")),
+        ) { e, i ->
+            e.relay.publishPresence(i.v("contextId"), i.opt("state")?.encodeToByteArray(), seq = System.currentTimeMillis())
+            "presence posted"
+        },
+        SDKOperation(
+            "pre.ephemeralSet", "Presence", "ephemeral.set", "A node's own presence slice (set_ephemeral)",
+            listOf(OpField.line("contextId", "Context ID"), OpField.json("state", "State (any JSON)", "{\"cursor\":1}")),
+        ) { m, i ->
+            m.mero.ephemeral.set(i.v("contextId"), i.v("state").encodeToByteArray(), RawCodec)
+            "slice set"
+        },
+    )
+
 /** The full registry, in display order. */
 val sdkOperations: List<SDKOperation> =
     sessionOps + cloudOps + spaceOps + relayOps + healthOps + authOps + keyOps + appOps + pkgOps + ctxOps + ctxIdOps +
         aliasOps + blobOps + nsOps + groupOps + memberOps + settingsOps + upgradeOps +
-        accountOps + teeOps + rc83Ops + rpcOps
+        accountOps + teeOps + rc83Ops + presenceOps + rpcOps
 
 /** Categories in display order (as first seen in [sdkOperations]). */
 val sdkCategories: List<String> = sdkOperations.map { it.category }.distinct()

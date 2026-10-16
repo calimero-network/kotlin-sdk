@@ -16,6 +16,7 @@ import com.calimero.mero.admin.SignedGroupOpenInvitation
 import com.calimero.mero.cloud.CloudClient
 import com.calimero.mero.http.ErrorKind
 import com.calimero.mero.http.classifyError
+import com.calimero.mero.presence.RelayPresenceClient
 import com.calimero.mero.relay.ApplicationTarget
 import com.calimero.mero.relay.RelayClient
 import com.calimero.mero.storage.EncryptedPrefsTokenStore
@@ -103,6 +104,12 @@ class MeroClient(
 
     /** Warranted writes and reads on the account's relay. */
     val relay: RelayClient? get() = _connection.value?.relay
+
+    /**
+     * The account's presence through its relay (device-signed, resent every 2.5 s while set),
+     * or null without a relay connection. Stopped by [signOut].
+     */
+    val presence: RelayPresenceClient? get() = _connection.value?.presence
 
     private val devNode = MutableStateFlow<Mero?>(null)
 

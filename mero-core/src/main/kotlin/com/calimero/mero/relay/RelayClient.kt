@@ -7,6 +7,8 @@ import com.calimero.mero.crypto.randomBytes
 import com.calimero.mero.http.HttpResponse
 import com.calimero.mero.http.PlainJsonHttp
 import com.calimero.mero.http.trimBase
+import com.calimero.mero.presence.PresenceRelay
+import com.calimero.mero.presence.PresenceStatement
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
 import kotlinx.serialization.Serializable
@@ -57,7 +59,7 @@ class RelayClient
         /** The author's account, 64 hex. */
         val authorAccount: String,
         /** The device certificate (`AccountProof<DeviceCert>`, hex) every write carries. */
-        val authorProof: String,
+        override val authorProof: String,
         private val signer: DeviceSigner,
         private val nonces: NonceSource,
         private val ttlSeconds: Long,
@@ -65,7 +67,7 @@ class RelayClient
         private val session: (suspend () -> String?)?,
         private val http: PlainJsonHttp,
         private val rateLimitRetries: Int,
-    ) {
+    ) : PresenceRelay {
         @Suppress("LongParameterList")
         constructor(
             relayUrl: String,
@@ -91,6 +93,9 @@ class RelayClient
             deviceSecret: String,
             nonces: NonceSource,
         ) : this(relayUrl, authorAccount, authorProof, SeedSigner(deviceSecret), nonces)
+
+        /** The device signer every warrant and presence statement is signed with (mero-js `authorSigner()`). */
+        override val authorSigner: DeviceSigner get() = signer
 
         /** The relay's base URL, without a trailing slash. */
         val relayUrl: String = relayUrl.trimBase()
@@ -375,8 +380,13 @@ class RelayClient
 
         // ---- Presence ------------------------------------------------------------------------
 
-        /** Post a signed presence statement (see core `crates/node/primitives/src/presence.rs`). */
-        suspend fun presenceIntent(
+        /**
+         * Post an already-signed presence statement (see core
+         * `crates/node/primitives/src/presence.rs`). Not retried on 429: presence resends
+         * every 2.5 s anyway, and a retry would only queue behind the next resend. A refusal
+         * throws with its status. Prefer [publishPresence], which signs for you.
+         */
+        override suspend fun presenceIntent(
             contextId: String,
             state: String?,
             seq: Long,
@@ -391,8 +401,26 @@ class RelayClient
                     put("signature", signature)
                     put("authorProof", authorProof)
                 }
-            request("POST", "/admin-api/contexts/${enc(contextId)}/presence-intents", body)
+            request("POST", "/admin-api/contexts/${enc(contextId)}/presence-intents", body, retries = 0)
         }
+
+        /**
+         * Sign one presence update with this device ([PresenceStatement]) and post it:
+         * [state] is the raw slice, or `null` to retract. For a heartbeating presence use
+         * [com.calimero.mero.presence.RelayPresenceClient] (`RelayConnection.presence`).
+         */
+        suspend fun publishPresence(
+            contextId: String,
+            state: ByteArray?,
+            seq: Long,
+            sentAtMs: Long = System.currentTimeMillis(),
+        ) = presenceIntent(
+            contextId,
+            state?.let { Hex.encode(it) },
+            seq,
+            sentAtMs,
+            PresenceStatement.sign(signer, contextId, seq, sentAtMs, state),
+        )
 
         // ---- Nonce discovery -----------------------------------------------------------------
 
@@ -455,12 +483,13 @@ class RelayClient
             method: String,
             path: String,
             body: JsonElement? = null,
+            retries: Int = rateLimitRetries,
         ): String {
             var wait = INITIAL_BACKOFF_MS
             var attempt = 0
             while (true) {
                 val res = raw(method, path, body, authed = false)
-                if (res.status == HTTP_TOO_MANY && attempt < rateLimitRetries) {
+                if (res.status == HTTP_TOO_MANY && attempt < retries) {
                     delay(
                         res.headers.entries
                             .firstOrNull { it.key.equals("Retry-After", true) }

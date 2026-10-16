@@ -12,6 +12,7 @@ import com.calimero.mero.crypto.Hex
 import com.calimero.mero.http.MeroStateException
 import com.calimero.mero.http.PlainJsonHttp
 import com.calimero.mero.http.trimBase
+import com.calimero.mero.presence.RelayPresenceClient
 import com.calimero.mero.relay.ApplicationTarget
 import com.calimero.mero.relay.Audience
 import com.calimero.mero.relay.FoundNamespaceInput
@@ -511,6 +512,14 @@ class RelayConnection internal constructor(
     val relayUrl: String get() = relay.relayUrl
 
     /**
+     * This account's ephemeral presence through the relay: device-signed statements posted
+     * to `presence-intents` and resent every 2.5 s while set; read back off [mero]'s
+     * shared event stream (`mero.sse`, which needs [ensureSession]). Close it with
+     * [RelayPresenceClient.close] — [logout] does.
+     */
+    val presence: RelayPresenceClient by lazy { RelayPresenceClient(relay, events = { mero.sse }) }
+
+    /**
      * Mint (or reuse) the relay's Bearer session. Returns false when it cannot be had —
      * the relay's node key is unknown or refused — in which case writes still work and
      * reads fall back to warrants.
@@ -522,7 +531,11 @@ class RelayConnection internal constructor(
      * best-effort) and drop its tokens. Warranted writes keep working — they never needed
      * the session — and the next [ensureSession] logs in again. See [Mero.logout].
      */
-    suspend fun logout() = mero.logout()
+    suspend fun logout() {
+        presence.close()
+        mero.sse.close()
+        mero.logout()
+    }
 }
 
 /** What [CloudAccount.foundNamespace] returns. */
