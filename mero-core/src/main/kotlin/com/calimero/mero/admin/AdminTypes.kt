@@ -692,6 +692,13 @@ data class CreateNamespaceResponseData(
     val namespaceId: String,
     /** What the new id was derived from (core rc.83). `null` from an older node. */
     val founding: NamespaceFounding? = null,
+    /**
+     * Set only by an account's admin ([com.calimero.mero.account.createAccountAdmin]): whether
+     * the cloud agreed to host the namespace founded through the relay. `null` from a node.
+     */
+    val haEnabled: Boolean? = null,
+    /** Why [haEnabled] is `false`, in words a person can act on. Account admin only. */
+    val haError: String? = null,
 )
 
 /**

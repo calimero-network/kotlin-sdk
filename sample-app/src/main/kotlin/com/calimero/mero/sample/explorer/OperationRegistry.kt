@@ -54,6 +54,7 @@ import com.calimero.mero.admin.SetMemberMetadataRequest
 import com.calimero.mero.admin.SetSubgroupVisibilityRequest
 import com.calimero.mero.admin.SetTeeAdmissionPolicyRequest
 import com.calimero.mero.admin.SetTeeAuthoringPolicyRequest
+import com.calimero.mero.admin.SignedGroupOpenInvitation
 import com.calimero.mero.admin.SyncGroupRequest
 import com.calimero.mero.admin.TeeAttestRequest
 import com.calimero.mero.admin.TeeRegistrationAttestRequest
@@ -448,6 +449,18 @@ private val nsOps =
             "ns.join", "Namespaces", "joinNamespace", "Join a namespace",
             listOf(OpField.line("namespaceId", "Namespace ID"), OpField.json("body", "JoinNamespaceRequest")),
         ) { m, i -> Fmt.json(m.admin.joinNamespace(i.v("namespaceId"), Fmt.decode<JoinNamespaceRequest>(i.v("body")))) },
+        SDKOperation(
+            "ns.redeem", "Namespaces", "redeemInvitation", "Redeem an invitation (joined / already a member / why not)",
+            listOf(
+                OpField.line("namespaceId", "Namespace ID"),
+                OpField.json("invitation", "SignedGroupOpenInvitation"),
+                OpField.line("groupName", "Group name (optional)", ""),
+            ),
+        ) { m, i ->
+            m.admin
+                .redeemInvitation(i.v("namespaceId"), Fmt.decode<SignedGroupOpenInvitation>(i.v("invitation")), i.opt("groupName")?.ifBlank { null })
+                .toString()
+        },
         SDKOperation(
             "ns.leave", "Namespaces", "leaveNamespace", "Leave a namespace",
             listOf(OpField.line("namespaceId", "Namespace ID"), OpField.json("body", "Body (optional)", "")),
