@@ -106,9 +106,6 @@ class RelayClient
                 explicitNulls = false
             }
 
-        /** What the node told us each `context|method` is, so the 409 probe is paid once. */
-        private val methodKinds = ConcurrentHashMap<String, Boolean>()
-
         // ---- Data writes ---------------------------------------------------------------------
 
         /** Who would execute in [contextId], and what a warrant there must pin. */
@@ -183,7 +180,8 @@ class RelayClient
         /**
          * Read or write, whichever [method] is: tried as a [query] first, and on a 409 (or any
          * failure of the query) sent as a warranted [execute], which reads too. What the node
-         * said is remembered, so a write pays the probe once. Without a [session] this is
+         * said is remembered per relay, context and method — across every client of the same
+         * relay, as mero-js does — so a write pays the probe once. Without a [session] this is
          * always [execute].
          */
         suspend fun call(
@@ -191,12 +189,12 @@ class RelayClient
             method: String,
             argsJson: JsonElement = JsonObject(emptyMap()),
         ): JsonElement? {
-            val key = "$contextId|$method"
-            if (session != null && methodKinds[key] != true) {
+            val key = MethodKinds.key(relayUrl, contextId, method)
+            if (session != null && !MethodKinds.isWrite(key)) {
                 try {
-                    return query(contextId, method, argsJson).also { methodKinds[key] = false }
+                    return query(contextId, method, argsJson).also { MethodKinds.markRead(key) }
                 } catch (_: NotAViewException) {
-                    methodKinds[key] = true
+                    MethodKinds.markWrite(key)
                 } catch (e: CancellationException) {
                     throw e
                 } catch (_: Exception) {
@@ -667,3 +665,34 @@ class NotAViewException(
     val contextId: String,
     val method: String,
 ) : Exception("$method is not a view method in context $contextId")
+
+/**
+ * What a relay's node said each `relay|context|method` is — a view (read) or not (write,
+ * answered `409` by `/query`) — so the probe is paid once per method, and the answer survives
+ * rebuilding the client (mero-js `methodKinds` in `account/session.ts`). Shared by
+ * [RelayClient.call] and the delegated client's reads.
+ */
+internal object MethodKinds {
+    private val kinds = ConcurrentHashMap<String, Boolean>()
+
+    fun key(
+        relayUrl: String,
+        contextId: String,
+        method: String,
+    ): String = "${relayUrl.trimEnd('/')}|$contextId|$method"
+
+    fun isWrite(key: String): Boolean = kinds[key] == true
+
+    fun markRead(key: String) {
+        kinds[key] = false
+    }
+
+    fun markWrite(key: String) {
+        kinds[key] = true
+    }
+
+    fun clear() = kinds.clear()
+}
+
+/** Forget what was learned about which relay methods read and which write. For tests (mero-js `forgetMethodKinds`). */
+fun forgetMethodKinds() = MethodKinds.clear()

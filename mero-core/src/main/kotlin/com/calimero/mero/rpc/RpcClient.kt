@@ -56,15 +56,21 @@ class ReadOnlyWriteRefusedException(
 /**
  * The result of [RpcClient.executeWithMetadata]: the decoded output plus which
  * transport carried it. Mirrors mero-js's `{ returns, transport }`, so code
- * written against a node-or-relay abstraction reads the same shape.
+ * written against a node-or-relay abstraction reads the same shape (see
+ * [com.calimero.mero.transport.ExecuteTransport], whose untyped result is
+ * [com.calimero.mero.transport.ExecuteResult]).
  */
 data class RpcExecution<T>(
     val returns: T,
-    /** Always [TRANSPORT_NODE] here: this client talks to a node's `/jsonrpc`. */
+    /** [TRANSPORT_NODE] from this client, which talks to a node's `/jsonrpc`; [TRANSPORT_RELAY] through a relay. */
     val transport: String = TRANSPORT_NODE,
 ) {
     companion object {
+        /** A node's JSON-RPC ran it (mero-js `TransportKind` `'node'`). */
         const val TRANSPORT_NODE = "node"
+
+        /** A relay ran it under a warrant, or answered it by query (mero-js `'relay'`). */
+        const val TRANSPORT_RELAY = "relay"
     }
 }
 
