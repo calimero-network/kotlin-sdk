@@ -432,19 +432,19 @@ private fun advisories(level: JsonObject): List<String> = (level["advisoryIDs"] 
 
 // ---- Quotes -----------------------------------------------------------------------------
 
-private class QuoteHeader(
+internal class QuoteHeader(
     val version: Int,
     val attestationKeyType: Int,
     val teeType: Long,
 )
 
-private class CertificationData(
+internal class CertificationData(
     val certType: Int,
     val body: ByteArray,
 )
 
 /** dcap-qvl `AuthDataV3` (a v4 quote's auth data is read into this shape). */
-private class AuthData(
+internal class AuthData(
     val ecdsaSignature: ByteArray,
     val ecdsaAttestationKey: ByteArray,
     val qeReport: ByteArray,
@@ -453,7 +453,7 @@ private class AuthData(
     val certificationData: CertificationData,
 )
 
-private class ParsedQuote(
+internal class ParsedQuote(
     val header: QuoteHeader,
     val report: DcapReport,
     val authData: AuthData,
@@ -528,7 +528,7 @@ private class ParsedQuote(
 }
 
 /** dcap-qvl's little-endian `BinaryReader`. */
-private class QuoteReader(
+internal class QuoteReader(
     private val buffer: ByteArray,
 ) {
     private var offset = 0
@@ -584,7 +584,7 @@ private class QuoteReader(
 
 // ---- Certificates and CRLs (dcap-qvl `utils.js`) -------------------------------------------
 
-private class StrictCertificate(
+internal class StrictCertificate(
     val der: ByteArray,
     val asn: AsnCertificate,
 ) {
@@ -593,7 +593,7 @@ private class StrictCertificate(
     val extensions: Extensions? get() = asn.tbsCertificate.extensions
 }
 
-private class StrictCrl(
+internal class StrictCrl(
     val der: ByteArray,
     val asn: CertificateList,
 ) {
@@ -601,7 +601,7 @@ private class StrictCrl(
 }
 
 @Suppress("TooManyFunctions")
-private object Pki {
+internal object Pki {
     /** ecdsa-with-SHA256 / SHA384 (dcap-qvl also names SHA-224 and SHA-512, which Intel never uses). */
     private val SIGNATURE_HASHES = mapOf("1.2.840.10045.4.3.2" to Hash.SHA256, "1.2.840.10045.4.3.3" to Hash.SHA384)
     private val PEM = Regex("-----BEGIN CERTIFICATE-----\\r?\\n?([A-Za-z0-9+/=\\r\\n]+)\\r?\\n?-----END CERTIFICATE-----")
