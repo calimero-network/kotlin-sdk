@@ -172,6 +172,9 @@ class MeroClient(
 
     private val node = MutableStateFlow<Mero?>(null)
     private var monitor: Job? = null
+
+    /** A session [connectWithAccount] adopted for this process, ahead of the persisted one. */
+    @Volatile private var adoptedSession: DelegatedSession? = null
     private var appIdJob: Job? = null
 
     /**
@@ -188,6 +191,9 @@ class MeroClient(
 
     /** An account on a relay rather than a node login (mero-react `isDelegated`). */
     val isDelegated: Boolean get() = _state.value.isDelegated
+
+    /** The account session in use: one [connectWithAccount] adopted, else the persisted one. Null when not signed in. */
+    val delegatedSession: DelegatedSession? get() = adoptedSession ?: account.session()
 
     // ---- Calimero Cloud ------------------------------------------------------------------
 
@@ -255,6 +261,7 @@ class MeroClient(
      * `/auth/validate`. Returns whether a session came back.
      */
     suspend fun restore(): Boolean {
+        adoptedSession = null
         if (!account.isSignedIn) return restoreNodeSession()
         _state.update { stateFor().copy(isLoading = true) }
         // Re-ask the cloud: the account may have gained a relay (or moved) since last time.
@@ -266,12 +273,12 @@ class MeroClient(
 
     /**
      * Adopt a delegated session — an account, a device it certified, and a relay that writes on
-     * its behalf (mero-react `connectWithAccount`). Persisted first, so [restore] finds it. Used
-     * after a join moved the account onto the relay that admitted it.
+     * its behalf (mero-react `connectWithAccount`). Used after a join moved the account onto the
+     * relay that admitted it. Held in memory only: what persists stays [CloudAccount]'s (a join
+     * through it saves the moved session itself), so [restore] reconnects from there.
      */
     suspend fun connectWithAccount(session: DelegatedSession) {
-        account.saveSession(session)
-        connect(note = null)
+        connect(note = null, adopted = session)
     }
 
     /**
@@ -490,6 +497,7 @@ class MeroClient(
         tokenStore.clear()
         _connection.value = null
         account.signOut(forgetDevice)
+        adoptedSession = null
         storage.clearAll()
         _session.value = MeroSession()
         _state.value = MeroAuthState()
@@ -555,6 +563,8 @@ class MeroClient(
                 isDelegated = false,
                 can = MeroCapabilities.NODE,
             )
+        // A development username/password session is not health-monitored (Swift parity).
+        if (username != null) return
         monitor =
             OnlineMonitor(
                 events = events,
@@ -565,9 +575,13 @@ class MeroClient(
             ).start(scope)
     }
 
-    private suspend fun connect(note: String?) {
+    private suspend fun connect(
+        note: String?,
+        adopted: DelegatedSession? = null,
+    ) {
         monitor?.cancel()
-        val session = account.session()
+        if (adopted != null) adoptedSession = adopted
+        val session = adoptedSession ?: account.session()
         if (session == null) {
             _state.value = stateFor()
             _session.value = MeroSession()
@@ -681,7 +695,7 @@ class MeroClient(
     }
 
     private fun stateFor(): MeroAuthState {
-        val s = account.session()
+        val s = adoptedSession ?: account.session()
         return MeroAuthState(isAuthenticated = s != null, account = s?.account, device = s?.device, relayUrl = s?.relayUrl)
     }
 

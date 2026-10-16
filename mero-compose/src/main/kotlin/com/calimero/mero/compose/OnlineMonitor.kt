@@ -28,9 +28,11 @@ private const val HTTP_FORBIDDEN = 403
  *
  * 1. The token family is gone ([AuthRevokedException]: 403 `token_revoked`, 401 `token_reuse`) —
  *    nothing will reopen the stream and there is no refresh token left: [StreamVerdict.LOGOUT].
- * 2. `403 permission_denied`: the token was minted without `context:subscribe`, and a refresh
- *    re-issues the same grants — only a fresh login fixes it: [StreamVerdict.LOGOUT].
- * 3. Any other 403 is core refusing this caller for a reason a new token would not change: offline.
+ * 2. A 403 naming an auth error (`permission_denied`: the token was minted without
+ *    `context:subscribe`, and a refresh re-issues the same grants; or any other `x-auth-error`)
+ *    — only a fresh login fixes it: [StreamVerdict.LOGOUT].
+ * 3. A 403 with no auth error is core refusing this caller for a reason a new token would not
+ *    change ("not the session owner"): offline.
  *
  * A 401 is not proof the session is over — the stream authenticates only at connect, so the
  * first reconnect after the access token ages out answers 401: [StreamVerdict.RECOVER].
@@ -44,7 +46,7 @@ fun streamFailureVerdict(
     if (delegated) return StreamVerdict.OFFLINE
     if (error is AuthRevokedException) return StreamVerdict.LOGOUT
     if (error is HttpException && error.status == HTTP_FORBIDDEN) {
-        return if (error.authError == "permission_denied") StreamVerdict.LOGOUT else StreamVerdict.OFFLINE
+        return if (error.authError != null) StreamVerdict.LOGOUT else StreamVerdict.OFFLINE
     }
     val status = (error as? HttpException)?.status
     return if (status == HTTP_UNAUTHORIZED || error.message.orEmpty().contains("401")) StreamVerdict.RECOVER else StreamVerdict.OFFLINE

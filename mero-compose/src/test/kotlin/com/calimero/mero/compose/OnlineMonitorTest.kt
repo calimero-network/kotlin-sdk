@@ -27,6 +27,7 @@ class OnlineMonitorTest {
     fun `stream failures map to mero-react's three answers`() {
         assertEquals(StreamVerdict.LOGOUT, streamFailureVerdict(AuthRevokedException("token_revoked", 403, "", emptyMap(), "u"), false))
         assertEquals(StreamVerdict.LOGOUT, streamFailureVerdict(http(403, "permission_denied"), false))
+        assertEquals(StreamVerdict.LOGOUT, streamFailureVerdict(http(403, "token_expired"), false))
         assertEquals(StreamVerdict.OFFLINE, streamFailureVerdict(http(403), false))
         assertEquals(StreamVerdict.RECOVER, streamFailureVerdict(http(401, "token_expired"), false))
         assertEquals(StreamVerdict.RECOVER, streamFailureVerdict(IllegalStateException("SSE connection failed: 401"), false))
