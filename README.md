@@ -23,7 +23,7 @@ See [`ROADMAP-TASKS/task-2-android-sdk.md`] in the planning repo for the full de
 | Module         | What it is                                                                 |
 |----------------|-----------------------------------------------------------------------------|
 | `mero-core`    | The SDK: the Cloud account layer (`account`, `cloud`, `relay`, `crypto` packages: `CloudAccount`, device keys, enrolment, `CloudClient` (device-proven routing plus cloud login sessions, HA and account linking), `connectCloud`, `RelayClient`, warrants), plus `Mero`, HTTP transport (OkHttp), `AuthApi` (incl. root/client keys + permissions), `AdminApi` (~140 methods), `RefreshCoordinator`, `TokenStore` (node-bound bundles), `RpcClient`, `SseClient`/`events()` + the long-lived `SseConnection` (`Mero.sse`, live subscribe/unsubscribe, typed migration/membership/app-version events), an experimental `WsClient`, ephemeral presence (`Mero.ephemeral`, device-signed `RelayPresenceClient`), `Capabilities` (+ presets, `capMask`/`capNames`), `classifyError`, local-node discovery, SSO with single-use callback state, and TEE trust (`tee`: Sigstore-verified releases, on-device DCAP, `SealedTransport`; `agentgate`: the mero-agent-gate client). |
-| `mero-compose` | Optional Jetpack Compose UI kit, Cloud sign-in: `MeroClient` (`signInWithCloud`, `handleEnrolmentCallback`, plus a development-only `login(nodeUrl, username, password)`), `LoginSheet` ("Continue with Calimero"), `ConnectButton`, `MeroProvider`/`useMero`. |
+| `mero-compose` | Optional Jetpack Compose kit, the mero-react port: `MeroClient` as the provider (Cloud sign-in, node SSO with node-URL trust and token adoption, `AppMode`, `can`, the session admin, SSE-driven `isOnline`, `MeroAppStorage`, plus a development-only `login(nodeUrl, username, password)`), a state holder and `remember*` composable for every mero-react hook (reads, writes, execute, subscriptions, presence, migrations, blobs), invitations (capture from intents, `InviteRedemption`, `InvitationDialog`, `InvitationGate`, `JoinSync`, `JoinInvitation`), and `LoginSheet` (Node and Cloud tabs), `ConnectButton`, `MeroTheme`, `CalimeroLogo`, `MigrationPendingBanner`, `MigrationAdminPanel`. |
 | `mero-testkit` | Test-support: `FakeNode`, a stateful in-memory node on OkHttp MockWebServer, and `FakeCloud` (its cloud-manager + hosted-relay routes), for driving whole sign-in → call → sign-out journeys with no live service. |
 | `sample-app`   | A Compose sample in the light Calimero style: Cloud sign-in, a native chat client and an **SDK Explorer** over the relay session, plus a deterministic mock mode that drives the instrumented UI test. |
 
@@ -234,7 +234,10 @@ node-bound token persistence, error classification and local-node discovery. A l
   quote verification (`Dcap`, a dcap-qvl port), DCAP-verified relay node keys, the sealed
   transport (Noise NK, wire-identical with core) for `connectCloud` and delegated sessions, and
   the mero-agent-gate client (HPKE Auth mode, signed agent policies).
-- [ ] **M5** — More Compose hooks (`useSubscription`, `useMigrationStatus`, …).
+- [x] **M5** — mero-react parity in Compose: the provider (app modes, node SSO trust and token
+  adoption, online state, account/node admin, `can`), a state holder per hook, the invitation
+  flow (capture, redemption, dialog, gate, join sync), and the Node/Cloud login sheet, connect
+  button, theme and migration composables.
 - [ ] **M6** — Maven Central publishing, version-aligned to the mero-js contract.
 
 ## License

@@ -364,6 +364,69 @@ Pinned to `0.11.0-rc.83` in `ci/core-version` (and the matching
   [Sealed transport](docs/src/content/docs/guides/sealed-transport.mdx) and
   [Agent gate](docs/src/content/docs/guides/agent-gate.mdx) guides.
 
+### Changed — mero-compose (mero-react parity)
+
+- `ConnectButton` follows mero-react: "Connect" opens a `LoginSheet` in a dialog (or calls
+  `onConnect`), "Reconnecting..." while a node's stream is down, "Connected" with a menu
+  (account or node, relay note, Log out). It no longer opens the wallet directly; new
+  `labels`, `logoOnly`, `tabs` and `theme` parameters.
+- `LoginSheet` has **Node** and **Cloud** tabs (`tabs`, `initialTab = LoginModalTab.CLOUD`) and
+  its colours default to `LoginSheetColors.from(LocalMeroTheme.current)` (mero-react's dark
+  `defaultMeroTheme`). Pass `colors = LoginSheetColors()` and `tabs = listOf(LoginModalTab.CLOUD)`
+  for the previous light, Cloud-only sheet (the sample does). Existing test tags are unchanged.
+- `MeroClient.signOut` / `logout` also clear `MeroAppStorage` (node URL, application, context)
+  and the node session; `restore()` returns whether a session came back and restores a stored
+  node session when no Cloud account is signed in. `MeroAuthState.isDevNodeSession` now needs a
+  `username` (an SSO node session is `isNodeSession`).
+
+### Added — mero-compose (mero-react parity)
+
+- **Provider**: `AppMode` (`MULTI_CONTEXT`, `ADMIN`, deprecated `SINGLE_CONTEXT`) and
+  `permissionsFor(mode)`; `MeroCapabilities` (`NODE`, `account(hasPackage)`, `NONE`) as
+  `MeroClient.can`; `MeroAppConfig` (mode, package, registry, cloud, `allowedNodeUrls`,
+  timeout). `MeroClient.connectToNode` / `nodeLoginUrl` / `handleAuthCallback` /
+  `handleDeepLink` / `restoreNodeSession` sign in through a node's own login page, adopting the
+  callback only from a trusted node (`sameOrigin`, `resolveTrustedNodeUrl` — mero-react
+  `auth/node-trust.ts`) and only when safe (`decodeJwtClaims`, `resolveTokenAdoption`,
+  `TokenAdoptionReason` — `auth/token-adoption.ts`), then validate with `/auth/validate`.
+  `MeroAuthState` gains `isOnline`, `applicationId`, `contextId`, `contextIdentity`,
+  `isNodeSession`, `isDelegated`. `isOnline` follows the node's SSE (`OnlineMonitor`,
+  `streamFailureVerdict`: a revoked family or a `403` with an `x-auth-error` logs out, a `401`
+  recovers). `MeroClient.session` (`MeroSession`: session `admin` — `createNodeAdmin` or
+  `createAccountAdmin` — `rawAdmin`, `rpc`, `events`, `presence`, `isDelegated`, `delegated`,
+  `can`), `admin`, `isDelegated`, `delegatedSession`, `connectWithAccount` (in memory),
+  `selectContext`; an account's `applicationId` is resolved from the registry by `packageName`,
+  else from its contexts. `MeroAppStorage` (SharedPreferences, mero-react's keys) with
+  `KeyValueStore`, `SharedPreferencesStore`, `MemoryKeyValueStore`.
+- **State holders** (`com.calimero.mero.compose.state`): `AsyncResource` / `ResourceState`,
+  `AsyncMutation` / `AdminMutation` / `MutationState`, `NotConnectedException`; `MeroReads`
+  (contexts, groups, members, subgroups, capabilities, visibility, upgrade status, metadata,
+  namespaces, node identity, blob info, `isBlobNotFound`); a write holder per write hook
+  (`CreateContext`, `CreatePrivateContext`, `JoinContext`, `JoinNamespace`, `RedeemInvitation`,
+  `UpgradeGroup`, `InstallFromRegistry`, `UploadBlob`, …); `ExecuteState`,
+  `SubscriptionState`, `EphemeralState`, `ContextDiscoveryState`, `GroupCapabilitiesState`,
+  `MigrationEventsState`, `MigrationStatusState` (SSE, 5 s poll fallback), `AppVersionState`,
+  `LatestVersionState`, `GroupAppVersionState`, `MyAuthoredMigrationState`, `BlobFileState`;
+  and `remember*` composables for each.
+- **Invitations** (`com.calimero.mero.compose.invitations`): `InvitationCapture`,
+  `primeInvitationCapture`, `onInvitation`, `peekInvitation`, `subscribeInvitation`,
+  `CapturedInvitation`, `buildInviteLink`, `invitationFromRaw`, `urlWithoutInvitation`,
+  `MAX_AUTO_JOIN_ATTEMPTS`; `InviteRedemption` / `InviteState` / `ParsedInvitation`,
+  `describeInviteFailure`, `JustJoinedNamespaces`, `JoinSync` (+ `JOIN_SYNC_*`),
+  `InvitationDialogModel` / `invitationDialogCopy` / `INVITATION_READY_MS`,
+  `decideInvitationGate` / `invitationGateCopy`, `JoinInvitation` / `JoinInvitationStep` /
+  `isFinalInvitationError`, `DelegatedBootstrap`; `AccountEnrolment` and `isReturningFromWallet`.
+- **Composables**: `MeroTheme` / `defaultMeroTheme` / `lightMeroTheme` / `LocalMeroTheme` /
+  `ProvideMeroTheme`, `CalimeroLogo` / `CalimeroLogoVector`, `AccountSignInPanel`,
+  `LoginModalTab` (`LoginTab`) with `NodeLoginState`, `isValidNodeUrl`, `localDiscoveryHost`,
+  `MigrationPendingBanner`, `MigrationAdminPanel`, `InvitationDialog`, `InvitationGate`,
+  `JoinSyncBanner`, `rememberInviteRedemption`, `rememberJoinSync`, `rememberPendingInvitation`.
+- Not ported: mero-react's `useNamespaceIdentity` (core serves no namespace-identity route),
+  `MigrationStatus.fleetCompletedAt` (not in the Kotlin type yet).
+- Docs: [Compose frontend](docs/src/content/docs/guides/compose-frontend.mdx),
+  [Compose state holders](docs/src/content/docs/guides/compose-state.mdx) and
+  [Invitations in Compose](docs/src/content/docs/guides/compose-invitations.mdx).
+
 ### Changed — events and presence
 
 - An SSE `401` whose `x-auth-error` is `token_reuse` / `token_revoked` now ends the

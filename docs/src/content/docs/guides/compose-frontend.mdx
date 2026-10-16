@@ -1,6 +1,6 @@
 ---
 title: Compose Frontend
-description: mero-compose — Cloud-only sign-in for Compose apps. The MeroClient view-model, MeroProvider/useMero, and the drop-in "Continue with Calimero" LoginSheet and ConnectButton.
+description: mero-compose — mero-react for Compose. The MeroClient provider (Cloud and node sessions, app modes, node trust, online state), MeroProvider/useMero, LoginSheet with Node and Cloud tabs, ConnectButton and MeroTheme.
 sidebar:
   order: 5
 ---
@@ -11,10 +11,12 @@ import Figure from '../../../components/Figure.astro';
 `mero-compose` is an optional Jetpack Compose layer that ships alongside the core
 SDK — a `MeroClient` view-model exposing a `StateFlow<MeroAuthState>`, a
 `MeroProvider`/`useMero` pair for passing it down the tree, and ready-made
-`LoginSheet` / `ConnectButton` composables. It's the analog of mero-react's
-`MeroProvider`/`useMero` + `LoginModal` in its **Cloud** mode: sign-in is
-"Continue with Calimero" and nothing else — no node URL, username or password.
-See [Authentication](/get-started/authentication/#sign-in-with-calimero-mobile)
+`LoginSheet` / `ConnectButton` composables. It's the port of mero-react: `MeroClient`
+is its `MeroProvider` (the `useMero()` value), the [state holders](/guides/compose-state/)
+are its hooks, and the [invitation flow](/guides/compose-invitations/) is its
+`invitations` module. On a phone, sign-in is "Continue with Calimero" (the **Cloud**
+tab); a node you run can be signed in to through its own login page (the **Node**
+tab). See [Authentication](/get-started/authentication/#sign-in-with-calimero-mobile)
 for what happens underneath.
 
 Add the optional dependency (see [install](/get-started/quickstart/#install)):
@@ -44,10 +46,11 @@ fun App(context: Context) {
     }
 }
 
-// The Activity that owns the callback intent filter forwards the wallet's redirect:
+// The Activity that owns the callback intent filter forwards every redirect — the
+// wallet's, and a node login page's SSO callback:
 override fun onNewIntent(intent: Intent) {
     super.onNewIntent(intent)
-    intent.data?.toString()?.let { lifecycleScope.launch { client.handleEnrolmentCallback(it) } }
+    intent.data?.toString()?.let { lifecycleScope.launch { client.handleDeepLink(it) } }
 }
 ```
 
@@ -91,68 +94,132 @@ override fun onNewIntent(intent: Intent) {
 
 ## `MeroClient`
 
-A plain (non-composable) class wrapping a `CloudAccount`, exposing one observable
-state flow. `MeroAuthState` carries `isAuthenticated`, `isLoading`, `account`,
-`device`, `relayUrl`, `sessionReady` (a Bearer session on the relay exists),
-`relayNote`, `cancelled` and `error`, plus `signedInWithoutRelay` — and, for a
-development login, `nodeUrl` / `username` / `isDevNodeSession`.
+A plain (non-composable) class: mero-react's `MeroProvider` state and actions.
+`MeroAuthState` carries `isAuthenticated`, `isLoading`, `account`, `device`,
+`relayUrl`, `sessionReady`, `relayNote`, `cancelled`, `error`, `nodeUrl`,
+`username`, `isOnline`, `applicationId`, `contextId` and `contextIdentity`, plus
+`signedInWithoutRelay`, `isNodeSession`, `isDevNodeSession` and `isDelegated`.
 
 ```kotlin
 class MeroClient(
     val account: CloudAccount,
     tokenStore: TokenStore = MemoryTokenStore(),
-    launchWallet: (Context, String) -> Unit = WalletLauncher::launch,   // a Custom Tab
+    launchWallet: (Context, String) -> Unit = WalletLauncher::launch,
+    val config: MeroAppConfig = MeroAppConfig(),          // mode, packageName, allowedNodeUrls, …
+    val storage: MeroAppStorage = MeroAppStorage(),       // node URL, application, context
+    launchLogin: (Context, String) -> Unit = …,           // a node's login page, in a Custom Tab
+    val pendingAuth: PendingAuthStates = PendingAuthStates.shared,
+    …
 ) {
     val state: StateFlow<MeroAuthState>
-    val relay: RelayClient?        // warranted writes, reads by query
-    val mero: Mero?                // admin / events on the relay (Bearer)
+    val session: StateFlow<MeroSession>   // what the state holders read
+    val admin: AdminSurface?              // node admin, or the account admin
+    val can: MeroCapabilities             // createNamespace / createContext / invite / upgrade
+    val isDelegated: Boolean
+    val relay: RelayClient?
+    val mero: Mero?
 
     fun signInWithCloud(context: Context, callbackUrl: String)
-    suspend fun handleEnrolmentCallback(url: String): Boolean
-    suspend fun restore()
-    suspend fun joinWithInvitation(namespaceId: String, invitation: SignedGroupOpenInvitation): JoinResult
-    suspend fun signOut(forgetDevice: Boolean = false)   // retires the relay session on the relay
+    fun connectToNode(context: Context, nodeUrl: String, callbackUrl: String)
+    suspend fun handleDeepLink(url: String): Boolean      // enrolment or SSO callback
+    suspend fun restore(): Boolean                        // Cloud session, else the stored node session
+    suspend fun connectWithAccount(session: DelegatedSession)
+    fun selectContext(contextId: String?, contextIdentity: String? = null)
+    suspend fun logout()                                  // clears tokens, session and storage
 
-    // Development only: username/password on a node you run yourself.
-    suspend fun login(nodeUrl: String, username: String, password: String): Boolean
+    suspend fun login(nodeUrl: String, username: String, password: String): Boolean  // development only
 
     companion object {
-        fun create(context: Context, cloudBaseUrl: String = …, walletUrl: String = …): MeroClient
+        fun create(context: Context, cloudBaseUrl: String = …, walletUrl: String = …, config: MeroAppConfig = …): MeroClient
     }
 }
 ```
 
+### App modes and what a session may do
+
+`MeroAppConfig.mode` is mero-react's `AppMode` — `MULTI_CONTEXT` (the default),
+`ADMIN`, and the deprecated `SINGLE_CONTEXT` — and decides the grants a node login
+asks for (`permissionsFor(mode)`; `MULTI_CONTEXT` includes `context:subscribe`, which
+every event stream needs, and `context:delete`). `can` answers *what is allowed*: a
+node session can do everything (`MeroCapabilities.NODE`); an account can create
+contexts and invite, founds a namespace only when the app names its `packageName`,
+and never upgrades.
+
+`admin` is the one admin API to write against: a node's (`createNodeAdmin`, which
+installs the app's package before founding a namespace when needed) or the account
+admin (`createAccountAdmin`, reads from the relay, writes as delegated ops). For an
+account, `applicationId` is derived — from the registry by `packageName`, else from the
+account's contexts when they name exactly one application.
+
+### Node sessions and SSO
+
+`connectToNode` records the node as the trust anchor and opens its login page
+(`buildAuthLoginUrl` with this app's mode, grants and package, and a single-use
+`auth_state`). The callback is accepted only when:
+
+1. it answers a login started here (`PendingAuthStates`);
+2. its `node_url` shares the started node's origin, or — with no started node — is in
+   `MeroAppConfig.allowedNodeUrls` (`resolveTrustedNodeUrl`, mero-react
+   `auth/node-trust.ts`). An untrusted one stores nothing and restores any existing
+   session, so a tampered link cannot log anyone out;
+3. its tokens are adopted only when nothing is stored, the node changed, they are
+   newer, or they fill a missing refresh token (`resolveTokenAdoption`, mero-react
+   `auth/token-adoption.ts`) — never over a bundle the SDK already rotated, which the
+   node would read as refresh-token reuse and revoke the whole family.
+
+The session is then checked with `/auth/validate` (no permission needed), and the
+application, context and identity the callback named are kept in `MeroAppStorage`
+(SharedPreferences, mero-react's keys). `isOnline` follows the node's event stream: a
+connect is online, a failure offline; a revoked family or a `403` naming an auth error
+(a token minted without `context:subscribe`) logs out; a `401` is first recovered
+through `/auth/validate`. A development `login` is not monitored.
+
 `login` is for development against your own `merod` (from the emulator,
-`http://10.0.2.2:2428`): on success `mero` talks to that node, on failure the
-reason is in `error`. Do not ship it — a shipped app signs people in with Calimero.
+`http://10.0.2.2:2428`). Do not ship it.
 
 `handleEnrolmentCallback` verifies the certificate against this device's own keys
-and the `state` it sent before storing anything, so a crafted deep link cannot sign
-the app in to someone else's account. A declined approval sets `cancelled`, not
-`error`.
+and the `state` it sent before storing anything. A declined approval sets
+`cancelled`, not `error`.
 
 ## Drop-in composables
 
-Both default their `client` to `useMero()`:
+All default their `client` to `useMero()` and their colours to the ambient `MeroTheme`:
 
 | Composable | Purpose |
 | --- | --- |
 | `MeroProvider(client) { … }` | provides the `MeroClient` via a `CompositionLocal` |
 | `useMero()` | reads the provided client (throws if no provider above) |
-| `LoginSheet(callbackUrl, onAuthenticated, colors)` | "Continue with Calimero" → `client.signInWithCloud(...)` |
-| `ConnectButton(callbackUrl, onConnect)` | "Continue with Calimero" when signed out, "Sign out" when signed in |
+| `LoginSheet(callbackUrl, tabs, initialTab, nodeCallbackUrl, onConnectNode, colors)` | **Cloud** tab (`AccountSignInPanel`, "Continue with Calimero") and **Node** tab (local nodes found on `10.0.2.2` on an emulator, `localhost` on a device, plus a manual URL) |
+| `ConnectButton(callbackUrl, onConnect, labels, logoOnly, tabs)` | "Connect" (opens the sheet), "Reconnecting...", or "Connected" with the account / node and "Log out" |
+| `CalimeroLogo(size, color)` | the emblem (`CalimeroLogoVector`) |
+| `MigrationPendingBanner(contextId, onMigrated)` | "re-sign your entries" with a one-tap convert |
+| `MigrationAdminPanel(namespaceId, pollIntervalMs)` | a namespace's migration rollup and members |
+| `InvitationDialog`, `InvitationGate`, `JoinSyncBanner` | see [Invitations](/guides/compose-invitations/) |
 
 ```kotlin
 LoginSheet(
     callbackUrl = "myapp://calimero-enrol",
+    tabs = listOf(LoginModalTab.CLOUD),          // Cloud only; the default has both, Cloud selected
     onAuthenticated = { /* navigate home */ },
 )
 
 ConnectButton(callbackUrl = "myapp://calimero-enrol")
 ```
 
-`LoginSheet` uses the light Calimero tokens by default; pass `LoginSheetColors(...)`
-to restyle it.
+`LoginModalTab` (also `LoginTab`) is `NODE` or `CLOUD`. The sheet's existing test tags
+(`cloudLoginTitle`, `cloudLoginButton`, `cloudLoginError`, `cloudLoginCancelled`) are
+unchanged; the Node tab adds `loginTabNode`, `nodeOption-…`, `nodeUrlInput` and
+`nodeConnectButton`.
+
+### Theme
+
+`MeroTheme` has mero-react's tokens (`primary`, `primaryHover`, `primaryText`,
+`background`, `backgroundSecondary`, `backgroundTertiary`, `border`, `text`,
+`textSecondary`, `error`, `overlay`, `radius`). `defaultMeroTheme` is mero-react's dark
+palette (accent `#A5FF11`); `lightMeroTheme` is the light Calimero style. Provide one
+with `ProvideMeroTheme(theme) { … }` and restyle with `copy(...)`.
+`LoginSheetColors.from(theme)` derives the sheet's colours; `LoginSheetColors()` is
+still the light set.
 
 <Aside type="note">
   For tests or a mock backend, build a `CloudAccount(MemorySecureStore(), cloudBaseUrl = …)`

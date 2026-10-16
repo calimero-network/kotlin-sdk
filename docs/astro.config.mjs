@@ -75,6 +75,8 @@ export default defineConfig({
             'guides/agent-gate',
             'guides/blobs',
             'guides/compose-frontend',
+            'guides/compose-state',
+            'guides/compose-invitations',
           ],
         },
         {
