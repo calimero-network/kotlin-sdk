@@ -200,6 +200,86 @@ Pinned to `0.11.0-rc.83` in `ci/core-version` (and the matching
 - Docs: [Calimero Cloud](docs/src/content/docs/guides/cloud.mdx) guide and
   [CloudClient](docs/src/content/docs/reference/cloud.mdx) reference.
 
+### Breaking — delegated accounts (mero-js parity)
+
+- **Security fix (mero-js #264): an invitation's unsigned `admitter_addrs` is never used as a
+  relay.** It sits outside the inviter's signature, so an http(s) entry there could name a host
+  that proxies a genuine relay. `Join.resolveRelayFromInvitation` no longer falls back to it:
+  a namespace the cloud lists no node for is `JoinStep.NO_NODES`. And
+  `CloudAccount.createNamespaceInvitation` refuses a namespace the cloud routes nowhere with
+  `InvitationNotClaimableException` (`reason = InvitationNotClaimableReason.NOT_HOSTED`), where
+  it used to put the relay's URL in `admitter_addrs`. `InvitationNotClaimableException` takes a
+  `reason` (`NOT_HOSTED` / `NO_NAMED_NODE`); `notHosted` and the boolean constructor remain.
+- **`CloudAccount.bootstrapFromInvitation` returns a `BootstrapResult`** (`Success(session, relay,
+  published)` / `Failure(step, reason, status)`) and never throws for an expected failure, as in
+  mero-js. It persists nothing. `JoinStep` (alias `BootstrapStep`) gains `INVITED_UNREACHABLE`
+  and `NO_CREDENTIAL` and a `wire` spelling. `CloudAccount.joinAsAccount(namespaceId, …)` still
+  throws `JoinException`, and now also records the relay in the account's relay map.
+- **`AdminApi` implements `AdminSurface`.** Every method is now an `override` and its default
+  arguments are declared on the interface. Calls compile unchanged. A subclass that overrode
+  an `AdminApi` method must drop the defaults it re-declared.
+- **Founding attests the relay afresh** (`foundDelegatedNamespace`, which
+  `CloudAccount.foundNamespace` now delegates to): a pinned key no longer stands in for the
+  attestation. Founding uses the first of the account's known relays, and learns the executor
+  account from the relay map when the session does not name it.
+- The HA refusal advice for `account_not_linked` is mero-js's current wording
+  (`HA_ACCOUNT_NOT_LINKED_MESSAGE`); `AccountHaRefusedException.ADVICE` is `HA_REFUSAL_MESSAGES`.
+
+### Added — delegated accounts and the unified transport (mero-js parity)
+
+- **Relay map** (mero-js `session.ts`), per account in the `CloudAccount`'s `SecureStore` under
+  mero-js's keys: `RelayMap`, `readRelayMap`, `rememberRelay`, `relayForContext`, `knownRelays`,
+  `listDelegatedContexts` / `listDelegatedNamespaces` (the union across every known relay, each
+  recorded as served by the relay that listed it; `DelegatedContext` / `DelegatedNamespace`),
+  `carryExecutorAccount`, `rememberGroupNamespace` / `namespaceOfGroup`, `persistedNonces` and
+  `markContextNonceSpent`.
+- **Relay node key learning**: `CloudAccount.attemptRelayNodeKey(relayUrl, fresh)` →
+  `RelayNodeKeyAttempt` (`Learned` / `Unavailable` / `Refused`), `resolveRelayNodeKey`,
+  `learnRelayNodeKey(relayUrl, retryMs = RELAY_NODE_KEY_RETRY_MS)` (1, 2, 5, 10, then every
+  30 s, cancelled with its coroutine, `null` on a refusal), `readPinnedRelayNodeKey`.
+- **`CloudAccount.buildDelegatedClient(session, contextId?)`**: a relay-transport client whose
+  requests carry the device certificate's request proof, whose reads try `/query` first (a
+  `409` marks the method a write and falls back to a warrant), and whose events stay inert on a
+  hosted relay until its key is known. `null` without a relay. The write-method cache is shared
+  per relay, context and method, as in mero-js (`forgetMethodKinds()` for tests).
+- **`MeroTransportClient`** (`com.calimero.mero.transport`, mero-js `MeroClient`):
+  `MeroTransportConfig.Node` / `.Relay`, with `rpc` as an `ExecuteTransport`
+  (`execute` / `executeWithMetadata` → `ExecuteResult(returns, transport, rootHash?)` /
+  `migrateMyEntries` / `countMyPending`, plus `executeAs<T>`), `canSubscribe`, `node`, `relay`,
+  `admin`, `auth`, `events`, `ws` (refused for a proof-only relay client), `ephemeral`
+  (`TransportEphemeral.Node` / `.Relay`), `cloud` and `close()`. Also `NodeTransport`,
+  `RelayTransport`, `RelayObserver` / `RelayObserveConfig` (a lazily minted, single-flight
+  `account_proof` session that re-mints near expiry), `createMeroClient`, and
+  `RpcExecution.TRANSPORT_RELAY`.
+- **Account admin** (mero-js `account-admin.ts`): `createAccountAdmin(session, read, app, deps)`
+  / `CloudAccount.accountAdmin(...)` return an `AdminSurface`. Writes become governance ops,
+  delegated creations, or invitations signed by this device; node-only calls throw
+  `NotForAccountException`; with no relay, listings are empty and other calls throw
+  `NoRelayException`. `AccountApp`, `AccountAdminDeps` / `CloudAccountAdminDeps`.
+  `createNodeAdmin(admin, app)` installs the app from the registry before `createNamespace`.
+  `CreateNamespaceResponseData` gains `haEnabled` / `haError` (account admin only).
+  `classifyError` reads `NotForAccountException` as `FORBIDDEN`, and `NoRelayException` /
+  `InvitationNotClaimableException` as `UNAVAILABLE`, as Swift does.
+- **Delegated governance** (mero-js `create-context.ts`, `govern.ts`): `createDelegatedContext`
+  (creation nonce `0`, the relay remembered), `createDelegatedPrivateContext` (a restricted
+  subgroup, its members, the context), `delegatedGovernance` (per-(relay, group)
+  clock-floored nonces), `governGroup` / `governRoot`, `foundDelegatedNamespace`,
+  `latestPublishedVersion`, `HA_ACCOUNT_NOT_LINKED_MESSAGE`, `HA_REFUSAL_MESSAGES`,
+  `CreateDelegatedContextRequest` / `CreatedDelegatedContext`.
+- **Invitation redemption** (mero-js `redeem-invitation.ts`): `redeemInvitation(namespaceId,
+  invitation, InviteRedeemer)` → `RedeemOutcome` (`Joined` / `AlreadyMember` /
+  `Failed(message, reason, retryable)`), `InviteFailureReason`, `isSettled`, `shouldRetain`,
+  and `AdminSurface.redeemInvitation(namespaceId, invitation, groupName, teamName)`.
+  `CloudAccount.joinAsAccount(session, namespaceId, invitation, cloudBaseUrl, onJoined)`
+  remembers the relay and moves the session onto it. `ResolvedRelay.peerId`.
+- `FakeCloud`: proof-authenticated reads (`acceptProofs`), `listedContexts`,
+  `listedNamespaces`, `contextGroups`, `groupNamespaces`, context-intents, `attestStatus` /
+  `attestBindsWrongKey`, `refuseNextGovernance`, `registryBundles`. A subgroup's create
+  answers the new group id.
+- SDK Explorer: `redeemInvitation`.
+- Docs: [Delegated accounts](docs/src/content/docs/guides/delegated-accounts.mdx) guide and
+  [Transport](docs/src/content/docs/reference/transport.mdx) reference.
+
 ### Changed — events and presence
 
 - An SSE `401` whose `x-auth-error` is `token_reuse` / `token_revoked` now ends the

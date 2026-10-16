@@ -1,0 +1,145 @@
+---
+title: Delegated accounts
+description: Run an app as a Cloud account with no node — relays per namespace, reads by query, governance through the relay, the account admin, and joining from an invitation.
+sidebar:
+  order: 9
+---
+
+A **delegated account** is a Cloud account on a phone: a certified device key, no node of its
+own, and one or more **relays** that run its writes under warrants it signs. This guide covers
+the layer on top of [`CloudAccount`](/guides/cloud/) that lets the same app code run against a
+node or an account. It is a port of mero-js `src/account/` and `src/transport/`.
+
+## Which relay serves what
+
+An account's namespaces may be served by different relays: the relay that admitted the account
+to a namespace serves that namespace's contexts. `CloudAccount` keeps a `RelayMap` per account in
+its `SecureStore` (mero-js's `calimero.delegated.relays.<account>` key):
+
+```kotlin
+account.rememberRelay(acc, relayUrl, namespaceId = ns)   // a join or a founding records it
+account.relayForContext(acc, contextId)                  // learned from each relay's listing
+account.knownRelays(session)                             // the session's relay first, then the map's
+val contexts = account.listDelegatedContexts(session)    // the union across every known relay
+val namespaces = account.listDelegatedNamespaces(session)
+```
+
+Each relay answers only for itself and this caller, so the union is exactly the account's own. A
+relay that cannot be reached, or whose key cannot be learned, is skipped. `rememberGroupNamespace`
+/ `namespaceOfGroup` remember which namespace a subgroup is in, so a group op goes to the right
+relay. Warrant nonces are one rising sequence per relay (`persistedNonces(relayUrl)`);
+`markContextNonceSpent` moves it past a creation nonce.
+
+## The relay's node key
+
+Logging in to a relay (for Bearer reads and SSE) signs a statement about the relay node's key,
+which must never come from the relay's answer to a login. It comes from the relay's attestation:
+
+```kotlin
+when (val attempt = account.attemptRelayNodeKey(relayUrl)) {
+    is RelayNodeKeyAttempt.Learned -> attempt.nodeKey       // pinned for next time
+    is RelayNodeKeyAttempt.Unavailable -> retryLater()       // the relay did not answer: nothing decided
+    is RelayNodeKeyAttempt.Refused -> showProblem()          // it answered and its proof did not hold
+}
+val key = account.learnRelayNodeKey(relayUrl)              // retries 1, 2, 5, 10, then every 30 s; null on refusal
+```
+
+`learnRelayNodeKey` waits an unreachable relay out on `RELAY_NODE_KEY_RETRY_MS` until its
+coroutine is cancelled. A refusal is final. Founding attests afresh (`fresh = true`) whatever is
+pinned: the relay founded through holds the namespace's keys.
+
+:::caution
+The verifier is still `TlsRelayKeyVerifier` (TLS plus the quote's nonce and key binding). The
+DCAP quote is not verified on mobile yet.
+:::
+
+## The delegated client
+
+```kotlin
+val client = account.buildDelegatedClient(session) ?: return   // null: no relay yet
+client.rpc.execute(contextId, "get_messages")                    // read: tried as /query first
+client.rpc.executeWithMetadata(contextId, "send", args).rootHash // write: a warrant
+client.admin.getContexts()                                       // this account's own, on this relay
+if (client.canSubscribe) client.events.subscribe(listOf(contextId))
+```
+
+It is a relay-transport [`MeroTransportClient`](/reference/transport/):
+
+- Requests are authenticated by the device certificate (a request proof). With the relay's node
+  key pinned, the client also logs in, because a hosted relay's forward-auth answers only Bearer.
+- Reads try `POST /admin-api/contexts/{ctx}/query` first. A `409` marks the method a write (kept
+  per relay, context and method, across rebuilds) and it goes out as a warrant. Any other query
+  failure falls back to the warrant, which reads too.
+- On a hosted relay whose key is not known yet, `canSubscribe` is false and `events` opens
+  nothing, instead of reconnecting forever on a `401`. Rebuild the client once the key is learned.
+
+## Governance and contexts
+
+```kotlin
+account.createDelegatedContext(session, CreateDelegatedContextRequest(ns, appId, serviceName = "docs"))
+account.createDelegatedPrivateContext(session, CreateDelegatedContextRequest(ns, appId), members = listOf(peer))
+account.governGroup(session, groupId, GovernanceOps.memberAddedOp(peer, GovernanceMemberRole.Member))
+account.governRoot(session, groupId, GovernanceOps.groupDeletedOp(groupId))
+account.foundDelegatedNamespace(session, defaultCapabilities = 231, application = target)
+```
+
+A context's creation warrant spends nonce `0` in the new context's own window. Governance
+nonces are kept per (relay, group), floored at the clock. `foundDelegatedNamespace` remembers the
+new namespace on its relay and, when the relay attested the founding, asks the cloud to host it.
+A refusal is reported in `HA_REFUSAL_MESSAGES` words (`HA_ACCOUNT_NOT_LINKED_MESSAGE`).
+`CloudAccount.foundNamespace` is the same call plus a display name.
+
+## One admin API for both
+
+`createAccountAdmin(session, read, app, deps)` returns an `AdminSurface`, the same interface
+`AdminApi` implements. So code written against a node's admin runs unchanged:
+
+```kotlin
+val admin: AdminSurface =
+    account.accountAdmin(session, read = client?.admin, app = AccountApp(packageName = "com.example.chat"))
+admin.createNamespace(CreateNamespaceRequest(appId, name = "Team"))   // founded through the relay
+admin.createGroupInNamespace(ns, CreateGroupInNamespaceRequest(groupName = "general"))
+admin.joinContext(contextId)                                           // MemberJoinedOpen
+admin.upgradeGroup(ns, request)                                        // NotForAccountException
+```
+
+- **Reads** go to the relay's caller-scoped admin client.
+- **Writes** become governance ops, delegated creations, or invitations signed by this device.
+  The invitation names the namespace's relays as admitters.
+- **Node-only calls** throw `NotForAccountException`: upgrades, installs, aliases, deleting or
+  leaving a node's copy of a context, TEE policy, blob deletion and account devices.
+- **No relay yet** (`read = null`): listings are empty, `getNodeIdentity` and `joinNamespace`
+  work, and everything else throws `NoRelayException`.
+
+`createNodeAdmin(admin, app)` is the node-side counterpart. Before `createNamespace` it installs
+the app from the registry when the node lacks it, and refuses a bundle that installs as a
+different application.
+
+## Joining from an invitation
+
+```kotlin
+when (val r = account.bootstrapFromInvitation(namespaceId, invitation)) {
+    is BootstrapResult.Success -> connect(r.session)        // the admitting node, used at once
+    is BootstrapResult.Failure -> show(r.step, r.reason)    // never thrown
+}
+account.joinAsAccount(session, namespaceId, invitation) { moved -> save(moved) }  // throws JoinException
+val outcome = admin.redeemInvitation(namespaceId, invitation)   // Joined / AlreadyMember / Failed
+if (shouldRetain(outcome)) keepForLater(invitation)
+```
+
+| step (`BootstrapStep`) | what to do |
+|---|---|
+| `ADMITTERS_LOOKUP` | the cloud read failed: retry; nothing is known about the invitation |
+| `NO_NODES` | the cloud lists no node for the namespace |
+| `NOT_INVITED` | the invitation names none of the nodes: ask for a fresh one |
+| `INVITED_UNREACHABLE`, `NO_RELAY_URL` | wait and retry |
+| `SIGN` | the join could not be signed; nothing was sent |
+| `ADMIT` | the node refused (`status`) or could not be reached |
+| `NO_CREDENTIAL` | nobody is signed in on this device |
+
+:::danger[Security]
+A node URL never comes from the invitation. Its `admitter_addrs` sit outside the inviter's
+signature. The node is the one you pass, or one the cloud's routing lists for the namespace
+(mero-js #264). For the same reason `createNamespaceInvitation` refuses a namespace the cloud
+routes nowhere, with `InvitationNotClaimableException(reason = NOT_HOSTED)`.
+:::

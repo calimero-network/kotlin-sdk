@@ -219,6 +219,10 @@ node-bound token persistence, error classification and local-node discovery. A l
 - [x] **M4.9** — mero-js parity: Calimero Cloud login sessions (Google or account root),
   owned namespaces, relays and machines, HA (API and Custom Tab pages), account linking
   (direct and through the consent page), `connectCloud` / `connectCloudWithAccount`.
+- [x] **M4.10** — mero-js parity: delegated accounts (multi-relay map, relay key learning,
+  delegated client reading by query, account admin facade over `AdminSurface`, delegated
+  governance and founding, step-typed invitation bootstrap, `redeemInvitation`) and the
+  unified `MeroTransportClient` (node or relay).
 - [ ] DCAP / TDX quote verification for the relay node key (today: TLS + binding checks).
 - [ ] **M5** — More Compose hooks (`useSubscription`, `useMigrationStatus`, …).
 - [ ] **M6** — Maven Central publishing, version-aligned to the mero-js contract.

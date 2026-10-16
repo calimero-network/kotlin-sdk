@@ -13,6 +13,10 @@ capabilities, metadata, upgrades, accounts/devices, and TEE. Every method is a `
 the shared [`HttpClient`](/get-started/quickstart/); most reads unwrap the node's
 `{ data }` envelope for you. Endpoints below are relative to `/admin-api`.
 
+`AdminApi` implements `AdminSurface`, the same surface by name and shape, which an account's
+admin facade implements too (`createAccountAdmin`, see [Delegated accounts](/guides/delegated-accounts/)),
+so code written against it runs against a node or an account.
+
 List methods return the node's full result set — the admin API does not paginate,
 so there are no limit/offset/cursor parameters. The one exception is
 `listMemberDevices` / `listGroupMemberDevices`, which take optional `offset` and
@@ -140,6 +144,7 @@ The list routes answer a **map** — `{"data": {"<alias>": "<value>"}}`, and
 | `deleteNamespace(namespaceId, request? = null): DeleteNamespaceResponseData` | `DELETE /namespaces/{namespaceId}` |
 | `createNamespaceInvitation(namespaceId, request? = null): CreateNamespaceInvitationResult` | `POST /namespaces/{namespaceId}/invite` |
 | `joinNamespace(namespaceId, request): JoinNamespaceResponseData` | `POST /namespaces/{namespaceId}/join` |
+| `redeemInvitation(namespaceId, invitation, groupName? = null, teamName? = null): RedeemOutcome` | `joinNamespace`, then `listNamespaces` to settle a failed request (`Joined` / `AlreadyMember` / `Failed(reason, retryable)`) |
 | `leaveNamespace(namespaceId, request? = null)` | `POST /namespaces/{namespaceId}/leave` |
 | `createGroupInNamespace(namespaceId, request? = null): CreateGroupInNamespaceResponseData` | `POST /namespaces/{namespaceId}/groups` |
 | `listNamespaceGroups(namespaceId): List<SubgroupEntry>` | `GET /namespaces/{namespaceId}/groups` |
