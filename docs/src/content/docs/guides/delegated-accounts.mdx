@@ -48,10 +48,14 @@ val key = account.learnRelayNodeKey(relayUrl)              // retries 1, 2, 5, 1
 coroutine is cancelled. A refusal is final. Founding attests afresh (`fresh = true`) whatever is
 pinned: the relay founded through holds the namespace's keys.
 
-:::caution
-The verifier is still `TlsRelayKeyVerifier` (TLS plus the quote's nonce and key binding). The
-DCAP quote is not verified on mobile yet.
-:::
+The default verifier, `DcapRelayKeyVerifier`, checks the relay's TDX quote on the device. It
+checks Intel's chain, the signed mero-tee release the relay runs, every register of that release's
+image, and our nonce and key binding. A release mirror that does not answer makes the attempt
+`Unavailable`, not `Refused`. See [TEE trust](/guides/tee-trust/#the-relays-node-key-dcaprelaykeyverifier).
+
+Every request the delegated client sends a hosted relay is sealed to the relay's attested TD
+(`relayTransportClient`). That covers intents, admin reads, queries, the login and events. See
+[Sealed transport](/guides/sealed-transport/#sealing-the-relay).
 
 ## The delegated client
 

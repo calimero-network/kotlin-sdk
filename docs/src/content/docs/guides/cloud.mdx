@@ -174,5 +174,6 @@ wait for a relay, set the TEE admission policy to `mode: relay`, or grant
 
 `connection.canSubscribe` is false while the relay's node key is unknown. Writes still work
 then, but `connection.client.mero` cannot log in to observe. Pass `relayNodeKey` if you
-have the key. mero-js's `seal` option is not ported yet: the sealed relay transport comes
-separately.
+have the key. Every call to a hosted relay is sealed to its attested TD by default, against
+the relay's signed release (`sealRelays = true`). Pass `seal` (a `VerifyTransportQuote`) to choose
+the verifier, or `sealRelays = false` for a plain test rig. See [Sealed transport](/guides/sealed-transport/#sealing-the-relay).

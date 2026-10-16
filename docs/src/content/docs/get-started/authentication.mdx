@@ -121,13 +121,13 @@ client.joinWithInvitation(namespaceId, invitation)   // signs a MemberJoined op,
 
 ### The relay's node key
 
-The login statement names the relay's node key, which mero-js learns from the
-relay's TEE attestation and verifies as a TDX DCAP quote. On Android this sits
-behind `RelayKeyVerifier`. The default `TlsRelayKeyVerifier` trusts the TLS
-connection and checks that the attestation binds this request's nonce and the
-named key; it does **not** verify the quote itself yet. Supply your own verifier to
-`CloudAccount(relayKeyVerifier = …)` to tighten that. Warranted writes do not
-depend on the node key.
+The login statement names the relay's node key. The SDK learns it from the relay's
+TEE attestation and verifies it as a TDX DCAP quote on the device, as mero-js does.
+That check sits behind `RelayKeyVerifier`. The default `DcapRelayKeyVerifier` checks
+Intel's chain, the signed mero-tee release the relay runs, every register of its
+image, and that the quote binds this request's nonce and the named key (see
+[TEE trust](/guides/tee-trust/)). Supply another verifier to
+`CloudAccount(relayKeyVerifier = …)`. Warranted writes do not depend on the node key.
 
 When the relay's operator gives you its node key out of band, pin it:
 `PinnedRelayKeyVerifier(nodeKey)` answers with that key whatever the relay

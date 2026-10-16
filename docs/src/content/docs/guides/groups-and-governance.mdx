@@ -191,7 +191,7 @@ Nodes can attest directly; verify the quote client-side (the node's
 ```kotlin
 val teeInfo = mero.admin.getTeeInfo()
 val attest  = mero.admin.teeAttest(TeeAttestRequest(nonce = nonce, includeCollateral = true))
-// attest.quote, attest.collateral → your DCAP verifier
+// attest.quoteB64 + attest.collateral → createQuoteVerifier(...) / Dcap.verify (see TEE trust)
 ```
 
 ## Owner operations

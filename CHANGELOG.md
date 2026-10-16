@@ -280,6 +280,90 @@ Pinned to `0.11.0-rc.83` in `ci/core-version` (and the matching
 - Docs: [Delegated accounts](docs/src/content/docs/guides/delegated-accounts.mdx) guide and
   [Transport](docs/src/content/docs/reference/transport.mdx) reference.
 
+### Breaking — TEE trust (mero-js parity)
+
+- **The relay's node key is verified by its TDX quote, on the device.** `DcapRelayKeyVerifier` is
+  now the default `RelayKeyVerifier` of `CloudAccount` and `RelayLogin` (it was
+  `TlsRelayKeyVerifier`, which trusted TLS and checked only the binding). A hosted relay's key is
+  learned only if its quote verifies with DCAP against Intel's root. Its image must be the
+  `locked-read-only` profile of the signed mero-tee release it names, at `MIN_RELAY_RELEASE`
+  (`2.3.99`) or newer. Its report data must bind our nonce and the key. A relay that fails any of
+  these is `RelayNodeKeyAttempt.Refused`. If the release mirror does not answer, the attempt is
+  `Unavailable` (`RelayKeyTransportException`). Mock quotes are still accepted from loopback
+  relays. Pass `relayKeyVerifier = TlsRelayKeyVerifier()` for the old check.
+- **A delegated session seals every request to a hosted relay.** Intents, admin reads, queries,
+  the relay login and events go through `relayTransportClient(relayUrl)`, sealed to the relay's
+  attested TD (mero-js `relayTransportFetch`). A relay that cannot seal is not reached in the
+  clear: its requests fail. Logged-in calls go out plain only after the TD answers
+  `403 sealed_route_unguarded` from inside the envelope. `CloudAccount(sealRelays = false)` opts
+  out, and `forgetRelaySealing()` resets.
+- **`connectCloud` seals a hosted relay by default.** With no `seal`, the relay is sealed against
+  its signed release (`DcapRelayKeyVerifier.signedReleaseVerifier`), with the same
+  `sealed_route_unguarded` fallback. `ConnectCloudOptions(sealRelays = false)` (and
+  `ConnectCloudWithAccountOptions`) opts out for plain test rigs. mero-js seals only with `seal`.
+  This follows the Swift SDK.
+- `classifyError` reads `RelayKeyTransportException` as `UNAVAILABLE`, retryable.
+
+### Added — TEE trust: signed releases, DCAP, sealed transport, agent gate (mero-js parity)
+
+- **Sigstore** (`com.calimero.mero.tee`, mero-js `sigstore.ts`, `sigstore-trust-root.ts`,
+  `x509.ts`): `Sigstore.verifyCosignBundle` and `chainsToFulcio`, against the embedded trust root
+  `FULCIO_AUTHORITIES` / `REKOR_LOGS` (copied exactly). DER, X.509 and ECDSA P-256/P-384 helpers
+  are internal and built on Bouncy Castle. Nothing reads the clock: certificates are checked at
+  Rekor's `integratedTime`.
+- **Signed node releases** (mero-js `release.ts`): `NODE_RELEASE_SIGNER`,
+  `DEFAULT_RELEASE_MIRROR`, `SignedNodeRelease`, `verifySignedNodeRelease`, `fetchNodeRelease`,
+  `nodeReleaseVersionFromImage`, `fetchNodeReleaseVersion`, `cloudNodeReleaseUrl`,
+  `trustSignedRelease`, `createSignedReleaseVerifier` (`SignedReleaseVerifierOptions`) and
+  `createSignedReleaseSealedFetch` (`SignedReleaseSealedFetchOptions`, `NodeReleaseRequest`).
+  Release versions are compared as semver.
+- **DCAP quote verification** (mero-js `verify.ts`): `createQuoteVerifier(QuoteVerifierOptions)`,
+  `PRODUCTION_PROFILE` (`locked-read-only`), `trustedMeasurementsFromReleases` → `TrustedImages`,
+  `PublishedMrtds`, `TrustedMeasurements`, `DcapCollateral` (hex or byte arrays), `DcapVerifiedReport`,
+  `DcapReport` (`Sgx` / `Td10` / `Td15`), `DcapVerify`, `VerifyTransportQuote`, `QuoteVerifier`,
+  `TransportQuote`. `createQuoteVerifier` makes exactly the checks `verify.ts` makes, including
+  refusing a debug TD whatever `dcapVerify` allows.
+  - `Dcap` is a built-in `DcapVerify`, a port of `@phala/dcap-qvl` 0.5.3's `verify`, so quotes are
+    verified on the device with no third-party library.
+  - `PccsCollateral.fetch` ports dcap-qvl's `getCollateral`, for quotes that carry their PCK chain.
+- **Sealed transport** (mero-js `noise.ts`, `sealed.ts`, wire-identical with core's
+  `crates/server/src/sealed.rs`): `SealedTransport` is an OkHttp `Interceptor` with a `.client`. It
+  - refuses URLs outside its base URL;
+  - takes the transport key as bytes or as a suspend attest step;
+  - re-attests and retries once when the node restarted;
+  - renews and replaces sessions, and waits out `busy`;
+  - streams sealed responses frame by frame;
+  - fails with `StaleTransportKeyException` / `SealedTransportException`.
+
+  Also `HANDSHAKE_PATH`, `SEALED_PATH`, `SEALED_CONTENT_TYPE`, `transportKeyBinding`,
+  `fetchAttestedTransportKey` (`TransportAttestation`, or an `AdminSurface`) and
+  `createAttestedSealedFetch`. The handshake, the envelope, the frames and the binding are pinned
+  to core's published vectors.
+- **Sealing wired in**: `ConnectCloudOptions.seal` / `ConnectCloudWithAccountOptions.seal` (the
+  relay only, as in mero-js). `MeroConfig.httpClient` is the client `Mero` builds on, with its
+  auth and proof interceptors in front, so a sealed client seals a node's whole surface, SSE
+  included.
+- **Relay node-key attestation** (mero-js `attest-node-key.ts`): `attestRelayNodeKey`
+  (`AttestedNodeKey`), `attestKeyBinding`, `reportDataOf` (`QuoteReportData`), reconciled with
+  `RelayAttest`. Also `DcapRelayKeyVerifier`, `AttestingRelayKeyVerifier`, `MIN_RELAY_RELEASE` and
+  `RelayKeyTransportException`.
+- **Agent gate** (`com.calimero.mero.agentgate`, mero-js `agent-gate/`, wire-identical with
+  mero-tee's mero-agent-gate `/attest`, `/provision`, `/release`): `attestAgent`, `checkOwner`,
+  `provisionAgent`, `releaseAgent`, `generateOwnerKey`, `ownerPublicKey`, `validateAgentId`,
+  `agentKeyBinding`, `provisionInfo`, `AGENT_ATTEST_DOMAIN`, `AGENT_PROVISION_INFO_DOMAIN`,
+  `AgentGateException`, `VerifiedAgent`, `OwnerKey`, `ProvisionedAgent`, `KMS_RELEASE_SIGNER`,
+  `AgentPolicy`, `verifySignedAgentPolicy` and `agentQuoteVerifier`.
+  - HPKE Auth mode (X25519, HKDF-SHA256, ChaCha20-Poly1305) is pinned to the gate's Rust-sealed
+    fixture and cross-checked against Bouncy Castle's HPKE.
+  - A verifier that returns `false` refuses here, where mero-js refuses only one that throws.
+- `TeeTrustException`: every trust check's refusal, with the reason.
+- Fixtures: mero-js's `src/sealed/fixtures/` (the real mero-tee 2.3.86 / 2.3.87 and mero-kms
+  2.3.87 signed files, dcap-qvl's sample TDX quote and collateral) and the agent gate's
+  `rust-sealed-bundle.json`, copied byte for byte into `mero-core/src/test/resources/fixtures/`.
+- Docs: [TEE trust](docs/src/content/docs/guides/tee-trust.mdx),
+  [Sealed transport](docs/src/content/docs/guides/sealed-transport.mdx) and
+  [Agent gate](docs/src/content/docs/guides/agent-gate.mdx) guides.
+
 ### Changed — events and presence
 
 - An SSE `401` whose `x-auth-error` is `token_reuse` / `token_revoked` now ends the
@@ -461,9 +545,8 @@ by mero-js's golden vectors (which are core's own fixtures):
 
 ### Known gaps
 
-- **Relay node key.** The default `TlsRelayKeyVerifier` trusts TLS and checks the attestation's
-  report data binds this request's nonce and the named key; it does **not** verify the TDX DCAP
-  quote. mero-js does. Writes never depend on the key; Bearer reads and SSE do.
+- ~~**Relay node key.** The default `TlsRelayKeyVerifier` does not verify the TDX DCAP quote.~~
+  Closed in Unreleased: `DcapRelayKeyVerifier` verifies the quote on the device.
 - **App-scheme callbacks** work in the SDK, but the hosted wallet only redirects to `https://`
   today. Until mero-wallet accepts app schemes, use a verified https App Link as the callback.
 

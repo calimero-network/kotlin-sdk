@@ -1,0 +1,94 @@
+---
+title: Sealed transport
+description: Encrypt every request end to end to a TEE node's attested key, as an OkHttp interceptor — the handshake, sessions, streaming, and sealing a relay.
+sidebar:
+  order: 11
+---
+
+import { Aside } from '@astrojs/starlight/components';
+
+A node speaks plain HTTP. Any TLS in front of it ends outside the enclave, at whatever proxy or
+ingress the operator runs. Everything that crosses that hop can be read there: the bearer token,
+the JSON-RPC arguments, the results, a warrant. **Sealing** encrypts each request so that only the
+attested TD can read it, and only the TD can produce a response the client accepts. It is a port of
+mero-js `src/sealed/sealed.ts`. The wire format is byte-identical with core's
+`crates/server/src/sealed.rs`, and the tests pin it to core's published vectors.
+
+## How it works
+
+1. **Attest.** `POST /admin-api/tee/attest {bindTransportKey: true}` returns the node's X25519
+   transport key and a quote whose report data is
+   `nonce ‖ transportKeyBinding(0^32, key)`. The quote is verified on the device
+   ([TEE trust](/guides/tee-trust/)). This is the one call that needs no credential and is never
+   sealed.
+2. **Handshake.** `POST /sealed/v2/handshake` (`HANDSHAKE_PATH`) runs Noise
+   `NK_25519_AESGCM_SHA256` to that key. The session keys come from both sides' ephemeral keys. So
+   once a session is gone (an hour at most), what was sent in it cannot be opened, not even with the
+   transport key.
+3. **Exchange.** Each request goes to `POST /sealed/v2` (`SEALED_PATH`) as
+   `application/vnd.calimero.sealed` (`SEALED_CONTENT_TYPE`). Its method, path, headers and body are
+   all sealed. The response streams back in sealed frames, so server-sent events are sealed too.
+   WebSockets cannot be sealed, and the node refuses one with a `501` from inside the envelope.
+
+## `SealedTransport`
+
+`SealedTransport` is an OkHttp `Interceptor`. Use its `client` for every request to the node:
+
+```kotlin
+val sealed = createAttestedSealedFetch(nodeUrl, verifier)        // attests, then seals everything
+val mero = Mero(MeroConfig(baseUrl = nodeUrl, httpClient = sealed.client))
+val relay = RelayClient(relayUrl, account, proof, signer, nonces, httpClient = sealed.client)
+```
+
+- **Only the base URL.** A request outside `baseUrl` is refused rather than sent in the clear.
+- **One session.** Every request shares one session, concurrent ones included. It is renewed a
+  minute before the node would drop it. If the node no longer knows the session (`unknown_session`),
+  the session is replaced and the request sent again, which is safe because nothing in it ran. If the
+  node is `busy`, the client waits the `Retry-After` it asks for (at most 5 s) and tries once more.
+- **A restarted node.** With an attestation step
+  (`SealedTransport(baseUrl) { fetchAttestedTransportKey(admin, verifier) }`), a node that restarted
+  is attested again through your verifier, and the request is retried once. With fixed key bytes
+  (`SealedTransport(baseUrl, keyBytes)`), the request fails with `StaleTransportKeyException`
+  instead. A failed attestation is not remembered, so the next request attests again.
+- **Errors.** The node refusing the envelope surfaces as `SealedTransportException` (`status`,
+  `code`, `retryAfterMs`). Both exceptions are `IOException`s, so OkHttp reports them as the call's
+  failure, and the SDK's HTTP layer wraps them in a `NetworkException`.
+- **Streaming.** The response body opens frame by frame as it arrives. A frame that does not
+  authenticate, or a stream that stops before its end frame, fails the body, so nothing
+  unauthenticated is passed on.
+
+<Aside type="caution">
+The response is rebuilt from the sealed frames, so OkHttp's `Authenticator` and redirect handling
+never see it: a `401` or a `3xx` inside the envelope reaches the caller as it is. `MeroConfig.httpClient`
+puts `Mero`'s token and proof interceptors in front of the sealing one, so the token and the proof
+are sealed too.
+</Aside>
+
+`createSignedReleaseSealedFetch(SignedReleaseSealedFetchOptions(relayUrl, minReleaseVersion = "2.3.99"))`
+does it all for a node you know only by URL:
+
+1. It reads the release the node names from `/tee/info`. For a node too old to serve that unsealed,
+   use `releaseVersion`.
+2. It fetches that release from `releaseMirror` or `releaseSource`, and verifies its signature.
+3. It attests the node against that release's image, then seals everything to it.
+
+## Sealing the relay
+
+- **`connectCloud`.** Every call to a hosted relay is sealed by default (`sealRelays = true`):
+  the intent, the warrant and the method's arguments. The default verifier is
+  `DcapRelayKeyVerifier().signedReleaseVerifier(relayUrl)`, which trusts the relay's signed
+  release (`locked-read-only`, 2.3.99 or newer). Pass `seal` (a `VerifyTransportQuote`) in
+  `ConnectCloudOptions` or `ConnectCloudWithAccountOptions` to choose another, or
+  `sealRelays = false` for a plain test rig. Calls to the cloud are not sealed, because they carry
+  no intent. A loopback relay is never sealed by default.
+- **A delegated session.** A `CloudAccount` session seals every request to a hosted relay:
+  intents, admin reads, queries, the login and events. It uses `relayTransportClient(relayUrl)`,
+  one transport per relay, checked by the account's `AttestingRelayKeyVerifier` (by default
+  `DcapRelayKeyVerifier`). A loopback relay is never sealed. `CloudAccount(sealRelays = false)`
+  opts out, and `forgetRelaySealing()` drops every relay's transport.
+
+Some relays leave authentication to their proxy and have no `[server.sealed] forward_auth`. Such a
+relay cannot guard a logged-in route inside the envelope, and answers `403 sealed_route_unguarded`
+from inside it. Only then do a delegated session's logged-in requests go out plain. That answer is
+sealed under the session, so nobody on the way can forge it to force the downgrade. Any other
+failure fails the request and never falls back.
