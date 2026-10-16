@@ -10,6 +10,7 @@ import com.calimero.mero.auth.RefreshCoordinator
 import com.calimero.mero.auth.RefreshTokenRequest
 import com.calimero.mero.auth.RevokeTokenRequest
 import com.calimero.mero.auth.TokenRequest
+import com.calimero.mero.ephemeral.EphemeralClient
 import com.calimero.mero.http.AuthInterceptor
 import com.calimero.mero.http.HttpClient
 import com.calimero.mero.http.HttpException
@@ -17,13 +18,18 @@ import com.calimero.mero.http.MeroStateException
 import com.calimero.mero.http.OkHttpTransport
 import com.calimero.mero.http.TokenAuthenticator
 import com.calimero.mero.rpc.RpcClient
+import com.calimero.mero.sse.AppVersionChangedEvent
 import com.calimero.mero.sse.ContextEvent
 import com.calimero.mero.sse.GroupEvent
+import com.calimero.mero.sse.GroupMembershipEvent
+import com.calimero.mero.sse.GroupMigrationEvent
 import com.calimero.mero.sse.NodeEvent
 import com.calimero.mero.sse.SseClient
+import com.calimero.mero.sse.SseConnection
 import com.calimero.mero.storage.MemoryTokenStore
 import com.calimero.mero.storage.NodeBoundTokenStore
 import com.calimero.mero.storage.TokenStore
+import com.calimero.mero.ws.WsClient
 import kotlinx.coroutines.flow.Flow
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.buildJsonObject
@@ -131,17 +137,12 @@ class Mero(
      * Live node events for the given [contextIds], over auto-reconnecting SSE. Cancel the collecting
      * coroutine to close the stream. Powers push updates (new messages, etc.) without polling.
      *
-     * Uses a dedicated OkHttp client with no read timeout (the stream is long-lived) and the token
-     * in the query string, so it does not share the reactive-refresh authenticator on [okHttpClient].
-     * (== mero-swift-sdk `Mero.events`.)
+     * Each call opens its own connection, on a dedicated OkHttp client with no read timeout (the
+     * stream is long-lived) and the Bearer token in a header, so it does not share the
+     * reactive-refresh authenticator on [okHttpClient]. Use [sse] for one shared connection whose
+     * subscriptions change while it is open. (== mero-swift-sdk `Mero.events`.)
      */
-    fun events(contextIds: List<String>): Flow<ContextEvent> =
-        SseClient(
-            baseUrl = config.baseUrl,
-            token = { store.getTokens()?.accessToken },
-            client = sseHttpClient,
-            json = json,
-        ).events(contextIds)
+    fun events(contextIds: List<String>): Flow<ContextEvent> = sseClient().events(contextIds)
 
     /**
      * Group-keyed events (membership changes, migration progress) for [groupIds], over the same
@@ -154,6 +155,34 @@ class Mero(
         contextIds: List<String>,
         groupIds: List<String>,
     ): Flow<NodeEvent> = sseClient().nodeEvents(contextIds, groupIds)
+
+    /** Parsed `AppVersionChanged` events for [contextIds] (mero-js `onAppVersionChanged`). */
+    fun appVersionChanges(contextIds: List<String>): Flow<AppVersionChangedEvent> = sseClient().appVersionChanges(contextIds)
+
+    /** Typed group-migration events for [groupIds] — subscribe with the namespace root. */
+    fun migrationEvents(groupIds: List<String>): Flow<GroupMigrationEvent> = sseClient().migrationEvents(groupIds)
+
+    /** Typed group-membership events for [groupIds]. */
+    fun membershipEvents(groupIds: List<String>): Flow<GroupMembershipEvent> = sseClient().membershipEvents(groupIds)
+
+    /**
+     * This client's one long-lived SSE connection — mero-js `MeroJs.events`. Not opened until
+     * [SseConnection.connect] (or a [ephemeral] subscription) asks; subscribe and unsubscribe
+     * on it while it is live.
+     */
+    val sse: SseConnection by lazy { sseClient().connection() }
+
+    /**
+     * WebSocket event client (`GET /ws`), **experimental** as in mero-js — prefer [sse].
+     * Not opened until [WsClient.connect].
+     */
+    @ExperimentalMeroApi
+    val ws: WsClient by lazy {
+        WsClient(baseUrl = config.baseUrl, token = { store.getTokens()?.accessToken }, client = sseHttpClient, json = json)
+    }
+
+    /** Ephemeral presence (`set_ephemeral`, and `Ephemeral` events on [sse]) — mero-js `MeroJs.ephemeral`. */
+    val ephemeral: EphemeralClient by lazy { EphemeralClient(rpc, sse) }
 
     private fun sseClient(): SseClient =
         SseClient(
