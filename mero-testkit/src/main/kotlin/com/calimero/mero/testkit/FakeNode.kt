@@ -120,6 +120,8 @@ class FakeNode {
                         )
                     },
                 )
+            // core's public admin health route (what local-node discovery probes).
+            "GET" to "/admin-api/health" -> ok(buildJsonObject { put("data", buildJsonObject { put("status", "alive") }) })
             "GET" to "/auth/providers" -> ok(providersBody())
             "GET" to "/admin/identity" -> ok(identityBody())
             "GET" to "/admin-api/contexts" -> guarded(request) { ok(buildJsonObject { put("data", buildJsonObject { put("contexts", buildJsonArray { }) }) }) }
