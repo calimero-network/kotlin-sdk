@@ -20,8 +20,9 @@ fun events(contextIds: List<String>): Flow<ContextEvent>
 Opens `GET /sse` and subscribes to the given context ids via
 `POST /sse/subscription`, then emits a `ContextEvent` per node emission. The
 returned `Flow` is cold — collecting it opens the connection; cancelling the
-collecting coroutine closes it. It reconnects automatically 3 s after a drop (a fixed
-delay, as in mero-js) and re-subscribes.
+collecting coroutine closes it. It reconnects automatically 3 s after a drop, doubling
+to 30 s while attempts keep failing (see [`ReconnectBackoff`](#reconnectbackoff)), and
+re-subscribes.
 
 ```kotlin
 val job = scope.launch {
@@ -87,7 +88,7 @@ class SseConnection(
     token: suspend () -> String?,
     client: OkHttpClient = OkHttpClient(),
     json: Json = …,
-    reconnectDelayMs: Long = 3_000,
+    backoff: ReconnectBackoff = ReconnectBackoff.SSE,
     now: () -> Long = System::currentTimeMillis,
     authorize: RequestAuthorizer? = null,      // per-request headers (a request proof); wins over token
 ) {
@@ -118,8 +119,7 @@ Port of mero-js `SseClient`. `subscribe` / `unsubscribe` on a live session POST
 `/sse/subscription` `{"id": <session>, "method": "subscribe" | "unsubscribe",
 "params": {contextIds?, groupIds?}}` with only the ids that changed, under a 10 s
 timeout. On every `connect` frame the whole remembered set is re-subscribed, then
-`connects` emits. Reconnection waits a fixed `reconnectDelayMs` (mero-js has no SSE
-backoff). Any `403`, or a `401` whose `x-auth-error` is `token_reuse` /
+`connects` emits. Reconnection follows `backoff`, below. Any `403`, or a `401` whose `x-auth-error` is `token_reuse` /
 `token_revoked`, stops the connection.
 
 `presenceSeed(contextId)` is the latest `Ephemeral` data per author for a context the
@@ -176,8 +176,36 @@ class WsClient(baseUrl: String, token: suspend () -> String?, client: OkHttpClie
 Port of mero-js `WsClient` over OkHttp's WebSocket: `GET /ws` (Bearer header),
 messages `{"id":null,"method":"subscribe"|"unsubscribe","params":{contextIds?,groupIds?}}`
 (core `server/primitives/src/ws.rs`), every remembered id re-subscribed on each open,
-reconnect after `min(1 s · 2ⁿ, 30 s)`, reset by a successful open. A `403` upgrade (or a
+reconnect after `min(1 s · 2ⁿ, 30 s)` (`ReconnectBackoff.WEB_SOCKET`), reset by a successful open. A `403` upgrade (or a
 `401` naming a dead family) sets `failure` and stops it.
+
+## `ReconnectBackoff`
+
+```kotlin
+data class ReconnectBackoff(
+    val initialDelayMs: Long,
+    val multiplier: Double = 2.0,
+    val maxDelayMs: Long = 30_000,
+    val jitter: Double = 0.0,                  // 0.2 = ±20%
+) {
+    fun delayMs(attempt: Int, random: Double = Random.nextDouble()): Long
+    companion object {
+        val SSE: ReconnectBackoff              // 3 s, ×2, ≤ 30 s, ±20% — the SseConnection default
+        val WEB_SOCKET: ReconnectBackoff       // 1 s, ×2, ≤ 30 s, no jitter — WsClient's schedule
+        fun fixed(delayMs: Long): ReconnectBackoff  // the same delay every time
+    }
+}
+```
+
+The wait before the `n`th consecutive failed attempt is
+`min(initialDelayMs · multiplierⁿ, maxDelayMs)`, spread by `±jitter` and never past
+`maxDelayMs`. A stream that opens resets the count, so a node that refuses three times
+and then serves a stream that later drops gives waits of 3, 6, 12, then 3 s again.
+mero-js's `SseClient` waits a flat `reconnectDelayMs` (3 s) forever; the first wait is
+the same, and the backoff only differs once a reconnect has failed, so a fleet of
+clients does not retry in step against a node that is down.
+`backoff = ReconnectBackoff.fixed(3_000)` is exactly mero-js's behaviour. The Swift SDK
+has the same policy (`ReconnectBackoff.sse`, `.fixed(3)`, `.webSocket`).
 
 ## `SseClient`
 
@@ -190,6 +218,8 @@ class SseClient(
     token: suspend () -> String?,
     client: OkHttpClient = OkHttpClient(),
     json: Json = Json { ignoreUnknownKeys = true },
+    backoff: ReconnectBackoff = ReconnectBackoff.SSE,   // for every connection it makes
+    authorize: RequestAuthorizer? = null,
 ) {
     fun connection(): SseConnection
     fun events(contextIds: List<String>): Flow<ContextEvent>

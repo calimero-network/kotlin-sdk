@@ -4,6 +4,7 @@ import com.calimero.mero.Mero
 import com.calimero.mero.MeroConfig
 import com.calimero.mero.TokenData
 import com.calimero.mero.rpc.RpcException
+import com.calimero.mero.sse.ReconnectBackoff
 import com.calimero.mero.sse.SseConnection
 import com.calimero.mero.storage.MemoryTokenStore
 import kotlinx.coroutines.async
@@ -80,7 +81,7 @@ class EphemeralClientTest {
     }
 
     private fun sse(now: () -> Long = System::currentTimeMillis) =
-        SseConnection(server.url("/").toString(), token = { "access" }, reconnectDelayMs = 100, now = now)
+        SseConnection(server.url("/").toString(), token = { "access" }, backoff = ReconnectBackoff.fixed(100), now = now)
 
     @Test
     fun `jsonCodec round-trips a value through bytes, as JSON text`() {

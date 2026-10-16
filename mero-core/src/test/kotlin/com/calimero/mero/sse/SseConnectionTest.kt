@@ -2,9 +2,11 @@ package com.calimero.mero.sse
 
 import com.calimero.mero.http.AuthRevokedException
 import com.calimero.mero.http.HttpException
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.yield
@@ -71,7 +73,8 @@ class SseConnectionTest {
     private fun connection(
         delayMs: Long = 150,
         now: () -> Long = System::currentTimeMillis,
-    ) = SseConnection(server.url("/").toString(), token = { "tok" }, reconnectDelayMs = delayMs, now = now)
+        backoff: ReconnectBackoff = ReconnectBackoff.fixed(delayMs),
+    ) = SseConnection(server.url("/").toString(), token = { "tok" }, backoff = backoff, now = now)
 
     private fun ids(
         body: JsonObject,
@@ -155,7 +158,7 @@ class SseConnectionTest {
         }
 
     @Test
-    fun `reconnects on a fixed delay, not a growing one`() {
+    fun `a fixed backoff reconnects on the same delay, not a growing one`() {
         streamFor = { MockResponse().setResponseCode(500) }
         val sse = connection(delayMs = 200)
         sse.connect()
@@ -163,8 +166,36 @@ class SseConnectionTest {
         sse.close()
         val gaps = streamTimes.zipWithNext { a, b -> b - a }.take(3)
         assertTrue("every gap waits the delay: $gaps", gaps.all { it >= 190 })
-        // An exponential backoff would wait 200, 400, 800.
+        // The default doubling would wait 200, 400, 800.
         assertTrue("the delay does not grow: $gaps", gaps.last() < 600)
+    }
+
+    @Test
+    fun `backs off while the node refuses and resets once a stream opens`() {
+        // Three refusals, a stream that opens and ends, then one that stays.
+        val refused = MockResponse().setResponseCode(503)
+        streamFor = { n ->
+            when {
+                n <= 3 -> refused
+                n == 4 -> MockResponse().setHeader("Content-Type", "text/event-stream").setBody(connect("s-4"))
+                else -> stream(connect("s-$n"))
+            }
+        }
+        val delays = CopyOnWriteArrayList<Long>()
+        val sse = connection(backoff = ReconnectBackoff.SSE)
+        sse.random = { 0.5 } // no jitter
+        sse.sleep = { delays += it }
+        val errors = CopyOnWriteArrayList<Throwable>()
+        runBlocking {
+            val collecting = launch(Dispatchers.Unconfined) { sse.errors.collect { errors += it } }
+            val seen = async(Dispatchers.Unconfined) { sse.connects.first { it == "s-5" } }
+            sse.connect()
+            withTimeout(5_000) { seen.await() }
+            collecting.cancel()
+        }
+        sse.close()
+        assertEquals("3 s doubling, back to 3 s after a stream opened", listOf(3_000L, 6_000L, 12_000L, 3_000L), delays.toList())
+        assertEquals(3, errors.count { (it as? HttpException)?.status == 503 })
     }
 
     @Test

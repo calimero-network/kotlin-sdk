@@ -18,6 +18,7 @@ import com.calimero.mero.relay.RelayClient
 import com.calimero.mero.request.ProofCredential
 import com.calimero.mero.request.createProofSigner
 import com.calimero.mero.rpc.RpcExecution
+import com.calimero.mero.sse.ReconnectBackoff
 import com.calimero.mero.sse.SseConnection
 import com.calimero.mero.ws.WsClient
 import kotlinx.serialization.json.Json
@@ -198,7 +199,7 @@ class MeroTransportClient internal constructor(
         lazy {
             // A connection whose credential never arrives: it holds its subscriptions, reports
             // no error, and reaches the network never (mero-js `dormantEvents`).
-            SseConnection(relay.relayUrl, { null }, streamingClient(relayHttp ?: OkHttpClient()), reconnectDelayMs = DORMANT_POLL_MS)
+            SseConnection(relay.relayUrl, { null }, streamingClient(relayHttp ?: OkHttpClient()), backoff = ReconnectBackoff.fixed(DORMANT_POLL_MS))
         }
     private val proofEventsLazy = lazy { checkNotNull(proofClient).sse }
 

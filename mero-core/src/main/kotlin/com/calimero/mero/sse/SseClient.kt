@@ -103,7 +103,8 @@ class SseClient(
     private val token: suspend () -> String?,
     private val client: OkHttpClient = OkHttpClient(),
     private val json: Json = Json { ignoreUnknownKeys = true },
-    private val reconnectDelayMs: Long = SseConnection.DEFAULT_RECONNECT_DELAY_MS,
+    /** Reconnect schedule for every connection; see [SseConnection]'s "Reconnection". */
+    private val backoff: ReconnectBackoff = ReconnectBackoff.SSE,
     /**
      * Per-request authorization (a request proof — [com.calimero.mero.request.createProofAuthorizer]),
      * taking precedence over [token]; see [SseConnection]'s "Request proofs".
@@ -115,12 +116,12 @@ class SseClient(
      * subscriptions are changed on the live stream with [SseConnection.subscribe] /
      * [SseConnection.unsubscribe]; close it with [SseConnection.close].
      */
-    fun connection(): SseConnection = SseConnection(baseUrl, token, client, json, reconnectDelayMs, authorize = authorize)
+    fun connection(): SseConnection = SseConnection(baseUrl, token, client, json, backoff, authorize = authorize)
 
     /**
      * Cold stream of events for the given [contextIds]. Cancelling the collecting coroutine closes
      * the connection. Each connection attempt subscribes on the `connect` frame; a `close` frame or
-     * any drop triggers a reconnect after a fixed delay (3 s).
+     * any drop triggers a reconnect after [backoff] (3 s, doubling to 30 s while attempts fail).
      */
     fun events(contextIds: List<String>): Flow<ContextEvent> = nodeEvents(contextIds, emptyList()).filterIsInstance<ContextEvent>()
 

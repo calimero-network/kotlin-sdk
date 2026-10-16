@@ -48,6 +48,7 @@ import okhttp3.sse.EventSourceListener
 import okhttp3.sse.EventSources
 import java.io.IOException
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicBoolean
 
 /**
  * One long-lived SSE connection to a node: the Android port of mero-js `SseClient`
@@ -73,14 +74,13 @@ import java.util.concurrent.TimeUnit
  * are live again. A failed re-subscribe still announces the session, then reports the
  * failure on [errors], exactly as mero-js does.
  *
- * ## Reconnection — a fixed delay, deliberately
+ * ## Reconnection
  *
  * After a drop (the stream ending, a `close` frame, a network failure or a non-terminal
- * HTTP status) the connection waits [reconnectDelayMs] (3 s by default) and opens a new
- * stream. There is **no exponential backoff**: mero-js's `SseClient.scheduleReconnect`
- * uses one fixed `reconnectDelayMs`, and this port keeps that. (The WebSocket client,
- * [com.calimero.mero.ws.WsClient], is the one that backs off, `1 s·2ⁿ` up to 30 s — also
- * as in mero-js.)
+ * HTTP status) the connection waits as [backoff] says and opens a new stream. The default,
+ * [ReconnectBackoff.SSE], waits 3 s (mero-js's `reconnectDelayMs`), then doubles up to 30 s
+ * while attempts keep failing, ±20% jitter; a stream that opens resets it to 3 s. mero-js
+ * waits a flat 3 s forever — pass [ReconnectBackoff.fixed]`(3_000)` for exactly that.
  *
  * ## Terminal failures
  *
@@ -119,8 +119,8 @@ class SseConnection(
     private val token: suspend () -> String?,
     client: OkHttpClient = OkHttpClient(),
     private val json: Json = Json { ignoreUnknownKeys = true },
-    /** Wait between a drop and the next attempt, fixed (mero-js `reconnectDelayMs`). */
-    val reconnectDelayMs: Long = DEFAULT_RECONNECT_DELAY_MS,
+    /** How long to wait between a drop and the next attempt; see "Reconnection". */
+    val backoff: ReconnectBackoff = ReconnectBackoff.SSE,
     private val now: () -> Long = System::currentTimeMillis,
     /** Per-request authorization; takes precedence over [token] when set. */
     private val authorize: RequestAuthorizer? = null,
@@ -148,6 +148,12 @@ class SseConnection(
     private var loop: Job? = null
 
     @Volatile private var currentSession: String? = null
+
+    /** The jitter draw for [backoff], in `[0, 1)`; a test pins it. */
+    internal var random: () -> Double = { kotlin.random.Random.nextDouble() }
+
+    /** The reconnect wait; a test records it instead of sleeping. */
+    internal var sleep: suspend (Long) -> Unit = { delay(it) }
 
     private val _events = MutableSharedFlow<NodeEvent>(extraBufferCapacity = EVENT_BUFFER)
     private val _connects = MutableSharedFlow<String>(extraBufferCapacity = SIGNAL_BUFFER)
@@ -297,7 +303,9 @@ class SseConnection(
     // ---- The connection loop ----------------------------------------------------------
 
     private suspend fun CoroutineScope.runLoop() {
+        var attempt = 0
         while (isActive) {
+            val opened = AtomicBoolean(false)
             val headers =
                 try {
                     streamHeaders()
@@ -309,7 +317,7 @@ class SseConnection(
                 }
             if (headers != null) {
                 try {
-                    runStream(headers)
+                    runStream(headers, opened)
                 } catch (e: CancellationException) {
                     throw e
                 } catch (e: TerminalSseFailure) {
@@ -320,7 +328,11 @@ class SseConnection(
                 }
             }
             currentSession = null
-            delay(reconnectDelayMs)
+            // A stream that opened was a success: the next failure starts the schedule over.
+            if (opened.get()) attempt = 0
+            val wait = backoff.delayMs(attempt, random())
+            attempt++
+            sleep(wait)
         }
     }
 
@@ -331,7 +343,10 @@ class SseConnection(
     }
 
     /** One stream: open it, handle its frames in order, return when it ends. */
-    private suspend fun runStream(headers: Map<String, String>) {
+    private suspend fun runStream(
+        headers: Map<String, String>,
+        opened: AtomicBoolean,
+    ) {
         val builder = Request.Builder().url("$base/sse")
         // The bearer goes in the header, like every other call. Core still accepts
         // `?token=` (a browser EventSource needs it), but a token in a URL ends up in logs.
@@ -340,7 +355,7 @@ class SseConnection(
         val proofAttached = carriesProof(headers)
         val frames = Channel<String>(Channel.UNLIMITED)
         val done = CompletableDeferred<Unit>()
-        val source = EventSources.createFactory(client).newEventSource(request, listener(frames, done, proofAttached))
+        val source = EventSources.createFactory(client).newEventSource(request, listener(frames, done, proofAttached, opened))
         try {
             for (frame in frames) {
                 // The node said `close`: this stream is over, reconnect like after a drop.
@@ -356,7 +371,15 @@ class SseConnection(
         frames: Channel<String>,
         done: CompletableDeferred<Unit>,
         proofAttached: Boolean,
+        opened: AtomicBoolean,
     ) = object : EventSourceListener() {
+        override fun onOpen(
+            eventSource: EventSource,
+            response: Response,
+        ) {
+            opened.set(true)
+        }
+
         override fun onEvent(
             eventSource: EventSource,
             id: String?,
@@ -516,9 +539,6 @@ class SseConnection(
     ) : Exception(error.message, error)
 
     companion object {
-        /** mero-js `reconnectDelayMs` default. */
-        const val DEFAULT_RECONNECT_DELAY_MS = 3_000L
-
         /** How long a subscription POST may take before it counts as failed (mero-js `SUBSCRIPTION_TIMEOUT_MS`). */
         const val SUBSCRIPTION_TIMEOUT_MS = 10_000L
 

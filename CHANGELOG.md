@@ -364,6 +364,17 @@ Pinned to `0.11.0-rc.83` in `ci/core-version` (and the matching
   [Sealed transport](docs/src/content/docs/guides/sealed-transport.mdx) and
   [Agent gate](docs/src/content/docs/guides/agent-gate.mdx) guides.
 
+### Changed — SSE reconnect backoff
+
+- **Breaking:** `SseConnection(reconnectDelayMs = …)` and `SseClient(reconnectDelayMs = …)`
+  are replaced by `backoff: ReconnectBackoff`, and
+  `SseConnection.DEFAULT_RECONNECT_DELAY_MS` is gone. The default,
+  `ReconnectBackoff.SSE`, waits 3 s first (as before, and as mero-js), then doubles
+  up to 30 s while attempts keep failing, ±20% jitter, and resets once a stream
+  opens — the Swift SDK's policy. `ReconnectBackoff.fixed(3_000)` is the old flat
+  3 s (mero-js `reconnectDelayMs`); `ReconnectBackoff.WEB_SOCKET` names
+  `WsClient`'s unchanged `1 s · 2ⁿ ≤ 30 s` schedule.
+
 ### Fixed — mero-compose
 
 - mero-compose applies the kotlinx.serialization plugin: the invitation
