@@ -1,7 +1,11 @@
 package com.calimero.mero.admin
 
 import com.calimero.mero.Capabilities
+import com.calimero.mero.account.DeviceCert
+import com.calimero.mero.account.DeviceScopeInput
+import com.calimero.mero.account.signDeviceScope
 import com.calimero.mero.auth.ApiEnvelope
+import com.calimero.mero.crypto.DeviceSigner
 import com.calimero.mero.http.HttpClient
 import com.calimero.mero.http.HttpException
 import com.calimero.mero.http.HttpResponse
@@ -10,6 +14,12 @@ import com.calimero.mero.http.deleteJson
 import com.calimero.mero.http.getJson
 import com.calimero.mero.http.postJson
 import com.calimero.mero.http.putJson
+import com.calimero.mero.ownerop.adminChangedOp
+import com.calimero.mero.ownerop.groupDeleteOp
+import com.calimero.mero.ownerop.mintRootProof
+import com.calimero.mero.ownerop.teeAdmissionPolicyOpOf
+import com.calimero.mero.ownerop.teeAuthoringPolicyOp
+import com.calimero.mero.ownerop.transferOwnershipOp
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.SerialName
@@ -768,6 +778,24 @@ class AdminApi(
             ).ensureSuccessful()
     }
 
+    /**
+     * [setTeeAdmissionPolicy] with the `rootProof` minted here by the signing admin's account
+     * [root]: the op the node will build from [request] is encoded, the group's
+     * `namespaceId` and `ownerOpCounter` are read ([getGroupInfo]) and the root signs
+     * ([com.calimero.mero.ownerop.signOwnerOpProof]). Any `rootProof` already on [request]
+     * is replaced. [keyEpoch] / [chain] are for a root that was handed off.
+     */
+    suspend fun setTeeAdmissionPolicy(
+        groupId: String,
+        request: SetTeeAdmissionPolicyRequest,
+        root: DeviceSigner,
+        keyEpoch: Long = 0,
+        chain: List<String> = emptyList(),
+    ) {
+        val proof = mintRootProof(groupId, teeAdmissionPolicyOpOf(request), root, keyEpoch, chain)
+        setTeeAdmissionPolicy(groupId, request.copy(rootProof = proof))
+    }
+
     suspend fun getTeeAdmissionPolicy(groupId: String): GetTeeAdmissionPolicyResponseData {
         // `data` is optional so a flat (un-enveloped) response cleanly falls back.
         val res = http.execute("GET", "/admin-api/groups/$groupId/settings/tee-admission-policy").ensureSuccessful()
@@ -1510,6 +1538,27 @@ class AdminApi(
                 "/admin-api/namespaces/$namespaceId/account/link-device", request,
             ).data ?: error("linkAccountDevice")
 
+    /**
+     * [linkAccountDevice] for an account with no node of its own: the account [root] signs
+     * the device's scope here ([com.calimero.mero.account.signDeviceScope]) for the device
+     * [credential] certifies, and both go to the node. [applications] empty means every
+     * application; [scopeEpoch] orders scopes for this device (0 for its first).
+     *
+     * Not for `rescopeDevice`: core's `PUT /admin-api/account/devices/{id}/scope` runs on the
+     * node holding the root, which signs the replacement itself.
+     */
+    suspend fun linkAccountDevice(
+        namespaceId: String,
+        credential: String,
+        root: DeviceSigner,
+        applications: List<String> = emptyList(),
+        scopeEpoch: Long = 0,
+    ): LinkAccountDeviceResponseData {
+        val device = DeviceCert.parse(credential).device
+        val scope = signDeviceScope(DeviceScopeInput(device = device, applications = applications, scopeEpoch = scopeEpoch, signer = root))
+        return linkAccountDevice(namespaceId, LinkAccountDeviceRequest(credential = credential, scope = scope))
+    }
+
     /** Seal a small payload to a member account's root key. This node must be a member. */
     suspend fun sealToAccount(
         groupId: String,
@@ -1560,6 +1609,73 @@ class AdminApi(
     ) {
         val body = request.rootProof?.let { http.json.encodeToString(request) }
         send("DELETE", "/admin-api/groups/$groupId/settings/tee-authoring-policy", body)
+    }
+
+    // ---- Root-guarded owner ops, signed here by the account root -------------
+    //
+    // Each reads the group's `namespaceId` and `ownerOpCounter` ([getGroupInfo]), encodes
+    // the op the node will build, and has [root] sign the `rootProof`
+    // (com.calimero.mero.ownerop, a port of mero-js `owner-op`). Use these when the node
+    // does not hold the account root — a nodeless account, or a root kept cold on this
+    // device. [keyEpoch] / [chain] are for a root that was handed off. A counter that moved
+    // between the read and the send is a `409`: call again.
+
+    /** [transferOwnership], with the root proof signed by [root]. */
+    suspend fun transferOwnership(
+        groupId: String,
+        newOwner: String,
+        root: DeviceSigner,
+        keyEpoch: Long = 0,
+        chain: List<String> = emptyList(),
+    ) {
+        val proof = mintRootProof(groupId, transferOwnershipOp(newOwner), root, keyEpoch, chain)
+        transferOwnership(groupId, TransferOwnershipRequest(newOwner = newOwner, rootProof = proof))
+    }
+
+    /** [changeNamespaceAdmin], with the root proof signed by [root] (a root op on the namespace root). */
+    suspend fun changeNamespaceAdmin(
+        namespaceId: String,
+        newAdmin: String,
+        root: DeviceSigner,
+        keyEpoch: Long = 0,
+        chain: List<String> = emptyList(),
+    ) {
+        val proof = mintRootProof(namespaceId, adminChangedOp(newAdmin), root, keyEpoch, chain)
+        changeNamespaceAdmin(namespaceId, ChangeNamespaceAdminRequest(newAdmin = newAdmin, rootProof = proof))
+    }
+
+    /** [ownerDeleteGroup], with the root proof signed by [root]. */
+    suspend fun ownerDeleteGroup(
+        groupId: String,
+        root: DeviceSigner,
+        keyEpoch: Long = 0,
+        chain: List<String> = emptyList(),
+    ) {
+        val proof = mintRootProof(groupId, groupDeleteOp(), root, keyEpoch, chain)
+        ownerDeleteGroup(groupId, OwnerDeleteGroupRequest(rootProof = proof))
+    }
+
+    /** [setTeeAuthoringPolicy], with the root proof signed by the signing admin's [root]. */
+    suspend fun setTeeAuthoringPolicy(
+        groupId: String,
+        allowedMrtd: List<String>,
+        root: DeviceSigner,
+        keyEpoch: Long = 0,
+        chain: List<String> = emptyList(),
+    ) {
+        val proof = mintRootProof(groupId, teeAuthoringPolicyOp(allowedMrtd), root, keyEpoch, chain)
+        setTeeAuthoringPolicy(groupId, SetTeeAuthoringPolicyRequest(allowedMrtd = allowedMrtd, rootProof = proof))
+    }
+
+    /** [disableTeeAuthoringPolicy], with the root proof (for the empty policy) signed by [root]. */
+    suspend fun disableTeeAuthoringPolicy(
+        groupId: String,
+        root: DeviceSigner,
+        keyEpoch: Long = 0,
+        chain: List<String> = emptyList(),
+    ) {
+        val proof = mintRootProof(groupId, teeAuthoringPolicyOp(emptyList()), root, keyEpoch, chain)
+        disableTeeAuthoringPolicy(groupId, DisableTeeAuthoringPolicyRequest(rootProof = proof))
     }
 
     // ---- Delegated authorship capability helpers ----------------------------
