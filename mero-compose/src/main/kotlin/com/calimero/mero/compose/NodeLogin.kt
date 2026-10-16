@@ -48,12 +48,18 @@ fun isValidNodeUrl(input: String): Boolean {
     return DOMAIN.matches(host)
 }
 
-/** [input] trimmed, with `https://` when it names no scheme, and no trailing slash. */
+/**
+ * [input] trimmed, with `https://` when it names no scheme, and no trailing slash. A URL that
+ * already has a scheme keeps it — `ftp://node.example` stays `ftp://…`, so [isValidNodeUrl]
+ * refuses it rather than reading it as `https://ftp://…`.
+ */
 fun normalizeNodeUrl(input: String): String {
     val t = input.trim()
-    val withScheme = if (t.startsWith("http://") || t.startsWith("https://")) t else "https://$t"
+    val withScheme = if (HAS_SCHEME.containsMatchIn(t)) t else "https://$t"
     return withScheme.trimEnd('/')
 }
+
+private val HAS_SCHEME = Regex("^[a-z][a-z0-9+.-]*://", RegexOption.IGNORE_CASE)
 
 /** A compact label for a node (`localhost:2428`). */
 fun displayNodeUrl(url: String): String = url.removePrefix("http://").removePrefix("https://").trimEnd('/')

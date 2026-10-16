@@ -364,6 +364,16 @@ Pinned to `0.11.0-rc.83` in `ci/core-version` (and the matching
   [Sealed transport](docs/src/content/docs/guides/sealed-transport.mdx) and
   [Agent gate](docs/src/content/docs/guides/agent-gate.mdx) guides.
 
+### Fixed — mero-compose
+
+- mero-compose applies the kotlinx.serialization plugin: the invitation
+  pending-intent store's `@Serializable` model did not compile in the Android build.
+- `buildInviteLink(host = "calimero:/")` (or `"calimero:"`) gives
+  `calimero://<slug>/join?invitation=…`; it used to drop a slash.
+- `normalizeNodeUrl` leaves a URL that already names a scheme alone, so
+  `isValidNodeUrl("ftp://node.example")` is false instead of reading it as
+  `https://ftp://…`.
+
 ### Changed — mero-compose (mero-react parity)
 
 - `ConnectButton` follows mero-react: "Connect" opens a `LoginSheet` in a dialog (or calls

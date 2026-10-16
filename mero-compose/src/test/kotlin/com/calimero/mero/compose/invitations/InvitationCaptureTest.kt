@@ -78,6 +78,22 @@ class InvitationCaptureTest {
     }
 
     @Test
+    fun `acking an invitation replayed after a relaunch clears the stored link and the attempt ledger`() {
+        InvitationCapture(store).capture("calimero://com.example.app/join?invitation=RELAUNCH")
+        // A relaunch: the first capture is gone, a fresh one replays the stored link.
+        var replayed: CapturedInvitation? = null
+        InvitationCapture(store).onInvitation { replayed = it }
+        assertTrue(store.get("calimero:invitation-attempts")!!.contains("RELAUNCH"))
+        // Only the invitation is kept; nothing else holds the capture that made it.
+        replayed!!.resolve()
+        assertFalse(store.get("calimero:invitation-attempts")!!.contains("RELAUNCH"))
+        assertEquals(PendingIntentStore(store).all(), emptyList<StoredIntent>())
+        val third = mutableListOf<String>()
+        InvitationCapture(store).onInvitation { third += it.token }
+        assertEquals(emptyList<String>(), third)
+    }
+
+    @Test
     fun `auto-join stops after the attempt cap, but the token is still handed over`() {
         repeat(MAX_AUTO_JOIN_ATTEMPTS) { assertTrue(openWith("LOOPY")[0].autoJoin) }
         val exhausted = openWith("LOOPY")[0]
@@ -177,6 +193,17 @@ class InvitationCaptureTest {
             buildInviteLink("com.calimero.docs", "T", mapOf("name" to "Q3 plan", "id" to null)),
         )
         assertEquals("calimero://com.calimero.docs/join?invitation=T", buildInviteLink("com.calimero.docs", "T", host = "calimero://"))
+    }
+
+    @Test
+    fun `a bare-scheme host roots the link at scheme slash slash`() {
+        for (host in listOf("calimero://", "calimero:/", "calimero:", "calimero:///")) {
+            assertEquals(host, "calimero://com.calimero.docs/join?invitation=T", buildInviteLink("com.calimero.docs", "T", host = host))
+        }
+        assertEquals(
+            "https://links.example.com/base/com.calimero.docs/join?invitation=T",
+            buildInviteLink("com.calimero.docs", "T", host = "https://links.example.com/base//"),
+        )
     }
 
     @Test

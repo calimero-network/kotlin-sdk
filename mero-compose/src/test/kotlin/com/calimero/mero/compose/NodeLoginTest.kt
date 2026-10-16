@@ -20,6 +20,17 @@ class NodeLoginTest {
         assertFalse(isValidNodeUrl("http://300.1.1.1"))
         assertFalse(isValidNodeUrl("   "))
         assertEquals("https://node.example.com", normalizeNodeUrl(" node.example.com/ "))
+        assertEquals("https://localhost:2428", normalizeNodeUrl("localhost:2428"))
+        assertTrue(isValidNodeUrl("HTTPS://Node.Example.com"))
+    }
+
+    @Test
+    fun `a URL with a scheme keeps it, and only http(s) passes`() {
+        assertEquals("ftp://node.example", normalizeNodeUrl("ftp://node.example/"))
+        assertFalse(isValidNodeUrl("ftp://node.example"))
+        assertFalse(isValidNodeUrl("ws://node.example"))
+        assertFalse(isValidNodeUrl("calimero://node.example"))
+        assertTrue(isValidNodeUrl("https://node.example"))
         assertEquals("localhost:2428", displayNodeUrl("http://localhost:2428/"))
     }
 

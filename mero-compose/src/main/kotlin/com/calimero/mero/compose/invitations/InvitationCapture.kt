@@ -91,8 +91,9 @@ fun buildInviteLink(
     params[INVITATION_PARAM] = token
     for ((key, value) in extra) if (!value.isNullOrEmpty()) params[key] = value
     val query = params.entries.joinToString("&") { (k, v) -> "${formEncode(k)}=${formEncode(v)}" }
-    // `calimero://` stays whole; an https host loses its trailing slashes.
-    val root = if (host.endsWith("://")) host else host.trimEnd('/') + "/"
+    // A bare scheme (`calimero://`, `calimero:/`, `calimero:`) roots the link as `calimero://`;
+    // any other host loses its trailing slashes.
+    val root = BARE_SCHEME.matchEntire(host.trim())?.let { "${it.groupValues[1]}://" } ?: (host.trimEnd('/') + "/")
     return "$root${pathEncode(slug)}/${pathEncode(JOIN_ACTION)}?$query"
 }
 
@@ -381,6 +382,7 @@ fun subscribeInvitation(watcher: () -> Unit): () -> Unit = InvitationCapture.sha
 
 private val json = Json { ignoreUnknownKeys = true }
 private val attemptsSerializer = MapSerializer(String.serializer(), Int.serializer())
+private val BARE_SCHEME = Regex("^([a-z][a-z0-9+.-]*):/*$", RegexOption.IGNORE_CASE)
 private val SCHEME = Regex("^[a-z][a-z0-9+.-]*:", RegexOption.IGNORE_CASE)
 private val SCHEME_AND_AUTHORITY = Regex("^[a-z][a-z0-9+.-]*://[^/?#]*", RegexOption.IGNORE_CASE)
 private const val FNV_OFFSET = 0x811c9dc5.toInt()
