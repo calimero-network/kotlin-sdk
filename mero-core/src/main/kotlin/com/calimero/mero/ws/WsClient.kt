@@ -3,15 +3,21 @@ package com.calimero.mero.ws
 import com.calimero.mero.ExperimentalMeroApi
 import com.calimero.mero.http.MeroStateException
 import com.calimero.mero.http.NetworkException
+import com.calimero.mero.request.ProofRequest
+import com.calimero.mero.request.RequestAuthorizer
+import com.calimero.mero.request.carriesProof
+import com.calimero.mero.request.signedPath
 import com.calimero.mero.sse.AppVersionChangedEvent
 import com.calimero.mero.sse.ContextEvent
 import com.calimero.mero.sse.GroupEvent
 import com.calimero.mero.sse.GroupMembershipEvent
 import com.calimero.mero.sse.GroupMigrationEvent
 import com.calimero.mero.sse.NodeEvent
+import com.calimero.mero.sse.REDIRECTS
 import com.calimero.mero.sse.asAppVersionChanged
 import com.calimero.mero.sse.asMembershipEvent
 import com.calimero.mero.sse.asMigrationEvent
+import com.calimero.mero.sse.proofRedirect
 import com.calimero.mero.sse.terminalFailureOf
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -66,19 +72,39 @@ import okhttp3.WebSocketListener
  * upgrade's HTTP status, so a `403` (or a `401` naming a dead token family) stops the
  * client instead of retrying a refused credential: [failure] is set and [connect] must be
  * called again, as with SSE.
+ *
+ * Pass [authorize] to authenticate the upgrade with headers of its own — a request proof
+ * over `GET /ws` ([com.calimero.mero.request.createProofAuthorizer]) — instead of the Bearer
+ * [token]. Core admits a proof on `/ws` like any other route when the request has no token.
+ * A proof-carrying upgrade never follows a redirect: the 3xx is reported on [errors] as a
+ * [com.calimero.mero.http.ProofRedirectRefusedException] and the client reconnects.
  */
 @ExperimentalMeroApi
 class WsClient(
     baseUrl: String,
     private val token: suspend () -> String?,
-    private val client: OkHttpClient = OkHttpClient(),
+    client: OkHttpClient = OkHttpClient(),
     private val json: Json = Json { ignoreUnknownKeys = true },
     /** First reconnect delay; doubled per failed attempt (mero-js: 1000 ms). */
     val initialBackoffMs: Long = INITIAL_BACKOFF_MS,
     /** Ceiling of the reconnect delay (mero-js `MAX_BACKOFF_MS`, 30 000 ms). */
     val maxBackoffMs: Long = MAX_BACKOFF_MS,
+    /** Per-request authorization for the upgrade; takes precedence over [token] when set. */
+    private val authorize: RequestAuthorizer? = null,
 ) {
     private val base = baseUrl.trimEnd('/')
+
+    // A proof is signed for one path, so a client that may carry one never follows a redirect.
+    private val client: OkHttpClient =
+        if (authorize == null) {
+            client
+        } else {
+            client
+                .newBuilder()
+                .followRedirects(false)
+                .followSslRedirects(false)
+                .build()
+        }
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val lock = Any()
     private val contextIds = LinkedHashSet<String>()
@@ -144,32 +170,35 @@ class WsClient(
     }
 
     private suspend fun openSocket() {
-        val accessToken =
+        val headers =
             try {
-                token()
+                upgradeHeaders()
             } catch (e: Exception) {
                 synchronized(lock) { connecting = false }
                 _errors.tryEmit(e)
                 scheduleReconnect()
                 return
             }
-        if (accessToken == null) {
+        if (headers == null) {
             synchronized(lock) { connecting = false }
             _errors.tryEmit(MeroStateException("No authentication token available for WebSocket connection"))
             scheduleReconnect()
             return
         }
-        val request =
-            Request
-                .Builder()
-                .url("$base/ws")
-                .header("Authorization", "Bearer $accessToken")
-                .build()
+        val builder = Request.Builder().url("$base/ws")
+        headers.forEach { (name, value) -> builder.header(name, value) }
+        val request = builder.build()
         synchronized(lock) {
             connecting = false
             if (closed) return
             socket = client.newWebSocket(request, listener)
         }
+    }
+
+    /** The upgrade's auth headers, or `null` when there is no credential yet. */
+    private suspend fun upgradeHeaders(): Map<String, String>? {
+        val authorize = authorize ?: return token()?.let { mapOf("Authorization" to "Bearer $it") }
+        return authorize(ProofRequest("GET", signedPath("$base/ws")))
     }
 
     private val listener =
@@ -215,6 +244,11 @@ class WsClient(
                 t: Throwable,
                 response: Response?,
             ) {
+                if (response != null && response.code in REDIRECTS && carriesProof(response.request.headers.toMap())) {
+                    if (synchronized(lock) { webSocket === socket && !closed }) _errors.tryEmit(proofRedirect(response))
+                    dropped(webSocket)
+                    return
+                }
                 val terminal = response?.let { terminalFailureOf(it) }
                 if (terminal != null) {
                     synchronized(lock) {

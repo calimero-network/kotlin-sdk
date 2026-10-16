@@ -104,3 +104,22 @@ internal val TERMINAL_AUTH_ERRORS = setOf("token_reuse", "token_revoked")
 
 /** `x-auth-error` reason that means "refresh me" — the reactive-refresh trigger. */
 internal const val AUTH_ERROR_TOKEN_EXPIRED = "token_expired"
+
+/**
+ * A request carrying `X-Calimero-Proof` was answered with a redirect, which the SDK refuses
+ * to follow: a proof is signed for one path, and following would hand it to another
+ * location. [status] is `0` (the response is withheld, as mero-js reports it); the redirect
+ * itself is [redirectStatus] to [location]. Port of mero-js `refuseProofRedirect`.
+ */
+class ProofRedirectRefusedException(
+    url: String,
+    /** The 3xx the node answered with. */
+    val redirectStatus: Int,
+    /** Where it pointed, if it said. */
+    val location: String?,
+) : HttpException(
+        0,
+        "the node answered with a redirect; a request carrying X-Calimero-Proof is not followed to another location",
+        emptyMap(),
+        url,
+    )

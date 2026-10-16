@@ -3,7 +3,12 @@ package com.calimero.mero.sse
 import com.calimero.mero.http.AuthRevokedException
 import com.calimero.mero.http.HttpException
 import com.calimero.mero.http.NetworkException
+import com.calimero.mero.http.ProofRedirectRefusedException
 import com.calimero.mero.http.TERMINAL_AUTH_ERRORS
+import com.calimero.mero.request.ProofRequest
+import com.calimero.mero.request.RequestAuthorizer
+import com.calimero.mero.request.carriesProof
+import com.calimero.mero.request.signedPath
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
@@ -99,17 +104,40 @@ import java.util.concurrent.TimeUnit
  *
  * [subscribe] and [unsubscribe] never throw for an HTTP failure: like mero-js they report
  * it on [errors] (and a terminal one ends the connection as above).
+ *
+ * ## Request proofs
+ *
+ * Pass [authorize] to authenticate each request with headers of its own — a device cert
+ * signing a request proof ([com.calimero.mero.request.createProofAuthorizer]) — instead of
+ * the Bearer [token] (mero-js `SseClient({ authorize })`). It is called for the `GET /sse`
+ * and every subscription POST with that request's method, path and body. A request that
+ * carries `X-Calimero-Proof` never follows a redirect: the 3xx is reported on [errors] as a
+ * [com.calimero.mero.http.ProofRedirectRefusedException] and the stream reconnects.
  */
 class SseConnection(
     baseUrl: String,
     private val token: suspend () -> String?,
-    private val client: OkHttpClient = OkHttpClient(),
+    client: OkHttpClient = OkHttpClient(),
     private val json: Json = Json { ignoreUnknownKeys = true },
     /** Wait between a drop and the next attempt, fixed (mero-js `reconnectDelayMs`). */
     val reconnectDelayMs: Long = DEFAULT_RECONNECT_DELAY_MS,
     private val now: () -> Long = System::currentTimeMillis,
+    /** Per-request authorization; takes precedence over [token] when set. */
+    private val authorize: RequestAuthorizer? = null,
 ) {
     private val base = baseUrl.trimEnd('/')
+
+    // A proof is signed for one path, so a client that may carry one never follows a redirect.
+    private val client: OkHttpClient =
+        if (authorize == null) {
+            client
+        } else {
+            client
+                .newBuilder()
+                .followRedirects(false)
+                .followSslRedirects(false)
+                .build()
+        }
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val lock = Any()
     private val contextIds = LinkedHashSet<String>()
@@ -270,10 +298,18 @@ class SseConnection(
 
     private suspend fun CoroutineScope.runLoop() {
         while (isActive) {
-            val accessToken = token()
-            if (accessToken != null) {
+            val headers =
                 try {
-                    runStream(accessToken)
+                    streamHeaders()
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    _errors.tryEmit(e)
+                    null
+                }
+            if (headers != null) {
+                try {
+                    runStream(headers)
                 } catch (e: CancellationException) {
                     throw e
                 } catch (e: TerminalSseFailure) {
@@ -288,20 +324,23 @@ class SseConnection(
         }
     }
 
+    /** The `GET /sse` headers, or `null` when there is no credential yet (wait and retry). */
+    private suspend fun streamHeaders(): Map<String, String>? {
+        val authorize = authorize ?: return token()?.let { mapOf("Authorization" to "Bearer $it") }
+        return authorize(ProofRequest("GET", signedPath("$base/sse")))
+    }
+
     /** One stream: open it, handle its frames in order, return when it ends. */
-    private suspend fun runStream(accessToken: String) {
-        val request =
-            Request
-                .Builder()
-                .url("$base/sse")
-                // The bearer goes in the header, like every other call. Core still accepts
-                // `?token=` (a browser EventSource needs it), but a token in a URL ends up in logs.
-                .header("Authorization", "Bearer $accessToken")
-                .header("Accept", "text/event-stream")
-                .build()
+    private suspend fun runStream(headers: Map<String, String>) {
+        val builder = Request.Builder().url("$base/sse")
+        // The bearer goes in the header, like every other call. Core still accepts
+        // `?token=` (a browser EventSource needs it), but a token in a URL ends up in logs.
+        headers.forEach { (name, value) -> builder.header(name, value) }
+        val request = builder.header("Accept", "text/event-stream").build()
+        val proofAttached = carriesProof(headers)
         val frames = Channel<String>(Channel.UNLIMITED)
         val done = CompletableDeferred<Unit>()
-        val source = EventSources.createFactory(client).newEventSource(request, listener(frames, done))
+        val source = EventSources.createFactory(client).newEventSource(request, listener(frames, done, proofAttached))
         try {
             for (frame in frames) {
                 // The node said `close`: this stream is over, reconnect like after a drop.
@@ -316,6 +355,7 @@ class SseConnection(
     private fun listener(
         frames: Channel<String>,
         done: CompletableDeferred<Unit>,
+        proofAttached: Boolean,
     ) = object : EventSourceListener() {
         override fun onEvent(
             eventSource: EventSource,
@@ -339,6 +379,7 @@ class SseConnection(
             val terminal = response?.let { terminalFailureOf(it) }
             val error: Throwable =
                 when {
+                    proofAttached && response != null && response.code in REDIRECTS -> proofRedirect(response)
                     terminal != null -> TerminalSseFailure(terminal)
                     response != null && !response.isSuccessful -> httpExceptionOf(response)
                     // A drop mid-stream, or a 200 that is not an event stream.
@@ -443,16 +484,19 @@ class SseConnection(
                             },
                         )
                     }
-                val builder =
-                    Request
-                        .Builder()
-                        .url("$base/sse/subscription")
-                        .post(json.encodeToString(JsonObject.serializer(), payload).toRequestBody(JSON_MEDIA))
-                token()?.let { builder.header("Authorization", "Bearer $it") }
+                val url = "$base/sse/subscription"
+                val body = json.encodeToString(JsonObject.serializer(), payload).encodeToByteArray()
+                val builder = Request.Builder().url(url).post(body.toRequestBody(JSON_MEDIA))
+                val headers =
+                    authorize?.invoke(ProofRequest("POST", signedPath(url), body))
+                        ?: token()?.let { mapOf("Authorization" to "Bearer $it") }
+                        ?: emptyMap()
+                headers.forEach { (name, value) -> builder.header(name, value) }
                 val call = client.newCall(builder.build())
                 call.timeout().timeout(SUBSCRIPTION_TIMEOUT_MS, TimeUnit.MILLISECONDS)
                 call.execute().use { resp ->
                     when {
+                        carriesProof(headers) && resp.code in REDIRECTS -> proofRedirect(resp)
                         resp.isSuccessful -> null
                         else -> terminalFailureOf(resp)?.let { TerminalSseFailure(it) } ?: httpExceptionOf(resp)
                     }
@@ -487,6 +531,9 @@ class SseConnection(
 }
 
 private const val HTTP_UNAUTHORIZED = 401
+
+/** Every 3xx: none is followed for a request carrying a proof. */
+internal val REDIRECTS = 300..399
 private const val HTTP_FORBIDDEN = 403
 
 /**
@@ -500,6 +547,10 @@ internal fun terminalFailureOf(response: Response): HttpException? {
     val ex = httpExceptionOf(response)
     return if (deadFamily != null) AuthRevokedException(deadFamily, ex.status, ex.bodyText, ex.headers, ex.url) else ex
 }
+
+/** The refusal for a 3xx that answered a request carrying a proof (mero-js `refuseProofRedirect`). */
+internal fun proofRedirect(response: Response): ProofRedirectRefusedException =
+    ProofRedirectRefusedException(response.request.url.toString(), response.code, response.header("Location"))
 
 internal fun httpExceptionOf(response: Response): HttpException {
     val body = runCatching { response.body?.string() }.getOrNull().orEmpty()

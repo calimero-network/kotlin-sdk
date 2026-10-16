@@ -1,5 +1,6 @@
 package com.calimero.mero.sse
 
+import com.calimero.mero.request.RequestAuthorizer
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.channelFlow
 import kotlinx.coroutines.flow.filterIsInstance
@@ -103,13 +104,18 @@ class SseClient(
     private val client: OkHttpClient = OkHttpClient(),
     private val json: Json = Json { ignoreUnknownKeys = true },
     private val reconnectDelayMs: Long = SseConnection.DEFAULT_RECONNECT_DELAY_MS,
+    /**
+     * Per-request authorization (a request proof — [com.calimero.mero.request.createProofAuthorizer]),
+     * taking precedence over [token]; see [SseConnection]'s "Request proofs".
+     */
+    private val authorize: RequestAuthorizer? = null,
 ) {
     /**
      * A new long-lived [SseConnection] on this client's node, not yet connected. Its
      * subscriptions are changed on the live stream with [SseConnection.subscribe] /
      * [SseConnection.unsubscribe]; close it with [SseConnection.close].
      */
-    fun connection(): SseConnection = SseConnection(baseUrl, token, client, json, reconnectDelayMs)
+    fun connection(): SseConnection = SseConnection(baseUrl, token, client, json, reconnectDelayMs, authorize = authorize)
 
     /**
      * Cold stream of events for the given [contextIds]. Cancelling the collecting coroutine closes

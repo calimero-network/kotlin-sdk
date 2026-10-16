@@ -16,7 +16,10 @@ import com.calimero.mero.http.HttpClient
 import com.calimero.mero.http.HttpException
 import com.calimero.mero.http.MeroStateException
 import com.calimero.mero.http.OkHttpTransport
+import com.calimero.mero.http.RequestProofInterceptor
 import com.calimero.mero.http.TokenAuthenticator
+import com.calimero.mero.request.RequestAuthorizer
+import com.calimero.mero.request.proofAuthorizerOf
 import com.calimero.mero.rpc.RpcClient
 import com.calimero.mero.sse.AppVersionChangedEvent
 import com.calimero.mero.sse.ContextEvent
@@ -100,6 +103,8 @@ class Mero(
             .writeTimeout(config.timeoutMs, TimeUnit.MILLISECONDS)
             .retryOnConnectionFailure(true)
             .addInterceptor(AuthInterceptor { store.getTokens()?.accessToken })
+            .apply { config.requestProof?.let { addInterceptor(RequestProofInterceptor(it)) } }
+            .refusingRedirectsWithProof()
             .authenticator(TokenAuthenticator { triggering -> coordinator.refresh(triggering).accessToken })
             .build()
 
@@ -110,7 +115,31 @@ class Mero(
             .connectTimeout(config.timeoutMs, TimeUnit.MILLISECONDS)
             .readTimeout(0, TimeUnit.MILLISECONDS)
             .retryOnConnectionFailure(true)
+            .refusingRedirectsWithProof()
             .build()
+
+    /** A proof is signed for one path: never let OkHttp carry it to another location. */
+    private fun OkHttpClient.Builder.refusingRedirectsWithProof(): OkHttpClient.Builder =
+        if (config.requestProof == null) this else followRedirects(false).followSslRedirects(false)
+
+    /**
+     * How SSE and the WebSocket authenticate when a proof is configured: the session token
+     * when there is one (the node answers a token-carrying request by the token anyway), the
+     * request proof otherwise. `null` without a proof, so they keep their token-only path.
+     */
+    private val streamAuthorizer: RequestAuthorizer? =
+        config.requestProof?.let { signer ->
+            val proof = proofAuthorizerOf(signer)
+            val authorizer: RequestAuthorizer = { request ->
+                store
+                    .getTokens()
+                    ?.accessToken
+                    ?.takeIf { it.isNotBlank() }
+                    ?.let { mapOf("Authorization" to "Bearer $it") }
+                    ?: proof(request)
+            }
+            authorizer
+        }
 
     private val transport: HttpClient =
         OkHttpTransport(
@@ -178,7 +207,13 @@ class Mero(
      */
     @ExperimentalMeroApi
     val ws: WsClient by lazy {
-        WsClient(baseUrl = config.baseUrl, token = { store.getTokens()?.accessToken }, client = sseHttpClient, json = json)
+        WsClient(
+            baseUrl = config.baseUrl,
+            token = { store.getTokens()?.accessToken },
+            client = sseHttpClient,
+            json = json,
+            authorize = streamAuthorizer,
+        )
     }
 
     /** Ephemeral presence (`set_ephemeral`, and `Ephemeral` events on [sse]) — mero-js `MeroJs.ephemeral`. */
@@ -190,6 +225,7 @@ class Mero(
             token = { store.getTokens()?.accessToken },
             client = sseHttpClient,
             json = json,
+            authorize = streamAuthorizer,
         )
 
     /**

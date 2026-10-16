@@ -1,5 +1,6 @@
 package com.calimero.mero
 
+import com.calimero.mero.request.ProofSigner
 import com.calimero.mero.storage.TokenStore
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
@@ -21,6 +22,19 @@ import java.io.File
  * @property refreshLockFile file backing the cross-process refresh lock. Pass a file in app-internal
  *   storage (e.g. `File(context.filesDir, "mero-refresh.lock")`) when a second process/WorkManager
  *   job can refresh concurrently. Null (default) → in-process single-flight only.
+ * @property requestProof sign every request with a device key, instead of or alongside a session —
+ *   mero-js `MeroJsConfig.requestProof`. Each request's method, path and query, and body are
+ *   signed at the moment of the call and sent as `X-Calimero-Proof`
+ *   ([com.calimero.mero.request.REQUEST_PROOF_HEADER]). Build one with
+ *   [com.calimero.mero.request.createProofSigner] (from `ProofSignerOptions` or a
+ *   `ProofCredential`), or pass your own when the key must not reach the SDK. Returning `null`
+ *   sends no proof for that request. With a proof configured the HTTP clients **do not follow
+ *   redirects**: a 3xx answering a proof-carrying request fails with
+ *   [com.calimero.mero.http.ProofRedirectRefusedException]. The node consults a proof only when
+ *   the request has no token, and serves other accounts' proofs only with `--delegated-access`
+ *   (otherwise `403`; a bad proof is a `401`, `x-auth-error: invalid_proof`). SSE ([Mero.sse])
+ *   and the WebSocket ([Mero.ws]) present the session token when there is one and the proof
+ *   otherwise.
  */
 data class MeroConfig(
     val baseUrl: String,
@@ -28,6 +42,7 @@ data class MeroConfig(
     val timeoutMs: Long = 10_000,
     val tokenStore: TokenStore? = null,
     val refreshLockFile: File? = null,
+    val requestProof: ProofSigner? = null,
 )
 
 /**
