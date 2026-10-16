@@ -110,7 +110,12 @@ class CloudAccount(
     /** True when a session is persisted. */
     val isSignedIn: Boolean get() = session() != null
 
-    internal fun saveSession(session: DelegatedSession) = store.put(KEY_SESSION, json.encodeToString(DelegatedSession.serializer(), session))
+    /**
+     * Persist [session] as this device's session — mero-js `saveDelegatedSession`, what
+     * mero-react's `connectWithAccount` adopts (a session moved onto the relay that admitted
+     * it, say). It must name this device's account and certificate: nothing here re-checks them.
+     */
+    fun saveSession(session: DelegatedSession) = store.put(KEY_SESSION, json.encodeToString(DelegatedSession.serializer(), session))
 
     // ---- Enrolment -----------------------------------------------------------------------
 
