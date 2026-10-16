@@ -135,4 +135,58 @@ class MeroClientTest {
             assertNull(again.relay)
             assertFalse(client.account.isSignedIn)
         }
+
+    // ---- Development node login ----------------------------------------------------------
+
+    @Test
+    fun `login signs in to a development node with a username and password`() =
+        runBlocking {
+            val base = server.url("/").toString()
+            assertTrue(client.login(base, "admin", "secret"))
+            val state = client.state.value
+            assertTrue(state.isAuthenticated)
+            assertTrue(state.isDevNodeSession)
+            assertFalse(state.signedInWithoutRelay)
+            assertEquals(base.trimEnd('/'), state.nodeUrl)
+            assertEquals("admin", state.username)
+            assertNull(client.relay)
+
+            val body = node.lastTokenRequestBody!!
+            assertTrue(body, body.contains("\"auth_method\":\"user_password\""))
+            assertTrue(body, body.contains("\"password\":\"secret\""))
+            assertEquals(JsonPrimitive(42), client.mero!!.rpc.execute<JsonPrimitive>("ctx", "get"))
+
+            client.signOut()
+            assertEquals(1, node.logoutCalls)
+            assertFalse(client.state.value.isAuthenticated)
+            assertNull(client.mero)
+        }
+
+    @Test
+    fun `login refuses a malformed url or empty credentials without a request`() =
+        runBlocking {
+            assertFalse(client.login("not a url", "admin", "secret"))
+            assertTrue(
+                client.state.value.error!!
+                    .contains("valid node URL"),
+            )
+            assertFalse(client.login(server.url("/").toString(), "admin", ""))
+            assertTrue(
+                client.state.value.error!!
+                    .contains("required"),
+            )
+            assertEquals(0, node.tokenCalls)
+            assertFalse(client.state.value.isAuthenticated)
+        }
+
+    @Test
+    fun `login reports an unreachable node in words`() =
+        runBlocking {
+            val closed = java.net.ServerSocket(0).use { it.localPort }
+            assertFalse(client.login("http://127.0.0.1:$closed", "admin", "secret"))
+            val state = client.state.value
+            assertFalse(state.isAuthenticated)
+            assertFalse(state.isLoading)
+            assertTrue(state.error!!, state.error!!.startsWith("Can't reach the node at http://127.0.0.1:$closed"))
+        }
 }
