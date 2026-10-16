@@ -3,6 +3,8 @@ package com.calimero.mero.http
 import com.calimero.mero.account.JoinException
 import com.calimero.mero.admin.WarrantNonceRouteUnavailableException
 import com.calimero.mero.cloud.AccountHaRefusedException
+import com.calimero.mero.cloud.CloudLinkDeclinedException
+import com.calimero.mero.cloud.CloudNotReadyException
 import com.calimero.mero.relay.IntentRefusedException
 import com.calimero.mero.relay.NotAViewException
 import com.calimero.mero.relay.WarrantNonceExhaustedException
@@ -123,6 +125,9 @@ data class ClassifiedError(
  *   retryable (re-sign with a fresh nonce); a Cloud HA refusal reports its advice.
  * - [ReadOnlyWriteRefusedException]: [ErrorKind.FORBIDDEN], not retryable — this node's role
  *   cannot write; [WarrantNonceExhaustedException]: [ErrorKind.CONFLICT].
+ * - [CloudLinkDeclinedException] (the account link was declined): [ErrorKind.FORBIDDEN];
+ *   [CloudNotReadyException] (no namespace or relay to connect to yet): [ErrorKind.UNAVAILABLE],
+ *   retryable — Swift `linkDeclined` / `cloudNotReady`.
  * - Anything else (an RPC method error, a state error): [ErrorKind.UNKNOWN], retryable.
  */
 fun classifyError(error: Throwable?): ClassifiedError {
@@ -130,6 +135,8 @@ fun classifyError(error: Throwable?): ClassifiedError {
     val kind =
         when {
             error is ReadOnlyWriteRefusedException -> ErrorKind.FORBIDDEN
+            error is CloudLinkDeclinedException -> ErrorKind.FORBIDDEN
+            error is CloudNotReadyException -> ErrorKind.UNAVAILABLE
             error is WarrantNonceExhaustedException -> ErrorKind.CONFLICT
             status != null -> ErrorKind.forStatus(status)
             error is IOException || error is TimeoutCancellationException -> ErrorKind.UNREACHABLE
@@ -142,11 +149,11 @@ fun classifyError(error: Throwable?): ClassifiedError {
 /** The HTTP status [error] carries, or null when there is none. `0` for a [NetworkException]. */
 fun statusOf(error: Throwable?): Int? =
     when (error) {
+        is AccountHaRefusedException -> error.status
         is HttpException -> error.status
         is NetworkException -> 0
         is IntentRefusedException -> error.status
         is JoinException -> error.status
-        is AccountHaRefusedException -> error.status
         is WarrantNonceRouteUnavailableException -> HTTP_NOT_FOUND
         is NotAViewException -> HTTP_CONFLICT
         else -> null
@@ -162,8 +169,9 @@ fun messageOf(
 ): String {
     val candidates =
         when (error) {
-            is HttpException -> listOf(explanationOf(error.bodyText), error.message)
+            // Before HttpException, which it extends: its advice beats the cloud's bare code.
             is AccountHaRefusedException -> listOf(error.advice, error.message)
+            is HttpException -> listOf(explanationOf(error.bodyText), error.message)
             is IntentRefusedException -> listOf(error.reason, error.message)
             else -> listOf(error?.message)
         }
