@@ -516,6 +516,13 @@ class RelayConnection internal constructor(
      * reads fall back to warrants.
      */
     suspend fun ensureSession(): Boolean = bearer() != null
+
+    /**
+     * End the relay session: retire its refresh token on the relay (`POST /auth/logout`,
+     * best-effort) and drop its tokens. Warranted writes keep working — they never needed
+     * the session — and the next [ensureSession] logs in again. See [Mero.logout].
+     */
+    suspend fun logout() = mero.logout()
 }
 
 /** What [CloudAccount.foundNamespace] returns. */

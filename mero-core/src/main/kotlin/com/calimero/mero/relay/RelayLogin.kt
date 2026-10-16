@@ -182,6 +182,33 @@ class TlsRelayKeyVerifier(
     }
 }
 
+/**
+ * A verifier that answers with a node key pinned out of band — from the relay's operator, a
+ * config file, or an earlier attestation the app stored — whatever the relay attests to. The
+ * relay is still asked to attest (the request proves it is up), but its answer does not
+ * choose the key: a login statement then names [nodeKey], and a relay that does not hold it
+ * cannot use the session. Port of the Swift SDK's `PinnedRelayKeyVerifier`.
+ *
+ * To skip the attestation round trip altogether for one account, pin the key with
+ * [com.calimero.mero.account.CloudAccount.pinRelayNodeKey] instead.
+ */
+class PinnedRelayKeyVerifier(
+    nodeKey: String,
+) : RelayKeyVerifier {
+    /** The pinned key, 64 lower-case hex. */
+    val nodeKey: String = nodeKey.trim().lowercase()
+
+    init {
+        require(Hex.isHex32(this.nodeKey)) { "nodeKey must be 64 hex characters" }
+    }
+
+    override suspend fun verify(
+        relayUrl: String,
+        nonce: ByteArray,
+        attestation: RelayAttestation,
+    ): String = nodeKey
+}
+
 /** TEE attestation byte layouts (mero-js `src/relay-attestation/attest-node-key.ts`). */
 object RelayAttest {
     private val KEY_BINDING_DOMAIN = "calimero.tee-attest.key-binding.v1".encodeToByteArray()
@@ -292,6 +319,27 @@ class RelayLogin internal constructor(
             (data["access_token"] as? JsonPrimitive)?.contentOrNull ?: error("the relay minted no session")
         val refresh = (data["refresh_token"] as? JsonPrimitive)?.contentOrNull.orEmpty()
         return TokenData(access, refresh, expiresAtFromJwt(access, System.currentTimeMillis() + ONE_HOUR_MS))
+    }
+
+    /**
+     * Retire a relay session's refresh token (`POST {relay}/auth/logout {refresh_token}`, core
+     * rc.83), so a copy that leaked can never mint another access token. Best effort: returns
+     * true when the relay acknowledged it, false for an empty token, a refusal (`401` for a
+     * token already invalid) or a network failure — it never throws. Swift `RelayLogin.logout`;
+     * the mero-js equivalent is `MeroJs.logout()` on a client pointed at the relay, which is
+     * [com.calimero.mero.account.RelayConnection.logout] here.
+     */
+    suspend fun logout(
+        relayUrl: String,
+        refreshToken: String,
+    ): Boolean {
+        if (refreshToken.isBlank()) return false
+        val body = buildJsonObject { put("refresh_token", refreshToken) }
+        return try {
+            http.execute("POST", relayUrl.trimBase() + "/auth/logout", body.toString()).isSuccessful
+        } catch (_: Exception) {
+            false
+        }
     }
 
     private companion object {

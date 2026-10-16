@@ -127,7 +127,10 @@ class MeroClientTest {
             assertTrue(again.state.value.isAuthenticated)
             assertNotNull(again.relay)
 
+            assertTrue(again.connection.value!!.ensureSession())
             again.signOut()
+            // The relay session was retired on the relay, not just dropped locally.
+            assertEquals(1, node.logoutCalls)
             assertFalse(again.state.value.isAuthenticated)
             assertNull(again.relay)
             assertFalse(client.account.isSignedIn)

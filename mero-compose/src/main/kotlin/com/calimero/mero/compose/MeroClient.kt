@@ -184,9 +184,12 @@ class MeroClient(
     suspend fun createNamespaceInvitation(namespaceId: String): SignedGroupOpenInvitation =
         account.createNamespaceInvitation(namespaceId, _connection.value)
 
-    /** Sign out: drop the relay session and the persisted account session. */
+    /**
+     * Sign out: retire the relay session on the relay (best-effort `POST /auth/logout`), drop
+     * its tokens and the persisted account session.
+     */
     suspend fun signOut(forgetDevice: Boolean = false) {
-        runCatching { _connection.value?.mero?.clearToken() }
+        runCatching { _connection.value?.logout() }
         tokenStore.clear()
         _connection.value = null
         account.signOut(forgetDevice)
