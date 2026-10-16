@@ -1,6 +1,6 @@
 ---
 title: Capabilities
-description: The Capabilities object — the member-capability bitmask constants and the hasCap / withCap / withoutCap helpers for reading and building capability masks.
+description: The Capabilities object — the member-capability bitmask constants, presets, capMask / capNames, and the hasCap / withCap / withoutCap helpers for reading and building capability masks.
 sidebar:
   order: 6
 ---
@@ -50,6 +50,38 @@ fun hasCap(mask: Long, cap: Long): Boolean   // every bit of cap set?
 fun withCap(mask: Long, cap: Long): Long     // mask with cap set
 fun withoutCap(mask: Long, cap: Long): Long  // mask with cap cleared
 ```
+
+## Presets
+
+Ready-made masks for `setDefaultCapabilities` / `setMemberCapabilities` and a
+namespace's `defaultCapabilities` at founding (mero-js `CAPABILITY_PRESETS`):
+
+```kotlin
+object Capabilities.Presets {
+    const val NONE         = 0L    // nothing
+    const val JOIN_ONLY    = 4L    // join Open subgroups: what a namespace starts with
+    const val CONTRIBUTOR  = 7L    // + create contexts, invite members
+    const val COLLABORATOR = 231L  // + create/delete subgroups, manage their visibility
+}
+val Capabilities.PRESETS: Map<String, Long>   // the same, by name
+```
+
+A namespace's default mask is copied into a non-admin member's row when they join,
+and a namespace starts without `CAN_CREATE_CONTEXT`: an app that never sets a
+default leaves every invited member unable to create a context. None of the
+presets include `CAN_AUTHOR_ON_BEHALF` — grant that deliberately.
+
+## By name
+
+```kotlin
+val Capabilities.BY_NAME: Map<String, Long>             // every assigned bit, in bit order
+fun capMask(vararg names: String): Long                  // capMask("CAN_CREATE_CONTEXT", "CAN_INVITE_MEMBERS") == 3
+fun capMask(base: Long, vararg names: String): Long      // capMask(Presets.CONTRIBUTOR, "CAN_CREATE_SUBGROUP") == 39
+fun capNames(mask: Long): List<String>                   // capNames(231) == [CAN_CREATE_CONTEXT, …, CAN_MANAGE_VISIBILITY]
+```
+
+`capMask` throws `IllegalArgumentException` on a name core does not assign, so a
+typo cannot silently yield 0. `capNames` reports assigned bits only (not 10+).
 
 ## Example
 

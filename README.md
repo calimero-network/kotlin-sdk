@@ -15,15 +15,15 @@ See [`ROADMAP-TASKS/task-2-android-sdk.md`] in the planning repo for the full de
 > a node with credentials, drive the whole
 > ~140-method Admin API (contexts, groups, namespaces, invitations, registry install, root/client
 > keys and permissions), call contracts over JSON-RPC, and subscribe to live node events over SSE.
-> The sample app is an **SDK Explorer** over all 182 catalogued methods plus a native Calimero chat
+> The sample app is an **SDK Explorer** over all 184 catalogued methods plus a native Calimero chat
 > client — feature-for-feature with the Swift SDK's sample. See [Roadmap](#roadmap).
 
 ## Modules
 
 | Module         | What it is                                                                 |
 |----------------|-----------------------------------------------------------------------------|
-| `mero-core`    | The SDK: the Cloud account layer (`account`, `cloud`, `relay`, `crypto` packages: `CloudAccount`, device keys, enrolment, `CloudClient`, `RelayClient`, warrants), plus `Mero`, HTTP transport (OkHttp), `AuthApi` (incl. root/client keys + permissions), `AdminApi` (~140 methods), `RefreshCoordinator`, `TokenStore`, `RpcClient`, `SseClient`/`events()`, `Capabilities`. |
-| `mero-compose` | Optional Jetpack Compose UI kit, Cloud-only: `MeroClient` (`signInWithCloud`, `handleEnrolmentCallback`), `LoginSheet` ("Continue with Calimero"), `ConnectButton`, `MeroProvider`/`useMero`. |
+| `mero-core`    | The SDK: the Cloud account layer (`account`, `cloud`, `relay`, `crypto` packages: `CloudAccount`, device keys, enrolment, `CloudClient`, `RelayClient`, warrants), plus `Mero`, HTTP transport (OkHttp), `AuthApi` (incl. root/client keys + permissions), `AdminApi` (~140 methods), `RefreshCoordinator`, `TokenStore` (node-bound bundles), `RpcClient`, `SseClient`/`events()`, `Capabilities` (+ presets, `capMask`/`capNames`), `classifyError`, local-node discovery, SSO with single-use callback state. |
+| `mero-compose` | Optional Jetpack Compose UI kit, Cloud sign-in: `MeroClient` (`signInWithCloud`, `handleEnrolmentCallback`, plus a development-only `login(nodeUrl, username, password)`), `LoginSheet` ("Continue with Calimero"), `ConnectButton`, `MeroProvider`/`useMero`. |
 | `mero-testkit` | Test-support: `FakeNode`, a stateful in-memory node on OkHttp MockWebServer, and `FakeCloud` (its cloud-manager + hosted-relay routes), for driving whole sign-in → call → sign-out journeys with no live service. |
 | `sample-app`   | A Compose sample in the light Calimero style: Cloud sign-in, a native chat client and an **SDK Explorer** over the relay session, plus a deterministic mock mode that drives the instrumented UI test. |
 
@@ -111,7 +111,9 @@ Without Compose, `CloudAccount` runs the same flow: `beginEnrolment(callbackUrl)
 
 ## Quick start (core, self-hosted node)
 
-For servers, tools and tests that talk to a node you run (not available in the Compose UI kit):
+For servers, tools and tests that talk to a node you run (the Compose kit has a development-only
+`MeroClient.login(nodeUrl, username, password)`; `discoverLocalNodes(host = ANDROID_EMULATOR_HOST)`
+finds running dev nodes):
 
 ```kotlin
 val mero = Mero(
@@ -190,7 +192,8 @@ from the release pinned in [`ci/core-version`](ci/core-version). See
 See **[TESTING.md](TESTING.md)** for the full matrix (mock vs live node, env vars, emulator setup).
 Unit + mock tests cover the highest-risk logic: single-flight/cross-process refresh, the terminal
 `x-auth-error` path, the full login→call→refresh→logout journey via `FakeNode`, Admin API request
-shaping, JSON-RPC unwrap/error mapping, JWT `exp` parsing, and SSO callback parsing. A live-node
+shaping, JSON-RPC unwrap/error mapping, JWT `exp` parsing, SSO callback parsing and its single-use state,
+node-bound token persistence, error classification and local-node discovery. A live-node
 `RealNodeE2ETest` runs in CI's `e2e.yml` (and self-skips locally unless `MERO_E2E_NODE_URL` is set).
 
 ## Roadmap
@@ -201,6 +204,8 @@ shaping, JSON-RPC unwrap/error mapping, JWT `exp` parsing, and SSO callback pars
 - [x] **M4** — SSO in-app flow (Custom Tabs + deep-link callback) in the sample app.
 - [x] **M4.5** — Cloud-only sign-in on mobile: device keys, wallet enrolment, cloud routing, relay
   login, warranted writes (golden vectors shared with mero-js).
+- [x] **M4.6** — mero-js parity: single-use SSO callback state, node-bound tokens, capability
+  presets, `classifyError`, local-node discovery, pinned relay keys and relay logout.
 - [ ] DCAP / TDX quote verification for the relay node key (today: TLS + binding checks).
 - [ ] **M5** — More Compose hooks (`useSubscription`, `useMigrationStatus`, …).
 - [ ] **M6** — Maven Central publishing, version-aligned to the mero-js contract.

@@ -129,12 +129,26 @@ named key; it does **not** verify the quote itself yet. Supply your own verifier
 `CloudAccount(relayKeyVerifier = …)` to tighten that. Warranted writes do not
 depend on the node key.
 
+When the relay's operator gives you its node key out of band, pin it:
+`PinnedRelayKeyVerifier(nodeKey)` answers with that key whatever the relay
+attests to (a relay that does not hold it cannot use the session), and
+`account.pinRelayNodeKey(relayUrl, nodeKey)` pins it for one account so no
+attestation round trip happens at all.
+
+Signing out (`MeroClient.signOut`, or `RelayConnection.logout()` on a connection
+you hold) retires the relay session's refresh token on the relay
+(`POST /auth/logout`, best-effort) before dropping it. With only a token bundle in
+hand, `RelayLogin().logout(relayUrl, refreshToken)` does the same and never
+throws.
+
 ## Self-hosted nodes
 
 ### Direct credentials
 
 For servers, tools and tests that talk to a node you run, exchange a username and
-password for a token bundle. (Not offered by the Compose UI kit.)
+password for a token bundle. In the Compose kit, `MeroClient.login(nodeUrl,
+username, password)` does the same for a development node — **development only**:
+it puts a node admin's password in the app; people sign in with Calimero.
 
 ```kotlin
 mero.authenticate(Credentials(username = "alice", password = "s3cr3t"))
@@ -249,6 +263,7 @@ SsoLauncher.launch(
 // It is not implied by "context". See /guides/events/.
 
 // 2. In the deep-link Activity that receives myapp://auth-callback:
+//    null unless the link answers the login launched in step 1 (single use, 10 minutes).
 val callback = Mero.parseAuthCallback(intent.dataString ?: "")
 if (callback != null) {
     mero.setTokenData(
@@ -278,7 +293,39 @@ if (callback != null) {
 
 `parseAuthCallback` reads the URL hash fragment
 (`access_token`, `refresh_token`, `application_id`, `context_id`,
-`context_identity`, `node_url`) and returns `null` if no access token is present.
+`context_identity`, `node_url`) and returns `null` if no access token is present
+**or if the callback does not answer a login this app began**.
+
+### Only callbacks this app asked for
+
+Anyone can send your app a deep link with tokens of their choosing in the
+fragment; adopting them would sign the person in to the *sender's* node and
+account. So `buildAuthLoginUrl` (and `SsoLauncher.launch`, which calls it) records
+a random single-use state in a `PendingAuthStates` store and adds it to the
+callback URL as `auth_state=<hex>`; the node's login page sends it back, and
+`parseAuthCallback` adopts the tokens only when that state is pending, unexpired
+(10 minutes) and unused — then spends it. This is the same check, with the same
+storage key and shape, as mero-js.
+
+The default store is in memory, so if Android kills the process while the Custom
+Tab is open the callback is refused and the person signs in again. To survive
+that, back it with the Keystore-encrypted store once at startup:
+
+```kotlin
+PendingAuthStates.shared = PendingAuthStates(EncryptedPrefsSecureStore(context, "mero_auth_state"))
+```
+
+or pass `pending = …` to `buildAuthLoginUrl` / `SsoLauncher.launch` and
+`parseAuthCallback` explicitly. `parseAuthCallback(url, allowUnsolicited = true)`
+accepts tokens nobody asked for — only for a host that injects them itself; never
+on a phone.
+
+<Aside type="caution">
+  Breaking change: a callback without a matching `auth_state` used to be adopted
+  and is now `null`. Launch every login with `buildAuthLoginUrl` / `SsoLauncher`
+  in the same process (or with a persistent `PendingAuthStates`) before handling
+  its callback.
+</Aside>
 Passing `expiresAt = 0L` tells `setTokenData` to derive the real expiry from the
 JWT. Both SSO helpers are also standalone functions in
 `com.calimero.mero.auth`.
@@ -288,6 +335,13 @@ JWT. Both SSO helpers are also standalone functions in
 Pass a `tokenStore` in the config so tokens survive app launches.
 `EncryptedPrefsTokenStore` (AndroidX Security, hardware-backed key) is the secure
 default; the memory store is ephemeral.
+
+A persisted bundle is **bound to the node that issued it**: `Mero` stores it with
+`node_origin` (the node's origin plus path prefix, `nodeOriginOf(baseUrl)`) and
+ignores a stored bundle for any other node, so `https://host/node1` never receives
+`https://host/node2`'s tokens even through one shared store. A bundle written
+before this tag existed carries none and is ignored too: after upgrading the SDK,
+a persisted session signs in once more.
 
 ```kotlin
 // Secure, persisted across launches — AndroidX EncryptedSharedPreferences
@@ -309,6 +363,28 @@ val ephemeral = Mero(
 
 Implement `TokenStore` (`getTokens` / `setTokens` / `clear`, all synchronous) to
 back tokens with anything else — see the [reference](/reference/mero/#token-stores).
+
+### Finding a local node
+
+Development nodes answer a public `GET /admin-api/health`, so an app can offer
+whatever is running on the usual ports instead of asking for a URL (port of
+mero-js `discoverLocalNodes`):
+
+```kotlin
+import com.calimero.mero.discovery.ANDROID_EMULATOR_HOST
+import com.calimero.mero.discovery.discoverLocalNodes
+import com.calimero.mero.discovery.probeNodeHealth
+
+// From the emulator, the development machine's localhost is 10.0.2.2.
+val nodes = discoverLocalNodes(host = ANDROID_EMULATOR_HOST)   // e.g. ["http://10.0.2.2:2428"]
+val up = probeNodeHealth("http://10.0.2.2:2428")              // true / false, never throws
+```
+
+`DEFAULT_LOCAL_NODE_PORTS` is `[2428, 2429, 2528, 2529]`; pass `ports =` to probe
+others, and `timeoutMs =` (default 2 s per probe; probes run in parallel). On a
+physical device use `adb reverse tcp:2428 tcp:2428` with the default `localhost`,
+or the machine's LAN address. A cleartext `http://` node needs a network security
+config exception.
 
 ## Inspecting and clearing auth state
 

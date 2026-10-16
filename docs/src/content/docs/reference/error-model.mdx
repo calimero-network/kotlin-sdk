@@ -118,6 +118,52 @@ try {
 }
 ```
 
+## Classifying an error
+
+When a caller only needs "what kind of failure is this, and would trying again
+later help?", `classifyError` answers both — the port of mero-js
+`classifyError`, with the same status table:
+
+```kotlin
+import com.calimero.mero.http.ErrorKind
+import com.calimero.mero.http.classifyError
+
+try {
+    mero.admin.joinNamespace(namespaceId, request)
+} catch (e: Exception) {
+    val c = classifyError(e)   // ClassifiedError(kind, status, retryable, message)
+    when (c.kind) {
+        ErrorKind.CONFLICT -> showError("This invitation can't be used: ${c.message}")
+        ErrorKind.UNREACHABLE, ErrorKind.UNAVAILABLE -> if (c.retryable) retryLater()
+        else -> showError(c.message)
+    }
+}
+```
+
+| Kind (`wire`) | Status | Retryable |
+|---|---|---|
+| `INVALID` (`invalid`) | 400, other 4xx | no |
+| `UNAUTHORIZED` (`unauthorized`) | 401 | yes (after signing in again) |
+| `FORBIDDEN` (`forbidden`) | 403 | no |
+| `NOT_FOUND` (`not-found`) | 404 | yes (may not have synced) |
+| `CONFLICT` (`conflict`) | 409 | no |
+| `GONE` (`gone`) | 410 | no |
+| `TOO_LARGE` (`too-large`) | 413 | no |
+| `RATE_LIMITED` (`rate-limited`) | 429 | yes |
+| `UNAVAILABLE` (`unavailable`) | 503, 504 | yes |
+| `SERVER` (`server`) | other 5xx | yes |
+| `UNREACHABLE` (`unreachable`) | 0 / none | yes |
+| `UNKNOWN` (`unknown`) | none | yes |
+
+`message` is the node's own words — the body's `error`, a proxy's nested
+`error.message`, or the cloud's `detail` — falling back to the exception message.
+`NetworkException` is `UNREACHABLE` with status `0` (a bare `IOException` or a
+coroutine timeout too, with no status). Account and relay exceptions that carry a
+status (`IntentRefusedException`, `JoinException`, `AccountHaRefusedException`)
+classify by it; an intent refused for its nonce stays retryable.
+`ReadOnlyWriteRefusedException` is `FORBIDDEN`, `WarrantNonceExhaustedException`
+`CONFLICT`. Anything else is `UNKNOWN`.
+
 ## How 401s are handled
 
 The SDK handles `401 token_expired` **internally**: it refreshes the token and

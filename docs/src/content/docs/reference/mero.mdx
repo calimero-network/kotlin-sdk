@@ -70,8 +70,33 @@ On `Mero`'s companion (also available as top-level functions in
 `com.calimero.mero.auth`):
 
 ```kotlin
-fun parseAuthCallback(url: String): AuthCallbackResult?
-fun buildAuthLoginUrl(nodeUrl: String, options: AuthLoginOptions): String
+fun parseAuthCallback(
+    url: String,
+    allowUnsolicited: Boolean = false,
+    pending: PendingAuthStates = PendingAuthStates.shared,
+): AuthCallbackResult?
+fun buildAuthLoginUrl(
+    nodeUrl: String,
+    options: AuthLoginOptions,
+    pending: PendingAuthStates = PendingAuthStates.shared,
+): String
+```
+
+`buildAuthLoginUrl` records a single-use `auth_state` in `pending` and adds it to
+the callback URL; `parseAuthCallback` returns `null` for a callback that carries
+no pending state (unless `allowUnsolicited`). See
+[only callbacks this app asked for](/get-started/authentication/#only-callbacks-this-app-asked-for).
+
+```kotlin
+class PendingAuthStates(
+    store: SecureStore = MemorySecureStore(),   // EncryptedPrefsSecureStore to survive process death
+    clock: () -> Long = System::currentTimeMillis,
+) {
+    fun begin(): String                 // a fresh state, 16 random bytes hex, 10-minute lifetime
+    fun take(state: String?): Boolean   // spend it: true once, if pending and unexpired
+    fun clear()
+    companion object { var shared: PendingAuthStates }
+}
 ```
 
 ```kotlin
@@ -87,7 +112,7 @@ data class AuthLoginOptions(
 )
 ```
 
-On Android, `SsoLauncher.launch(context, nodeUrl, options)` opens the login URL in
+On Android, `SsoLauncher.launch(context, nodeUrl, options, pending)` opens the login URL in
 a Chrome Custom Tab. See [authentication](/get-started/authentication/#hosted-sso-deep-link).
 
 ## Configuration types
@@ -120,12 +145,22 @@ data class TokenData(
     val accessToken: String,   // wire: access_token
     val refreshToken: String,  // wire: refresh_token
     val expiresAt: Long,       // wire: expires_at (epoch ms; derived from the JWT `exp`)
+    val nodeOrigin: String? = null, // wire: node_origin — the issuing node, set by Mero on persist
 )
+
+fun nodeOriginOf(baseUrl: String): String  // "https://host/node1/" → "https://host/node1"
 ```
 
 Wire/storage keys are snake_case, portable with the mero-js token bundle. Pass
 `expiresAt = 0L` to `setTokenData` to have the SDK derive the real expiry from the
 access token's JWT.
+
+`Mero` tags every bundle it persists with `nodeOrigin = nodeOriginOf(baseUrl)`
+(origin plus path prefix, as mero-js's `node_origin`) and reads a stored bundle
+tagged for another node — or untagged, from before the field existed — as empty,
+so tokens are never sent to a node that did not issue them. `getTokenData()`
+returns bundles without the tag; `clearToken()` leaves another node's bundle in a
+shared store alone.
 
 ## Token stores
 

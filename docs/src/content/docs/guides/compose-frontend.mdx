@@ -94,7 +94,8 @@ override fun onNewIntent(intent: Intent) {
 A plain (non-composable) class wrapping a `CloudAccount`, exposing one observable
 state flow. `MeroAuthState` carries `isAuthenticated`, `isLoading`, `account`,
 `device`, `relayUrl`, `sessionReady` (a Bearer session on the relay exists),
-`relayNote`, `cancelled` and `error`, plus `signedInWithoutRelay`.
+`relayNote`, `cancelled` and `error`, plus `signedInWithoutRelay` — and, for a
+development login, `nodeUrl` / `username` / `isDevNodeSession`.
 
 ```kotlin
 class MeroClient(
@@ -110,13 +111,20 @@ class MeroClient(
     suspend fun handleEnrolmentCallback(url: String): Boolean
     suspend fun restore()
     suspend fun joinWithInvitation(namespaceId: String, invitation: SignedGroupOpenInvitation): JoinResult
-    suspend fun signOut(forgetDevice: Boolean = false)
+    suspend fun signOut(forgetDevice: Boolean = false)   // retires the relay session on the relay
+
+    // Development only: username/password on a node you run yourself.
+    suspend fun login(nodeUrl: String, username: String, password: String): Boolean
 
     companion object {
         fun create(context: Context, cloudBaseUrl: String = …, walletUrl: String = …): MeroClient
     }
 }
 ```
+
+`login` is for development against your own `merod` (from the emulator,
+`http://10.0.2.2:2428`): on success `mero` talks to that node, on failure the
+reason is in `error`. Do not ship it — a shipped app signs people in with Calimero.
 
 `handleEnrolmentCallback` verifies the certificate against this device's own keys
 and the `state` it sent before storing anything, so a crafted deep link cannot sign

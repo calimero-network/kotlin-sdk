@@ -59,8 +59,11 @@ Expected: builds `:mero-core`, `:mero-compose`, and `:sample-app` with no errors
 ./gradlew testDebugUnitTest        # JVM unit + MockWebServer-backed e2e
 ```
 
-The unit suite covers the auth state machine, RPC client, SSO, JWT, capabilities,
-token store, and the mocked end-to-end journeys (against OkHttp `MockWebServer`).
+The unit suite covers the auth state machine, RPC client, SSO (including the
+single-use callback state, `AuthCallbackStateTest`), JWT, capabilities, token store
+(and its node binding, `TokenOriginTest`), error classification, local-node
+discovery (real loopback sockets), and the mocked end-to-end journeys (against
+OkHttp `MockWebServer`).
 
 `RealNodeE2ETest` (§4) **self-skips** (JUnit `assume`) because `MERO_E2E_NODE_URL`
 is not set — that is correct here; run it against a real node in §4.

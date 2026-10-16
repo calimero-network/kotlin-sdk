@@ -134,6 +134,7 @@ The list routes answer a **map** — `{"data": {"<alias>": "<value>"}}`, and
 | `getNamespace(namespaceId): Namespace` | `GET /namespaces/{namespaceId}` |
 | `admitJoin(namespaceId, request): AdmitJoinResponseData` | `POST /namespaces/{namespaceId}/admit` |
 | `revokeAccountDevice(namespaceId, request): RevokeDeviceResponseData` | `POST /namespaces/{namespaceId}/account/revoke` |
+| `listNamespaceRevokedDevices(namespaceId): NamespaceRevokedDevices` | `GET /namespaces/{namespaceId}/revoked-devices` (no `data` envelope; `403` unless this node's account is bound in it) |
 | `listNamespacesForApplication(applicationId): ListNamespacesResponseData` | `GET /namespaces/for-application/{applicationId}` |
 | `createNamespace(request): CreateNamespaceResponseData` | `POST /namespaces` |
 | `deleteNamespace(namespaceId, request? = null): DeleteNamespaceResponseData` | `DELETE /namespaces/{namespaceId}` |

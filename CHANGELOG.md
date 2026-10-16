@@ -5,6 +5,58 @@
 Pinned to `0.11.0-rc.83` in `ci/core-version` (and the matching
 `ghcr.io/calimero-network/merod:0.11.0-rc.83` image in every merobox scenario).
 
+### Breaking — mero-js parity (auth hardening)
+
+- **`parseAuthCallback` adopts tokens only for a login this app began.**
+  `buildAuthLoginUrl` (and `SsoLauncher.launch`) now records a random,
+  single-use, 10-minute `auth_state` in a `PendingAuthStates` store and adds it
+  to the callback URL; `parseAuthCallback` returns `null` for a callback without
+  a pending state, and spends it on success. A crafted deep link carrying an
+  attacker's tokens is refused. The default store is in memory — set
+  `PendingAuthStates.shared = PendingAuthStates(EncryptedPrefsSecureStore(context, "mero_auth_state"))`
+  so a login survives the process dying while the Custom Tab is open, or pass
+  `pending =` explicitly. `parseAuthCallback(url, allowUnsolicited = true)` keeps
+  the old behaviour for a host that injects tokens itself. Port of mero-js
+  `auth/index.ts` (same storage key and shape). Existing calls compile
+  unchanged; a callback for a login not started with `buildAuthLoginUrl` in this
+  process (or a persistent store) is now `null`.
+- **Persisted tokens are bound to the node that issued them.** `TokenData`
+  gains an optional `nodeOrigin` (`node_origin`; bundles without it still
+  decode). `Mero` tags what it persists with `nodeOriginOf(baseUrl)` — origin
+  plus path prefix, trailing slashes dropped — and reads a stored bundle for any
+  other node, **or with no tag**, as empty. So a bundle persisted by an earlier
+  SDK version is ignored once: those users sign in again. `getTokenData()`
+  returns bundles without the tag; `clearToken()` leaves another node's bundle in
+  a shared store alone. Port of mero-js `TokenData.node_origin`.
+
+### Added — mero-js parity
+
+- `Capabilities.Presets` (`NONE`, `JOIN_ONLY`, `CONTRIBUTOR` = 7,
+  `COLLABORATOR` = 231), `Capabilities.PRESETS` / `BY_NAME`, `capMask(names)` /
+  `capMask(base, names)` (refuses an unknown name) and `capNames(mask)` — mero-js
+  `CAPABILITY_PRESETS`, `capMask`, `capNames`.
+  `MeroClient.DEFAULT_SPACE_CAPABILITIES` is now `Presets.COLLABORATOR`.
+- `classifyError(Throwable?)` → `ClassifiedError(kind, status, retryable,
+  message)` with `ErrorKind` (`INVALID`, `UNAUTHORIZED`, `FORBIDDEN`,
+  `NOT_FOUND`, `CONFLICT`, `GONE`, `TOO_LARGE`, `RATE_LIMITED`, `UNAVAILABLE`,
+  `SERVER`, `UNREACHABLE`, `UNKNOWN`), plus `statusOf` / `messageOf` — mero-js
+  `errors/classify.ts`, mapped over the SDK's exceptions.
+- Local node discovery (`com.calimero.mero.discovery`):
+  `DEFAULT_LOCAL_NODE_PORTS`, `localNodeUrl(port, host)`, `nodeEndpoint`,
+  `probeNodeHealth`, `discoverLocalNodes` (parallel, per-probe timeout) and
+  `ANDROID_EMULATOR_HOST` (`10.0.2.2`) — mero-js `nodeDiscovery.ts`.
+- `AdminApi.listNamespaceRevokedDevices(namespaceId)` →
+  `NamespaceRevokedDevices` (`GET /admin-api/namespaces/{id}/revoked-devices`)
+  and `AuthApi.getLoginPage()` (`GET /auth/login`).
+- `PinnedRelayKeyVerifier(nodeKey)`, `RelayLogin.logout(relayUrl,
+  refreshToken)` and `RelayConnection.logout()`. `MeroClient.signOut` now
+  retires the relay session on the relay (`POST /auth/logout`) instead of only
+  dropping it.
+- `MeroClient.login(nodeUrl, username, password)` — **development only** —
+  signs the Compose client in to a node you run yourself (Swift MeroKitUI
+  parity); `MeroAuthState` gains `nodeUrl`, `username` and `isDevNodeSession`.
+- `FakeNode` answers `GET /admin-api/health`.
+
 ### Breaking
 
 - `RpcClient.execute` / `executeRaw` / `executeWithMetadata` no longer take
