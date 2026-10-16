@@ -4,8 +4,12 @@ import com.calimero.mero.account.CloudAccount
 import com.calimero.mero.account.DeviceCert
 import com.calimero.mero.account.MemorySecureStore
 import com.calimero.mero.crypto.SeedSigner
+import com.calimero.mero.relay.DcapRelayKeyVerifier
 import com.calimero.mero.storage.MemoryTokenStore
 import com.calimero.mero.testkit.FakeNode
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.JsonPrimitive
 import okhttp3.HttpUrl.Companion.toHttpUrl
@@ -84,6 +88,35 @@ class MeroClientTest {
 
             assertEquals(JsonPrimitive(42), client.relay!!.call("demo-context", "get"))
             assertNotNull(client.mero!!.getTokenData())
+        }
+
+    /**
+     * The sample's emulator test: after sign-in the client learns the account's application id
+     * in the background. That lookup must not open a second relay login — FakeNode (like a relay
+     * that keeps one session per device) then retires the connection's token, the query 401s and
+     * the call falls through to a warrant. The call waits for the lookup to finish.
+     */
+    @Test
+    fun `learning the application id in the background leaves the relay session usable`() =
+        runBlocking {
+            val base = server.url("/").toString().trimEnd('/')
+            // The sample's mock setup: a relay whose (mock) attestation is accepted, so the
+            // account's relays can be listed.
+            val account =
+                CloudAccount(
+                    MemorySecureStore(),
+                    cloudBaseUrl = base,
+                    walletUrl = "https://wallet.example/account-enroll",
+                    relayKeyVerifier = DcapRelayKeyVerifier(allowMock = true),
+                )
+            val background = SupervisorJob()
+            val inline = MeroClient(account, MemoryTokenStore(), launchWallet = { _, url -> opened = url }, scope = CoroutineScope(background + Dispatchers.IO))
+            inline.signInWithCloud(android.content.ContextWrapper(null), callback)
+            assertTrue(inline.handleEnrolmentCallback(walletAnswer()))
+            val logins = node.tokenCalls
+            background.children.forEach { it.join() }
+            assertEquals(JsonPrimitive(42), inline.relay!!.call("demo-context", "get"))
+            assertEquals("no further relay login", logins, node.tokenCalls)
         }
 
     @Test

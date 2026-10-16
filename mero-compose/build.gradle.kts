@@ -47,8 +47,9 @@ android {
     publishing {
         singleVariant("release") {
             withSourcesJar()
-            // Central rejects a release with no javadoc jar, even an empty one.
-            withJavadocJar()
+            // No withJavadocJar(): AGP 8.5's Dokka reads mero-core's classes with an ASM that
+            // predates Java 17's PermittedSubclasses, so it fails on any sealed type this
+            // module's API names (NodeEvent, …). The placeholder below takes its place.
         }
     }
 }
@@ -74,6 +75,13 @@ dependencies {
     testImplementation(project(":mero-testkit"))
 }
 
+// Central rejects a release with no javadoc jar; a placeholder one is accepted. The API docs
+// are the KDoc in the sources jar and the docs site.
+val javadocJar by tasks.registering(Jar::class) {
+    archiveClassifier.set("javadoc")
+    from(layout.projectDirectory.file("JAVADOC.md"))
+}
+
 group = providers.gradleProperty("GROUP").getOrElse("com.calimero.mero")
 version = providers.gradleProperty("VERSION_NAME").getOrElse("0.1.0")
 
@@ -84,6 +92,7 @@ publishing {
             artifactId = "mero-compose"
             version = project.version.toString()
             afterEvaluate { from(components["release"]) }
+            artifact(javadocJar)
             pom {
                 name.set("mero-compose")
                 description.set("Calimero Android SDK — Jetpack Compose login UI kit.")

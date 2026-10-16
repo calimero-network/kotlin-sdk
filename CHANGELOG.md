@@ -379,6 +379,13 @@ Pinned to `0.11.0-rc.83` in `ci/core-version` (and the matching
 
 - mero-compose applies the kotlinx.serialization plugin: the invitation
   pending-intent store's `@Serializable` model did not compile in the Android build.
+- `MeroClient` learns an account's application id over the relay connection it
+  already holds, instead of listing contexts through a new client per relay. That
+  second relay login superseded the live session on a relay keeping one session per
+  device, so the next query 401'd and a read fell through to a warrant.
+- mero-compose publishes a placeholder javadoc jar: AGP 8.5's Dokka cannot read
+  sealed classes compiled for Java 17 (`PermittedSubclasses`), which mero-compose's
+  API now names. The KDoc ships in the sources jar.
 - `buildInviteLink(host = "calimero:/")` (or `"calimero:"`) gives
   `calimero://<slug>/join?invitation=…`; it used to drop a slash.
 - `normalizeNodeUrl` leaves a URL that already names a scheme alone, so

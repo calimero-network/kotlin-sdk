@@ -667,9 +667,14 @@ class MeroClient(
         }
         if (_connection.value == null) return
         try {
+            // Read over the connection already open when it is attested. Listing through
+            // `delegated` builds a client per relay, each with its own relay login — a second
+            // login for this device, which a relay keeping one session per device answers by
+            // retiring the live connection's token (the sample's emulator test caught it).
+            val live = _session.value.rawAdmin
+            val contexts = live?.getContexts()?.contexts ?: _session.value.delegated?.listContexts()
             val apps =
-                _session.value.delegated
-                    ?.listContexts()
+                contexts
                     .orEmpty()
                     .map { it.applicationId }
                     .filter { it.isNotEmpty() }
