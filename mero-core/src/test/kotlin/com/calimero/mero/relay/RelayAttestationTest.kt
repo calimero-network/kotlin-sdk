@@ -224,7 +224,7 @@ class RelayAttestationTest {
     fun `a mirror that does not answer is unavailable, not a refusal`() {
         val net = hostedRelay(mirrorUp = false)
         val e = assertRefuses("fetching the release the relay runs") { runBlocking { attestRelayNodeKey(relayUrl, verify = dcap(net).quoteVerifier(relayUrl), httpClient = net.client) } }
-        assertTrue(e is RelayKeyUnavailableException)
+        assertTrue(e is RelayKeyTransportException)
     }
 
     @Test

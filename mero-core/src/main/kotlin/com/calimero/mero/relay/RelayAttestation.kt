@@ -160,9 +160,9 @@ internal suspend fun checkAttestation(
  * Something on the way to a relay's key did not answer — reading the release the relay names,
  * fetching that release, reaching the relay. It says nothing about the relay's image, so the
  * attempt is worth making again ([com.calimero.mero.account.RelayNodeKeyAttempt.Unavailable]).
- * mero-js `RelayKeyTransportError`.
+ * mero-js `RelayKeyTransportError`; [com.calimero.mero.http.classifyError] reads it as `UNAVAILABLE`.
  */
-class RelayKeyUnavailableException(
+class RelayKeyTransportException(
     /** What was being done, e.g. `fetching the release the relay runs`. */
     val step: String,
     cause: Throwable,
@@ -198,7 +198,7 @@ const val MIN_RELAY_RELEASE: String = "2.3.99"
  * - its report data must be our nonce and the binding of the key the relay named.
  *
  * A mock quote is accepted only from a loopback relay (a dev rig), or with [allowMock]. When a
- * step that only moves bytes fails, [verify] throws [RelayKeyUnavailableException] (try again);
+ * step that only moves bytes fails, [verify] throws [RelayKeyTransportException] (try again);
  * any other failure is the verification saying no ([RelayKeyRefusedException] or
  * [com.calimero.mero.tee.TeeTrustException]), which retrying cannot change.
  *
@@ -222,8 +222,15 @@ class DcapRelayKeyVerifier(
     /** The current time in milliseconds, for the quote's collateral. For tests. */
     private val now: () -> Long = System::currentTimeMillis,
 ) : AttestingRelayKeyVerifier {
-    /** The quote verifier for [relayUrl]: its signed release, Intel's chain, every register of the release's image. */
-    override fun quoteVerifier(relayUrl: String): QuoteVerifier {
+    /** [signedReleaseVerifier], as the transport quote verifier for [relayUrl]. */
+    override fun quoteVerifier(relayUrl: String): QuoteVerifier = signedReleaseVerifier(relayUrl)
+
+    /**
+     * The quote verifier for [relayUrl]: its signed release ([profile], at least
+     * [minReleaseVersion]), Intel's chain, every register of the release's image. (Swift
+     * `DcapRelayKeyVerifier.signedReleaseVerifier`.)
+     */
+    fun signedReleaseVerifier(relayUrl: String): QuoteVerifier {
         val base = relayUrl.trimBase()
         return createSignedReleaseVerifier(
             SignedReleaseVerifierOptions(
@@ -267,9 +274,9 @@ class DcapRelayKeyVerifier(
             run()
         } catch (e: CancellationException) {
             throw e
-        } catch (e: RelayKeyUnavailableException) {
+        } catch (e: RelayKeyTransportException) {
             throw e
         } catch (e: Exception) {
-            throw RelayKeyUnavailableException(step, e)
+            throw RelayKeyTransportException(step, e)
         }
 }

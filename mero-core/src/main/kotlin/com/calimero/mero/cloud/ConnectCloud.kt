@@ -12,12 +12,14 @@ import com.calimero.mero.crypto.resolveSigner
 import com.calimero.mero.http.PlainJsonHttp
 import com.calimero.mero.http.trimBase
 import com.calimero.mero.relay.Audience
+import com.calimero.mero.relay.DcapRelayKeyVerifier
 import com.calimero.mero.relay.IntentResult
 import com.calimero.mero.relay.MemoryNonceSource
 import com.calimero.mero.relay.NonceSource
 import com.calimero.mero.relay.PersistedNonceSource
 import com.calimero.mero.relay.RelayClient
 import com.calimero.mero.relay.RelayLogin
+import com.calimero.mero.relay.isLoopbackRelay
 import com.calimero.mero.storage.MemoryTokenStore
 import com.calimero.mero.storage.TokenStore
 import com.calimero.mero.tee.VerifyTransportQuote
@@ -69,10 +71,17 @@ class ConnectCloudOptions(
      * or [com.calimero.mero.tee.createQuoteVerifier] with the images you trust. The warrant and the
      * method's arguments then reach only the relay's TD, not whatever terminates TLS in front of
      * it, and the relay is one this client checked itself rather than one the cloud vouched for.
-     * Calls to the cloud are not sealed; they carry no intent. Without it, calls to the relay are
-     * plain HTTPS.
+     * Calls to the cloud are not sealed; they carry no intent. Without it, [sealRelays] decides.
      */
     val seal: VerifyTransportQuote? = null,
+    /**
+     * With no [seal], seal the relay anyway, to its signed release
+     * ([com.calimero.mero.relay.DcapRelayKeyVerifier.signedReleaseVerifier]), as a delegated
+     * session does: on by default (Swift `sealRelays`). A loopback relay is never sealed this way,
+     * and a logged-in call the TD answers `sealed_route_unguarded` goes out plain. Pass false for
+     * a plain test rig.
+     */
+    val sealRelays: Boolean = true,
     /**
      * The chosen relay node's device signing key, hex, if known out of band. With it,
      * [CloudConnection.client] can log in to the relay and observe (SSE, admin reads); left
@@ -110,6 +119,8 @@ class ConnectCloudWithAccountOptions(
     val ttlSeconds: Long = 300,
     /** See [ConnectCloudOptions.seal]. */
     val seal: VerifyTransportQuote? = null,
+    /** See [ConnectCloudOptions.sealRelays]. */
+    val sealRelays: Boolean = true,
     val relayNodeKey: String? = null,
     val tokenStore: TokenStore = MemoryTokenStore(),
     val clientName: String = "mero-kotlin-sdk",
@@ -204,7 +215,7 @@ suspend fun connectCloud(options: ConnectCloudOptions): CloudConnection {
             session = bearer,
             // Only the relay is sealed: a sealed transport is bound to one node and refuses any
             // other URL, and the cloud calls above carry no intent.
-            httpClient = options.seal?.let { createAttestedSealedFetch(relayUrl, it, httpClient = options.httpClient).client } ?: options.httpClient,
+            httpClient = relayHttpClient(options, relayUrl),
         )
     val session =
         DelegatedSession(
@@ -259,6 +270,7 @@ suspend fun connectCloudWithAccount(options: ConnectCloudWithAccountOptions): Cl
             nonceStore = options.nonceStore,
             ttlSeconds = options.ttlSeconds,
             seal = options.seal,
+            sealRelays = options.sealRelays,
             relayNodeKey = options.relayNodeKey,
             tokenStore = options.tokenStore,
             clientName = options.clientName,
@@ -266,6 +278,17 @@ suspend fun connectCloudWithAccount(options: ConnectCloudWithAccountOptions): Cl
             httpClient = options.httpClient,
         ),
     )
+}
+
+/** The client [connectCloud]'s relay writes go through: sealed with [ConnectCloudOptions.seal], else by default. */
+internal fun relayHttpClient(
+    options: ConnectCloudOptions,
+    relayUrl: String,
+): OkHttpClient {
+    options.seal?.let { return createAttestedSealedFetch(relayUrl, it, httpClient = options.httpClient).client }
+    if (!options.sealRelays || isLoopbackRelay(relayUrl)) return options.httpClient
+    val verifier = DcapRelayKeyVerifier(httpClient = options.httpClient).signedReleaseVerifier(relayUrl)
+    return createAttestedSealedFetch(relayUrl, verifier, httpClient = options.httpClient).also { it.plainWhenUnguarded = true }.client
 }
 
 private fun defaultNonceSource(

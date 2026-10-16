@@ -22,7 +22,7 @@ import com.calimero.mero.relay.GovernanceOps
 import com.calimero.mero.relay.PersistedNonceSource
 import com.calimero.mero.relay.RelayClient
 import com.calimero.mero.relay.RelayKeyRefusedException
-import com.calimero.mero.relay.RelayKeyUnavailableException
+import com.calimero.mero.relay.RelayKeyTransportException
 import com.calimero.mero.relay.RelayKeyVerifier
 import com.calimero.mero.relay.RelayLogin
 import com.calimero.mero.storage.MemoryTokenStore
@@ -242,7 +242,7 @@ class CloudAccount(
             RelayNodeKeyAttempt.Learned(nodeKey)
         } catch (e: CancellationException) {
             throw e
-        } catch (e: RelayKeyUnavailableException) {
+        } catch (e: RelayKeyTransportException) {
             RelayNodeKeyAttempt.Unavailable(e)
         } catch (e: NetworkException) {
             RelayNodeKeyAttempt.Unavailable(e)

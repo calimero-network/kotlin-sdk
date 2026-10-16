@@ -131,6 +131,15 @@ class ConnectCloudTest {
         }
 
     @Test
+    fun `seals a hosted relay by default, never a loopback one, and not when told not to`() {
+        val plain = options()
+        assertTrue(relayHttpClient(plain, base) === plain.httpClient)
+        assertFalse(relayHttpClient(plain, "https://relay.example") === plain.httpClient)
+        val off = ConnectCloudOptions(authorAccount = author, authorProof = "aa", deviceSecret = deviceSecret, sessionToken = "s", sealRelays = false)
+        assertTrue(relayHttpClient(off, "https://relay.example") === off.httpClient)
+    }
+
+    @Test
     fun `exchanges a Google ID token when no session token is held`() =
         runBlocking {
             val seen = mutableListOf<String?>()

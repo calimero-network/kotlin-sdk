@@ -57,6 +57,15 @@ class ClassifyErrorTest {
     }
 
     @Test
+    fun `a relay key that could not be learned for want of an answer is unavailable`() {
+        val e =
+            com.calimero.mero.relay
+                .RelayKeyTransportException("fetching the release the relay runs", java.io.IOException("down"))
+        assertEquals(ErrorKind.UNAVAILABLE, classifyError(e).kind)
+        assertTrue(classifyError(e).retryable)
+    }
+
+    @Test
     fun `kinds carry mero-js's names`() {
         assertEquals(
             listOf(
