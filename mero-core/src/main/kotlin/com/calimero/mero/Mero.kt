@@ -95,23 +95,27 @@ class Mero(
             lockFile = config.refreshLockFile,
         )
 
+    /** The configured client to build on, or a fresh one. */
+    private fun baseBuilder(): OkHttpClient.Builder = config.httpClient?.newBuilder() ?: OkHttpClient.Builder()
+
     private val okHttpClient: OkHttpClient =
-        OkHttpClient
-            .Builder()
+        baseBuilder()
             .connectTimeout(config.timeoutMs, TimeUnit.MILLISECONDS)
             .readTimeout(config.timeoutMs, TimeUnit.MILLISECONDS)
             .writeTimeout(config.timeoutMs, TimeUnit.MILLISECONDS)
             .retryOnConnectionFailure(true)
-            .addInterceptor(AuthInterceptor { store.getTokens()?.accessToken })
-            .apply { config.requestProof?.let { addInterceptor(RequestProofInterceptor(it)) } }
-            .refusingRedirectsWithProof()
+            .apply {
+                // In front of the configured client's own interceptors: a sealing one among them
+                // must see the token and the proof, and seal them too.
+                val front = listOfNotNull(AuthInterceptor { store.getTokens()?.accessToken }, config.requestProof?.let(::RequestProofInterceptor))
+                interceptors().addAll(0, front)
+            }.refusingRedirectsWithProof()
             .authenticator(TokenAuthenticator { triggering -> coordinator.refresh(triggering).accessToken })
             .build()
 
     /** Long-lived streaming client for SSE: no read timeout, no auth interceptor/authenticator. */
     private val sseHttpClient: OkHttpClient =
-        OkHttpClient
-            .Builder()
+        baseBuilder()
             .connectTimeout(config.timeoutMs, TimeUnit.MILLISECONDS)
             .readTimeout(0, TimeUnit.MILLISECONDS)
             .retryOnConnectionFailure(true)

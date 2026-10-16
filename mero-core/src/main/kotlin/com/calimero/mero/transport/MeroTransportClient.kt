@@ -143,7 +143,7 @@ class MeroTransportClient internal constructor(
                 rpcTransport = if (readsByQuery) ReadsThroughQuery(relayTransport) else relayTransport
                 proofClient =
                     config.proof?.let { proof ->
-                        Mero(MeroConfig(baseUrl = relay.relayUrl, requestProof = createProofSigner(proof)))
+                        Mero(MeroConfig(baseUrl = relay.relayUrl, requestProof = createProofSigner(proof), httpClient = config.httpClient))
                     }
                 val session = config.session
                 relayAdmin =

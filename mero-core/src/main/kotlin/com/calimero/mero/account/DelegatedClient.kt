@@ -5,6 +5,7 @@ import com.calimero.mero.admin.Namespace
 import com.calimero.mero.expiresAtFromJwt
 import com.calimero.mero.http.trimBase
 import com.calimero.mero.relay.RelayClient
+import com.calimero.mero.relay.RelayLogin
 import com.calimero.mero.relay.isLoopbackRelay
 import com.calimero.mero.request.ProofCredential
 import com.calimero.mero.transport.MeroTransportClient
@@ -25,6 +26,7 @@ import kotlinx.coroutines.sync.withLock
  * point at the relay **as the account**, so the caller-scoped reads answer this account's own
  * contexts and namespaces — mero-js `buildDelegatedClient`.
  *
+ * - Every request to a hosted relay is sealed to its attested TD ([relayTransportClient]).
  * - Writes are warrants, with this device's persisted per-relay nonces ([persistedNonces]).
  * - Requests are authenticated by the device certificate (a request proof). With the relay's
  *   node key pinned ([CloudAccount.readPinnedRelayNodeKey]) the client also logs in to the
@@ -47,6 +49,9 @@ fun CloudAccount.buildDelegatedClient(
     val relayUrl = session.relayUrl?.trimBase() ?: return null
     val nodeKey = readPinnedRelayNodeKey(relayUrl)
     val signer = deviceKeys.loadOrCreate().signer()
+    // Every request sealed to the relay's attested TD: intents, admin reads, queries, the login
+    // and events ([relayTransportClient]).
+    val transport = relayTransportClient(relayUrl)
     val bearer = nodeKey?.let { relaySessionSource(session.credential, relayUrl, it) }
     val relay =
         RelayClient(
@@ -57,7 +62,7 @@ fun CloudAccount.buildDelegatedClient(
             // One sequence per relay, whatever context is chosen.
             nonces = persistedNonces(relayUrl),
             session = bearer,
-            httpClient = httpClient,
+            httpClient = transport,
         )
     return MeroTransportClient(
         MeroTransportConfig.Relay(
@@ -65,7 +70,7 @@ fun CloudAccount.buildDelegatedClient(
             session = bearer,
             observe = nodeKey?.let { RelayObserveConfig(it, audience = audience, clientName = clientName) },
             proof = ProofCredential(session.credential, signer = signer),
-            httpClient = httpClient,
+            httpClient = transport,
         ),
         readsByQuery = nodeKey != null,
         eventsDormant = nodeKey == null && !isLoopbackRelay(relayUrl),
@@ -94,7 +99,10 @@ internal fun CloudAccount.relaySessionSource(
             } else {
                 token =
                     try {
-                        relayLogin.login(relayUrl, nodeKey, credential, deviceKeys.loadOrCreate().signer()).accessToken
+                        // Sealed: the token is the session, and the TLS ends outside the TD.
+                        RelayLogin(relayKeyVerifier, clientName, audience, httpClient = relayTransportClient(relayUrl))
+                            .login(relayUrl, nodeKey, credential, deviceKeys.loadOrCreate().signer())
+                            .accessToken
                     } catch (e: CancellationException) {
                         throw e
                     } catch (_: Exception) {

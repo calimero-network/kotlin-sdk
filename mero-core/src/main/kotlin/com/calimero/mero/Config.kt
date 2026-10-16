@@ -6,6 +6,7 @@ import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import okhttp3.HttpUrl
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
+import okhttp3.OkHttpClient
 import java.io.File
 
 /**
@@ -43,6 +44,14 @@ data class MeroConfig(
     val tokenStore: TokenStore? = null,
     val refreshLockFile: File? = null,
     val requestProof: ProofSigner? = null,
+    /**
+     * The client every request is carried on — mero-js `MeroJsConfig.fetch`. [Mero] builds its
+     * own clients from it (its timeouts, and its auth, proof and refresh handling in front of
+     * this client's interceptors), so a sealed transport's client
+     * ([com.calimero.mero.tee.SealedTransport.client]) seals every request, SSE included.
+     * Null: a fresh client.
+     */
+    val httpClient: OkHttpClient? = null,
 )
 
 /**

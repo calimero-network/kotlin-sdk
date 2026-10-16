@@ -138,7 +138,7 @@ internal fun CloudAccount.delegatedRelayClient(
         authorProof = session.credential,
         signer = deviceKeys.loadOrCreate().signer(),
         nonces = nonces,
-        httpClient = httpClient,
+        httpClient = relayTransportClient(relayUrl),
     )
 
 private val initJson = Json { ignoreUnknownKeys = true }

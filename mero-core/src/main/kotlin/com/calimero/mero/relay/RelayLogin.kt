@@ -100,14 +100,12 @@ object LoginStatement {
 /**
  * Decides which key a relay's node signs with — the key a login statement names.
  *
- * mero-js learns it from the relay's TEE attestation and **verifies the TDX DCAP quote**
- * against Calimero's signed release before trusting it. That verification is not ported
- * yet, so the default ([TlsRelayKeyVerifier]) trusts the TLS connection to the relay and
- * only checks the answer is well-formed and claims to bind our nonce and the key.
- *
- * TODO(follow-up): DCAP quote verification on mobile — or the cloud manager publishing a
- * signed node key beside `relay_url`. Plug either in by implementing this interface.
- * Writes (warrant intents) do not depend on this key; Bearer reads and SSE do.
+ * The default, [DcapRelayKeyVerifier], learns it from the relay's TEE attestation and verifies
+ * the TDX quote on the device (Intel's chain via DCAP, the signed mero-tee release the relay
+ * runs, every register of its image, our nonce and the key binding) before trusting it, as
+ * mero-js does. [PinnedRelayKeyVerifier] answers with a key known out of band;
+ * [TlsRelayKeyVerifier] trusts TLS and checks only the binding. Plug in another by implementing
+ * this interface. Writes (warrant intents) do not depend on this key; Bearer reads and SSE do.
  */
 fun interface RelayKeyVerifier {
     /**
@@ -138,12 +136,13 @@ class RelayKeyRefusedException(
 ) : Exception(message)
 
 /**
- * The v1 mobile verifier: trusts TLS to the relay, and checks the attestation is shaped
- * like one made for this request — a well-formed node key, and report data that carries
- * our nonce and `SHA256("calimero.tee-attest.key-binding.v1" ‖ 0^32 ‖ nodeKey)`.
+ * A verifier that trusts TLS to the relay, and checks only that the attestation is shaped like
+ * one made for this request — a well-formed node key, and report data that carries our nonce
+ * and `SHA256("calimero.tee-attest.key-binding.v1" ‖ 0^32 ‖ nodeKey)`. The SDK's default before
+ * [DcapRelayKeyVerifier].
  *
- * **It does not verify the quote's signature or measurements.** A relay that lies about
- * its key over a valid TLS connection is not caught here; see [RelayKeyVerifier].
+ * **It does not verify the quote's signature or measurements.** A relay that lies about its key
+ * over a valid TLS connection is not caught here; prefer [DcapRelayKeyVerifier].
  *
  * A MOCK quote (dev rigs) is accepted only from a loopback relay unless [allowMock].
  */
@@ -245,7 +244,8 @@ object RelayAttest {
  * [LoginStatement]. The result is an ordinary Bearer token pair, so the existing
  * [com.calimero.mero.Mero] admin and SSE clients work against the relay.
  *
- * Port of mero-js `src/login/session.ts` plus `attestRelayNodeKey`.
+ * Port of mero-js `src/login/session.ts` plus `attestRelayNodeKey` ([attestNodeKey] hands the
+ * relay's answer to the [RelayKeyVerifier], by default [DcapRelayKeyVerifier]).
  */
 class RelayLogin internal constructor(
     private val http: PlainJsonHttp,
@@ -255,7 +255,7 @@ class RelayLogin internal constructor(
     private val ttlSeconds: Long,
 ) {
     constructor(
-        verifier: RelayKeyVerifier = TlsRelayKeyVerifier(),
+        verifier: RelayKeyVerifier = DcapRelayKeyVerifier(),
         clientName: String = "mero-kotlin-sdk",
         audience: Audience = Audience.Cli,
         ttlSeconds: Long = DEFAULT_TTL_SECONDS,

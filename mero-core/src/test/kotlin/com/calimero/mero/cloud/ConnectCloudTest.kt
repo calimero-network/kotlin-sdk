@@ -113,6 +113,24 @@ class ConnectCloudTest {
         }
 
     @Test
+    fun `with seal, sends the relay nothing in the clear - here a relay that cannot seal gets no intent at all`() =
+        runBlocking {
+            // The fake relay attests (a mock quote) but names no transport key: it predates sealing.
+            var asked = 0
+            val seal =
+                com.calimero.mero.tee.VerifyTransportQuote {
+                    asked++
+                    true
+                }
+            val connection = connectCloud(ConnectCloudOptions(authorAccount = author, authorProof = "aa", deviceSecret = deviceSecret, sessionToken = "fake-session", cloudBaseUrl = base, nonces = MemoryNonceSource(), seal = seal))
+            val refused = runCatching { connection.execute(context, "set", buildJsonObject { put("key", "k") }) }.exceptionOrNull()
+            assertTrue("got $refused", refused?.message.orEmpty().contains("predates sealed transport"))
+            assertEquals(0, asked)
+            assertTrue(node.cloud.requests.none { it.path.endsWith("/intents") })
+            assertEquals(1, node.cloud.recorded("/admin-api/tee/attest").size)
+        }
+
+    @Test
     fun `exchanges a Google ID token when no session token is held`() =
         runBlocking {
             val seen = mutableListOf<String?>()

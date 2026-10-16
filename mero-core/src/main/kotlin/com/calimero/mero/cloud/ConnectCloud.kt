@@ -20,6 +20,8 @@ import com.calimero.mero.relay.RelayClient
 import com.calimero.mero.relay.RelayLogin
 import com.calimero.mero.storage.MemoryTokenStore
 import com.calimero.mero.storage.TokenStore
+import com.calimero.mero.tee.VerifyTransportQuote
+import com.calimero.mero.tee.createAttestedSealedFetch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
@@ -32,7 +34,7 @@ import okhttp3.OkHttpClient
  * session already in [sessionStore]. The author: [authorAccount], its certificate
  * [authorProof] and the device key as [deviceSecret] **or** [signer] (exactly one).
  *
- * mero-js's `seal` option is not here yet: the sealed relay transport lands separately.
+ * [seal] seals every call to the relay to its attested TEE (mero-js `seal`).
  */
 @Suppress("LongParameterList")
 class ConnectCloudOptions(
@@ -61,6 +63,16 @@ class ConnectCloudOptions(
     val nonceStore: SecureStore? = null,
     /** Seconds a minted warrant stays presentable. */
     val ttlSeconds: Long = 300,
+    /**
+     * Seal every call to the relay to its attested TEE, verified with this — for example
+     * [com.calimero.mero.relay.DcapRelayKeyVerifier.quoteVerifier] (the relay's signed release),
+     * or [com.calimero.mero.tee.createQuoteVerifier] with the images you trust. The warrant and the
+     * method's arguments then reach only the relay's TD, not whatever terminates TLS in front of
+     * it, and the relay is one this client checked itself rather than one the cloud vouched for.
+     * Calls to the cloud are not sealed; they carry no intent. Without it, calls to the relay are
+     * plain HTTPS.
+     */
+    val seal: VerifyTransportQuote? = null,
     /**
      * The chosen relay node's device signing key, hex, if known out of band. With it,
      * [CloudConnection.client] can log in to the relay and observe (SSE, admin reads); left
@@ -96,6 +108,8 @@ class ConnectCloudWithAccountOptions(
     val nonces: NonceSource? = null,
     val nonceStore: SecureStore? = null,
     val ttlSeconds: Long = 300,
+    /** See [ConnectCloudOptions.seal]. */
+    val seal: VerifyTransportQuote? = null,
     val relayNodeKey: String? = null,
     val tokenStore: TokenStore = MemoryTokenStore(),
     val clientName: String = "mero-kotlin-sdk",
@@ -188,7 +202,9 @@ suspend fun connectCloud(options: ConnectCloudOptions): CloudConnection {
             ttlSeconds = options.ttlSeconds,
             executorAccount = relayInfo.executorAccount,
             session = bearer,
-            httpClient = options.httpClient,
+            // Only the relay is sealed: a sealed transport is bound to one node and refuses any
+            // other URL, and the cloud calls above carry no intent.
+            httpClient = options.seal?.let { createAttestedSealedFetch(relayUrl, it, httpClient = options.httpClient).client } ?: options.httpClient,
         )
     val session =
         DelegatedSession(
@@ -242,6 +258,7 @@ suspend fun connectCloudWithAccount(options: ConnectCloudWithAccountOptions): Cl
             nonces = options.nonces,
             nonceStore = options.nonceStore,
             ttlSeconds = options.ttlSeconds,
+            seal = options.seal,
             relayNodeKey = options.relayNodeKey,
             tokenStore = options.tokenStore,
             clientName = options.clientName,

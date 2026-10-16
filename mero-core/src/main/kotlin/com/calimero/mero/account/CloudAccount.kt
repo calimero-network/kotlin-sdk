@@ -16,14 +16,15 @@ import com.calimero.mero.http.trimBase
 import com.calimero.mero.presence.RelayPresenceClient
 import com.calimero.mero.relay.ApplicationTarget
 import com.calimero.mero.relay.Audience
+import com.calimero.mero.relay.DcapRelayKeyVerifier
 import com.calimero.mero.relay.FoundedNamespace
 import com.calimero.mero.relay.GovernanceOps
 import com.calimero.mero.relay.PersistedNonceSource
 import com.calimero.mero.relay.RelayClient
 import com.calimero.mero.relay.RelayKeyRefusedException
+import com.calimero.mero.relay.RelayKeyUnavailableException
 import com.calimero.mero.relay.RelayKeyVerifier
 import com.calimero.mero.relay.RelayLogin
-import com.calimero.mero.relay.TlsRelayKeyVerifier
 import com.calimero.mero.storage.MemoryTokenStore
 import com.calimero.mero.storage.TokenStore
 import kotlinx.coroutines.CancellationException
@@ -65,7 +66,8 @@ data class DelegatedSession(
  * 3. [completeEnrolment] — verify that certificate against **this** device's keys and the
  *    `state`, ask the cloud manager which relay serves the account ([CloudClient.chooseRelay])
  *    and persist the [DelegatedSession].
- * 4. [connect] — learn the relay's node key ([RelayKeyVerifier]), log in to it with the
+ * 4. [connect] — learn the relay's node key ([RelayKeyVerifier]; by default its TDX quote is
+ *    verified on the device, [DcapRelayKeyVerifier]), log in to it with the
  *    certificate (Bearer tokens for admin reads and SSE), and hand back a [RelayConnection]
  *    whose [RelayClient] writes through warrants.
  *
@@ -76,10 +78,16 @@ class CloudAccount(
     internal val store: SecureStore,
     val cloudBaseUrl: String = CloudClient.DEFAULT_BASE_URL,
     val walletUrl: String = Enrolment.DEFAULT_WALLET_URL,
-    internal val relayKeyVerifier: RelayKeyVerifier = TlsRelayKeyVerifier(),
+    internal val relayKeyVerifier: RelayKeyVerifier = DcapRelayKeyVerifier(),
     internal val clientName: String = "mero-kotlin-sdk",
     internal val audience: Audience = Audience.Cli,
     internal val httpClient: OkHttpClient = PlainJsonHttp.defaultClient(),
+    /**
+     * Seal every request a delegated session sends a hosted relay — intents, admin reads,
+     * queries, the login and events — to the relay's attested TD ([relayTransportClient]), as
+     * mero-js always does. A loopback relay (a dev rig) is never sealed.
+     */
+    internal val sealRelays: Boolean = true,
 ) {
     private val json = Json { ignoreUnknownKeys = true }
     private val loginMutex = Mutex()
@@ -234,6 +242,8 @@ class CloudAccount(
             RelayNodeKeyAttempt.Learned(nodeKey)
         } catch (e: CancellationException) {
             throw e
+        } catch (e: RelayKeyUnavailableException) {
+            RelayNodeKeyAttempt.Unavailable(e)
         } catch (e: NetworkException) {
             RelayNodeKeyAttempt.Unavailable(e)
         } catch (e: HttpException) {
