@@ -71,6 +71,10 @@ class SseGroupEventsTest {
         assertEquals("g-1", event.groupId)
         assertEquals("MemberAdded", event.kind)
 
+        // The re-subscribe POST runs beside the frame reader (as in mero-js), so it may land
+        // just after the first event.
+        val deadline = System.currentTimeMillis() + 5_000
+        while (subscribeBodies.isEmpty() && System.currentTimeMillis() < deadline) Thread.sleep(20)
         val params =
             Json
                 .parseToJsonElement(subscribeBodies.first())

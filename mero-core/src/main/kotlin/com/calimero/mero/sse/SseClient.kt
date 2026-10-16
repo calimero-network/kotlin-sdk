@@ -1,33 +1,19 @@
 package com.calimero.mero.sse
 
-import com.calimero.mero.http.AuthRevokedException
-import com.calimero.mero.http.HttpException
-import com.calimero.mero.http.TERMINAL_AUTH_ERRORS
-import kotlinx.coroutines.CompletableDeferred
-import kotlinx.coroutines.channels.ProducerScope
-import kotlinx.coroutines.channels.awaitClose
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.channelFlow
 import kotlinx.coroutines.flow.filterIsInstance
-import kotlinx.coroutines.isActive
+import kotlinx.coroutines.flow.filterNotNull
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.mapNotNull
+import kotlinx.coroutines.flow.onSubscription
+import kotlinx.coroutines.launch
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
-import kotlinx.serialization.json.add
-import kotlinx.serialization.json.buildJsonArray
-import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.contentOrNull
-import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
-import kotlinx.serialization.json.put
-import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
-import okhttp3.Request
-import okhttp3.RequestBody.Companion.toRequestBody
-import okhttp3.sse.EventSource
-import okhttp3.sse.EventSourceListener
-import okhttp3.sse.EventSources
 
 /**
  * A node event pushed over SSE. [kind] is the frame's `result.type`: a live
@@ -80,9 +66,9 @@ sealed interface NodeEvent
 /**
  * Server-Sent-Events subscription client — the Android analog of mero-js's SSE client (and the
  * Swift SDK's `SseClient`). Opens `GET {base}/sse` (Bearer header) and POSTs `{base}/sse/subscription` to
- * (re)subscribe to context ids, then streams [ContextEvent]s as a cold [Flow]. Reconnects
- * automatically after a drop (the node persists session subscriptions), so a chat view can react to
- * new messages without polling.
+ * (re)subscribe, then streams events as a cold [Flow]. Each flow runs on its own
+ * [SseConnection]; use [connection] (or `Mero.sse`) for one long-lived connection whose
+ * subscriptions change while it is open.
  *
  * Usage:
  * ```kotlin
@@ -101,10 +87,11 @@ sealed interface NodeEvent
  * now refused with a `403`, and so is one whose refresh family was revoked.
  *
  * Neither is fixed by waiting, so neither is retried: this client used to treat every
- * failure alike and reconnect every [RECONNECT_DELAY_MS] forever, which turned both into
+ * failure alike and reconnect every three seconds forever, which turned both into
  * a silent loop delivering no events and reporting nothing. A `403` now fails the flow
- * with [AuthRevokedException] (when `x-auth-error` names a dead family) or a plain
- * [HttpException], so the collector sees it.
+ * with [com.calimero.mero.http.AuthRevokedException] (when `x-auth-error` names a dead
+ * family) or a plain [com.calimero.mero.http.HttpException], so the collector sees it.
+ * A `401` naming a dead family is terminal the same way (mero-js parity).
  *
  * `context:subscribe` is **not** implied by `context` — core's `ContextPermission::All`
  * arm matches only another `All`. `admin` does cover it. A scoped token must name it:
@@ -115,211 +102,62 @@ class SseClient(
     private val token: suspend () -> String?,
     private val client: OkHttpClient = OkHttpClient(),
     private val json: Json = Json { ignoreUnknownKeys = true },
+    private val reconnectDelayMs: Long = SseConnection.DEFAULT_RECONNECT_DELAY_MS,
 ) {
+    /**
+     * A new long-lived [SseConnection] on this client's node, not yet connected. Its
+     * subscriptions are changed on the live stream with [SseConnection.subscribe] /
+     * [SseConnection.unsubscribe]; close it with [SseConnection.close].
+     */
+    fun connection(): SseConnection = SseConnection(baseUrl, token, client, json, reconnectDelayMs)
+
     /**
      * Cold stream of events for the given [contextIds]. Cancelling the collecting coroutine closes
      * the connection. Each connection attempt subscribes on the `connect` frame; a `close` frame or
-     * any drop triggers a reconnect after [RECONNECT_DELAY_MS].
+     * any drop triggers a reconnect after a fixed delay (3 s).
      */
-    fun events(contextIds: List<String>): Flow<ContextEvent> =
-        nodeEvents(contextIds, emptyList()).filterIsInstance<ContextEvent>()
+    fun events(contextIds: List<String>): Flow<ContextEvent> = nodeEvents(contextIds, emptyList()).filterIsInstance<ContextEvent>()
 
     /**
      * Cold stream of group-keyed events (membership, migration) for [groupIds].
      * The node drops ids the token may not observe, silently.
      */
-    fun groupEvents(groupIds: List<String>): Flow<GroupEvent> =
-        nodeEvents(emptyList(), groupIds).filterIsInstance<GroupEvent>()
+    fun groupEvents(groupIds: List<String>): Flow<GroupEvent> = nodeEvents(emptyList(), groupIds).filterIsInstance<GroupEvent>()
+
+    /** `AppVersionChanged` events for [contextIds], parsed (mero-js `onAppVersionChanged`). */
+    fun appVersionChanges(contextIds: List<String>): Flow<AppVersionChangedEvent> = events(contextIds).mapNotNull { it.asAppVersionChanged() }
+
+    /** Typed migration events for [groupIds] (subscribe with the namespace root). */
+    fun migrationEvents(groupIds: List<String>): Flow<GroupMigrationEvent> = groupEvents(groupIds).mapNotNull { it.asMigrationEvent() }
+
+    /** Typed membership events for [groupIds]. */
+    fun membershipEvents(groupIds: List<String>): Flow<GroupMembershipEvent> = groupEvents(groupIds).mapNotNull { it.asMembershipEvent() }
 
     /**
      * One stream for both: context events for [contextIds] and group events for
-     * [groupIds], subscribed together on every (re)connect.
+     * [groupIds], subscribed together on every (re)connect. A terminal refusal fails the flow.
      */
     fun nodeEvents(
         contextIds: List<String>,
         groupIds: List<String>,
-    ): Flow<NodeEvent> =
-        channelFlow {
-            val ids = SubscriptionIds(contextIds, groupIds)
-            while (isActive) {
-                val accessToken = token()
-                if (accessToken != null) {
-                    runConnection(ids, accessToken)
-                }
-                // Wait before reconnecting (or before retrying when no token was available yet). The
-                // cancellable delay exits the loop when the collector is cancelled.
-                delay(RECONNECT_DELAY_MS)
-            }
-            awaitClose { }
-        }
-
-    /**
-     * One connection attempt: open the SSE stream, subscribe on `connect`, forward events into
-     * [scope] until the stream ends (server `close`, a drop, or failure). Suspends until then.
-     */
-    private suspend fun ProducerScope<NodeEvent>.runConnection(
-        ids: SubscriptionIds,
-        accessToken: String,
-    ) {
-        val base = baseUrl.trimEnd('/')
-        val request =
-            Request
-                .Builder()
-                .url("$base/sse")
-                // The bearer goes in the header, like every other call. Core still accepts `?token=`
-                // on `/sse` (a browser EventSource needs it), but a token in a URL ends up in logs.
-                .header("Authorization", "Bearer $accessToken")
-                .header("Accept", "text/event-stream")
-                .build()
-
-        // Bridges the EventSource callback into structured concurrency: completes when the stream
-        // ends (server `close`, drop, or failure) so the caller can reconnect.
-        val done = CompletableDeferred<Unit>()
-        val listener = streamListener(base, ids, accessToken, done)
-
-        val eventSource = EventSources.createFactory(client).newEventSource(request, listener)
-        try {
-            done.await()
-        } finally {
-            eventSource.cancel()
-        }
-    }
-
-    private fun ProducerScope<NodeEvent>.streamListener(
-        base: String,
-        ids: SubscriptionIds,
-        accessToken: String,
-        done: CompletableDeferred<Unit>,
-    ) = object : EventSourceListener() {
-        override fun onEvent(
-            eventSource: EventSource,
-            id: String?,
-            type: String?,
-            data: String,
-        ) {
-            val obj = runCatching { json.parseToJsonElement(data).jsonObject }.getOrNull() ?: return
-
-            val frameType = obj["type"]?.jsonPrimitive?.contentOrNull
-            if (frameType != null) {
-                when (frameType) {
-                    "connect" ->
-                        obj["session_id"]
-                            ?.jsonPrimitive
-                            ?.contentOrNull
-                            ?.let { subscribe(base, ids, it, accessToken, done) }
-                    "close" -> {
-                        eventSource.cancel()
-                        if (!done.isCompleted) done.complete(Unit) // reconnect
-                    }
-                }
-                return
-            }
-
-            val result = obj["result"] as? JsonObject ?: return
-            val kind = result["type"]?.jsonPrimitive?.contentOrNull ?: "event"
-            val contextId = result["contextId"]?.jsonPrimitive?.contentOrNull
-            val groupId = result["groupId"]?.jsonPrimitive?.contentOrNull
-            when {
-                contextId != null -> trySend(ContextEvent(contextId = contextId, kind = kind, payload = result))
-                groupId != null -> trySend(GroupEvent(groupId = groupId, kind = kind, payload = result))
-            }
-        }
-
-        override fun onClosed(eventSource: EventSource) {
-            if (!done.isCompleted) done.complete(Unit)
-        }
-
-        override fun onFailure(
-            eventSource: EventSource,
-            t: Throwable?,
-            response: okhttp3.Response?,
-        ) {
-            if (done.isCompleted) return
-            // A 403 is a decision, not a hiccup: either this token never carried
-            // `context:subscribe` (rc.41) or its family is gone. Retrying re-asks a
-            // question already answered, so fail the flow instead of looping.
-            val terminal = response?.takeIf { it.code == HTTP_FORBIDDEN }?.let { terminalFor(it) }
-            if (terminal != null) done.completeExceptionally(terminal) else done.complete(Unit)
-        }
-    }
-
-    /**
-     * POST the subscription request (never dropped, unlike a WS message sent before the socket is
-     * open — the reason mero-chat moved to SSE). Fire-and-forget for every failure but one: a
-     * `403` fails [done], because the next `connect` would only be refused again.
-     */
-    private fun subscribe(
-        base: String,
-        ids: SubscriptionIds,
-        sessionId: String,
-        accessToken: String,
-        done: CompletableDeferred<Unit>,
-    ) {
-        val payload =
-            buildJsonObject {
-                put("id", sessionId)
-                put("method", "subscribe")
-                put(
-                    "params",
-                    buildJsonObject {
-                        put(
-                            "contextIds",
-                            buildJsonArray { ids.contextIds.forEach { add(it) } },
-                        )
-                        // Only when asked: core skips an empty list, and a node predating
-                        // group subscriptions denies the unknown key.
-                        if (ids.groupIds.isNotEmpty()) {
-                            put("groupIds", buildJsonArray { ids.groupIds.forEach { add(it) } })
-                        }
-                    },
-                )
-            }
-        val request =
-            Request
-                .Builder()
-                .url("$base/sse/subscription")
-                .header("Authorization", "Bearer $accessToken")
-                .post(json.encodeToString(JsonObject.serializer(), payload).toRequestBody(JSON_MEDIA))
-                .build()
-        // A failed POST is normally harmless — the next `connect` re-subscribes. A 403 is
-        // not: the stream stays open and silent, which used to read as "this context is
-        // quiet" rather than "you were refused". Core rc.41 put `context:subscribe` on
-        // this route too, so the open can succeed and the subscribe still be refused.
-        runCatching {
-            client.newCall(request).execute().use { resp ->
-                if (resp.code == HTTP_FORBIDDEN && !done.isCompleted) {
-                    done.completeExceptionally(terminalFor(resp))
-                }
-            }
-        }
-    }
-
-    /**
-     * The exception a `403` deserves. A dead token family is named by `x-auth-error`
-     * and already has a type apps catch; anything else at this status is a permission
-     * the token does not hold — since rc.41 that is `context:subscribe` — and gets a
-     * plain [HttpException] carrying the body and headers to say which.
-     */
-    private fun terminalFor(response: okhttp3.Response): HttpException {
-        val authError = response.header("x-auth-error")
-        val body = runCatching { response.body?.string() }.getOrNull().orEmpty()
-        val headers = response.headers.names().associateWith { response.headers[it].orEmpty() }
-        val url = response.request.url.toString()
-        return if (authError != null && authError in TERMINAL_AUTH_ERRORS) {
-            AuthRevokedException(authError, response.code, body, headers, url)
-        } else {
-            HttpException(response.code, body, headers, url)
-        }
-    }
-
-    private data class SubscriptionIds(
-        val contextIds: List<String>,
-        val groupIds: List<String>,
-    )
-
-    private companion object {
-        const val RECONNECT_DELAY_MS = 3_000L
-        const val HTTP_FORBIDDEN = 403
-        val JSON_MEDIA = "application/json".toMediaType()
-    }
+    ): Flow<NodeEvent> = connection().flowOf(contextIds, groupIds)
 }
+
+/**
+ * This connection's events for [contextIds] and [groupIds] as a cold flow that owns the
+ * connection: collecting subscribes and connects, cancelling closes it, and a terminal
+ * failure fails the flow.
+ */
+internal fun SseConnection.flowOf(
+    contextIds: List<String>,
+    groupIds: List<String>,
+): Flow<NodeEvent> =
+    channelFlow {
+        subscribe(contextIds, groupIds) // no session yet: remembered, sent with the `connect` frame
+        launch { this@channelFlow.close(failure.filterNotNull().first()) }
+        try {
+            events.onSubscription { connect() }.collect { send(it) }
+        } finally {
+            this@flowOf.close()
+        }
+    }
