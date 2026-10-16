@@ -221,17 +221,7 @@ class CloudAccount(
     ): RelayConnection {
         val relayUrl = session.relayUrl ?: error("this account has no relay yet")
         val mero = Mero(MeroConfig(baseUrl = relayUrl, tokenStore = tokenStore))
-        val bearer: suspend () -> String? = {
-            loginMutex.withLock {
-                // Through `mero`, not the raw store: the bundle is bound to the relay's origin.
-                val current = mero.getTokenData()
-                if (current != null && current.expiresAt - System.currentTimeMillis() > REFRESH_MARGIN_MS) {
-                    current.accessToken
-                } else {
-                    runCatching { loginToRelay(session) }.getOrNull()?.also { mero.setTokenData(it) }?.accessToken
-                }
-            }
-        }
+        val bearer = RelayConnection.bearerSource(mero, loginMutex) { loginToRelay(session) }
         return RelayConnection(session, mero, relayClient(session, relayUrl, bearer), bearer)
     }
 
@@ -490,7 +480,6 @@ class CloudAccount(
         const val KEY_SESSION = "calimero.delegated.connection"
         const val KEY_PENDING_STATE = "calimero.enrol.state"
         const val KEY_NODE_KEY_PREFIX = "calimero.delegated.relay-node-key."
-        const val REFRESH_MARGIN_MS = 30_000L
         const val ROLE_RELAY_TEE = "RelayTee"
     }
 }
@@ -535,6 +524,31 @@ class RelayConnection internal constructor(
         presence.close()
         mero.sse.close()
         mero.logout()
+    }
+
+    internal companion object {
+        private const val REFRESH_MARGIN_MS = 30_000L
+
+        /**
+         * The Bearer token for [mero]'s relay: the stored one while it has more than 30 s
+         * left, else a fresh [login] (null when it fails), single-flight under [mutex].
+         */
+        fun bearerSource(
+            mero: Mero,
+            mutex: Mutex,
+            login: suspend () -> TokenData?,
+        ): suspend () -> String? =
+            {
+                mutex.withLock {
+                    // Through `mero`, not the raw store: the bundle is bound to the relay's origin.
+                    val current = mero.getTokenData()
+                    if (current != null && current.expiresAt - System.currentTimeMillis() > REFRESH_MARGIN_MS) {
+                        current.accessToken
+                    } else {
+                        runCatching { login() }.getOrNull()?.also { mero.setTokenData(it) }?.accessToken
+                    }
+                }
+            }
     }
 }
 
