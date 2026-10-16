@@ -22,7 +22,7 @@ See [`ROADMAP-TASKS/task-2-android-sdk.md`] in the planning repo for the full de
 
 | Module         | What it is                                                                 |
 |----------------|-----------------------------------------------------------------------------|
-| `mero-core`    | The SDK: the Cloud account layer (`account`, `cloud`, `relay`, `crypto` packages: `CloudAccount`, device keys, enrolment, `CloudClient`, `RelayClient`, warrants), plus `Mero`, HTTP transport (OkHttp), `AuthApi` (incl. root/client keys + permissions), `AdminApi` (~140 methods), `RefreshCoordinator`, `TokenStore` (node-bound bundles), `RpcClient`, `SseClient`/`events()`, `Capabilities` (+ presets, `capMask`/`capNames`), `classifyError`, local-node discovery, SSO with single-use callback state. |
+| `mero-core`    | The SDK: the Cloud account layer (`account`, `cloud`, `relay`, `crypto` packages: `CloudAccount`, device keys, enrolment, `CloudClient`, `RelayClient`, warrants), plus `Mero`, HTTP transport (OkHttp), `AuthApi` (incl. root/client keys + permissions), `AdminApi` (~140 methods), `RefreshCoordinator`, `TokenStore` (node-bound bundles), `RpcClient`, `SseClient`/`events()` + the long-lived `SseConnection` (`Mero.sse`, live subscribe/unsubscribe, typed migration/membership/app-version events), an experimental `WsClient`, ephemeral presence (`Mero.ephemeral`, device-signed `RelayPresenceClient`), `Capabilities` (+ presets, `capMask`/`capNames`), `classifyError`, local-node discovery, SSO with single-use callback state. |
 | `mero-compose` | Optional Jetpack Compose UI kit, Cloud sign-in: `MeroClient` (`signInWithCloud`, `handleEnrolmentCallback`, plus a development-only `login(nodeUrl, username, password)`), `LoginSheet` ("Continue with Calimero"), `ConnectButton`, `MeroProvider`/`useMero`. |
 | `mero-testkit` | Test-support: `FakeNode`, a stateful in-memory node on OkHttp MockWebServer, and `FakeCloud` (its cloud-manager + hosted-relay routes), for driving whole sign-in → call → sign-out journeys with no live service. |
 | `sample-app`   | A Compose sample in the light Calimero style: Cloud sign-in, a native chat client and an **SDK Explorer** over the relay session, plus a deterministic mock mode that drives the instrumented UI test. |
@@ -139,6 +139,10 @@ scope.launch {
     mero.events(listOf(contextId)).collect { event -> /* e.g. re-fetch messages */ }
 }
 
+// Presence: publish your cursor, watch everyone's (replayed to late subscribers).
+mero.ephemeral.set(contextId, Cursor(line = 3, col = 7))
+scope.launch { mero.ephemeral.subscribe<Cursor>(contextId).collect { entry -> /* render */ } }
+
 // Logout (best-effort POST /auth/logout + revoke, then local clear).
 mero.logout(clientId = null)
 ```
@@ -206,6 +210,9 @@ node-bound token persistence, error classification and local-node discovery. A l
   login, warranted writes (golden vectors shared with mero-js).
 - [x] **M4.6** — mero-js parity: single-use SSO callback state, node-bound tokens, capability
   presets, `classifyError`, local-node discovery, pinned relay keys and relay logout.
+- [x] **M4.7** — mero-js parity: long-lived SSE connection with live subscriptions and
+  typed group events, experimental WebSocket client, ephemeral presence (node and
+  device-signed relay presence).
 - [ ] DCAP / TDX quote verification for the relay node key (today: TLS + binding checks).
 - [ ] **M5** — More Compose hooks (`useSubscription`, `useMigrationStatus`, …).
 - [ ] **M6** — Maven Central publishing, version-aligned to the mero-js contract.

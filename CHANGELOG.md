@@ -57,6 +57,61 @@ Pinned to `0.11.0-rc.83` in `ci/core-version` (and the matching
   parity); `MeroAuthState` gains `nodeUrl`, `username` and `isDevNodeSession`.
 - `FakeNode` answers `GET /admin-api/health`.
 
+### Added — events and presence (mero-js parity)
+
+- **`SseConnection`** (`Mero.sse`, `SseClient.connection()`): one long-lived SSE
+  connection — mero-js `SseClient`. `subscribe(contextIds, groupIds)` /
+  `unsubscribe(...)` change a **live** session (`POST /sse/subscription`, only the ids
+  that changed, 10 s timeout); `isSubscribed` / `isSubscribedToGroup`; every
+  remembered id is re-subscribed on each `connect` frame, *then* `connects` emits the
+  session id. Hot `events`, `errors` and `failure` (the terminal refusal). Reconnects
+  on mero-js's fixed 3 s delay — SSE has no backoff in mero-js, so none here. A failed
+  subscription POST is reported on `errors` rather than thrown, as in mero-js. The
+  existing `events` / `groupEvents` / `nodeEvents` flows now run on it unchanged.
+- **Typed events**: `AppVersionChangedEvent`, `GroupMigrationEvent`
+  (`MigrationStarted`, `MigrationProgress`, `CascadeProgress`, `MigrationCompleted`)
+  and `GroupMembershipEvent` (`MemberJoined`, `MemberAdded`, `MemberRemoved`), with
+  core's field names; `appVersionChanges` / `migrationEvents` / `membershipEvents`
+  flows on `Mero`, `SseClient` and `SseConnection`, callback forms
+  `onAppVersionChanged` / `onMigrationEvent`, and `asAppVersionChanged()` /
+  `asMigrationEvent()` / `asMembershipEvent()` on a raw event.
+- **`presenceSeed(contextId)`**: the latest `Ephemeral` entry per author of each
+  subscribed context, `ageMs` advanced by the time since arrival; replayed to a late
+  presence subscriber, cleared on reconnect and unsubscribe.
+- **`WsClient`** (`Mero.ws`, `@ExperimentalMeroApi` as in mero-js): OkHttp WebSocket on
+  `GET /ws` (Bearer header; core also takes `?token=`), `subscribe` / `unsubscribe`
+  messages `{"id":null,"method":…,"params":{contextIds?,groupIds?}}`, re-subscribe on
+  every open, reconnect after `min(1 s·2ⁿ, 30 s)`; a `403` upgrade stops it.
+- **`EphemeralClient`** (`Mero.ephemeral`): `set(contextId, state, codec)` via
+  JSON-RPC `set_ephemeral {contextId, state: [bytes]}`, `subscribe(contextId, codec)`
+  → `Flow<EphemeralEntry>` (`author`, `account`, `state`, `removed`, `ageMs`), and
+  `subscribePresence` (filter `Ephemeral`, replay the seed, connect and subscribe).
+  `Codec`, `JsonCodec` / `jsonCodec<T>()` (bytes identical to mero-js) and `RawCodec`.
+- **`RelayPresenceClient`** (`RelayConnection.presence`, `MeroClient.presence`): an
+  account's presence signed with the device key and posted to `presence-intents`,
+  resent every 2.5 s while set; `set(ctx, null)` / `clear(ctx)` retracts, `close()`
+  stops; 429/5xx/network failures wait for the next resend, other refusals throw and
+  stop. `RelayConnection.logout()` closes it.
+- **`PresenceStatement`**: `PRESENCE_DOMAIN` (`calimero/presence/1`), `stateHash`,
+  `presenceStatementBytes` (pinned to core's `statement_vector_is_stable`), `sign` and
+  `signedRequest` — so `AdminApi.presenceIntent` callers no longer hand-supply a
+  signature. `RelayClient.publishPresence(contextId, state, seq)` signs for you;
+  `RelayClient` implements `PresenceRelay` and exposes `authorSigner`.
+- SDK Explorer: a **Presence** category (`presence.set`, `presence.clear`,
+  `publishPresence`, `ephemeral.set`).
+
+### Changed — events and presence
+
+- An SSE `401` whose `x-auth-error` is `token_reuse` / `token_revoked` now ends the
+  stream like a `403` (`AuthRevokedException`); a `401 token_expired` still reconnects.
+- A group-only SSE subscription no longer sends an empty `contextIds` (both lists are
+  sent only when non-empty, as in mero-js; core defaults either).
+- `RelayClient.presenceIntent` is no longer retried on `429` (presence resends every
+  2.5 s anyway, as in mero-js).
+- The re-subscribe after a `connect` frame runs beside the frame reader instead of
+  blocking it, so a frame that follows `connect` closely may be delivered before the
+  subscription POST returns.
+
 ### Breaking
 
 - `RpcClient.execute` / `executeRaw` / `executeWithMetadata` no longer take

@@ -20,8 +20,8 @@ fun events(contextIds: List<String>): Flow<ContextEvent>
 Opens `GET /sse` and subscribes to the given context ids via
 `POST /sse/subscription`, then emits a `ContextEvent` per node emission. The
 returned `Flow` is cold — collecting it opens the connection; cancelling the
-collecting coroutine closes it. It reconnects automatically ~3s after a drop and
-re-subscribes (the node persists session subscriptions).
+collecting coroutine closes it. It reconnects automatically 3 s after a drop (a fixed
+delay, as in mero-js) and re-subscribes.
 
 ```kotlin
 val job = scope.launch {
@@ -72,6 +72,104 @@ presence).
 For a contract emission (`kind == "StateMutation"`) the encoded contract events
 live under `payload`'s `data.events[].data`, each with its own `kind`.
 
+## `mero.sse` — `SseConnection`
+
+```kotlin
+class SseConnection(
+    baseUrl: String,
+    token: suspend () -> String?,
+    client: OkHttpClient = OkHttpClient(),
+    json: Json = …,
+    reconnectDelayMs: Long = 3_000,
+) {
+    val events: SharedFlow<NodeEvent>          // hot; collect before connect()
+    val contextEvents: Flow<ContextEvent>
+    val groupEvents: Flow<GroupEvent>
+    val appVersionChanges: Flow<AppVersionChangedEvent>
+    val migrationEvents: Flow<GroupMigrationEvent>
+    val membershipEvents: Flow<GroupMembershipEvent>
+    val connects: SharedFlow<String>           // session id, after the re-subscribe landed
+    val errors: SharedFlow<Throwable>
+    val failure: StateFlow<Throwable?>         // the terminal refusal, if any
+    val sessionId: String?
+
+    fun connect()
+    suspend fun subscribe(contextIds: Collection<String> = emptyList(), groupIds: Collection<String> = emptyList())
+    suspend fun unsubscribe(contextIds: Collection<String> = emptyList(), groupIds: Collection<String> = emptyList())
+    fun isSubscribed(contextId: String): Boolean
+    fun isSubscribedToGroup(groupId: String): Boolean
+    fun presenceSeed(contextId: String): List<JsonObject>
+    fun onAppVersionChanged(handler: (AppVersionChangedEvent) -> Unit): () -> Unit
+    fun onMigrationEvent(handler: (GroupMigrationEvent) -> Unit): () -> Unit
+    fun close()
+}
+```
+
+Port of mero-js `SseClient`. `subscribe` / `unsubscribe` on a live session POST
+`/sse/subscription` `{"id": <session>, "method": "subscribe" | "unsubscribe",
+"params": {contextIds?, groupIds?}}` with only the ids that changed, under a 10 s
+timeout. On every `connect` frame the whole remembered set is re-subscribed, then
+`connects` emits. Reconnection waits a fixed `reconnectDelayMs` (mero-js has no SSE
+backoff). Any `403`, or a `401` whose `x-auth-error` is `token_reuse` /
+`token_revoked`, stops the connection.
+
+`presenceSeed(contextId)` is the latest `Ephemeral` data per author for a context the
+connection holds, each `ageMs` advanced by the time since it arrived; removals are
+dropped, and a reconnect or `unsubscribe` clears it.
+
+## Typed events
+
+```kotlin
+data class AppVersionChangedEvent(val contextId: String, val fromVersion: String?, val toVersion: String?)
+
+sealed class GroupMigrationEvent { abstract val groupId: String
+    data class MigrationStarted(groupId, fromVersion, toVersion, toStateVersion: Long, localContextsTotal: Long)
+    data class MigrationProgress(groupId, migrated: Long, inProgress: Long, unknown: Long, failed: Long, total: Long)
+    data class CascadeProgress(groupId, subgroupId, localContextsSwapped: Long, localContextsTotal: Long)  // admins only
+    data class MigrationCompleted(groupId, toVersion, completedAt: Long)  // seconds since the epoch
+}
+
+sealed class GroupMembershipEvent { abstract val groupId: String; abstract val memberAccount: String; abstract val role: String?
+    data class MemberJoined(…); data class MemberAdded(…); data class MemberRemoved(…)
+}
+
+fun ContextEvent.asAppVersionChanged(): AppVersionChangedEvent?
+fun GroupEvent.asMigrationEvent(): GroupMigrationEvent?
+fun GroupEvent.asMembershipEvent(): GroupMembershipEvent?
+```
+
+Field names are core's (`crates/primitives/src/events.rs`): `memberAccount` is the
+member's account (64 hex), not a signing key; `role` is absent on `MemberRemoved` and
+on an inherited Open-subgroup join; `MigrationProgress.total` is the fleet cohort,
+`MigrationStarted.localContextsTotal` the emitting node's own count. `Mero` and
+`SseClient` also offer `appVersionChanges(contextIds)`, `migrationEvents(groupIds)` and
+`membershipEvents(groupIds)` as cold flows.
+
+## `mero.ws` — `WsClient` (experimental)
+
+```kotlin
+@ExperimentalMeroApi
+class WsClient(baseUrl: String, token: suspend () -> String?, client: OkHttpClient = OkHttpClient(), …) {
+    val events: SharedFlow<NodeEvent>
+    val connects: SharedFlow<Unit>
+    val errors: SharedFlow<Throwable>
+    val failure: StateFlow<Throwable?>
+    val isOpen: Boolean
+    fun connect()
+    fun subscribe(contextIds: Collection<String> = emptyList(), groupIds: Collection<String> = emptyList())
+    fun unsubscribe(contextIds: Collection<String> = emptyList(), groupIds: Collection<String> = emptyList())
+    fun isSubscribed(contextId: String): Boolean
+    fun close()
+    companion object { fun backoffMs(attempt: Int, initial: Long = 1_000, max: Long = 30_000): Long }
+}
+```
+
+Port of mero-js `WsClient` over OkHttp's WebSocket: `GET /ws` (Bearer header),
+messages `{"id":null,"method":"subscribe"|"unsubscribe","params":{contextIds?,groupIds?}}`
+(core `server/primitives/src/ws.rs`), every remembered id re-subscribed on each open,
+reconnect after `min(1 s · 2ⁿ, 30 s)`, reset by a successful open. A `403` upgrade (or a
+`401` naming a dead family) sets `failure` and stops it.
+
 ## `SseClient`
 
 `mero.events(...)` builds an `SseClient` for you; use it directly only to manage
@@ -84,9 +182,18 @@ class SseClient(
     client: OkHttpClient = OkHttpClient(),
     json: Json = Json { ignoreUnknownKeys = true },
 ) {
+    fun connection(): SseConnection
     fun events(contextIds: List<String>): Flow<ContextEvent>
+    fun groupEvents(groupIds: List<String>): Flow<GroupEvent>
+    fun nodeEvents(contextIds: List<String>, groupIds: List<String>): Flow<NodeEvent>
+    fun appVersionChanges(contextIds: List<String>): Flow<AppVersionChangedEvent>
+    fun migrationEvents(groupIds: List<String>): Flow<GroupMigrationEvent>
+    fun membershipEvents(groupIds: List<String>): Flow<GroupMembershipEvent>
 }
 ```
+
+Each flow runs on its own `SseConnection`, closed when the collector is cancelled, and
+fails with the terminal refusal if there is one.
 
 <Aside type="note">
   `mero.logout()` does not stop an active stream — tie the collecting coroutine

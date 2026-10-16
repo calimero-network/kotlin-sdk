@@ -1,0 +1,122 @@
+---
+title: Presence
+description: Ephemeral presence (cursors, typing, who is here) with mero.ephemeral on a node, and device-signed presence through a relay with RelayPresenceClient for an account.
+sidebar:
+  order: 4
+---
+
+import { Aside } from '@astrojs/starlight/components';
+
+Presence is transient state — a cursor, "is typing", "is online" — that gossips
+between the members of a context without running WASM, growing the DAG or being
+persisted. Every author holds one slot per context; you only ever write your own, and
+everyone reads everyone's. Entries expire on each node 7 s after their author was last
+heard from.
+
+There are two writers, with one read path:
+
+| Who | Writes with | Reads with |
+| --- | --- | --- |
+| A node (you are signed in to your own node) | `mero.ephemeral.set` → JSON-RPC `set_ephemeral` | `mero.ephemeral.subscribe` |
+| An account (Cloud sign-in, no node) | `connection.presence.set` → signed `presence-intents` via the relay | `connection.presence.subscribe` |
+
+## On a node: `mero.ephemeral`
+
+```kotlin
+@Serializable data class Cursor(val line: Int, val col: Int)
+
+// Publish your slice, replacing it wholesale. The node fills in the author.
+mero.ephemeral.set(contextId, Cursor(12, 4))
+
+// Everyone's slices, as they change.
+scope.launch {
+    mero.ephemeral.subscribe<Cursor>(contextId).collect { entry ->
+        if (entry.removed) cursors.remove(entry.author) else cursors[entry.author] = entry.state!!
+    }
+}
+```
+
+`set` posts `{"method":"set_ephemeral","params":{"contextId":…,"state":[…bytes…]}}`; the
+slice is at most 16 384 bytes, and a refusal throws `RpcException` with core's `type`
+and `data` (e.g. `SliceTooLarge`). The node never decodes the slice: pick a `Codec`
+every client agrees on. The default is `jsonCodec<T>()` (JSON text as UTF-8, the same
+bytes mero-js's `jsonCodec` produces); `RawCodec` passes bytes through.
+
+Each `EphemeralEntry` carries:
+
+| Field | Meaning |
+| --- | --- |
+| `author` | the author's public key (a node's context identity, or an account's device key) |
+| `account` | for an update a relay carried, the account its device certificate names |
+| `state` | the decoded slice; `null` on a removal |
+| `removed` | `true` when the author's slot went away |
+| `ageMs` | ms since the author was last heard from, **only** on a replayed entry; `null` on a live delta |
+
+### The replay, and late subscribers
+
+When a context is first subscribed on a connection, the node replays its current
+presence (entries with `ageMs`) before any live delta. It does that **once per
+connection** — so a screen that subscribes to a context's events first and its presence
+second would never see the replay. `mero.sse` keeps the latest entry per author of
+every context it holds, and `subscribe` seeds a late collector from it, each `ageMs`
+advanced by the time since the entry arrived (`mero.sse.presenceSeed(contextId)` is the
+raw form). A reconnect clears the seed; the re-subscribe brings a fresh replay.
+
+Collecting `subscribe` connects `mero.sse` and subscribes the context for you.
+Cancelling stops delivery but leaves the context subscribed, since other collectors may
+share it.
+
+## As an account: `RelayPresenceClient`
+
+An account has no node to heartbeat for it. `RelayConnection.presence` (and
+`MeroClient.presence` in Compose) signs each update with the device key, posts it to the
+relay's `POST /admin-api/contexts/{id}/presence-intents`, and **resends it every 2.5 s**
+while set — the node's own heartbeat, so the entry never outlives the 7 s TTL. The relay
+checks it, then seals and gossips it; other members verify the device signature and
+certificate themselves, so the relay cannot invent or alter an account's presence.
+
+```kotlin
+val presence = client.presence ?: return          // MeroClient; or relayConnection.presence
+
+presence.set(contextId, mapOf("typing" to true))  // signed, then resent every 2.5 s
+presence.clear(contextId)                         // retract (set(contextId, null) with a codec)
+presence.close()                                  // stop every resend; signOut does this
+
+presence.subscribe<Map<String, Boolean>>(contextId).collect { entry -> … }  // via the relay's SSE
+```
+
+`set` throws when the relay refuses the first send for good — `403` (not a member,
+revoked) or `400` (malformed, or a clock outside the relay's window) — and stops the
+resends. A `429`, a `5xx` or a network failure is not thrown: the next resend covers it.
+`seq` is seeded from the wall clock and strictly rising, so a relay restart never sees an
+old one; a newer `set` (or `close`) always wins over an older one still in flight.
+
+<Aside type="note">
+  Reading presence through the relay needs its Bearer session (`ensureSession()`); a
+  connection without one can still publish.
+</Aside>
+
+### The signed statement
+
+What the device signs is core's `PresenceStatement` borsh, byte-identical to mero-js
+(`PresenceStatement` in `com.calimero.mero.presence`, pinned to core's vector):
+
+```
+"calimero/presence/1" (19 bytes) ‖ contextId (32) ‖ author device key (32)
+  ‖ u64le(seq) ‖ u64le(sentAtMs) ‖ sha256(borsh(Option<Vec<u8>> state))
+```
+
+To post one update yourself, let the SDK sign it:
+
+```kotlin
+relay.publishPresence(contextId, state = bytes, seq = System.currentTimeMillis())  // RelayClient
+mero.admin.presenceIntent(                                                          // AdminApi
+    contextId,
+    PresenceStatement.signedRequest(signer, authorProof, contextId, state = bytes, seq = seq),
+)
+```
+
+## See also
+
+- [Live events](/guides/events/) — the SSE connection presence rides on.
+- [Events reference](/reference/events/) — `SseConnection.presenceSeed` and the event types.

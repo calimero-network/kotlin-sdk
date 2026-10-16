@@ -30,12 +30,20 @@ Properties that expose the API clients over the shared transport:
 | `mero.admin` | `AdminApi` | contexts, apps, namespaces, groups, blobs, TEE — [reference](/reference/admin-api/) |
 | `mero.rpc` | `RpcClient` | execute WASM methods — [reference](/reference/rpc/) |
 | `mero.http` | `HttpClient` | the transport in use (advanced) |
+| `mero.sse` | `SseConnection` | the one long-lived SSE connection; subscribe while live — [reference](/reference/events/) |
+| `mero.ws` | `WsClient` | WebSocket events, `@ExperimentalMeroApi` — [reference](/reference/events/) |
+| `mero.ephemeral` | `EphemeralClient` | presence slices (`set_ephemeral`) — [guide](/guides/presence/) |
 
-Plus one method, not an accessor:
+Plus event methods, each a cold flow on its own connection:
 
 | Method | Returns | Description |
 | --- | --- | --- |
 | `mero.events(contextIds)` | `Flow<ContextEvent>` | live SSE events — [reference](/reference/events/) |
+| `mero.groupEvents(groupIds)` | `Flow<GroupEvent>` | group-keyed events (membership, migration) |
+| `mero.nodeEvents(contextIds, groupIds)` | `Flow<NodeEvent>` | both on one stream |
+| `mero.appVersionChanges(contextIds)` | `Flow<AppVersionChangedEvent>` | parsed bundle-version flips |
+| `mero.migrationEvents(groupIds)` | `Flow<GroupMigrationEvent>` | typed migration phases |
+| `mero.membershipEvents(groupIds)` | `Flow<GroupMembershipEvent>` | typed membership changes |
 
 ## Authentication
 
