@@ -3,6 +3,8 @@ package com.calimero.mero.cloud
 import com.calimero.mero.account.CloudAccount
 import com.calimero.mero.account.DelegatedSession
 import com.calimero.mero.account.DeviceCert
+import com.calimero.mero.account.InvitationNotClaimableException
+import com.calimero.mero.account.InvitationNotClaimableReason
 import com.calimero.mero.account.Invitations
 import com.calimero.mero.account.MemorySecureStore
 import com.calimero.mero.crypto.Ed25519
@@ -16,8 +18,6 @@ import com.calimero.mero.storage.MemoryTokenStore
 import com.calimero.mero.testkit.FakeNode
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.Json
-import kotlinx.serialization.json.JsonPrimitive
-import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.long
@@ -195,11 +195,15 @@ class FoundingFlowTest {
         }
 
     @Test
-    fun `an invitation to a namespace the cloud does not host says where its relay is`() =
+    fun `refuses, without signing, an invitation to a namespace the cloud lists no node for, even with a relay in it`() =
         runBlocking {
+            // mero-js #264: an address on the invitation is unsigned, so the relay cannot ride along as one.
             node.cloud.namespacesRouted = false
-            val invitation = account.createNamespaceInvitation("77".repeat(32), account.connect(session, MemoryTokenStore()))
-            assertEquals(listOf(base), invitation.admitterAddrs)
-            assertEquals(JsonPrimitive(base), invitation.raw["admitter_addrs"]!!.jsonArray.single())
+            val e =
+                runCatching { account.createNamespaceInvitation("77".repeat(32), account.connect(session, MemoryTokenStore())) }
+                    .exceptionOrNull() as InvitationNotClaimableException
+            assertEquals(InvitationNotClaimableReason.NOT_HOSTED, e.reason)
+            assertTrue(e.notHosted)
+            assertTrue(e.message!!.contains("lists no node"))
         }
 }

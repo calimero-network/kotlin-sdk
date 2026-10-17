@@ -50,6 +50,8 @@ class OkHttpTransport(
             val response =
                 try {
                     client.newCall(builder.build()).execute()
+                } catch (e: RequestProofFailure) {
+                    throw e.cause
                 } catch (e: IOException) {
                     throw NetworkException(e.message ?: "Network error", e)
                 }

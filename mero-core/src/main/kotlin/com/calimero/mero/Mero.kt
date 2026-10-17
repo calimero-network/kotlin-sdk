@@ -5,23 +5,34 @@ import com.calimero.mero.auth.AuthApi
 import com.calimero.mero.auth.AuthCallbackResult
 import com.calimero.mero.auth.AuthLoginOptions
 import com.calimero.mero.auth.LogoutRequest
+import com.calimero.mero.auth.PendingAuthStates
 import com.calimero.mero.auth.RefreshCoordinator
 import com.calimero.mero.auth.RefreshTokenRequest
 import com.calimero.mero.auth.RevokeTokenRequest
 import com.calimero.mero.auth.TokenRequest
+import com.calimero.mero.ephemeral.EphemeralClient
 import com.calimero.mero.http.AuthInterceptor
 import com.calimero.mero.http.HttpClient
 import com.calimero.mero.http.HttpException
 import com.calimero.mero.http.MeroStateException
 import com.calimero.mero.http.OkHttpTransport
+import com.calimero.mero.http.RequestProofInterceptor
 import com.calimero.mero.http.TokenAuthenticator
+import com.calimero.mero.request.RequestAuthorizer
+import com.calimero.mero.request.proofAuthorizerOf
 import com.calimero.mero.rpc.RpcClient
+import com.calimero.mero.sse.AppVersionChangedEvent
 import com.calimero.mero.sse.ContextEvent
 import com.calimero.mero.sse.GroupEvent
+import com.calimero.mero.sse.GroupMembershipEvent
+import com.calimero.mero.sse.GroupMigrationEvent
 import com.calimero.mero.sse.NodeEvent
 import com.calimero.mero.sse.SseClient
+import com.calimero.mero.sse.SseConnection
 import com.calimero.mero.storage.MemoryTokenStore
+import com.calimero.mero.storage.NodeBoundTokenStore
 import com.calimero.mero.storage.TokenStore
+import com.calimero.mero.ws.WsClient
 import kotlinx.coroutines.flow.Flow
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.buildJsonObject
@@ -36,6 +47,11 @@ import java.util.concurrent.TimeUnit
  * The [TokenStore] is the single source of truth for the current bundle (in-memory by default);
  * every read/write of tokens goes through it, so the reactive 401→refresh path re-reads the store
  * inside its lock and never replays a consumed refresh token.
+ *
+ * Tokens are bound to the node that issued them ([TokenData.nodeOrigin], [nodeOriginOf]): a
+ * bundle in the store that another node issued — or one persisted before the tag existed — is
+ * ignored, so a store shared between clients for different nodes never leaks one node's
+ * tokens to another.
  */
 class Mero(
     private val config: MeroConfig,
@@ -47,7 +63,9 @@ class Mero(
             encodeDefaults = false
         }
 
-    private val store: TokenStore = config.tokenStore ?: MemoryTokenStore()
+    // Every read and write goes through the node-bound view: what this client persists is
+    // tagged with the node's origin, and another node's bundle in a shared store reads as empty.
+    private val store: TokenStore = NodeBoundTokenStore(config.tokenStore ?: MemoryTokenStore(), nodeOriginOf(config.baseUrl))
 
     private val coordinator =
         RefreshCoordinator(
@@ -77,25 +95,55 @@ class Mero(
             lockFile = config.refreshLockFile,
         )
 
+    /** The configured client to build on, or a fresh one. */
+    private fun baseBuilder(): OkHttpClient.Builder = config.httpClient?.newBuilder() ?: OkHttpClient.Builder()
+
     private val okHttpClient: OkHttpClient =
-        OkHttpClient
-            .Builder()
+        baseBuilder()
             .connectTimeout(config.timeoutMs, TimeUnit.MILLISECONDS)
             .readTimeout(config.timeoutMs, TimeUnit.MILLISECONDS)
             .writeTimeout(config.timeoutMs, TimeUnit.MILLISECONDS)
             .retryOnConnectionFailure(true)
-            .addInterceptor(AuthInterceptor { store.getTokens()?.accessToken })
+            .apply {
+                // In front of the configured client's own interceptors: a sealing one among them
+                // must see the token and the proof, and seal them too.
+                val front = listOfNotNull(AuthInterceptor { store.getTokens()?.accessToken }, config.requestProof?.let(::RequestProofInterceptor))
+                interceptors().addAll(0, front)
+            }.refusingRedirectsWithProof()
             .authenticator(TokenAuthenticator { triggering -> coordinator.refresh(triggering).accessToken })
             .build()
 
     /** Long-lived streaming client for SSE: no read timeout, no auth interceptor/authenticator. */
     private val sseHttpClient: OkHttpClient =
-        OkHttpClient
-            .Builder()
+        baseBuilder()
             .connectTimeout(config.timeoutMs, TimeUnit.MILLISECONDS)
             .readTimeout(0, TimeUnit.MILLISECONDS)
             .retryOnConnectionFailure(true)
+            .refusingRedirectsWithProof()
             .build()
+
+    /** A proof is signed for one path: never let OkHttp carry it to another location. */
+    private fun OkHttpClient.Builder.refusingRedirectsWithProof(): OkHttpClient.Builder =
+        if (config.requestProof == null) this else followRedirects(false).followSslRedirects(false)
+
+    /**
+     * How SSE and the WebSocket authenticate when a proof is configured: the session token
+     * when there is one (the node answers a token-carrying request by the token anyway), the
+     * request proof otherwise. `null` without a proof, so they keep their token-only path.
+     */
+    private val streamAuthorizer: RequestAuthorizer? =
+        config.requestProof?.let { signer ->
+            val proof = proofAuthorizerOf(signer)
+            val authorizer: RequestAuthorizer = { request ->
+                store
+                    .getTokens()
+                    ?.accessToken
+                    ?.takeIf { it.isNotBlank() }
+                    ?.let { mapOf("Authorization" to "Bearer $it") }
+                    ?: proof(request)
+            }
+            authorizer
+        }
 
     private val transport: HttpClient =
         OkHttpTransport(
@@ -122,17 +170,12 @@ class Mero(
      * Live node events for the given [contextIds], over auto-reconnecting SSE. Cancel the collecting
      * coroutine to close the stream. Powers push updates (new messages, etc.) without polling.
      *
-     * Uses a dedicated OkHttp client with no read timeout (the stream is long-lived) and the token
-     * in the query string, so it does not share the reactive-refresh authenticator on [okHttpClient].
-     * (== mero-swift-sdk `Mero.events`.)
+     * Each call opens its own connection, on a dedicated OkHttp client with no read timeout (the
+     * stream is long-lived) and the Bearer token in a header, so it does not share the
+     * reactive-refresh authenticator on [okHttpClient]. Use [sse] for one shared connection whose
+     * subscriptions change while it is open. (== mero-swift-sdk `Mero.events`.)
      */
-    fun events(contextIds: List<String>): Flow<ContextEvent> =
-        SseClient(
-            baseUrl = config.baseUrl,
-            token = { store.getTokens()?.accessToken },
-            client = sseHttpClient,
-            json = json,
-        ).events(contextIds)
+    fun events(contextIds: List<String>): Flow<ContextEvent> = sseClient().events(contextIds)
 
     /**
      * Group-keyed events (membership changes, migration progress) for [groupIds], over the same
@@ -146,12 +189,47 @@ class Mero(
         groupIds: List<String>,
     ): Flow<NodeEvent> = sseClient().nodeEvents(contextIds, groupIds)
 
+    /** Parsed `AppVersionChanged` events for [contextIds] (mero-js `onAppVersionChanged`). */
+    fun appVersionChanges(contextIds: List<String>): Flow<AppVersionChangedEvent> = sseClient().appVersionChanges(contextIds)
+
+    /** Typed group-migration events for [groupIds] — subscribe with the namespace root. */
+    fun migrationEvents(groupIds: List<String>): Flow<GroupMigrationEvent> = sseClient().migrationEvents(groupIds)
+
+    /** Typed group-membership events for [groupIds]. */
+    fun membershipEvents(groupIds: List<String>): Flow<GroupMembershipEvent> = sseClient().membershipEvents(groupIds)
+
+    /**
+     * This client's one long-lived SSE connection — mero-js `MeroJs.events`. Not opened until
+     * [SseConnection.connect] (or a [ephemeral] subscription) asks; subscribe and unsubscribe
+     * on it while it is live.
+     */
+    val sse: SseConnection by lazy { sseClient().connection() }
+
+    /**
+     * WebSocket event client (`GET /ws`), **experimental** as in mero-js — prefer [sse].
+     * Not opened until [WsClient.connect].
+     */
+    @ExperimentalMeroApi
+    val ws: WsClient by lazy {
+        WsClient(
+            baseUrl = config.baseUrl,
+            token = { store.getTokens()?.accessToken },
+            client = sseHttpClient,
+            json = json,
+            authorize = streamAuthorizer,
+        )
+    }
+
+    /** Ephemeral presence (`set_ephemeral`, and `Ephemeral` events on [sse]) — mero-js `MeroJs.ephemeral`. */
+    val ephemeral: EphemeralClient by lazy { EphemeralClient(rpc, sse) }
+
     private fun sseClient(): SseClient =
         SseClient(
             baseUrl = config.baseUrl,
             token = { store.getTokens()?.accessToken },
             client = sseHttpClient,
             json = json,
+            authorize = streamAuthorizer,
         )
 
     /**
@@ -214,7 +292,10 @@ class Mero(
     /** True if a token bundle is present. */
     val isAuthenticated: Boolean get() = store.getTokens() != null
 
-    /** Drop the current tokens (logout). Does not call the network — see [logout] for a full logout. */
+    /**
+     * Drop the current tokens (logout). Does not call the network — see [logout] for a full logout.
+     * A bundle another node's client wrote into a shared store is left alone.
+     */
     fun clearToken() {
         store.clear()
     }
@@ -249,19 +330,29 @@ class Mero(
         private const val ONE_HOUR_MS = 3_600_000L
         private const val HTTP_UNAUTHORIZED = 401
 
-        /** Parse an SSO callback URL's hash fragment. */
+        /**
+         * Parse an SSO callback URL's hash fragment. Null unless it answers a login begun with
+         * [buildAuthLoginUrl] (single use, expires) — see [com.calimero.mero.auth.parseAuthCallback].
+         */
         @JvmStatic
-        fun parseAuthCallback(url: String): AuthCallbackResult? =
+        @JvmOverloads
+        fun parseAuthCallback(
+            url: String,
+            allowUnsolicited: Boolean = false,
+            pending: PendingAuthStates = PendingAuthStates.shared,
+        ): AuthCallbackResult? =
             com.calimero.mero.auth
-                .parseAuthCallback(url)
+                .parseAuthCallback(url, allowUnsolicited, pending)
 
-        /** Build the node's SSO login URL. */
+        /** Build the node's SSO login URL, recording the login in [pending]. */
         @JvmStatic
+        @JvmOverloads
         fun buildAuthLoginUrl(
             nodeUrl: String,
             options: AuthLoginOptions,
+            pending: PendingAuthStates = PendingAuthStates.shared,
         ): String =
             com.calimero.mero.auth
-                .buildAuthLoginUrl(nodeUrl, options)
+                .buildAuthLoginUrl(nodeUrl, options, pending)
     }
 }

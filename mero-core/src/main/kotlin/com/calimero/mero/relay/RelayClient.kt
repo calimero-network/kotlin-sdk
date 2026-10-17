@@ -7,6 +7,8 @@ import com.calimero.mero.crypto.randomBytes
 import com.calimero.mero.http.HttpResponse
 import com.calimero.mero.http.PlainJsonHttp
 import com.calimero.mero.http.trimBase
+import com.calimero.mero.presence.PresenceRelay
+import com.calimero.mero.presence.PresenceStatement
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
 import kotlinx.serialization.Serializable
@@ -57,7 +59,7 @@ class RelayClient
         /** The author's account, 64 hex. */
         val authorAccount: String,
         /** The device certificate (`AccountProof<DeviceCert>`, hex) every write carries. */
-        val authorProof: String,
+        override val authorProof: String,
         private val signer: DeviceSigner,
         private val nonces: NonceSource,
         private val ttlSeconds: Long,
@@ -65,7 +67,7 @@ class RelayClient
         private val session: (suspend () -> String?)?,
         private val http: PlainJsonHttp,
         private val rateLimitRetries: Int,
-    ) {
+    ) : PresenceRelay {
         @Suppress("LongParameterList")
         constructor(
             relayUrl: String,
@@ -92,6 +94,9 @@ class RelayClient
             nonces: NonceSource,
         ) : this(relayUrl, authorAccount, authorProof, SeedSigner(deviceSecret), nonces)
 
+        /** The device signer every warrant and presence statement is signed with (mero-js `authorSigner()`). */
+        override val authorSigner: DeviceSigner get() = signer
+
         /** The relay's base URL, without a trailing slash. */
         val relayUrl: String = relayUrl.trimBase()
 
@@ -100,9 +105,6 @@ class RelayClient
                 ignoreUnknownKeys = true
                 explicitNulls = false
             }
-
-        /** What the node told us each `context|method` is, so the 409 probe is paid once. */
-        private val methodKinds = ConcurrentHashMap<String, Boolean>()
 
         // ---- Data writes ---------------------------------------------------------------------
 
@@ -178,7 +180,8 @@ class RelayClient
         /**
          * Read or write, whichever [method] is: tried as a [query] first, and on a 409 (or any
          * failure of the query) sent as a warranted [execute], which reads too. What the node
-         * said is remembered, so a write pays the probe once. Without a [session] this is
+         * said is remembered per relay, context and method — across every client of the same
+         * relay, as mero-js does — so a write pays the probe once. Without a [session] this is
          * always [execute].
          */
         suspend fun call(
@@ -186,12 +189,12 @@ class RelayClient
             method: String,
             argsJson: JsonElement = JsonObject(emptyMap()),
         ): JsonElement? {
-            val key = "$contextId|$method"
-            if (session != null && methodKinds[key] != true) {
+            val key = MethodKinds.key(relayUrl, contextId, method)
+            if (session != null && !MethodKinds.isWrite(key)) {
                 try {
-                    return query(contextId, method, argsJson).also { methodKinds[key] = false }
+                    return query(contextId, method, argsJson).also { MethodKinds.markRead(key) }
                 } catch (_: NotAViewException) {
-                    methodKinds[key] = true
+                    MethodKinds.markWrite(key)
                 } catch (e: CancellationException) {
                     throw e
                 } catch (_: Exception) {
@@ -375,8 +378,13 @@ class RelayClient
 
         // ---- Presence ------------------------------------------------------------------------
 
-        /** Post a signed presence statement (see core `crates/node/primitives/src/presence.rs`). */
-        suspend fun presenceIntent(
+        /**
+         * Post an already-signed presence statement (see core
+         * `crates/node/primitives/src/presence.rs`). Not retried on 429: presence resends
+         * every 2.5 s anyway, and a retry would only queue behind the next resend. A refusal
+         * throws with its status. Prefer [publishPresence], which signs for you.
+         */
+        override suspend fun presenceIntent(
             contextId: String,
             state: String?,
             seq: Long,
@@ -391,8 +399,26 @@ class RelayClient
                     put("signature", signature)
                     put("authorProof", authorProof)
                 }
-            request("POST", "/admin-api/contexts/${enc(contextId)}/presence-intents", body)
+            request("POST", "/admin-api/contexts/${enc(contextId)}/presence-intents", body, retries = 0)
         }
+
+        /**
+         * Sign one presence update with this device ([PresenceStatement]) and post it:
+         * [state] is the raw slice, or `null` to retract. For a heartbeating presence use
+         * [com.calimero.mero.presence.RelayPresenceClient] (`RelayConnection.presence`).
+         */
+        suspend fun publishPresence(
+            contextId: String,
+            state: ByteArray?,
+            seq: Long,
+            sentAtMs: Long = System.currentTimeMillis(),
+        ) = presenceIntent(
+            contextId,
+            state?.let { Hex.encode(it) },
+            seq,
+            sentAtMs,
+            PresenceStatement.sign(signer, contextId, seq, sentAtMs, state),
+        )
 
         // ---- Nonce discovery -----------------------------------------------------------------
 
@@ -455,12 +481,13 @@ class RelayClient
             method: String,
             path: String,
             body: JsonElement? = null,
+            retries: Int = rateLimitRetries,
         ): String {
             var wait = INITIAL_BACKOFF_MS
             var attempt = 0
             while (true) {
                 val res = raw(method, path, body, authed = false)
-                if (res.status == HTTP_TOO_MANY && attempt < rateLimitRetries) {
+                if (res.status == HTTP_TOO_MANY && attempt < retries) {
                     delay(
                         res.headers.entries
                             .firstOrNull { it.key.equals("Retry-After", true) }
@@ -638,3 +665,34 @@ class NotAViewException(
     val contextId: String,
     val method: String,
 ) : Exception("$method is not a view method in context $contextId")
+
+/**
+ * What a relay's node said each `relay|context|method` is — a view (read) or not (write,
+ * answered `409` by `/query`) — so the probe is paid once per method, and the answer survives
+ * rebuilding the client (mero-js `methodKinds` in `account/session.ts`). Shared by
+ * [RelayClient.call] and the delegated client's reads.
+ */
+internal object MethodKinds {
+    private val kinds = ConcurrentHashMap<String, Boolean>()
+
+    fun key(
+        relayUrl: String,
+        contextId: String,
+        method: String,
+    ): String = "${relayUrl.trimEnd('/')}|$contextId|$method"
+
+    fun isWrite(key: String): Boolean = kinds[key] == true
+
+    fun markRead(key: String) {
+        kinds[key] = false
+    }
+
+    fun markWrite(key: String) {
+        kinds[key] = true
+    }
+
+    fun clear() = kinds.clear()
+}
+
+/** Forget what was learned about which relay methods read and which write. For tests (mero-js `forgetMethodKinds`). */
+fun forgetMethodKinds() = MethodKinds.clear()

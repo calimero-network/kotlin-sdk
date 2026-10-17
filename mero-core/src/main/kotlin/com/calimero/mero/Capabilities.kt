@@ -31,6 +31,86 @@ object Capabilities {
 
     private const val U32_MASK = 0xFFFF_FFFFL
 
+    /** Every assigned bit by its core name, in bit order (mero-js `CAPABILITIES`). */
+    val BY_NAME: Map<String, Long> =
+        linkedMapOf(
+            "CAN_CREATE_CONTEXT" to CAN_CREATE_CONTEXT,
+            "CAN_INVITE_MEMBERS" to CAN_INVITE_MEMBERS,
+            "CAN_JOIN_OPEN_SUBGROUPS" to CAN_JOIN_OPEN_SUBGROUPS,
+            "MANAGE_MEMBERS" to MANAGE_MEMBERS,
+            "MANAGE_APPLICATION" to MANAGE_APPLICATION,
+            "CAN_CREATE_SUBGROUP" to CAN_CREATE_SUBGROUP,
+            "CAN_DELETE_SUBGROUP" to CAN_DELETE_SUBGROUP,
+            "CAN_MANAGE_VISIBILITY" to CAN_MANAGE_VISIBILITY,
+            "CAN_MANAGE_METADATA" to CAN_MANAGE_METADATA,
+            "CAN_AUTHOR_ON_BEHALF" to CAN_AUTHOR_ON_BEHALF,
+        )
+
+    /**
+     * Ready-made masks for `setDefaultCapabilities` / `setMemberCapabilities` and a namespace's
+     * `defaultCapabilities` at founding, so an app names the default it gives members instead of
+     * passing a bare number. Port of mero-js `CAPABILITY_PRESETS`.
+     *
+     * Why this matters: a namespace's default mask is copied into a non-admin member's row when
+     * they join, and a namespace starts without [CAN_CREATE_CONTEXT] in it. An app that never
+     * sets a default leaves every invited member unable to create a context until an admin
+     * grants it by hand.
+     *
+     * None of these include [CAN_AUTHOR_ON_BEHALF]; grant that deliberately
+     * (`AdminApi.grantAuthorship` / `openToDelegatedExecution`).
+     */
+    object Presets {
+        /** No capabilities. */
+        const val NONE: Long = 0L
+
+        /** Join Open subgroups only: what a namespace starts with (= 4). */
+        const val JOIN_ONLY: Long = CAN_JOIN_OPEN_SUBGROUPS
+
+        /**
+         * Create contexts, invite members, join Open subgroups (= 7). A member who can work in
+         * the namespace but not reshape it.
+         */
+        const val CONTRIBUTOR: Long = CAN_CREATE_CONTEXT or CAN_INVITE_MEMBERS or CAN_JOIN_OPEN_SUBGROUPS
+
+        /**
+         * [CONTRIBUTOR] plus create and delete subgroups and manage their visibility (= 231).
+         * What mero-chat gives members, so they can start and close their own channels.
+         */
+        const val COLLABORATOR: Long =
+            CONTRIBUTOR or CAN_CREATE_SUBGROUP or CAN_DELETE_SUBGROUP or CAN_MANAGE_VISIBILITY
+    }
+
+    /** The presets by name, in mero-js's order. */
+    val PRESETS: Map<String, Long> =
+        linkedMapOf(
+            "NONE" to Presets.NONE,
+            "JOIN_ONLY" to Presets.JOIN_ONLY,
+            "CONTRIBUTOR" to Presets.CONTRIBUTOR,
+            "COLLABORATOR" to Presets.COLLABORATOR,
+        )
+
+    /**
+     * A u32 mask from capability names: `capMask("CAN_CREATE_CONTEXT", "CAN_INVITE_MEMBERS") == 3`.
+     * Throws [IllegalArgumentException] on a name core does not assign, so a typo can't
+     * silently yield 0.
+     */
+    fun capMask(vararg names: String): Long = capMask(0L, *names)
+
+    /** [base] (a mask or bit, u32-normalized) with the bits of [names] added. See [capMask]. */
+    fun capMask(
+        base: Long,
+        vararg names: String,
+    ): Long {
+        var mask = base
+        for (name in names) {
+            mask = mask or (BY_NAME[name] ?: throw IllegalArgumentException("unknown capability: $name"))
+        }
+        return mask and U32_MASK
+    }
+
+    /** The names of the assigned bits set in [mask], in bit order. Unassigned bits (10+) are not reported. */
+    fun capNames(mask: Long): List<String> = BY_NAME.filterValues { hasCap(mask, it) }.keys.toList()
+
     /** True if [mask] has every bit of [cap] set. */
     fun hasCap(
         mask: Long,

@@ -1,8 +1,12 @@
 package com.calimero.mero
 
+import com.calimero.mero.request.ProofSigner
 import com.calimero.mero.storage.TokenStore
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
+import okhttp3.HttpUrl
+import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
+import okhttp3.OkHttpClient
 import java.io.File
 
 /**
@@ -19,6 +23,19 @@ import java.io.File
  * @property refreshLockFile file backing the cross-process refresh lock. Pass a file in app-internal
  *   storage (e.g. `File(context.filesDir, "mero-refresh.lock")`) when a second process/WorkManager
  *   job can refresh concurrently. Null (default) → in-process single-flight only.
+ * @property requestProof sign every request with a device key, instead of or alongside a session —
+ *   mero-js `MeroJsConfig.requestProof`. Each request's method, path and query, and body are
+ *   signed at the moment of the call and sent as `X-Calimero-Proof`
+ *   ([com.calimero.mero.request.REQUEST_PROOF_HEADER]). Build one with
+ *   [com.calimero.mero.request.createProofSigner] (from `ProofSignerOptions` or a
+ *   `ProofCredential`), or pass your own when the key must not reach the SDK. Returning `null`
+ *   sends no proof for that request. With a proof configured the HTTP clients **do not follow
+ *   redirects**: a 3xx answering a proof-carrying request fails with
+ *   [com.calimero.mero.http.ProofRedirectRefusedException]. The node consults a proof only when
+ *   the request has no token, and serves other accounts' proofs only with `--delegated-access`
+ *   (otherwise `403`; a bad proof is a `401`, `x-auth-error: invalid_proof`). SSE ([Mero.sse])
+ *   and the WebSocket ([Mero.ws]) present the session token when there is one and the proof
+ *   otherwise.
  */
 data class MeroConfig(
     val baseUrl: String,
@@ -26,6 +43,15 @@ data class MeroConfig(
     val timeoutMs: Long = 10_000,
     val tokenStore: TokenStore? = null,
     val refreshLockFile: File? = null,
+    val requestProof: ProofSigner? = null,
+    /**
+     * The client every request is carried on — mero-js `MeroJsConfig.fetch`. [Mero] builds its
+     * own clients from it (its timeouts, and its auth, proof and refresh handling in front of
+     * this client's interceptors), so a sealed transport's client
+     * ([com.calimero.mero.tee.SealedTransport.client]) seals every request, SSE included.
+     * Null: a fresh client.
+     */
+    val httpClient: OkHttpClient? = null,
 )
 
 /**
@@ -54,4 +80,26 @@ data class TokenData(
     @SerialName("access_token") val accessToken: String,
     @SerialName("refresh_token") val refreshToken: String,
     @SerialName("expires_at") val expiresAt: Long,
+    /**
+     * Origin and path prefix of the node that issued the bundle ([nodeOriginOf]), as mero-js
+     * stores it. [Mero] tags what it persists and ignores a stored bundle for another node — or
+     * one with no tag, written before this field existed — so tokens are never sent to a node
+     * that did not issue them. Optional, so older bundles still decode. [Mero.getTokenData]
+     * returns bundles without it.
+     */
+    @SerialName("node_origin") val nodeOrigin: String? = null,
 )
+
+/**
+ * The key a token bundle is bound to: the node's origin (`scheme://host[:port]`, default port
+ * omitted, host lower-cased) plus its path prefix without trailing slashes — so two nodes
+ * behind one host (`https://host/node1`, `https://host/node2`) stay apart, and
+ * `https://host/node1/` is the same node as `https://host/node1`. A URL that is not http(s)
+ * keys as itself. Port of mero-js `nodeKeyOf`.
+ */
+fun nodeOriginOf(baseUrl: String): String {
+    val url = baseUrl.toHttpUrlOrNull() ?: return baseUrl
+    val host = if (url.host.contains(':')) "[${url.host}]" else url.host
+    val port = if (url.port == HttpUrl.defaultPort(url.scheme)) "" else ":${url.port}"
+    return "${url.scheme}://$host$port${url.encodedPath.trimEnd('/')}"
+}

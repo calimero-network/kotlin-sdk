@@ -81,21 +81,83 @@ AuthLoginOptions(
 ```
 :::
 
+## One connection, changing subscriptions
+
+Each `mero.events(...)` call opens its own stream. When a screen's set of contexts
+changes over time — a chat list adding and dropping channels — use the client's one
+long-lived connection, `mero.sse`, and change its subscriptions while it is open:
+
+```kotlin
+val sse = mero.sse
+scope.launch { sse.contextEvents.collect { event -> handle(event) } }  // collect first: the flow is hot
+sse.connect()
+
+sse.subscribe(contextIds = listOf(channelA, channelB))  // POST /sse/subscription, only the new ids
+sse.unsubscribe(contextIds = listOf(channelA))
+sse.isSubscribed(channelB)                              // true
+
+sse.close()  // stops the stream and forgets every id
+```
+
+`subscribe` before the session exists just remembers the ids; they go out with the
+`connect` frame. A failed subscription POST does not throw — like mero-js, it is
+reported on `sse.errors` — except a terminal one (below), which stops the connection
+and sets `sse.failure`.
+
+## Typed events
+
+The raw `ContextEvent` / `GroupEvent` carry the frame as JSON. Typed flows parse the
+families you usually branch on:
+
+```kotlin
+mero.appVersionChanges(listOf(contextId)).collect { e ->   // AppVersionChangedEvent
+    showUpgradeBanner(e.fromVersion, e.toVersion)
+}
+
+mero.migrationEvents(listOf(namespaceId)).collect { e ->    // subscribe with the namespace root
+    when (e) {
+        is GroupMigrationEvent.MigrationStarted -> showStarted(e.toVersion, e.localContextsTotal)
+        is GroupMigrationEvent.MigrationProgress -> showProgress(e.migrated, e.total)
+        is GroupMigrationEvent.CascadeProgress -> showSubgroup(e.subgroupId)  // admins only
+        is GroupMigrationEvent.MigrationCompleted -> showDone(e.completedAt)
+    }
+}
+
+mero.membershipEvents(listOf(groupId)).collect { e ->       // MemberJoined / MemberAdded / MemberRemoved
+    refreshMembers(e.memberAccount)
+}
+```
+
+The same flows exist on `mero.sse` (`appVersionChanges`, `migrationEvents`,
+`membershipEvents`), with callback forms `onAppVersionChanged { … }` and
+`onMigrationEvent { … }` that return a function to stop. On a raw event,
+`event.asAppVersionChanged()`, `groupEvent.asMigrationEvent()` and
+`groupEvent.asMembershipEvent()` do the same parse. A non-admin never receives
+`CascadeProgress` — core withholds it, since it names a descendant subgroup.
+
 ## Reconnection
 
-The stream reconnects automatically ~3 seconds after a drop and re-subscribes to
-your context ids (the node persists the session's subscriptions). You don't need
-to rebuild the flow on a transient network blip — the collector keeps delivering
-events across reconnects.
+The stream reconnects automatically **3 seconds** after a drop, as mero-js's
+`SseClient` does. If that attempt fails too, the wait doubles — 6, 12, 24, then 30 s —
+with ±20% jitter, and drops back to 3 s once a stream opens
+([`ReconnectBackoff.SSE`](/reference/events/#reconnectbackoff); pass
+`backoff = ReconnectBackoff.fixed(3_000)` to `SseClient` or `SseConnection` for
+mero-js's flat 3 s). It re-subscribes every id the
+connection holds in one POST before announcing the new session on `sse.connects`. You
+don't need to rebuild the flow on a transient network blip — the collector keeps
+delivering events across reconnects. A new session also drops the presence the old
+one reported; the node replays it again on the re-subscribe.
 
 A **`403` is the exception**, and it ends the flow rather than restarting it. Two
 things produce one: a token that never carried `context:subscribe`, and a refresh
 family that was revoked (core answers that with `x-auth-error` and an empty body).
-Neither is fixed by waiting, so retrying every three seconds is not resilience —
+Neither is fixed by waiting, so retrying forever is not resilience —
 it is a silent outage, a live-looking subscription delivering nothing while no
 exception ever reaches the collector. Instead:
 
-- a revoked family throws `AuthRevokedException` — route the user back to login;
+- a revoked family throws `AuthRevokedException` — route the user back to login
+  (a `401` naming a dead family, `token_reuse` or `token_revoked`, is terminal too;
+  a `401 token_expired` is not — the next attempt reads the refreshed token);
 - any other `403` throws `HttpException(status = 403)` — the token is missing
   `context:subscribe`.
 
@@ -147,7 +209,30 @@ fun MessagesScreen(mero: Mero, contextId: String) {
 }
 ```
 
+## WebSocket (experimental)
+
+`mero.ws` is a `WsClient` on core's `GET /ws`, marked `@ExperimentalMeroApi` as mero-js
+marks its own. SSE is the recommended transport — a WebSocket message sent before the
+socket opens is lost, where an SSE subscription is a POST that lands or fails visibly.
+
+```kotlin
+@OptIn(ExperimentalMeroApi::class)
+fun watch(mero: Mero, scope: CoroutineScope) {
+    val ws = mero.ws
+    scope.launch { ws.events.collect { handle(it) } }
+    ws.subscribe(contextIds = listOf(contextId), groupIds = listOf(groupId))
+    ws.connect()
+}
+```
+
+It sends `{"id":null,"method":"subscribe","params":{"contextIds":[…],"groupIds":[…]}}`
+(each list only when non-empty), re-subscribes everything on every open, and backs off
+`1 s · 2ⁿ` up to 30 s between attempts. The token rides in an `Authorization` header;
+core also accepts `?token=`, which a browser needs.
+
 ## See also
+
+- [Presence](/guides/presence/) — ephemeral cursors and typing, from a node or an account.
 
 - [RPC client](/reference/rpc/) — trigger the state changes you're observing.
 - [Events reference](/reference/events/) — `SseClient` and the full API surface.

@@ -14,7 +14,7 @@ class SsoTest {
         val url =
             "myapp://auth-callback#access_token=aaa&refresh_token=bbb&application_id=app1" +
                 "&context_id=ctx1&context_identity=id1&node_url=https%3A%2F%2Fnode.example.com"
-        val result = parseAuthCallback(url)!!
+        val result = parseAuthCallback(url, allowUnsolicited = true)!!
         assertEquals("aaa", result.accessToken)
         assertEquals("bbb", result.refreshToken)
         assertEquals("app1", result.applicationId)
@@ -25,12 +25,12 @@ class SsoTest {
 
     @Test
     fun `returns null when access_token is absent`() {
-        assertNull(parseAuthCallback("myapp://auth-callback#refresh_token=bbb"))
+        assertNull(parseAuthCallback("myapp://auth-callback#refresh_token=bbb", allowUnsolicited = true))
     }
 
     @Test
     fun `returns null when there is no hash fragment`() {
-        assertNull(parseAuthCallback("myapp://auth-callback?foo=bar"))
+        assertNull(parseAuthCallback("myapp://auth-callback?foo=bar", allowUnsolicited = true))
     }
 
     @Test

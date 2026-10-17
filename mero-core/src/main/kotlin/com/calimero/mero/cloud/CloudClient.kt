@@ -1,57 +1,476 @@
 package com.calimero.mero.cloud
 
+import com.calimero.mero.account.AccountLinkInput
+import com.calimero.mero.account.AccountLoginInput
+import com.calimero.mero.account.ResolvedRoot
+import com.calimero.mero.account.resolveRoot
+import com.calimero.mero.account.resolveRootPair
+import com.calimero.mero.account.signAccountLink
+import com.calimero.mero.account.signAccountLogin
 import com.calimero.mero.crypto.DeviceSigner
 import com.calimero.mero.crypto.Hex
+import com.calimero.mero.http.HttpException
 import com.calimero.mero.http.HttpResponse
 import com.calimero.mero.http.MeroStateException
 import com.calimero.mero.http.PlainJsonHttp
 import com.calimero.mero.http.trimBase
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.booleanOrNull
+import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.contentOrNull
-import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.doubleOrNull
 import kotlinx.serialization.json.longOrNull
 import kotlinx.serialization.json.put
 import okhttp3.OkHttpClient
 import java.net.URLEncoder
 
 /**
- * The Calimero cloud manager's device-proven routing reads.
+ * The Calimero cloud manager (MDMA) API — port of mero-js `CloudClient`
+ * (`src/cloud/cloud-client.ts`).
  *
- * Port of the device-credential half of mero-js `CloudClient` (`src/cloud/cloud-client.ts`).
- * The session-based half (Google / account-root sign-in, `/api/cloud/me/…`) is wallet- and
- * dashboard-side and not needed on a phone: a device only ever proves itself with its
- * certificate ([RoutingCredential]).
+ * Two kinds of caller use it. A **device** proves itself with its certificate
+ * ([RoutingCredential]) on the routing reads and holds no cloud session. A **cloud login**
+ * (Google, or an account root signing itself in) holds a [CloudLoginSession] and reads what
+ * it owns. The routes that need a session refuse locally, before any request, when none is
+ * held ([MeroStateException]).
  *
- * | method | endpoint |
- * |---|---|
- * | [getAccountRelaysChallenge] | `GET /api/cloud/accounts/{acc}/challenge` |
- * | [getAccountRelays] | `GET /api/cloud/accounts/{acc}/relays` + routing proof |
- * | [getRoutingChallenge] | `GET /api/cloud/namespaces/{ns}/challenge` |
- * | [getNamespaceRouting] | `GET /api/cloud/namespaces/{ns}/admitters` + routing proof |
- * | [enableHaAsAccount] | `POST /api/cloud/accounts/{acc}/namespaces/{ns}/enable-ha` + founder's claim |
+ * | method | endpoint | auth |
+ * |---|---|---|
+ * | [signInWithGoogle] | `POST /api/auth/google` | anonymous |
+ * | [getAccountLoginChallenge] / [submitAccountLogin] / [signInWithAccount] | `GET /api/auth/account/challenge`, `POST /api/auth/account` | anonymous |
+ * | [refreshSession] / [signOut] | `POST /api/auth/refresh`, `POST /api/auth/logout` | session |
+ * | [getMyNamespaces] | `GET /api/cloud/me/namespaces` | session |
+ * | [getNamespaceRelays] / [findExecutingRelay] | `GET /api/cloud/me/namespaces/{ns}/relays` | session |
+ * | [getMyMachines] | `GET /api/cloud/me/machines` | session |
+ * | [claimNamespace] | `POST /api/cloud/namespaces/claim` | session |
+ * | [enableNamespaceHa] / [disableNamespaceHa] | `POST /api/cloud/namespaces/{ns}/enable-ha` · `disable-ha` | session |
+ * | [enableFoundedNamespaceHa] | `POST /api/cloud/me/namespaces/{ns}/enable-ha` | session |
+ * | [getAccountLinkChallenge] / [submitAccountLink] / [linkAccount] | `GET /api/cloud/me/accounts/challenge`, `POST /api/cloud/me/accounts` | session |
+ * | [getMyAccounts] | `GET /api/cloud/me/accounts` | session |
+ * | [linkAccountWithGrant] | `POST /api/cloud/accounts/link` | anonymous |
+ * | [getAccountRelaysChallenge] / [getAccountRelays] | `GET /api/cloud/accounts/{acc}/challenge` · `relays` + routing proof | anonymous |
+ * | [getRoutingChallenge] / [getNamespaceRouting] / [findAdmitter] | `GET /api/cloud/namespaces/{ns}/challenge` · `admitters` | anonymous |
+ * | [enableHaAsAccount] | `POST /api/cloud/accounts/{acc}/namespaces/{ns}/enable-ha` + founder's claim | anonymous |
+ *
+ * mero-js `getMyNode` (`GET /api/cloud/me/node`) is not ported: it is deprecated there and
+ * reads a ledger nothing has written since the v1 retirement, so it answers null for every
+ * namespace-native account. Use [getMyMachines].
+ *
+ * **Sessions.** MDMA rotates the token on activity and hands the replacement back in the
+ * `x-mdma-session-refresh` / `x-mdma-session-expires` response headers; the client adopts
+ * it on every response. Every change — sign-in, refresh, rolling refresh, sign-out — is
+ * written to [sessionStore] and reported to [onSession] (whose failures are swallowed so a
+ * storage error cannot mask the response).
+ *
+ * @param sessionToken a stored session token to start out signed in with (expiry unknown:
+ *   `expiresAt = 0`). Wins over [sessionStore]'s.
+ * @param onSession called with the new session (or null on sign-out) whenever it changes.
+ * @param sessionStore where the session persists ([CloudSessionStore] over an
+ *   [com.calimero.mero.account.EncryptedPrefsSecureStore] on a device); its stored session
+ *   is loaded at construction when no [sessionToken] is given.
  */
 class CloudClient internal constructor(
     baseUrl: String,
     private val routingCredential: RoutingCredential?,
     private val http: PlainJsonHttp,
+    sessionToken: String? = null,
+    private val onSession: ((CloudLoginSession?) -> Unit)? = null,
+    private val sessionStore: CloudSessionStore? = null,
 ) {
+    @Suppress("LongParameterList")
     constructor(
         baseUrl: String = DEFAULT_BASE_URL,
         routingCredential: RoutingCredential? = null,
         httpClient: OkHttpClient = PlainJsonHttp.defaultClient(),
-    ) : this(baseUrl, routingCredential, PlainJsonHttp(httpClient))
+        sessionToken: String? = null,
+        onSession: ((CloudLoginSession?) -> Unit)? = null,
+        sessionStore: CloudSessionStore? = null,
+    ) : this(baseUrl, routingCredential, PlainJsonHttp(httpClient), sessionToken, onSession, sessionStore)
 
-    private val base = baseUrl.trimBase()
+    /** The manager API base, without a trailing slash. */
+    val baseUrl: String = baseUrl.trimBase()
+    private val base get() = baseUrl
     private val json = Json { ignoreUnknownKeys = true }
+
+    @Volatile
+    private var session: CloudLoginSession? =
+        if (!sessionToken.isNullOrEmpty()) {
+            CloudLoginSession(sessionToken, 0, CloudUser(""))
+        } else {
+            runCatching { sessionStore?.load() }.getOrNull()
+        }
+
+    // ---- Session -------------------------------------------------------------------------
+
+    /** The current session, or null when nobody is signed in. */
+    fun getSession(): CloudLoginSession? = session
+
+    /** Whether a session token is held. Says nothing about the server agreeing. */
+    val isSignedIn: Boolean get() = session != null
+
+    /**
+     * Exchange a Google OAuth2 ID token for a session. The app owns the Google flow
+     * (Credential Manager, a Custom Tab) and hands the ID token here once.
+     */
+    suspend fun signInWithGoogle(idToken: String): CloudLoginSession =
+        adoptSession(request("POST", "/api/auth/google", buildJsonObject { put("id_token", idToken) }, anonymous = true))
+
+    /**
+     * Sign in as a Calimero account, proving it with its root ([rootSecret], 64 hex): fetch
+     * a challenge, sign it ([signAccountLogin]), post the proof. Only a signature over the
+     * cloud's nonce travels.
+     *
+     * A `403` means the signature did not verify **or** the account is not linked to a
+     * cloud login; the ownership claim is recorded either way.
+     */
+    suspend fun signInWithAccount(rootSecret: String): CloudLoginSession = signInWithAccount(resolveRoot(rootSecret))
+
+    /** [signInWithAccount] with a root held as a signer this process cannot read (an [com.calimero.mero.account.AccountRootSigner]). */
+    suspend fun signInWithAccount(root: DeviceSigner): CloudLoginSession = signInWithAccount(resolveRoot(root))
+
+    private suspend fun signInWithAccount(root: ResolvedRoot): CloudLoginSession {
+        val nonce = getAccountLoginChallenge().nonce
+        return submitAccountLogin(
+            AccountLoginProof(root.publicKey, nonce, signAccountLogin(AccountLoginInput(nonce, signer = root.signer))),
+        )
+    }
+
+    /** A single-use challenge for a root to sign in with. Public: obtaining a session is what it is for. */
+    suspend fun getAccountLoginChallenge(): AccountLoginChallenge {
+        val body = obj(request("GET", "/api/auth/account/challenge", anonymous = true))
+        return AccountLoginChallenge(body.str("nonce").orEmpty(), body.long("expires_at_ms") ?: 0)
+    }
+
+    /** Post a login proof assembled elsewhere (a hardware key, another device). */
+    suspend fun submitAccountLogin(proof: AccountLoginProof): CloudLoginSession =
+        adoptSession(
+            request(
+                "POST",
+                "/api/auth/account",
+                buildJsonObject {
+                    put("root_public_key", proof.rootPublicKey)
+                    put("nonce", proof.nonce)
+                    put("signature", proof.signature)
+                },
+                anonymous = true,
+            ),
+        )
+
+    /** Refresh the session explicitly. Rarely needed: rolling refreshes are adopted on every call. */
+    suspend fun refreshSession(): CloudLoginSession = adoptSession(request("POST", "/api/auth/refresh"))
+
+    /**
+     * Revoke this session server-side and forget it locally. Local state is cleared even
+     * when the server call fails (which then still throws).
+     */
+    suspend fun signOut() {
+        try {
+            if (session != null) request("POST", "/api/auth/logout")
+        } finally {
+            setSession(null)
+        }
+    }
+
+    // ---- What the login owns -------------------------------------------------------------
+
+    /** Namespaces the signed-in user owns. */
+    suspend fun getMyNamespaces(): List<CloudNamespace> =
+        rows(parse(request("GET", "/api/cloud/me/namespaces"))).map { row ->
+            CloudNamespace(
+                namespaceId = row.str("namespace_id") ?: row.str("group_id").orEmpty(),
+                groupId = row.str("group_id") ?: row.str("namespace_id").orEmpty(),
+                haStatus = row.str("ha_status") ?: "none",
+                haEnabledAt = row.str("ha_enabled_at"),
+                contexts = (row["contexts"] as? JsonArray).orEmpty().mapNotNull { (it as? JsonPrimitive)?.contentOrNull },
+                fleetReplicas = row["fleet_replicas"]?.takeIf { it !is JsonNull },
+            )
+        }
+
+    /**
+     * The relays serving one owned namespace: where to present an intent, and as whom.
+     * Filter on [CloudRelay.canExecute] before signing — a warrant presented to a relay that
+     * does not relay is refused after the nonce is spent. See [findExecutingRelay].
+     */
+    suspend fun getNamespaceRelays(namespaceId: String): List<CloudRelay> {
+        val body = obj(request("GET", "/api/cloud/me/namespaces/${enc(namespaceId)}/relays"))
+        return rows(body["relays"]).map { row ->
+            val relayUrl = row.str("relay_url")
+            val executorAccount = row.str("executor_account")
+            val authorshipReady = row.bool("authorship_ready") == true
+            CloudRelay(
+                peerId = row.str("peer_id").orEmpty(),
+                relayUrl = relayUrl,
+                executorAccount = executorAccount,
+                nodeKey = row.str("node_key") ?: row.str("node_public_key"),
+                status = row.str("status").orEmpty(),
+                authorshipReady = authorshipReady,
+                teeRole = teeRoleOf(row),
+                canExecute = row.bool("can_execute") ?: (authorshipReady && relayUrl != null && executorAccount != null),
+                lastSeenAt = row.str("last_seen_at"),
+                confirmedAt = row.str("confirmed_at"),
+                admission = row.str("admission"),
+                admissionHint = row.str("admission_hint"),
+                join = joinOf(row["join"]),
+            )
+        }
+    }
+
+    /** The first relay for [namespaceId] that can run an intent now, or null. See [pickExecutingRelay]. */
+    suspend fun findExecutingRelay(namespaceId: String): CloudRelay? = pickExecutingRelay(getNamespaceRelays(namespaceId))
+
+    /** Every attested machine serving something this login owns, keyed by machine. */
+    suspend fun getMyMachines(): List<CloudMachine> {
+        val body = obj(request("GET", "/api/cloud/me/machines"))
+        return rows(body["machines"]).map { row ->
+            val relayUrl = row.str("relay_url")
+            val executorAccount = row.str("executor_account")
+            val namespaces =
+                rows(row["namespaces"]).map { ns ->
+                    CloudMachineNamespace(
+                        namespaceId = ns.str("namespace_id").orEmpty(),
+                        status = ns.str("status").orEmpty(),
+                        authorshipReady = ns.bool("authorship_ready") == true,
+                        teeRole = teeRoleOf(ns),
+                        fresh = ns.bool("fresh") == true,
+                        confirmedAt = ns.str("confirmed_at"),
+                        lastSeenAt = ns.str("last_seen_at"),
+                    )
+                }
+            CloudMachine(
+                peerId = row.str("peer_id").orEmpty(),
+                relayUrl = relayUrl,
+                executorAccount = executorAccount,
+                canExecute =
+                    row.bool("can_execute")
+                        ?: (relayUrl != null && executorAccount != null && namespaces.any { it.authorshipReady }),
+                namespaces = namespaces,
+            )
+        }
+    }
+
+    // ---- HA ------------------------------------------------------------------------------
+
+    /**
+     * Claim a namespace under this login, proving ownership. Pass merod's
+     * `issueNamespaceOwnershipProof` answer **verbatim** (the cloud accepts core's camelCase;
+     * the `founding` and `credential` it carries are what the cloud checks). Idempotent for
+     * the same account; another owner's namespace is a `409`, a replayed nonce a `403`.
+     */
+    suspend fun claimNamespace(
+        namespaceId: String,
+        ownershipProof: JsonElement,
+    ) {
+        request(
+            "POST",
+            "/api/cloud/namespaces/claim",
+            buildJsonObject {
+                put("namespace_id", namespaceId)
+                put("ownership_proof", ownershipProof)
+            },
+        )
+    }
+
+    /**
+     * Ask the fleet to host a claimed namespace. [admitterAddrs] is where the owner's node
+     * can be dialed — [admitterAddrsFromNetworkStatus] of its network status; null leaves
+     * what the cloud holds (an empty body), a list replaces it. Not the web flow
+     * ([enableHaUrl]); this is the API call.
+     */
+    suspend fun enableNamespaceHa(
+        namespaceId: String,
+        admitterAddrs: List<String>? = null,
+    ): JsonElement {
+        val body =
+            buildJsonObject {
+                if (admitterAddrs != null) put("admitter_addrs", buildJsonArray { admitterAddrs.forEach { add(JsonPrimitive(it)) } })
+            }
+        return parse(request("POST", "/api/cloud/namespaces/${enc(namespaceId)}/enable-ha", body))
+    }
+
+    /**
+     * Enable HA for a namespace this **account** founded through a relay, with the founder's
+     * claim ([signAccountOwnershipClaim], whose `subject` is this login's email) instead of a
+     * node's ownership proof. The login must be linked to that account.
+     */
+    suspend fun enableFoundedNamespaceHa(
+        namespaceId: String,
+        ownershipProof: AccountOwnershipProof,
+    ): JsonElement {
+        val body =
+            buildJsonObject {
+                put("groups", JsonArray(emptyList()))
+                put("ownership_proof", ownershipProof.toJson())
+            }
+        return parse(request("POST", "/api/cloud/me/namespaces/${enc(namespaceId)}/enable-ha", body))
+    }
+
+    /**
+     * Stop hosting a claimed namespace. Each fleet node assigned to it then self-leaves,
+     * which makes core evict it and purge its data and keys — not just a billing flip.
+     */
+    suspend fun disableNamespaceHa(namespaceId: String): JsonElement =
+        parse(request("POST", "/api/cloud/namespaces/${enc(namespaceId)}/disable-ha", JsonObject(emptyMap())))
+
+    /**
+     * The cloud's `/enable-ha` page for a person to complete by hand:
+     * `{baseUrl}/enable-ha?group_id=…&context_id=…[&redirect_url=…]` (mero-js `enableHA`,
+     * which `window.open`s it). Open it with `CloudWebLauncher.enableHA`, or any browser.
+     */
+    fun enableHaUrl(options: HaPageOptions): String = haPageUrl("/enable-ha", options)
+
+    /** The cloud's `/disable-ha` page. See [enableHaUrl]. */
+    fun disableHaUrl(options: HaPageOptions): String = haPageUrl("/disable-ha", options)
+
+    private fun haPageUrl(
+        path: String,
+        options: HaPageOptions,
+    ): String {
+        val params = mutableListOf("group_id" to options.groupId, "context_id" to options.contextId)
+        options.redirectUrl?.takeIf { it.isNotEmpty() }?.let { params += "redirect_url" to it }
+        return "$base$path?" + params.joinToString("&") { (k, v) -> "${form(k)}=${form(v)}" }
+    }
+
+    /**
+     * Ask the cloud to host (HA) a namespace this account founded, with no cloud session:
+     * `POST /api/cloud/accounts/{account}/namespaces/{ns}/enable-ha` `{ownership_proof}`,
+     * signed by [AccountOwnership.signAccountHaClaim]. The cloud bills the user the account
+     * is linked to in the wallet.
+     *
+     * [signer] defaults to this client's routing credential's.
+     *
+     * @throws AccountHaRefusedException (one of its five subclasses, [HaRefusal]) for the
+     *   refusals a person can act on; any other failure as [HttpException].
+     */
+    @Suppress("LongParameterList")
+    suspend fun enableHaAsAccount(
+        namespaceId: String,
+        salt: String,
+        accountId: String,
+        credential: String,
+        signer: DeviceSigner? = routingCredential?.signer,
+        relayUrl: String? = null,
+        ttlMs: Long = AccountOwnership.DEFAULT_TTL_MS,
+    ): JsonObject {
+        val key = signer ?: throw MeroStateException("enableHaAsAccount needs the device signer")
+        val proof = AccountOwnership.signAccountHaClaim(namespaceId, accountId, salt, credential, key, relayUrl, ttlMs)
+        // The path carries the ids as the claim does: lowercase hex.
+        val path =
+            "/api/cloud/accounts/${enc(accountId.lowercase())}/namespaces/${enc(namespaceId.lowercase())}/enable-ha"
+        val body = buildJsonObject { put("ownership_proof", proof.toJson()) }
+        val res =
+            try {
+                request("POST", path, body, anonymous = true)
+            } catch (e: HttpException) {
+                throw AccountHaRefusedException.from(e) ?: e
+            }
+        return obj(res)
+    }
+
+    // ---- Account linking -----------------------------------------------------------------
+
+    /**
+     * Link a Calimero account to this login, proving its root ([rootSecret], 64 hex): fetch a
+     * single-use challenge, sign it ([signAccountLink]), post the proof. Idempotent for the
+     * same login ([CloudAccountLink.alreadyLinked]); another login's account is a `409`, a
+     * spent challenge a `403`, a full plan a `402`.
+     */
+    suspend fun linkAccount(rootSecret: String): CloudAccountLink = linkAccount(resolveRoot(rootSecret))
+
+    /** [linkAccount] with a root held as a signer. */
+    suspend fun linkAccount(root: DeviceSigner): CloudAccountLink = linkAccount(resolveRoot(root))
+
+    private suspend fun linkAccount(root: ResolvedRoot): CloudAccountLink {
+        val nonce = getAccountLinkChallenge().nonce
+        return submitAccountLink(
+            AccountLinkProof(root.accountId, root.publicKey, nonce, signAccountLink(AccountLinkInput(nonce, signer = root.signer))),
+        )
+    }
+
+    /** A single-use link challenge, bound to this login. Fetching and abandoning one spends it. */
+    suspend fun getAccountLinkChallenge(): AccountLinkChallenge {
+        val body = obj(request("GET", "/api/cloud/me/accounts/challenge"))
+        return AccountLinkChallenge(body.str("nonce").orEmpty(), body.long("expires_at_ms"))
+    }
+
+    /**
+     * Post a link proof assembled elsewhere. [AccountLinkProof.accountId] must be the
+     * account [AccountLinkProof.rootPublicKey] names — derive both from one key.
+     */
+    suspend fun submitAccountLink(proof: AccountLinkProof): CloudAccountLink {
+        val body =
+            obj(
+                request(
+                    "POST",
+                    "/api/cloud/me/accounts",
+                    buildJsonObject {
+                        put("account_id", proof.accountId)
+                        put("root_public_key", proof.rootPublicKey)
+                        put("nonce", proof.nonce)
+                        put("signature", proof.signature)
+                    },
+                ),
+            )
+        return linkOf(body, proof.accountId)
+    }
+
+    /**
+     * Spend a link grant ([readAccountLinkCallback] / [CloudLink.readCloudLinkCallback]): sign
+     * it with the account root and post both halves, **anonymously** — no session is sent
+     * even when one is held. Exactly one of [rootSecret] and [signer].
+     *
+     * A `403` means the grant was bad, expired, spent, or signed by a key naming another
+     * account; `409` that the account belongs to another login; `402` a full plan.
+     */
+    suspend fun linkAccountWithGrant(
+        grant: String,
+        rootSecret: String? = null,
+        signer: DeviceSigner? = null,
+    ): CloudAccountLink {
+        val root = resolveRootPair(rootSecret, signer)
+        val body =
+            obj(
+                request(
+                    "POST",
+                    "/api/cloud/accounts/link",
+                    buildJsonObject {
+                        put("grant", grant)
+                        put("root_public_key", root.publicKey)
+                        put("signature", signAccountLink(AccountLinkInput(grant, signer = root.signer)))
+                    },
+                    anonymous = true,
+                ),
+            )
+        return linkOf(body, root.accountId)
+    }
+
+    /** The accounts linked to this login, and how many the plan allows. */
+    suspend fun getMyAccounts(): CloudLinkedAccounts {
+        val body = obj(request("GET", "/api/cloud/me/accounts"))
+        return CloudLinkedAccounts(
+            accounts =
+                rows(body["accounts"]).map { row ->
+                    CloudLinkedAccount(row.str("account_id").orEmpty(), row.str("linked_at"), row.bool("has_recovery_envelope") == true)
+                },
+            limit = body.long("limit")?.toInt(),
+        )
+    }
+
+    private fun linkOf(
+        body: JsonObject,
+        fallbackAccount: String,
+    ) = CloudAccountLink(body.str("account_id") ?: fallbackAccount, body.str("linked_at"), body.bool("already_linked") == true)
+
+    // ---- Device-proven routing reads -----------------------------------------------------
 
     /** A fresh account-bound nonce to sign. Unauthenticated; nonces live about two minutes. */
     suspend fun getAccountRelaysChallenge(accountId: String): DiscoveryChallenge {
-        val body = get("/api/cloud/accounts/${enc(accountId)}/challenge")
+        val body = obj(request("GET", "/api/cloud/accounts/${enc(accountId)}/challenge", anonymous = true))
         return DiscoveryChallenge(
             accountId = body.str("account_id") ?: accountId,
             nonce = body.str("nonce").orEmpty(),
@@ -73,8 +492,11 @@ class CloudClient internal constructor(
                     "getAccountRelays needs a routingCredential: construct the client with the device certificate and its signing key",
                 )
         val challenge = getAccountRelaysChallenge(accountId)
-        val body = get("/api/cloud/accounts/${enc(accountId)}/relays", RoutingProof.headers(challenge.nonce, credential))
-        return (body["relays"] as? JsonArray).orEmpty().mapNotNull { it as? JsonObject }.map { row ->
+        val body =
+            obj(
+                request("GET", "/api/cloud/accounts/${enc(accountId)}/relays", anonymous = true, headers = RoutingProof.headers(challenge.nonce, credential)),
+            )
+        return rows(body["relays"]).map { row ->
             CloudAccountRelay(
                 peerId = row.str("peer_id").orEmpty(),
                 relayUrl = row.str("relay_url")?.ifEmpty { null },
@@ -87,7 +509,7 @@ class CloudClient internal constructor(
 
     /** A fresh namespace-bound nonce to sign. Unauthenticated. */
     suspend fun getRoutingChallenge(namespaceId: String): RoutingChallenge {
-        val body = get("/api/cloud/namespaces/${enc(namespaceId)}/challenge")
+        val body = obj(request("GET", "/api/cloud/namespaces/${enc(namespaceId)}/challenge", anonymous = true))
         return RoutingChallenge(
             namespaceId = body.str("namespace_id") ?: namespaceId,
             nonce = body.str("nonce").orEmpty(),
@@ -101,9 +523,9 @@ class CloudClient internal constructor(
      */
     suspend fun getNamespaceRouting(namespaceId: String): CloudNamespaceRouting {
         val headers = routingCredential?.let { RoutingProof.headers(getRoutingChallenge(namespaceId).nonce, it) }.orEmpty()
-        val body = get("/api/cloud/namespaces/${enc(namespaceId)}/admitters", headers)
+        val body = obj(request("GET", "/api/cloud/namespaces/${enc(namespaceId)}/admitters", anonymous = true, headers = headers))
         val nodes =
-            (body["admitters"] as? JsonArray).orEmpty().mapNotNull { it as? JsonObject }.map { row ->
+            rows(body["admitters"]).map { row ->
                 val account = row.str("account")
                 val relayUrl = row.str("relay_url")?.ifEmpty { null }
                 val fresh = row.bool("fresh") == true
@@ -117,7 +539,7 @@ class CloudClient internal constructor(
                     fresh = fresh,
                     canAdmit = row.bool("can_admit") == true,
                     authorshipReady = authorshipReady,
-                    teeRole = row.str("tee_role")?.ifEmpty { null },
+                    teeRole = teeRoleOf(row),
                     canExecute = row.bool("can_execute") ?: (authorshipReady && relayUrl != null && account != null && fresh),
                 )
             }
@@ -130,69 +552,140 @@ class CloudClient internal constructor(
     }
 
     /**
-     * Ask the cloud to host (HA) a namespace this account founded, with no cloud session:
-     * `POST /api/cloud/accounts/{account}/namespaces/{ns}/enable-ha` `{ownership_proof}`,
-     * signed by [AccountOwnership.signAccountHaClaim]. The cloud bills the user the account
-     * is linked to in the wallet.
-     *
-     * [signer] defaults to this client's routing credential's.
-     *
-     * @throws AccountHaRefusedException for the refusals a person can act on (409/422 with
-     *   a known `error` code); any other failure as [com.calimero.mero.http.HttpException].
+     * The node to send a signed join to, among those the invitation's [admitters] name
+     * (its signed, mint-time snapshot); any admitting node when it names none. mero-js
+     * `findAdmitter`.
      */
-    @Suppress("LongParameterList")
-    suspend fun enableHaAsAccount(
+    suspend fun findAdmitter(
         namespaceId: String,
-        salt: String,
-        accountId: String,
-        credential: String,
-        signer: DeviceSigner? = routingCredential?.signer,
-        relayUrl: String? = null,
-        ttlMs: Long = AccountOwnership.DEFAULT_TTL_MS,
-    ): JsonObject {
-        val key = signer ?: throw MeroStateException("enableHaAsAccount needs the device signer")
-        val proof = AccountOwnership.signAccountHaClaim(namespaceId, accountId, salt, credential, key, relayUrl, ttlMs)
-        // The path carries the ids as the claim does: lowercase hex.
-        val path =
-            "/api/cloud/accounts/${enc(accountId.lowercase())}/namespaces/${enc(namespaceId.lowercase())}/enable-ha"
-        val body = buildJsonObject { put("ownership_proof", proof.toJson()) }.toString()
-        val res = http.execute("POST", base + path, body)
-        if (res.status in ACCOUNT_HA_REFUSAL_STATUSES) {
-            refusalCode(res.body)?.takeIf { it in ACCOUNT_HA_REFUSAL_CODES }?.let { throw AccountHaRefusedException(it, res.status, res.body) }
-        }
-        res.ensureSuccessful()
-        return if (res.body.isBlank()) JsonObject(emptyMap()) else json.parseToJsonElement(res.body).jsonObject
+        admitters: List<String>? = null,
+    ): CloudNamespaceNode? {
+        val nodes = getNamespaceRouting(namespaceId).nodes
+        val allowed = admitters?.takeIf { it.isNotEmpty() }?.map { it.lowercase() }?.toSet()
+        return nodes.firstOrNull { n -> n.canAdmit && (allowed == null || n.account?.lowercase() in allowed) }
     }
 
-    private fun refusalCode(body: String): String? =
-        runCatching {
-            val o = json.parseToJsonElement(body).jsonObject
-            o.str("error") ?: o.str("detail") ?: (o["detail"] as? JsonObject)?.str("error")
-        }.getOrNull()
+    // ---- Transport -----------------------------------------------------------------------
 
-    private suspend fun get(
+    private suspend fun request(
+        method: String,
         path: String,
+        body: JsonElement? = null,
+        anonymous: Boolean = false,
         headers: Map<String, String> = emptyMap(),
-    ): JsonObject {
-        val res: HttpResponse = http.execute("GET", base + path, headers = headers).ensureSuccessful()
-        return if (res.body.isBlank()) JsonObject(emptyMap()) else json.parseToJsonElement(res.body).jsonObject
+    ): HttpResponse {
+        val current = session
+        if (!anonymous && current == null) {
+            throw MeroStateException(
+                "Not signed in to Calimero Cloud: call signInWithGoogle() or signInWithAccount(), or construct the client with a sessionToken",
+            )
+        }
+        // Caller headers first, so a per-call header can never replace the session's.
+        val all = headers.filterKeys { !it.equals("Authorization", ignoreCase = true) }.toMutableMap()
+        if (!anonymous && current != null) all["Authorization"] = "Bearer ${current.sessionToken}"
+        val res = http.execute(method, base + path, body?.toString(), all)
+        adoptRollingRefresh(res.headers)
+        return res.ensureSuccessful()
     }
+
+    private fun adoptRollingRefresh(headers: Map<String, String>) {
+        val token = header(headers, REFRESH_HEADER)?.takeIf { it.isNotEmpty() } ?: return
+        val previous = session ?: return
+        val expires = header(headers, REFRESH_EXPIRES_HEADER)?.toDoubleOrNull()
+        val expiresAt = if (expires != null && expires.isFinite() && expires > 0) expires.toLong() else previous.expiresAt
+        setSession(CloudLoginSession(token, expiresAt, previous.user))
+    }
+
+    private fun adoptSession(res: HttpResponse): CloudLoginSession {
+        val body = obj(res)
+        val user = body["user"] as? JsonObject
+        val adopted =
+            CloudLoginSession(
+                sessionToken = body.str("session_token") ?: throw MeroStateException("the cloud answered a sign-in with no session_token"),
+                expiresAt = body.long("expires_at") ?: 0,
+                user = CloudUser(user?.str("email").orEmpty(), user?.str("name"), user?.str("picture")),
+            )
+        setSession(adopted)
+        return adopted
+    }
+
+    private fun setSession(next: CloudLoginSession?) {
+        session = next
+        // A failing store or callback must not mask the call's own result.
+        runCatching { sessionStore?.save(next) }
+        runCatching { onSession?.invoke(next) }
+    }
+
+    private fun parse(res: HttpResponse): JsonElement = if (res.body.isBlank()) JsonObject(emptyMap()) else json.parseToJsonElement(res.body)
+
+    private fun obj(res: HttpResponse): JsonObject = parse(res) as? JsonObject ?: JsonObject(emptyMap())
 
     companion object {
-        private val ACCOUNT_HA_REFUSAL_STATUSES = setOf(409, 422)
+        /** The hosted cloud manager's API (not `cloud.calimero.network`, the web app). */
+        const val DEFAULT_BASE_URL = "https://manager.cloud.calimero.network"
+
+        /** The cloud's web app, where a person consents to a link ([accountLinkHandoff]'s portal). */
+        const val DEFAULT_PORTAL_URL = "https://cloud.calimero.network"
+
+        /** Response headers MDMA uses to hand back a rolling-refreshed session. */
+        const val REFRESH_HEADER = "x-mdma-session-refresh"
+        const val REFRESH_EXPIRES_HEADER = "x-mdma-session-expires"
 
         /** The `error` codes [enableHaAsAccount] maps to [AccountHaRefusedException]. */
-        val ACCOUNT_HA_REFUSAL_CODES: Set<String> =
-            setOf(
-                AccountHaRefusedException.ACCOUNT_NOT_LINKED,
-                AccountHaRefusedException.ACCOUNT_LINKED_TO_SEVERAL_USERS,
-                AccountHaRefusedException.HA_REQUEST_PENDING,
-                AccountHaRefusedException.UNKNOWN_RELAY,
-                AccountHaRefusedException.RELAY_NOT_DIALABLE,
-            )
+        val ACCOUNT_HA_REFUSAL_CODES: Set<String> = HaRefusal.entries.map { it.code }.toSet()
 
-        /** The hosted cloud manager. */
-        const val DEFAULT_BASE_URL = "https://manager.cloud.calimero.network"
+        /**
+         * The first relay a warrant can be spent at — [CloudRelay.canExecute], with a URL and
+         * an executor account — or null. mero-js `pickExecutingRelay`, shared with
+         * [connectCloud], which already holds the list.
+         */
+        fun pickExecutingRelay(relays: List<CloudRelay>): CloudRelay? =
+            relays.firstOrNull { it.canExecute && it.relayUrl != null && it.executorAccount != null }
+
+        /**
+         * Where to send someone to consent to linking [accountId] (64 lowercase hex):
+         * `{portal}/?link-account=<id>&callback-url=<callbackUrl carrying link_state>`.
+         * Remembers the link in [pending] so [readAccountLinkCallback] can match the answer.
+         * Needs no client and no session. mero-js `CloudClient.accountLinkHandoff`.
+         *
+         * @throws IllegalArgumentException for an id the portal would refuse, or a callback
+         *   that is not an absolute URL (nothing is remembered then).
+         */
+        fun accountLinkHandoff(
+            accountId: String,
+            callbackUrl: String,
+            portalUrl: String = DEFAULT_PORTAL_URL,
+            pending: PendingCloudLinks = PendingCloudLinks.shared,
+        ): AccountLinkHandoff {
+            val callback = CloudLink.beginLinkState(accountId, callbackUrl, pending)
+            val query = "link-account=${form(accountId)}&callback-url=${form(callback)}"
+            return AccountLinkHandoff("${portalUrl.trimBase()}/?$query", accountId)
+        }
+
+        /**
+         * Read the portal's answer out of a callback URL's **fragment** (a grant in the query is
+         * ignored). Every field null for an ordinary deep link, so it is safe to call on each
+         * one. A grant that does not answer a handoff this app began, for the account it
+         * named, comes back as `error = "unexpected_callback"` — the callback can be forwarded.
+         * The pending link is spent either way. mero-js `CloudClient.readAccountLinkCallback`.
+         */
+        fun readAccountLinkCallback(
+            href: String,
+            pending: PendingCloudLinks = PendingCloudLinks.shared,
+        ): AccountLinkCallback {
+            if (!UrlParts.isAbsolute(href)) return AccountLinkCallback()
+            val params = UrlParts.formDecode(UrlParts.fragment(href))
+            val state = UrlParts.formDecode(UrlParts.query(href))[CloudLink.STATE_PARAM]
+            val grant = params["grant"]?.ifEmpty { null }
+            val accountId = params["account"]?.ifEmpty { null }
+            val error = params["error"]?.ifEmpty { null }
+            if (error != null) pending.take(state)
+            if (grant != null && pending.take(state) != accountId) return AccountLinkCallback(error = UNEXPECTED_CALLBACK)
+            return AccountLinkCallback(grant, accountId, error)
+        }
+
+        /** [AccountLinkCallback.error] for a grant this app never asked for. */
+        const val UNEXPECTED_CALLBACK = "unexpected_callback"
 
         /**
          * Pick the relay to talk to, as mero-react's `chooseRelay` does: a fresh relay with an
@@ -226,16 +719,71 @@ class CloudClient internal constructor(
                     "Redeeming an invitation admits this account to a namespace and gives it a relay.",
             )
         }
-
-        private fun enc(value: String): String = URLEncoder.encode(value, "UTF-8").replace("+", "%20")
     }
+}
+
+private fun enc(value: String): String = URLEncoder.encode(value, "UTF-8").replace("+", "%20")
+
+/** `URLSearchParams` encoding: form-urlencoded, spaces as `+`. */
+private fun form(value: String): String = URLEncoder.encode(value, "UTF-8")
+
+private fun header(
+    headers: Map<String, String>,
+    name: String,
+): String? = headers.entries.firstOrNull { it.key.equals(name, ignoreCase = true) }?.value
+
+private fun teeRoleOf(row: JsonObject): String? = row.str("tee_role")?.ifEmpty { null }
+
+private fun rows(element: JsonElement?): List<JsonObject> = (element as? JsonArray).orEmpty().mapNotNull { it as? JsonObject }
+
+private fun joinOf(raw: JsonElement?): CloudRelayJoin? {
+    val join = raw as? JsonObject ?: return null
+    val state = join.str("state") ?: return null
+    return CloudRelayJoin(
+        state = state,
+        attempts = join.long("attempts")?.toInt() ?: 0,
+        refusals =
+            rows(join["refusals"]).map { r ->
+                CloudRelayRefusal(textOf(r["peer"]), textOf(r["reason"]))
+            },
+        error = join.str("error"),
+        reportedAt = join.str("reported_at"),
+    )
+}
+
+// `String(x ?? '')`: a string as is, any other JSON value as its text.
+private fun textOf(element: JsonElement?): String =
+    when (element) {
+        null, JsonNull -> ""
+        is JsonPrimitive -> element.content
+        else -> element.toString()
+    }
+
+/**
+ * The addresses a fleet node can dial to ask this node for admission, from its
+ * `GET /admin-api/network/status` ([com.calimero.mero.admin.AdminApi.getNetworkStatus]; the
+ * `{data}` wrapper is accepted): each `externalAddrs` entry made to end in
+ * `/p2p/<localPeerId>`, non-multiaddrs dropped, duplicates removed. Empty when the status
+ * names no peer id or no external address. mero-js `admitterAddrsFromNetworkStatus`.
+ */
+fun admitterAddrsFromNetworkStatus(status: JsonElement?): List<String> {
+    val outer = status as? JsonObject ?: return emptyList()
+    val record = (outer["data"] as? JsonObject) ?: outer
+    val peerId = record.str("localPeerId")?.takeIf { it.isNotEmpty() } ?: return emptyList()
+    val external = record["externalAddrs"] as? JsonArray ?: return emptyList()
+    val suffix = "/p2p/$peerId"
+    return external
+        .mapNotNull { (it as? JsonPrimitive)?.takeIf { p -> p.isString }?.content?.trim() }
+        .filter { it.startsWith("/") }
+        .map { if (it.endsWith(suffix)) it else it + suffix }
+        .distinct()
 }
 
 private fun JsonObject.str(key: String): String? = (this[key] as? JsonPrimitive)?.takeIf { it.isString }?.contentOrNull
 
 private fun JsonObject.bool(key: String): Boolean? = (this[key] as? JsonPrimitive)?.booleanOrNull
 
-private fun JsonObject.long(key: String): Long? = (this[key] as? JsonPrimitive)?.longOrNull
+private fun JsonObject.long(key: String): Long? = (this[key] as? JsonPrimitive)?.let { it.longOrNull ?: it.doubleOrNull?.toLong() }
 
 /** An account-bound challenge (sealed by the cloud; opaque here). */
 data class DiscoveryChallenge(
@@ -295,39 +843,3 @@ data class CloudNamespaceRouting(
     val servable: Boolean,
     val writable: Boolean,
 )
-
-/**
- * The cloud refused [CloudClient.enableHaAsAccount] for a reason a person can act on.
- * [code] is the cloud's `error`, verbatim; the namespace stays founded either way.
- */
-class AccountHaRefusedException(
-    val code: String,
-    val status: Int,
-    val bodyText: String,
-) : Exception("the cloud refused to host the namespace (HTTP $status): $code") {
-    /** What to tell a person, in words they can act on. */
-    val advice: String get() = ADVICE[code] ?: code
-
-    companion object {
-        const val ACCOUNT_NOT_LINKED = "account_not_linked"
-        const val ACCOUNT_LINKED_TO_SEVERAL_USERS = "account_linked_to_several_users"
-        const val HA_REQUEST_PENDING = "ha_request_pending"
-        const val UNKNOWN_RELAY = "unknown_relay"
-        const val RELAY_NOT_DIALABLE = "relay_not_dialable"
-
-        /** mero-js `HA_REFUSAL_MESSAGES`. */
-        val ADVICE: Map<String, String> =
-            mapOf(
-                ACCOUNT_NOT_LINKED to "link this account to your cloud user in the wallet so invitees can find this namespace",
-                ACCOUNT_LINKED_TO_SEVERAL_USERS to
-                    "this account is linked to more than one cloud user, so the cloud cannot tell whose plan hosts the namespace: " +
-                    "unlink it from all but one in the wallet",
-                HA_REQUEST_PENDING to
-                    "another namespace of this account is still waiting to be hosted; the cloud hosts one new namespace at a time " +
-                    "without a cloud sign-in. Sign in to the cloud and turn off hosting for the waiting namespace, or wait until it is hosted",
-                UNKNOWN_RELAY to "the cloud does not run the relay this namespace was founded on, so it cannot host it",
-                RELAY_NOT_DIALABLE to
-                    "the relay this namespace was founded on has not reported its address to the cloud yet; try enabling hosting again shortly",
-            )
-    }
-}

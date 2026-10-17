@@ -1,7 +1,11 @@
 package com.calimero.mero.admin
 
 import com.calimero.mero.Capabilities
+import com.calimero.mero.account.DeviceCert
+import com.calimero.mero.account.DeviceScopeInput
+import com.calimero.mero.account.signDeviceScope
 import com.calimero.mero.auth.ApiEnvelope
+import com.calimero.mero.crypto.DeviceSigner
 import com.calimero.mero.http.HttpClient
 import com.calimero.mero.http.HttpException
 import com.calimero.mero.http.HttpResponse
@@ -10,6 +14,12 @@ import com.calimero.mero.http.deleteJson
 import com.calimero.mero.http.getJson
 import com.calimero.mero.http.postJson
 import com.calimero.mero.http.putJson
+import com.calimero.mero.ownerop.adminChangedOp
+import com.calimero.mero.ownerop.groupDeleteOp
+import com.calimero.mero.ownerop.mintRootProof
+import com.calimero.mero.ownerop.teeAdmissionPolicyOpOf
+import com.calimero.mero.ownerop.teeAuthoringPolicyOp
+import com.calimero.mero.ownerop.transferOwnershipOp
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.SerialName
@@ -141,23 +151,24 @@ private data class SubgroupsWire(
  * empty list for list returns); the handful of endpoints core serializes flat (or
  * that legitimately return `null`) are handled explicitly and documented at each site.
  */
+@Suppress("TooManyFunctions")
 class AdminApi(
     private val http: HttpClient,
-) {
+) : AdminSurface {
     // ---- Health and Status (public, no auth) -------------------------------
 
-    suspend fun healthCheck(): HealthStatus =
+    override suspend fun healthCheck(): HealthStatus =
         http.getJson<ApiEnvelope<HealthStatus>>("/admin-api/health").data ?: error("healthCheck")
 
     /** NOTE: not unwrapped — returns the whole `{ data: { status } }` envelope. */
-    suspend fun isAuthed(): AdminAuthStatus =
+    override suspend fun isAuthed(): AdminAuthStatus =
         http.getJson("/admin-api/is-authed")
 
     /**
      * Readiness, as distinct from liveness: `health` says the process is up,
      * this says it can serve.
      */
-    suspend fun isReady(): HealthStatus =
+    override suspend fun isReady(): HealthStatus =
         http.getJson<ApiEnvelope<HealthStatus>>("/admin-api/ready").data ?: error("isReady")
 
     /**
@@ -171,7 +182,7 @@ class AdminApi(
      * `404` here is a real answer: a node holding neither a usable device nor an
      * account root has taken part in nothing at all.
      */
-    suspend fun getNodeIdentity(): NodeIdentity =
+    override suspend fun getNodeIdentity(): NodeIdentity =
         http.getJson<ApiEnvelope<NodeIdentity>>("/admin-api/identity").data ?: error("getNodeIdentity")
 
     // ---- Application Management --------------------------------------------
@@ -184,7 +195,7 @@ class AdminApi(
      * A `502` here is neither the node's fault nor the caller's: *"the configured
      * Http source has no application published at `<package>@<version>`"*.
      */
-    suspend fun installApplication(request: InstallApplicationRequest): InstallApplicationResponseData =
+    override suspend fun installApplication(request: InstallApplicationRequest): InstallApplicationResponseData =
         http
             .postJson<InstallApplicationRequest, ApiEnvelope<InstallApplicationResponseData>>(
                 "/admin-api/install-application", request,
@@ -212,7 +223,7 @@ class AdminApi(
      * registry, so point [getRegistryVersions] at the same one it is configured
      * with; a mismatch surfaces as a `502` from the install.
      */
-    suspend fun installFromRegistry(
+    override suspend fun installFromRegistry(
         packageName: String,
         version: String,
     ): InstallApplicationResponseData = installApplication(InstallApplicationRequest(packageName, version))
@@ -222,7 +233,7 @@ class AdminApi(
      * Reads `GET {registry}/api/v2/bundles?package={package}` and takes each bundle's
      * `appVersion`. Registry-side data — distinct from the node's installed-version list.
      */
-    suspend fun getRegistryVersions(
+    override suspend fun getRegistryVersions(
         registryUrl: String,
         packageName: String,
     ): List<String> {
@@ -233,33 +244,33 @@ class AdminApi(
         return bundles.map { it.appVersion }.sortedWith { x, y -> -compareSemver(x, y) }
     }
 
-    suspend fun installDevApplication(request: InstallDevApplicationRequest): InstallApplicationResponseData =
+    override suspend fun installDevApplication(request: InstallDevApplicationRequest): InstallApplicationResponseData =
         http
             .postJson<InstallDevApplicationRequest, ApiEnvelope<InstallApplicationResponseData>>(
                 "/admin-api/install-dev-application", request,
             ).data ?: error("installDevApplication")
 
-    suspend fun uninstallApplication(appId: String): UninstallApplicationResponseData =
+    override suspend fun uninstallApplication(appId: String): UninstallApplicationResponseData =
         http.deleteJson<ApiEnvelope<UninstallApplicationResponseData>>("/admin-api/applications/$appId").data
             ?: error("uninstallApplication")
 
-    suspend fun listApplications(): ListApplicationsResponseData =
+    override suspend fun listApplications(): ListApplicationsResponseData =
         http.getJson<ApiEnvelope<ListApplicationsResponseData>>("/admin-api/applications").data
             ?: error("listApplications")
 
-    suspend fun getApplication(appId: String): GetApplicationResponseData =
+    override suspend fun getApplication(appId: String): GetApplicationResponseData =
         http.getJson<ApiEnvelope<GetApplicationResponseData>>("/admin-api/applications/$appId").data
             ?: error("getApplication")
 
     /** Installed-blob inventory for an application — one entry per locally installed version. */
-    suspend fun listApplicationVersions(applicationId: String): List<ApplicationVersionEntry> =
+    override suspend fun listApplicationVersions(applicationId: String): List<ApplicationVersionEntry> =
         http.getJson<ApiEnvelope<List<ApplicationVersionEntry>>>("/admin-api/applications/$applicationId/versions").data
             ?: emptyList()
 
     // ---- Package Management ------------------------------------------------
 
     /** Packages this node has **installed** — not the registry's catalogue. */
-    suspend fun listPackages(): ListPackagesResponseData {
+    override suspend fun listPackages(): ListPackagesResponseData {
         // Core returns this flat ({ packages: [...] }), not under `data`; tolerate both.
         val res = http.execute("GET", "/admin-api/packages").ensureSuccessful()
         val wire = http.json.decodeFromString<ListPackagesWire>(res.body)
@@ -271,7 +282,7 @@ class AdminApi(
      * "not installed here", never "not published" — use [getRegistryVersions] for
      * what is available to install.
      */
-    suspend fun listPackageVersions(packageName: String): ListVersionsResponseData {
+    override suspend fun listPackageVersions(packageName: String): ListVersionsResponseData {
         // Core returns this flat ({ versions: [...] }), not under `data`; tolerate both.
         val res = http.execute("GET", "/admin-api/packages/${encodeComponent(packageName)}/versions").ensureSuccessful()
         val wire = http.json.decodeFromString<ListVersionsWire>(res.body)
@@ -279,12 +290,12 @@ class AdminApi(
     }
 
     /** Newest **installed** version of a package. Both fields are `null` if none is. */
-    suspend fun getLatestPackageVersion(packageName: String): GetLatestVersionResponseData =
+    override suspend fun getLatestPackageVersion(packageName: String): GetLatestVersionResponseData =
         http.getJson("/admin-api/packages/${encodeComponent(packageName)}/latest")
 
     // ---- Context Management ------------------------------------------------
 
-    suspend fun createContext(request: CreateContextRequest): CreateContextResponseData {
+    override suspend fun createContext(request: CreateContextRequest): CreateContextResponseData {
         // Core requires `initializationParams`; default it to an empty byte array.
         val body = if (request.initializationParams == null) request.copy(initializationParams = emptyList()) else request
         return http
@@ -293,9 +304,9 @@ class AdminApi(
             ).data ?: error("createContext")
     }
 
-    suspend fun deleteContext(
+    override suspend fun deleteContext(
         contextId: String,
-        request: DeleteContextRequest? = null,
+        request: DeleteContextRequest?,
     ): DeleteContextResponseData {
         val body = request?.let { http.json.encodeToString(it) }
         val res = http.execute("DELETE", "/admin-api/contexts/$contextId", body).ensureSuccessful()
@@ -303,29 +314,29 @@ class AdminApi(
             ?: error("deleteContext")
     }
 
-    suspend fun getContexts(): GetContextsResponseData =
+    override suspend fun getContexts(): GetContextsResponseData =
         http.getJson<ApiEnvelope<GetContextsResponseData>>("/admin-api/contexts").data ?: error("getContexts")
 
-    suspend fun getContext(contextId: String): Context =
+    override suspend fun getContext(contextId: String): Context =
         http.getJson<ApiEnvelope<Context>>("/admin-api/contexts/$contextId").data ?: error("getContext")
 
-    suspend fun getContextsForApplication(applicationId: String): GetContextsResponseData =
+    override suspend fun getContextsForApplication(applicationId: String): GetContextsResponseData =
         http.getJson<ApiEnvelope<GetContextsResponseData>>("/admin-api/contexts/for-application/$applicationId").data
             ?: error("getContextsForApplication")
 
     // ---- Context Identity --------------------------------------------------
 
-    suspend fun generateContextIdentity(): GenerateContextIdentityResponseData =
+    override suspend fun generateContextIdentity(): GenerateContextIdentityResponseData =
         http
             .postJson<JsonObject, ApiEnvelope<GenerateContextIdentityResponseData>>(
                 "/admin-api/identity/context", JsonObject(emptyMap()),
             ).data ?: error("generateContextIdentity")
 
-    suspend fun getContextIdentities(contextId: String): GetContextIdentitiesResponseData =
+    override suspend fun getContextIdentities(contextId: String): GetContextIdentitiesResponseData =
         http.getJson<ApiEnvelope<GetContextIdentitiesResponseData>>("/admin-api/contexts/$contextId/identities").data
             ?: error("getContextIdentities")
 
-    suspend fun getContextIdentitiesOwned(contextId: String): GetContextIdentitiesResponseData =
+    override suspend fun getContextIdentitiesOwned(contextId: String): GetContextIdentitiesResponseData =
         http
             .getJson<ApiEnvelope<GetContextIdentitiesResponseData>>(
                 "/admin-api/contexts/$contextId/identities-owned",
@@ -333,7 +344,7 @@ class AdminApi(
 
     // ---- Context join (group membership) -----------------------------------
 
-    suspend fun joinContext(contextId: String): JoinContextResponseData =
+    override suspend fun joinContext(contextId: String): JoinContextResponseData =
         http
             .postJson<JsonObject, ApiEnvelope<JoinContextResponseData>>(
                 "/admin-api/contexts/$contextId/join", JsonObject(emptyMap()),
@@ -342,10 +353,10 @@ class AdminApi(
     // ---- Context group / storage / sync ------------------------------------
 
     /** Value is `string | null`; returns the optional directly (does NOT throw on null). */
-    suspend fun getContextGroup(contextId: String): ContextGroupResponseData =
+    override suspend fun getContextGroup(contextId: String): ContextGroupResponseData =
         http.getJson<ApiEnvelope<String>>("/admin-api/contexts/$contextId/group").data
 
-    suspend fun getContextStorage(contextId: String): ContextStorageResponseData =
+    override suspend fun getContextStorage(contextId: String): ContextStorageResponseData =
         http.getJson<ApiEnvelope<ContextStorageResponseData>>("/admin-api/contexts/$contextId/storage").data
             ?: error("getContextStorage")
 
@@ -366,7 +377,7 @@ class AdminApi(
      * So "sync everything" silently became a 404 and this threw, on a call that
      * had worked for every release before rc.30.
      */
-    suspend fun syncContext(contextId: String? = null) {
+    override suspend fun syncContext(contextId: String?) {
         val path = if (contextId == null) "/admin-api/contexts/sync" else "/admin-api/contexts/sync/$contextId"
         http.execute("POST", path, "{}").ensureSuccessful()
     }
@@ -375,9 +386,9 @@ class AdminApi(
      * Kick off a full state re-pull for a context (operator recovery for a stranded
      * context). `force` re-pulls even when the node does not flag the context as stranded.
      */
-    suspend fun resyncContext(
+    override suspend fun resyncContext(
         contextId: String,
-        request: ResyncContextRequest = ResyncContextRequest(),
+        request: ResyncContextRequest,
     ): ResyncContextResponseData {
         // Core's `ResyncContextApiResponse` is a flat payload (no inner `data`), so parse
         // directly. An empty 2xx body means accepted; synthesize a typed result.
@@ -389,7 +400,7 @@ class AdminApi(
             ?: ResyncContextResponseData(contextId = contextId, resyncStarted = true)
     }
 
-    suspend fun updateContextApplication(
+    override suspend fun updateContextApplication(
         contextId: String,
         request: UpdateContextApplicationRequest,
     ) {
@@ -398,7 +409,7 @@ class AdminApi(
             .ensureSuccessful()
     }
 
-    suspend fun getContextsWithExecutorsForApplication(applicationId: String): ContextsWithExecutorsResponseData {
+    override suspend fun getContextsWithExecutorsForApplication(applicationId: String): ContextsWithExecutorsResponseData {
         // Core returns this flat as { contexts: [...] }; tolerate a bare array and { data } too.
         val res =
             http
@@ -411,7 +422,7 @@ class AdminApi(
 
     // ---- Blob Management ---------------------------------------------------
 
-    suspend fun uploadBlob(request: UploadBlobRequest): UploadBlobResponseData {
+    override suspend fun uploadBlob(request: UploadBlobRequest): UploadBlobResponseData {
         // Core streams the raw request body into blob storage (no JSON) and takes its
         // params from the query string (`hash`, `context_id` — snake_case).
         val query =
@@ -430,13 +441,13 @@ class AdminApi(
         return BlobInfo(blobId = inner.blobId, size = inner.size)
     }
 
-    suspend fun deleteBlob(blobId: String): DeleteBlobResponseData {
+    override suspend fun deleteBlob(blobId: String): DeleteBlobResponseData {
         // Core's `BlobDeleteResponse` is flat, snake_case (`{ blob_id, deleted }`).
         val wire = http.deleteJson<DeleteBlobWire>("/admin-api/blobs/$blobId")
         return DeleteBlobResponseData(blobId = wire.blobId, deleted = wire.deleted)
     }
 
-    suspend fun listBlobs(): ListBlobsResponseData {
+    override suspend fun listBlobs(): ListBlobsResponseData {
         // Core's BlobInfo is snake_case (`blob_id`); map to camelCase.
         val inner = http.getJson<ApiEnvelope<BlobsWire>>("/admin-api/blobs").data ?: error("listBlobs")
         return ListBlobsResponseData(blobs = inner.blobs.map { BlobInfo(blobId = it.blobId, size = it.size) })
@@ -450,9 +461,9 @@ class AdminApi(
      * account-scoped caller is judged against that context's membership rather than
      * refused outright.
      */
-    suspend fun getBlob(
+    override suspend fun getBlob(
         blobId: String,
-        contextId: String? = null,
+        contextId: String?,
     ): ByteArray =
         http
             .execute("GET", blobPath(blobId, contextId))
@@ -465,9 +476,9 @@ class AdminApi(
      * the info in response headers (size via `content-length`, plus `x-blob-*`). Header
      * names are matched case-insensitively. [contextId] as for [getBlob].
      */
-    suspend fun getBlobInfo(
+    override suspend fun getBlobInfo(
         blobId: String,
-        contextId: String? = null,
+        contextId: String?,
     ): GetBlobInfoResponseData {
         val res = http.execute("HEAD", blobPath(blobId, contextId)).ensureSuccessful()
         val headers = res.headers.entries.associate { it.key.lowercase() to it.value }
@@ -481,37 +492,37 @@ class AdminApi(
 
     // ---- Alias Management --------------------------------------------------
 
-    suspend fun createContextAlias(request: CreateContextAliasRequest): CreateAliasResponseData =
+    override suspend fun createContextAlias(request: CreateContextAliasRequest): CreateAliasResponseData =
         http
             .postJson<CreateContextAliasRequest, ApiEnvelope<CreateAliasResponseData>>(
                 "/admin-api/alias/create/context", request,
             ).data ?: error("createContextAlias")
 
-    suspend fun createApplicationAlias(request: CreateApplicationAliasRequest): CreateAliasResponseData =
+    override suspend fun createApplicationAlias(request: CreateApplicationAliasRequest): CreateAliasResponseData =
         http
             .postJson<CreateApplicationAliasRequest, ApiEnvelope<CreateAliasResponseData>>(
                 "/admin-api/alias/create/application", request,
             ).data ?: error("createApplicationAlias")
 
-    suspend fun lookupContextAlias(name: String): LookupAliasResponseData =
+    override suspend fun lookupContextAlias(name: String): LookupAliasResponseData =
         http
             .postJson<JsonObject, ApiEnvelope<LookupAliasResponseData>>(
                 "/admin-api/alias/lookup/context/${encodeComponent(name)}", JsonObject(emptyMap()),
             ).data ?: error("lookupContextAlias")
 
-    suspend fun lookupApplicationAlias(name: String): LookupAliasResponseData =
+    override suspend fun lookupApplicationAlias(name: String): LookupAliasResponseData =
         http
             .postJson<JsonObject, ApiEnvelope<LookupAliasResponseData>>(
                 "/admin-api/alias/lookup/application/${encodeComponent(name)}", JsonObject(emptyMap()),
             ).data ?: error("lookupApplicationAlias")
 
-    suspend fun deleteContextAlias(name: String): DeleteAliasResponseData =
+    override suspend fun deleteContextAlias(name: String): DeleteAliasResponseData =
         http
             .postJson<JsonObject, ApiEnvelope<DeleteAliasResponseData>>(
                 "/admin-api/alias/delete/context/${encodeComponent(name)}", JsonObject(emptyMap()),
             ).data ?: error("deleteContextAlias")
 
-    suspend fun deleteApplicationAlias(name: String): DeleteAliasResponseData =
+    override suspend fun deleteApplicationAlias(name: String): DeleteAliasResponseData =
         http
             .postJson<JsonObject, ApiEnvelope<DeleteAliasResponseData>>(
                 "/admin-api/alias/delete/application/${encodeComponent(name)}", JsonObject(emptyMap()),
@@ -523,9 +534,9 @@ class AdminApi(
      * threw `MissingFieldException: Field 'aliases' is required` on every call,
      * so all three list methods had never returned anything.
      */
-    suspend fun listContextAliases(): ListAliasesResponseData = listAliases("context")
+    override suspend fun listContextAliases(): ListAliasesResponseData = listAliases("context")
 
-    suspend fun listApplicationAliases(): ListAliasesResponseData = listAliases("application")
+    override suspend fun listApplicationAliases(): ListAliasesResponseData = listAliases("application")
 
     // ---- Device aliases ----------------------------------------------------
     //
@@ -533,21 +544,21 @@ class AdminApi(
     // offer an `identity/{contextId}` scope instead, which does not exist —
     // every create/lookup/delete/list under it answered 404.
 
-    suspend fun listDeviceAliases(): ListAliasesResponseData = listAliases("device")
+    override suspend fun listDeviceAliases(): ListAliasesResponseData = listAliases("device")
 
-    suspend fun createDeviceAlias(request: CreateDeviceAliasRequest): CreateAliasResponseData =
+    override suspend fun createDeviceAlias(request: CreateDeviceAliasRequest): CreateAliasResponseData =
         http
             .postJson<CreateDeviceAliasRequest, ApiEnvelope<CreateAliasResponseData>>(
                 "/admin-api/alias/create/device", request,
             ).data ?: Empty()
 
-    suspend fun lookupDeviceAlias(name: String): LookupAliasResponseData =
+    override suspend fun lookupDeviceAlias(name: String): LookupAliasResponseData =
         http
             .postJson<JsonObject, ApiEnvelope<LookupAliasResponseData>>(
                 "/admin-api/alias/lookup/device/${encodeComponent(name)}", JsonObject(emptyMap()),
             ).data ?: LookupAliasResponseData()
 
-    suspend fun deleteDeviceAlias(name: String): DeleteAliasResponseData =
+    override suspend fun deleteDeviceAlias(name: String): DeleteAliasResponseData =
         http
             .postJson<JsonObject, ApiEnvelope<DeleteAliasResponseData>>(
                 "/admin-api/alias/delete/device/${encodeComponent(name)}", JsonObject(emptyMap()),
@@ -565,27 +576,27 @@ class AdminApi(
 
     // ---- Namespace Management ----------------------------------------------
 
-    suspend fun listNamespaces(): ListNamespacesResponseData =
+    override suspend fun listNamespaces(): ListNamespacesResponseData =
         http.getJson<ApiEnvelope<ListNamespacesResponseData>>("/admin-api/namespaces").data ?: emptyList()
 
-    suspend fun getNamespace(namespaceId: String): Namespace =
+    override suspend fun getNamespace(namespaceId: String): Namespace =
         http.getJson<ApiEnvelope<Namespace>>("/admin-api/namespaces/$namespaceId").data ?: error("getNamespace")
 
-    suspend fun listNamespacesForApplication(applicationId: String): ListNamespacesResponseData =
+    override suspend fun listNamespacesForApplication(applicationId: String): ListNamespacesResponseData =
         http
             .getJson<ApiEnvelope<ListNamespacesResponseData>>(
                 "/admin-api/namespaces/for-application/$applicationId",
             ).data ?: emptyList()
 
-    suspend fun createNamespace(request: CreateNamespaceRequest): CreateNamespaceResponseData =
+    override suspend fun createNamespace(request: CreateNamespaceRequest): CreateNamespaceResponseData =
         http
             .postJson<CreateNamespaceRequest, ApiEnvelope<CreateNamespaceResponseData>>(
                 "/admin-api/namespaces", request,
             ).data ?: error("createNamespace")
 
-    suspend fun deleteNamespace(
+    override suspend fun deleteNamespace(
         namespaceId: String,
-        request: DeleteNamespaceRequest? = null,
+        request: DeleteNamespaceRequest?,
     ): DeleteNamespaceResponseData {
         // Core requires `Content-Type: application/json` even with an empty body.
         val body = request?.let { http.json.encodeToString(it) } ?: "{}"
@@ -594,9 +605,9 @@ class AdminApi(
             ?: error("deleteNamespace")
     }
 
-    suspend fun createNamespaceInvitation(
+    override suspend fun createNamespaceInvitation(
         namespaceId: String,
-        request: CreateNamespaceInvitationRequest? = null,
+        request: CreateNamespaceInvitationRequest?,
     ): CreateNamespaceInvitationResult {
         val body = request?.let { http.json.encodeToString(it) } ?: "{}"
         val res = http.execute("POST", "/admin-api/namespaces/$namespaceId/invite", body).ensureSuccessful()
@@ -611,7 +622,7 @@ class AdminApi(
         }
     }
 
-    suspend fun joinNamespace(
+    override suspend fun joinNamespace(
         namespaceId: String,
         request: JoinNamespaceRequest,
     ): JoinNamespaceResponseData {
@@ -626,6 +637,22 @@ class AdminApi(
     }
 
     /**
+     * [joinNamespace], reported by whether it worked rather than by whether its request
+     * returned — mero-js `AdminApiClient.redeemInvitation`. The join is sent once; a failed
+     * request whose namespace [listNamespaces] then lists is [RedeemOutcome.AlreadyMember]
+     * (a proxy timed out a join that landed, or the link was followed twice). See
+     * [com.calimero.mero.admin.redeemInvitation].
+     */
+    override suspend fun redeemInvitation(
+        namespaceId: String,
+        invitation: SignedGroupOpenInvitation,
+        groupName: String?,
+        teamName: String?,
+    ): RedeemOutcome =
+        com.calimero.mero.admin
+            .redeemInvitation(namespaceId, invitation, adminRedeemer(this, groupName), teamName)
+
+    /**
      * Create a subgroup in a namespace.
      *
      * ⚠️ Always sends a `visibility`. Core 0.11.0-rc.83 flipped what an absent one
@@ -634,9 +661,9 @@ class AdminApi(
      * request, or a `null` [CreateGroupInNamespaceRequest.visibility], is sent as
      * [CreateGroupInNamespaceRequest.VISIBILITY_OPEN], rc.83's own default.
      */
-    suspend fun createGroupInNamespace(
+    override suspend fun createGroupInNamespace(
         namespaceId: String,
-        request: CreateGroupInNamespaceRequest? = null,
+        request: CreateGroupInNamespaceRequest?,
     ): CreateGroupInNamespaceResponseData {
         val explicit =
             (request ?: CreateGroupInNamespaceRequest()).let {
@@ -648,26 +675,26 @@ class AdminApi(
             ?: error("createGroupInNamespace")
     }
 
-    suspend fun listNamespaceGroups(namespaceId: String): List<SubgroupEntry> =
+    override suspend fun listNamespaceGroups(namespaceId: String): List<SubgroupEntry> =
         http.getJson<ApiEnvelope<List<SubgroupEntry>>>("/admin-api/namespaces/$namespaceId/groups").data
             ?: emptyList()
 
     // ---- Group Management --------------------------------------------------
 
-    suspend fun getGroupInfo(groupId: String): GroupInfoResponseData =
+    override suspend fun getGroupInfo(groupId: String): GroupInfoResponseData =
         http.getJson<ApiEnvelope<GroupInfoResponseData>>("/admin-api/groups/$groupId").data ?: error("getGroupInfo")
 
     /** Thin wrapper over [getGroupInfo]: returns the group's `defaultCapabilities` bitmask. */
-    suspend fun getDefaultCapabilities(groupId: String): Int =
+    override suspend fun getDefaultCapabilities(groupId: String): Int =
         getGroupInfo(groupId).defaultCapabilities
 
     /** Thin wrapper over [getGroupInfo]: returns the group's `subgroupVisibility`. */
-    suspend fun getSubgroupVisibility(groupId: String): String =
+    override suspend fun getSubgroupVisibility(groupId: String): String =
         getGroupInfo(groupId).subgroupVisibility
 
-    suspend fun deleteGroup(
+    override suspend fun deleteGroup(
         groupId: String,
-        request: DeleteGroupRequest? = null,
+        request: DeleteGroupRequest?,
     ): DeleteGroupResponseData {
         // Core requires `Content-Type: application/json` even with an empty body.
         val body = request?.let { http.json.encodeToString(it) } ?: "{}"
@@ -675,7 +702,7 @@ class AdminApi(
         return http.json.decodeFromString<ApiEnvelope<DeleteGroupResponseData>>(res.body).data ?: error("deleteGroup")
     }
 
-    suspend fun listGroupMembers(groupId: String): ListGroupMembersResponseData {
+    override suspend fun listGroupMembers(groupId: String): ListGroupMembersResponseData {
         // Response is un-enveloped ({ members, selfIdentity }). Validate the non-optional
         // `members` field so a contract-violating response surfaces as a clear error.
         val res = http.execute("GET", "/admin-api/groups/$groupId/members").ensureSuccessful()
@@ -688,18 +715,18 @@ class AdminApi(
         return ListGroupMembersResponseData(members = members, selfIdentity = lenient.selfIdentity)
     }
 
-    suspend fun listGroupContexts(groupId: String): ListGroupContextsResponseData =
+    override suspend fun listGroupContexts(groupId: String): ListGroupContextsResponseData =
         http.getJson<ApiEnvelope<ListGroupContextsResponseData>>("/admin-api/groups/$groupId/contexts").data
             ?: emptyList()
 
-    suspend fun addGroupMembers(
+    override suspend fun addGroupMembers(
         groupId: String,
         request: AddGroupMembersRequest,
     ) {
         http.execute("POST", "/admin-api/groups/$groupId/members", http.json.encodeToString(request)).ensureSuccessful()
     }
 
-    suspend fun removeGroupMembers(
+    override suspend fun removeGroupMembers(
         groupId: String,
         request: RemoveGroupMembersRequest,
     ) {
@@ -708,7 +735,7 @@ class AdminApi(
             .ensureSuccessful()
     }
 
-    suspend fun updateMemberRole(
+    override suspend fun updateMemberRole(
         groupId: String,
         identity: String,
         request: UpdateMemberRoleRequest,
@@ -718,7 +745,7 @@ class AdminApi(
             .ensureSuccessful()
     }
 
-    suspend fun getMemberCapabilities(
+    override suspend fun getMemberCapabilities(
         groupId: String,
         identity: String,
     ): MemberCapabilities =
@@ -727,7 +754,7 @@ class AdminApi(
                 "/admin-api/groups/$groupId/members/$identity/capabilities",
             ).data ?: error("getMemberCapabilities")
 
-    suspend fun setMemberCapabilities(
+    override suspend fun setMemberCapabilities(
         groupId: String,
         identity: String,
         request: SetMemberCapabilitiesRequest,
@@ -738,7 +765,7 @@ class AdminApi(
             ).ensureSuccessful()
     }
 
-    suspend fun setDefaultCapabilities(
+    override suspend fun setDefaultCapabilities(
         groupId: String,
         request: SetDefaultCapabilitiesRequest,
     ) {
@@ -748,7 +775,7 @@ class AdminApi(
             ).ensureSuccessful()
     }
 
-    suspend fun setSubgroupVisibility(
+    override suspend fun setSubgroupVisibility(
         groupId: String,
         request: SetSubgroupVisibilityRequest,
     ) {
@@ -758,7 +785,7 @@ class AdminApi(
             ).ensureSuccessful()
     }
 
-    suspend fun setTeeAdmissionPolicy(
+    override suspend fun setTeeAdmissionPolicy(
         groupId: String,
         request: SetTeeAdmissionPolicyRequest,
     ) {
@@ -768,7 +795,25 @@ class AdminApi(
             ).ensureSuccessful()
     }
 
-    suspend fun getTeeAdmissionPolicy(groupId: String): GetTeeAdmissionPolicyResponseData {
+    /**
+     * [setTeeAdmissionPolicy] with the `rootProof` minted here by the signing admin's account
+     * [root]: the op the node will build from [request] is encoded, the group's
+     * `namespaceId` and `ownerOpCounter` are read ([getGroupInfo]) and the root signs
+     * ([com.calimero.mero.ownerop.signOwnerOpProof]). Any `rootProof` already on [request]
+     * is replaced. [keyEpoch] / [chain] are for a root that was handed off.
+     */
+    override suspend fun setTeeAdmissionPolicy(
+        groupId: String,
+        request: SetTeeAdmissionPolicyRequest,
+        root: DeviceSigner,
+        keyEpoch: Long,
+        chain: List<String>,
+    ) {
+        val proof = mintRootProof(groupId, teeAdmissionPolicyOpOf(request), root, keyEpoch, chain)
+        setTeeAdmissionPolicy(groupId, request.copy(rootProof = proof))
+    }
+
+    override suspend fun getTeeAdmissionPolicy(groupId: String): GetTeeAdmissionPolicyResponseData {
         // `data` is optional so a flat (un-enveloped) response cleanly falls back.
         val res = http.execute("GET", "/admin-api/groups/$groupId/settings/tee-admission-policy").ensureSuccessful()
         runCatching { http.json.decodeFromString<TeeAdmissionEnv>(res.body).data }.getOrNull()?.let { return it }
@@ -777,17 +822,17 @@ class AdminApi(
 
     // ---- Group / member / context metadata ---------------------------------
 
-    suspend fun setGroupMetadata(
+    override suspend fun setGroupMetadata(
         groupId: String,
         request: SetGroupMetadataRequest,
     ) {
         http.execute("PUT", "/admin-api/groups/$groupId/metadata", http.json.encodeToString(request)).ensureSuccessful()
     }
 
-    suspend fun getGroupMetadata(groupId: String): MetadataRecord? =
+    override suspend fun getGroupMetadata(groupId: String): MetadataRecord? =
         getMetadataRecord("/admin-api/groups/$groupId/metadata")
 
-    suspend fun setMemberMetadata(
+    override suspend fun setMemberMetadata(
         groupId: String,
         identity: String,
         request: SetMemberMetadataRequest,
@@ -798,13 +843,13 @@ class AdminApi(
             ).ensureSuccessful()
     }
 
-    suspend fun getMemberMetadata(
+    override suspend fun getMemberMetadata(
         groupId: String,
         identity: String,
     ): MetadataRecord? =
         getMetadataRecord("/admin-api/groups/$groupId/members/$identity/metadata")
 
-    suspend fun setContextMetadata(
+    override suspend fun setContextMetadata(
         groupId: String,
         contextId: String,
         request: SetContextMetadataRequest,
@@ -815,15 +860,15 @@ class AdminApi(
             ).ensureSuccessful()
     }
 
-    suspend fun getContextMetadata(
+    override suspend fun getContextMetadata(
         groupId: String,
         contextId: String,
     ): MetadataRecord? =
         getMetadataRecord("/admin-api/groups/$groupId/contexts/$contextId/metadata")
 
-    suspend fun syncGroup(
+    override suspend fun syncGroup(
         groupId: String,
-        request: SyncGroupRequest? = null,
+        request: SyncGroupRequest?,
     ): SyncGroupResponseData {
         val body = request?.let { http.json.encodeToString(it) } ?: "{}"
         val res = http.execute("POST", "/admin-api/groups/$groupId/sync", body).ensureSuccessful()
@@ -835,7 +880,7 @@ class AdminApi(
      * instead of staying uninitialized (the "1111…" root hash). Sync/join failures per context are
      * tolerated — cross-node sync is asynchronous, so callers normally retry this.
      */
-    suspend fun syncGroupContexts(groupId: String): ListGroupContextsResponseData {
+    override suspend fun syncGroupContexts(groupId: String): ListGroupContextsResponseData {
         runCatching { syncGroup(groupId) }
         val contexts = listGroupContexts(groupId)
         for (ctx in contexts) {
@@ -845,7 +890,7 @@ class AdminApi(
         return contexts
     }
 
-    suspend fun upgradeGroup(
+    override suspend fun upgradeGroup(
         groupId: String,
         request: UpgradeGroupRequest,
     ): UpgradeGroupResponseData =
@@ -855,26 +900,26 @@ class AdminApi(
             ).data ?: error("upgradeGroup")
 
     /** Value is `GroupUpgradeStatus | null`; returns the optional directly. */
-    suspend fun getGroupUpgradeStatus(groupId: String): GroupUpgradeStatusResponseData =
+    override suspend fun getGroupUpgradeStatus(groupId: String): GroupUpgradeStatusResponseData =
         http.getJson<ApiEnvelope<GroupUpgradeStatus>>("/admin-api/groups/$groupId/upgrade/status").data
 
     /**
      * The operator-facing "have all peers migrated?" rollup for a namespace. The handler
      * serializes the payload directly, so there is no `{ data }` envelope to unwrap here.
      */
-    suspend fun getMigrationStatus(namespaceId: String): MigrationStatus =
+    override suspend fun getMigrationStatus(namespaceId: String): MigrationStatus =
         http.getJson("/admin-api/groups/${encodeComponent(namespaceId)}/migration-status")
 
     /** Per-group cascade-migration snapshots for a namespace. */
-    suspend fun getCascadeStatus(namespaceId: String): List<CascadeStatusEntry> =
+    override suspend fun getCascadeStatus(namespaceId: String): List<CascadeStatusEntry> =
         http
             .getJson<ApiEnvelope<List<CascadeStatusEntry>>>(
                 "/admin-api/groups/${encodeComponent(namespaceId)}/cascade-status",
             ).data ?: emptyList()
 
-    suspend fun retryGroupUpgrade(
+    override suspend fun retryGroupUpgrade(
         groupId: String,
-        request: RetryGroupUpgradeRequest? = null,
+        request: RetryGroupUpgradeRequest?,
     ): RetryGroupUpgradeResponseData {
         val body = request?.let { http.json.encodeToString(it) } ?: "{}"
         val res = http.execute("POST", "/admin-api/groups/$groupId/upgrade/retry", body).ensureSuccessful()
@@ -883,7 +928,7 @@ class AdminApi(
     }
 
     /** Move `childGroupId` under `request.newParentId`. */
-    suspend fun reparentGroup(
+    override suspend fun reparentGroup(
         childGroupId: String,
         request: ReparentGroupRequest,
     ): ReparentGroupResponseData {
@@ -896,16 +941,16 @@ class AdminApi(
         return env.data ?: ReparentGroupResponseData(reparented = env.reparented ?: false)
     }
 
-    suspend fun listSubgroups(groupId: String): List<SubgroupEntry> {
+    override suspend fun listSubgroups(groupId: String): List<SubgroupEntry> {
         val res = http.execute("GET", "/admin-api/groups/$groupId/subgroups").ensureSuccessful()
         val wire = http.json.decodeFromString<SubgroupsWire>(res.body)
         return wire.subgroups ?: wire.data ?: emptyList()
     }
 
-    suspend fun detachContextFromGroup(
+    override suspend fun detachContextFromGroup(
         groupId: String,
         contextId: String,
-        request: DetachContextFromGroupRequest? = null,
+        request: DetachContextFromGroupRequest?,
     ) {
         val body = request?.let { http.json.encodeToString(it) } ?: "{}"
         http.execute("POST", "/admin-api/groups/$groupId/contexts/$contextId/remove", body).ensureSuccessful()
@@ -913,9 +958,9 @@ class AdminApi(
 
     // ---- Group Invitation & Join -------------------------------------------
 
-    suspend fun createGroupInvitation(
+    override suspend fun createGroupInvitation(
         groupId: String,
-        request: CreateGroupInvitationRequest? = null,
+        request: CreateGroupInvitationRequest?,
     ): CreateGroupInvitationResult {
         val body = request?.let { http.json.encodeToString(it) } ?: "{}"
         val res = http.execute("POST", "/admin-api/groups/$groupId/invite", body).ensureSuccessful()
@@ -928,11 +973,11 @@ class AdminApi(
         }
     }
 
-    suspend fun joinGroup(request: JoinGroupRequest): JoinGroupResponseData =
+    override suspend fun joinGroup(request: JoinGroupRequest): JoinGroupResponseData =
         http.postJson<JoinGroupRequest, ApiEnvelope<JoinGroupResponseData>>("/admin-api/groups/join", request).data
             ?: error("joinGroup")
 
-    suspend fun joinSubgroupInheritance(groupId: String): JoinSubgroupInheritanceResponseData =
+    override suspend fun joinSubgroupInheritance(groupId: String): JoinSubgroupInheritanceResponseData =
         http
             .postJson<JsonObject, ApiEnvelope<JoinSubgroupInheritanceResponseData>>(
                 "/admin-api/groups/$groupId/join-via-inheritance", JsonObject(emptyMap()),
@@ -940,10 +985,10 @@ class AdminApi(
 
     // ---- TEE ---------------------------------------------------------------
 
-    suspend fun getTeeInfo(): TeeInfoResponseData =
+    override suspend fun getTeeInfo(): TeeInfoResponseData =
         http.getJson<ApiEnvelope<TeeInfoResponseData>>("/admin-api/tee/info").data ?: error("getTeeInfo")
 
-    suspend fun teeAttest(request: TeeAttestRequest): TeeAttestResponseData =
+    override suspend fun teeAttest(request: TeeAttestRequest): TeeAttestResponseData =
         http.postJson<TeeAttestRequest, ApiEnvelope<TeeAttestResponseData>>("/admin-api/tee/attest", request).data
             ?: error("teeAttest")
 
@@ -953,7 +998,7 @@ class AdminApi(
      *
      * `teeVerifyQuote` is gone: its route was removed from core before rc.41.
      */
-    suspend fun teeRegistrationAttest(request: TeeRegistrationAttestRequest): TeeAttestResponseData =
+    override suspend fun teeRegistrationAttest(request: TeeRegistrationAttestRequest): TeeAttestResponseData =
         http
             .postJson<TeeRegistrationAttestRequest, ApiEnvelope<TeeAttestResponseData>>(
                 "/admin-api/tee/registration-attest", request,
@@ -961,15 +1006,15 @@ class AdminApi(
 
     // ---- Network -----------------------------------------------------------
 
-    suspend fun getPeersCount(): PeersCountResponseData =
+    override suspend fun getPeersCount(): PeersCountResponseData =
         http.getJson("/admin-api/peers")
 
     /** Node network status (GET /admin-api/network/status). */
-    suspend fun getNetworkStatus(): JsonElement =
+    override suspend fun getNetworkStatus(): JsonElement =
         rawJson("GET", "/admin-api/network/status", null)
 
     /** Node storage/usage stats (GET /admin-api/usage). */
-    suspend fun getUsage(): JsonElement =
+    override suspend fun getUsage(): JsonElement =
         rawJson("GET", "/admin-api/usage", null)
 
     // `getCertificate` is gone: core 0.11.0-rc.83 removed `GET /admin-api/certificate`
@@ -983,19 +1028,19 @@ class AdminApi(
      * ⚠️ Never put a `groupId` in the map: core 0.11.0-rc.83 derives group ids and
      * refuses a body naming one (`deny_unknown_fields`). Prefer the typed overload.
      */
-    suspend fun createGroup(request: Map<String, JsonElement>): CreateGroupResponseData =
+    override suspend fun createGroup(request: Map<String, JsonElement>): CreateGroupResponseData =
         http.postJson<Map<String, JsonElement>, ApiEnvelope<CreateGroupResponseData>>("/admin-api/groups", request).data
             ?: error("createGroup")
 
     /** Create a standalone group from the typed body. The id is derived by the node. */
-    suspend fun createGroup(request: CreateGroupRequest): CreateGroupResponseData =
+    override suspend fun createGroup(request: CreateGroupRequest): CreateGroupResponseData =
         http.postJson<CreateGroupRequest, ApiEnvelope<CreateGroupResponseData>>("/admin-api/groups", request).data
             ?: error("createGroup")
 
     /** Leave a group (POST /admin-api/groups/:group_id/leave). */
-    suspend fun leaveGroup(
+    override suspend fun leaveGroup(
         groupId: String,
-        request: Map<String, JsonElement>? = null,
+        request: Map<String, JsonElement>?,
     ) {
         http
             .execute("POST", "/admin-api/groups/$groupId/leave", http.json.encodeToString(request ?: emptyMap()))
@@ -1003,9 +1048,9 @@ class AdminApi(
     }
 
     /** Leave a context (POST /admin-api/contexts/:context_id/leave). */
-    suspend fun leaveContext(
+    override suspend fun leaveContext(
         contextId: String,
-        request: Map<String, JsonElement>? = null,
+        request: Map<String, JsonElement>?,
     ) {
         http
             .execute("POST", "/admin-api/contexts/$contextId/leave", http.json.encodeToString(request ?: emptyMap()))
@@ -1013,9 +1058,9 @@ class AdminApi(
     }
 
     /** Leave a namespace (POST /admin-api/namespaces/:namespace_id/leave). */
-    suspend fun leaveNamespace(
+    override suspend fun leaveNamespace(
         namespaceId: String,
-        request: Map<String, JsonElement>? = null,
+        request: Map<String, JsonElement>?,
     ) {
         http
             .execute(
@@ -1024,14 +1069,14 @@ class AdminApi(
     }
 
     /** Issue a group ownership proof (POST /admin-api/groups/:group_id/issue-ownership-proof). */
-    suspend fun issueOwnershipProof(
+    override suspend fun issueOwnershipProof(
         groupId: String,
-        request: Map<String, JsonElement>? = null,
+        request: Map<String, JsonElement>?,
     ): JsonElement =
         rawJson("POST", "/admin-api/groups/$groupId/issue-ownership-proof", http.json.encodeToString(request ?: emptyMap()))
 
     /** Typed [issueOwnershipProof]. The response is flat on the wire; an enveloped one is tolerated. */
-    suspend fun issueOwnershipProof(
+    override suspend fun issueOwnershipProof(
         groupId: String,
         request: IssueOwnershipProofRequest,
     ): IssueOwnershipProofResponseData =
@@ -1048,7 +1093,7 @@ class AdminApi(
      * the namespace's `founding` and the signer's `credential`, so a verifier can
      * check the founder without holding namespace state.
      */
-    suspend fun issueNamespaceOwnershipProof(
+    override suspend fun issueNamespaceOwnershipProof(
         groupId: String,
         request: IssueNamespaceOwnershipProofRequest,
     ): IssueOwnershipProofResponseData =
@@ -1063,9 +1108,9 @@ class AdminApi(
         )
 
     /** Issue a namespace ownership proof (POST /admin-api/groups/:group_id/issue-namespace-ownership-proof). */
-    suspend fun issueNamespaceOwnershipProof(
+    override suspend fun issueNamespaceOwnershipProof(
         groupId: String,
-        request: Map<String, JsonElement>? = null,
+        request: Map<String, JsonElement>?,
     ): JsonElement =
         rawJson(
             "POST",
@@ -1074,7 +1119,7 @@ class AdminApi(
         )
 
     /** Set a member's auto-follow flag (PUT /admin-api/groups/:group_id/members/:identity/auto-follow). */
-    suspend fun setMemberAutoFollow(
+    override suspend fun setMemberAutoFollow(
         groupId: String,
         identity: String,
         request: Map<String, JsonElement>,
@@ -1086,9 +1131,9 @@ class AdminApi(
     }
 
     /** Abort a namespace migration (POST /admin-api/groups/:namespace_id/migration/abort). */
-    suspend fun abortMigration(
+    override suspend fun abortMigration(
         namespaceId: String,
-        request: Map<String, JsonElement>? = null,
+        request: Map<String, JsonElement>?,
     ): JsonElement =
         rawJson("POST", "/admin-api/groups/$namespaceId/migration/abort", http.json.encodeToString(request ?: emptyMap()))
 
@@ -1176,9 +1221,9 @@ class AdminApi(
      * a single-service application. Returns `null` on `404` — the application is
      * not installed here.
      */
-    suspend fun getApplicationAbi(
+    override suspend fun getApplicationAbi(
         applicationId: String,
-        serviceName: String? = null,
+        serviceName: String?,
     ): JsonElement? {
         val query = serviceName?.let { "?service_name=" + encodeComponent(it) }.orEmpty()
         val res = http.execute("GET", "/admin-api/applications/$applicationId/abi$query")
@@ -1193,7 +1238,7 @@ class AdminApi(
      * The warrant names who authorized the call; `authorProof` binds it to the
      * author.
      */
-    suspend fun performIntent(
+    override suspend fun performIntent(
         contextId: String,
         request: PerformIntentRequest,
     ): PerformIntentResponseData =
@@ -1211,11 +1256,11 @@ class AdminApi(
      * [listAccountApplications] and [listMemberDevices]. Only a real body settles
      * that; it is not guessable from the neighbouring routes.
      */
-    suspend fun listAccountDevices(): AccountDevices =
+    override suspend fun listAccountDevices(): AccountDevices =
         http.getJson("/admin-api/account/devices")
 
     /** Applications this account speaks in, derived from the namespaces it is in. Flat. */
-    suspend fun listAccountApplications(): AccountApplications =
+    override suspend fun listAccountApplications(): AccountApplications =
         http.getJson("/admin-api/account/applications")
 
     /**
@@ -1224,10 +1269,10 @@ class AdminApi(
      * [offset] and [limit] page through the members; both are left off the wire
      * when `null`, so the node's own defaults (and its clamp on `limit`) apply.
      */
-    suspend fun listMemberDevices(
+    override suspend fun listMemberDevices(
         groupId: String,
-        offset: Int? = null,
-        limit: Int? = null,
+        offset: Int?,
+        limit: Int?,
     ): MemberDevices {
         val query =
             buildList {
@@ -1239,10 +1284,10 @@ class AdminApi(
     }
 
     /** [listMemberDevices], unwrapped to the member list (mero-js `listGroupMemberDevices`). */
-    suspend fun listGroupMemberDevices(
+    override suspend fun listGroupMemberDevices(
         groupId: String,
-        offset: Int? = null,
-        limit: Int? = null,
+        offset: Int?,
+        limit: Int?,
     ): List<MemberDeviceGroup> = listMemberDevices(groupId, offset, limit).members
 
     /**
@@ -1253,23 +1298,23 @@ class AdminApi(
      * namespaces. [revokeAccountDevice] stayed per-namespace, because that is
      * where the group key rotates.
      */
-    suspend fun pairInit(request: PairInitRequest): PairInitResponseData =
+    override suspend fun pairInit(request: PairInitRequest): PairInitResponseData =
         http
             .postJson<PairInitRequest, ApiEnvelope<PairInitResponseData>>(
                 "/admin-api/account/pair-init", request,
             ).data ?: error("pairInit")
 
     /** Complete a pairing begun by [pairInit], after both sides matched the code. */
-    suspend fun pairComplete(request: PairCompleteRequest): PairCompleteResponseData =
+    override suspend fun pairComplete(request: PairCompleteRequest): PairCompleteResponseData =
         http
             .postJson<PairCompleteRequest, ApiEnvelope<PairCompleteResponseData>>(
                 "/admin-api/account/pair-complete", request,
             ).data ?: error("pairComplete")
 
     /** Re-link an already-certified device, optionally narrowing which apps it may speak for. */
-    suspend fun relinkDevice(
+    override suspend fun relinkDevice(
         deviceId: String,
-        request: RelinkDeviceRequest = RelinkDeviceRequest(),
+        request: RelinkDeviceRequest,
     ): RelinkDeviceResponseData =
         http
             .postJson<RelinkDeviceRequest, ApiEnvelope<RelinkDeviceResponseData>>(
@@ -1288,7 +1333,7 @@ class AdminApi(
      * ⚠️ Must run on the node holding the **account root** — only its key can
      * sign the replacement. The device need not be online.
      */
-    suspend fun rescopeDevice(
+    override suspend fun rescopeDevice(
         deviceId: String,
         request: RescopeDeviceRequest,
     ): RescopeDeviceResponseData =
@@ -1306,7 +1351,7 @@ class AdminApi(
      * [AccountDevice.label] for every device of the account — and
      * `labelEpoch` orders it against a rename made elsewhere at the same time.
      */
-    suspend fun labelDevice(
+    override suspend fun labelDevice(
         deviceId: String,
         request: LabelDeviceRequest,
     ): LabelDeviceResponseData =
@@ -1316,7 +1361,7 @@ class AdminApi(
             ).data ?: error("labelDevice")
 
     /** Revoke a device from ONE namespace, rotating that namespace's group key. */
-    suspend fun revokeAccountDevice(
+    override suspend fun revokeAccountDevice(
         namespaceId: String,
         request: RevokeDeviceRequest,
     ): RevokeDeviceResponseData =
@@ -1324,6 +1369,15 @@ class AdminApi(
             .postJson<RevokeDeviceRequest, ApiEnvelope<RevokeDeviceResponseData>>(
                 "/admin-api/namespaces/$namespaceId/account/revoke", request,
             ).data ?: error("revokeAccountDevice")
+
+    /**
+     * The devices revoked in a namespace and the slots their own accounts withdrew
+     * (`GET /admin-api/namespaces/{id}/revoked-devices`). A subgroup id resolves to its
+     * namespace. `403` unless this node's account is bound in the namespace. The handler
+     * serializes the payload directly — no `{ data }` envelope.
+     */
+    override suspend fun listNamespaceRevokedDevices(namespaceId: String): NamespaceRevokedDevices =
+        http.getJson("/admin-api/namespaces/${encodeComponent(namespaceId)}/revoked-devices")
 
     // ---- Direct admission (rc.29) ------------------------------------------
 
@@ -1334,7 +1388,7 @@ class AdminApi(
      * designated is what permits it to carry the claim. The response says
      * **`published`** — not *joined*.
      */
-    suspend fun admitJoin(
+    override suspend fun admitJoin(
         namespaceId: String,
         request: AdmitJoinRequest,
     ): AdmitJoinResponseData =
@@ -1355,7 +1409,7 @@ class AdminApi(
      * `400` whose [com.calimero.mero.http.HttpException.errorType] is
      * `FunctionCallError`.
      */
-    suspend fun queryContext(
+    override suspend fun queryContext(
         contextId: String,
         request: QueryContextRequest,
     ): QueryContextResponseData =
@@ -1370,7 +1424,7 @@ class AdminApi(
      * holds `CAN_AUTHOR_ON_BEHALF`. `404` when it holds no identity there or the
      * group names no release yet.
      */
-    suspend fun getIntentRelay(contextId: String): IntentRelayInfo =
+    override suspend fun getIntentRelay(contextId: String): IntentRelayInfo =
         http.getJson<ApiEnvelope<IntentRelayInfo>>("/admin-api/contexts/$contextId/intents").data
             ?: error("getIntentRelay")
 
@@ -1378,7 +1432,7 @@ class AdminApi(
      * Create a context under a signed creation warrant
      * (`POST /admin-api/groups/{id}/context-intents`). The warrant is opaque here.
      */
-    suspend fun createContextIntent(
+    override suspend fun createContextIntent(
         groupId: String,
         request: CreateContextIntentRequest,
     ): CreateContextIntentResponseData =
@@ -1388,9 +1442,9 @@ class AdminApi(
             ).data ?: error("createContextIntent")
 
     /** Discovery for [createContextIntent]. [author] (an account id) adds `authorMayCreate`. */
-    suspend fun getContextIntentRelay(
+    override suspend fun getContextIntentRelay(
         groupId: String,
-        author: String? = null,
+        author: String?,
     ): ContextIntentRelayInfo {
         val query = author?.let { "?author=" + encodeComponent(it) }.orEmpty()
         return http.getJson<ApiEnvelope<ContextIntentRelayInfo>>("/admin-api/groups/$groupId/context-intents$query").data
@@ -1398,7 +1452,7 @@ class AdminApi(
     }
 
     /** Apply a governance op under a signed governance warrant (`POST …/governance-intents`). */
-    suspend fun governanceIntent(
+    override suspend fun governanceIntent(
         groupId: String,
         request: GovernanceIntentRequest,
     ): GovernanceIntentResponseData =
@@ -1408,7 +1462,7 @@ class AdminApi(
             ).data ?: error("governanceIntent")
 
     /** Discovery for [governanceIntent]. */
-    suspend fun getGovernanceIntentRelay(groupId: String): GovernanceIntentRelayInfo =
+    override suspend fun getGovernanceIntentRelay(groupId: String): GovernanceIntentRelayInfo =
         http.getJson<ApiEnvelope<GovernanceIntentRelayInfo>>("/admin-api/groups/$groupId/governance-intents").data
             ?: error("getGovernanceIntentRelay")
 
@@ -1417,7 +1471,7 @@ class AdminApi(
      * refusals are `400`, `403`, `413`, `429` or `503`. `state` is always on the
      * wire — as `null` to clear the slice.
      */
-    suspend fun presenceIntent(
+    override suspend fun presenceIntent(
         contextId: String,
         request: PresenceIntentRequest,
     ) {
@@ -1441,7 +1495,7 @@ class AdminApi(
      * rather than retry. The `u64` fields are read from the literal digits, never
      * through a `Double`.
      */
-    suspend fun getWarrantNonce(
+    override suspend fun getWarrantNonce(
         contextId: String,
         authorDeviceKey: String,
     ): WarrantNonceState {
@@ -1454,7 +1508,7 @@ class AdminApi(
      * device's own credential ([authorProof], hex borsh `AccountProof<DeviceCert>`),
      * which self-scopes the request. Same answer, same `404` caveat.
      */
-    suspend fun getWarrantNonceAsAuthor(
+    override suspend fun getWarrantNonceAsAuthor(
         contextId: String,
         authorProof: String,
     ): WarrantNonceState {
@@ -1481,7 +1535,7 @@ class AdminApi(
      * one of [AccountSignDomains] — e.g. to link the account to Calimero Cloud.
      * Must run on the node holding the root.
      */
-    suspend fun signWithAccountRoot(request: AccountSignWithRootRequest): AccountSignWithRootResponseData =
+    override suspend fun signWithAccountRoot(request: AccountSignWithRootRequest): AccountSignWithRootResponseData =
         http
             .postJson<AccountSignWithRootRequest, ApiEnvelope<AccountSignWithRootResponseData>>(
                 "/admin-api/account/sign-with-root", request,
@@ -1492,7 +1546,7 @@ class AdminApi(
      * verify or the scope does not reach this namespace; `403` when the device was
      * revoked here or the account is a member of nothing in it.
      */
-    suspend fun linkAccountDevice(
+    override suspend fun linkAccountDevice(
         namespaceId: String,
         request: LinkAccountDeviceRequest,
     ): LinkAccountDeviceResponseData =
@@ -1501,8 +1555,29 @@ class AdminApi(
                 "/admin-api/namespaces/$namespaceId/account/link-device", request,
             ).data ?: error("linkAccountDevice")
 
+    /**
+     * [linkAccountDevice] for an account with no node of its own: the account [root] signs
+     * the device's scope here ([com.calimero.mero.account.signDeviceScope]) for the device
+     * [credential] certifies, and both go to the node. [applications] empty means every
+     * application; [scopeEpoch] orders scopes for this device (0 for its first).
+     *
+     * Not for `rescopeDevice`: core's `PUT /admin-api/account/devices/{id}/scope` runs on the
+     * node holding the root, which signs the replacement itself.
+     */
+    override suspend fun linkAccountDevice(
+        namespaceId: String,
+        credential: String,
+        root: DeviceSigner,
+        applications: List<String>,
+        scopeEpoch: Long,
+    ): LinkAccountDeviceResponseData {
+        val device = DeviceCert.parse(credential).device
+        val scope = signDeviceScope(DeviceScopeInput(device = device, applications = applications, scopeEpoch = scopeEpoch, signer = root))
+        return linkAccountDevice(namespaceId, LinkAccountDeviceRequest(credential = credential, scope = scope))
+    }
+
     /** Seal a small payload to a member account's root key. This node must be a member. */
-    suspend fun sealToAccount(
+    override suspend fun sealToAccount(
         groupId: String,
         account: String,
         request: SealToAccountRequest,
@@ -1515,13 +1590,13 @@ class AdminApi(
     // ---- Root-guarded owner ops (rc.83) -------------------------------------
 
     /** Hand [groupId] to an existing admin. Owner-only, root-guarded — see [TransferOwnershipRequest]. */
-    suspend fun transferOwnership(
+    override suspend fun transferOwnership(
         groupId: String,
         request: TransferOwnershipRequest,
     ) = send("POST", "/admin-api/groups/$groupId/transfer-ownership", http.json.encodeToString(request))
 
     /** Repoint the namespace's admin pin. Owner-only, root-guarded. */
-    suspend fun changeNamespaceAdmin(
+    override suspend fun changeNamespaceAdmin(
         namespaceId: String,
         request: ChangeNamespaceAdminRequest,
     ) = send("POST", "/admin-api/namespaces/$namespaceId/admin", http.json.encodeToString(request))
@@ -1530,13 +1605,13 @@ class AdminApi(
      * Delete a group through the owner-only path: it must hold no contexts, and
      * the op is root-guarded. [deleteGroup] is the admin-level cascading delete.
      */
-    suspend fun ownerDeleteGroup(
+    override suspend fun ownerDeleteGroup(
         groupId: String,
-        request: OwnerDeleteGroupRequest = OwnerDeleteGroupRequest(),
+        request: OwnerDeleteGroupRequest,
     ) = send("POST", "/admin-api/groups/$groupId/owner-delete", http.json.encodeToString(request))
 
     /** Which admitted TEEs may author as the TEE authority. [groupId] must be a namespace root. */
-    suspend fun setTeeAuthoringPolicy(
+    override suspend fun setTeeAuthoringPolicy(
         groupId: String,
         request: SetTeeAuthoringPolicyRequest,
     ) = send("PUT", "/admin-api/groups/$groupId/settings/tee-authoring-policy", http.json.encodeToString(request))
@@ -1545,12 +1620,79 @@ class AdminApi(
      * Turn TEE authorship off (the same op as an empty [setTeeAuthoringPolicy]).
      * With no `rootProof` the DELETE carries no body and the node signs itself.
      */
-    suspend fun disableTeeAuthoringPolicy(
+    override suspend fun disableTeeAuthoringPolicy(
         groupId: String,
-        request: DisableTeeAuthoringPolicyRequest = DisableTeeAuthoringPolicyRequest(),
+        request: DisableTeeAuthoringPolicyRequest,
     ) {
         val body = request.rootProof?.let { http.json.encodeToString(request) }
         send("DELETE", "/admin-api/groups/$groupId/settings/tee-authoring-policy", body)
+    }
+
+    // ---- Root-guarded owner ops, signed here by the account root -------------
+    //
+    // Each reads the group's `namespaceId` and `ownerOpCounter` ([getGroupInfo]), encodes
+    // the op the node will build, and has [root] sign the `rootProof`
+    // (com.calimero.mero.ownerop, a port of mero-js `owner-op`). Use these when the node
+    // does not hold the account root — a nodeless account, or a root kept cold on this
+    // device. [keyEpoch] / [chain] are for a root that was handed off. A counter that moved
+    // between the read and the send is a `409`: call again.
+
+    /** [transferOwnership], with the root proof signed by [root]. */
+    override suspend fun transferOwnership(
+        groupId: String,
+        newOwner: String,
+        root: DeviceSigner,
+        keyEpoch: Long,
+        chain: List<String>,
+    ) {
+        val proof = mintRootProof(groupId, transferOwnershipOp(newOwner), root, keyEpoch, chain)
+        transferOwnership(groupId, TransferOwnershipRequest(newOwner = newOwner, rootProof = proof))
+    }
+
+    /** [changeNamespaceAdmin], with the root proof signed by [root] (a root op on the namespace root). */
+    override suspend fun changeNamespaceAdmin(
+        namespaceId: String,
+        newAdmin: String,
+        root: DeviceSigner,
+        keyEpoch: Long,
+        chain: List<String>,
+    ) {
+        val proof = mintRootProof(namespaceId, adminChangedOp(newAdmin), root, keyEpoch, chain)
+        changeNamespaceAdmin(namespaceId, ChangeNamespaceAdminRequest(newAdmin = newAdmin, rootProof = proof))
+    }
+
+    /** [ownerDeleteGroup], with the root proof signed by [root]. */
+    override suspend fun ownerDeleteGroup(
+        groupId: String,
+        root: DeviceSigner,
+        keyEpoch: Long,
+        chain: List<String>,
+    ) {
+        val proof = mintRootProof(groupId, groupDeleteOp(), root, keyEpoch, chain)
+        ownerDeleteGroup(groupId, OwnerDeleteGroupRequest(rootProof = proof))
+    }
+
+    /** [setTeeAuthoringPolicy], with the root proof signed by the signing admin's [root]. */
+    override suspend fun setTeeAuthoringPolicy(
+        groupId: String,
+        allowedMrtd: List<String>,
+        root: DeviceSigner,
+        keyEpoch: Long,
+        chain: List<String>,
+    ) {
+        val proof = mintRootProof(groupId, teeAuthoringPolicyOp(allowedMrtd), root, keyEpoch, chain)
+        setTeeAuthoringPolicy(groupId, SetTeeAuthoringPolicyRequest(allowedMrtd = allowedMrtd, rootProof = proof))
+    }
+
+    /** [disableTeeAuthoringPolicy], with the root proof (for the empty policy) signed by [root]. */
+    override suspend fun disableTeeAuthoringPolicy(
+        groupId: String,
+        root: DeviceSigner,
+        keyEpoch: Long,
+        chain: List<String>,
+    ) {
+        val proof = mintRootProof(groupId, teeAuthoringPolicyOp(emptyList()), root, keyEpoch, chain)
+        disableTeeAuthoringPolicy(groupId, DisableTeeAuthoringPolicyRequest(rootProof = proof))
     }
 
     // ---- Delegated authorship capability helpers ----------------------------
@@ -1564,7 +1706,7 @@ class AdminApi(
      * default bits (notably `CAN_JOIN_OPEN_SUBGROUPS`) survive; a no-op when the
      * bit is already set.
      */
-    suspend fun openToDelegatedExecution(groupId: String): CapabilityChange {
+    override suspend fun openToDelegatedExecution(groupId: String): CapabilityChange {
         val current = getDefaultCapabilities(groupId).toLong() and U32
         if (Capabilities.hasCap(current, Capabilities.CAN_AUTHOR_ON_BEHALF)) return CapabilityChange(false, current)
         val next = Capabilities.withCap(current, Capabilities.CAN_AUTHOR_ON_BEHALF)
@@ -1576,7 +1718,7 @@ class AdminApi(
      * Grant [account] (a member's ACCOUNT id) `CAN_AUTHOR_ON_BEHALF` on [groupId],
      * leaving its other capabilities alone. A no-op when it already holds it.
      */
-    suspend fun grantAuthorship(
+    override suspend fun grantAuthorship(
         groupId: String,
         account: String,
     ): CapabilityChange {

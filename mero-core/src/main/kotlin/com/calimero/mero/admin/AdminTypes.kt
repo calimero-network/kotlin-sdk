@@ -692,6 +692,13 @@ data class CreateNamespaceResponseData(
     val namespaceId: String,
     /** What the new id was derived from (core rc.83). `null` from an older node. */
     val founding: NamespaceFounding? = null,
+    /**
+     * Set only by an account's admin ([com.calimero.mero.account.createAccountAdmin]): whether
+     * the cloud agreed to host the namespace founded through the relay. `null` from a node.
+     */
+    val haEnabled: Boolean? = null,
+    /** Why [haEnabled] is `false`, in words a person can act on. Account admin only. */
+    val haError: String? = null,
 )
 
 /**
@@ -1783,6 +1790,15 @@ data class RevokeDeviceResponseData(
     val deviceId: String,
     val keyRotated: Boolean,
     val revokedIn: List<RevocationOutcome> = emptyList(),
+)
+
+/** [AdminApi.listNamespaceRevokedDevices]: core `NamespaceRevokedDevicesApiResponse`. */
+@Serializable
+data class NamespaceRevokedDevices(
+    /** Device ids (64 hex) revoked in the namespace. */
+    val revokedDevices: List<String> = emptyList(),
+    /** Hex `sha256(account ‖ device)` of each device its own account withdrew in the namespace. */
+    val withdrawnSlots: List<String> = emptyList(),
 )
 
 @Serializable

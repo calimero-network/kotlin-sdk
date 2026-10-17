@@ -13,6 +13,10 @@ capabilities, metadata, upgrades, accounts/devices, and TEE. Every method is a `
 the shared [`HttpClient`](/get-started/quickstart/); most reads unwrap the node's
 `{ data }` envelope for you. Endpoints below are relative to `/admin-api`.
 
+`AdminApi` implements `AdminSurface`, the same surface by name and shape, which an account's
+admin facade implements too (`createAccountAdmin`, see [Delegated accounts](/guides/delegated-accounts/)),
+so code written against it runs against a node or an account.
+
 List methods return the node's full result set — the admin API does not paginate,
 so there are no limit/offset/cursor parameters. The one exception is
 `listMemberDevices` / `listGroupMemberDevices`, which take optional `offset` and
@@ -134,11 +138,13 @@ The list routes answer a **map** — `{"data": {"<alias>": "<value>"}}`, and
 | `getNamespace(namespaceId): Namespace` | `GET /namespaces/{namespaceId}` |
 | `admitJoin(namespaceId, request): AdmitJoinResponseData` | `POST /namespaces/{namespaceId}/admit` |
 | `revokeAccountDevice(namespaceId, request): RevokeDeviceResponseData` | `POST /namespaces/{namespaceId}/account/revoke` |
+| `listNamespaceRevokedDevices(namespaceId): NamespaceRevokedDevices` | `GET /namespaces/{namespaceId}/revoked-devices` (no `data` envelope; `403` unless this node's account is bound in it) |
 | `listNamespacesForApplication(applicationId): ListNamespacesResponseData` | `GET /namespaces/for-application/{applicationId}` |
 | `createNamespace(request): CreateNamespaceResponseData` | `POST /namespaces` |
 | `deleteNamespace(namespaceId, request? = null): DeleteNamespaceResponseData` | `DELETE /namespaces/{namespaceId}` |
 | `createNamespaceInvitation(namespaceId, request? = null): CreateNamespaceInvitationResult` | `POST /namespaces/{namespaceId}/invite` |
 | `joinNamespace(namespaceId, request): JoinNamespaceResponseData` | `POST /namespaces/{namespaceId}/join` |
+| `redeemInvitation(namespaceId, invitation, groupName? = null, teamName? = null): RedeemOutcome` | `joinNamespace`, then `listNamespaces` to settle a failed request (`Joined` / `AlreadyMember` / `Failed(reason, retryable)`) |
 | `leaveNamespace(namespaceId, request? = null)` | `POST /namespaces/{namespaceId}/leave` |
 | `createGroupInNamespace(namespaceId, request? = null): CreateGroupInNamespaceResponseData` | `POST /namespaces/{namespaceId}/groups` |
 | `listNamespaceGroups(namespaceId): List<SubgroupEntry>` | `GET /namespaces/{namespaceId}/groups` |
@@ -188,6 +194,20 @@ The proof names the group's `namespaceId` and `ownerOpCounter` — read both fro
 `getGroupInfo` first. A stale counter is a **`409`**: re-read and re-sign. An
 empty `rootProof` is a `400`; omit the field instead. `ownerDeleteGroup` needs a
 group with no contexts; `deleteGroup` stays the admin-level cascading delete.
+
+Each also has a **root-signer overload** that reads the counter, encodes the op and
+mints `rootProof` itself (see [Signing offline](/guides/signing/)). Each overload
+takes `keyEpoch: Long = 0` and `chain: List<String> = emptyList()` for a root that was
+handed off:
+
+| Method | Signs |
+| --- | --- |
+| `transferOwnership(groupId, newOwner, root)` | `transferOwnershipOp(newOwner)` |
+| `changeNamespaceAdmin(namespaceId, newAdmin, root)` | `adminChangedOp(newAdmin)`, a root op on the namespace root |
+| `ownerDeleteGroup(groupId, root)` | `groupDeleteOp()` |
+| `setTeeAuthoringPolicy(groupId, allowedMrtd, root)` | `teeAuthoringPolicyOp(allowedMrtd)` |
+| `disableTeeAuthoringPolicy(groupId, root)` | `teeAuthoringPolicyOp(emptyList())` |
+| `setTeeAdmissionPolicy(groupId, request, root)` | `teeAdmissionPolicyOpOf(request)` |
 
 ## Group invitations & join
 
@@ -293,6 +313,7 @@ that is where the group key rotates.
 | `rescopeDevice(deviceId, request): RescopeDeviceResponseData` | `PUT /account/devices/{deviceId}/scope` |
 | `labelDevice(deviceId, request): LabelDeviceResponseData` | `PUT /account/devices/{deviceId}/label` |
 | `signWithAccountRoot(request): AccountSignWithRootResponseData` | `POST /account/sign-with-root` |
+| `linkAccountDevice(namespaceId, credential, root, applications, scopeEpoch)` | `POST /namespaces/{namespaceId}/account/link-device`, with the scope signed here by `root` ([`signDeviceScope`](/guides/signing/#device-scopes-linking-a-device-without-a-node)) |
 
 <Aside type="tip" title="`relink` adds, `scope` replaces (core 0.11.0-rc.41)">
 `relinkDevice` is add-only, so it can widen a device's reach but never narrow it.

@@ -56,15 +56,21 @@ class ReadOnlyWriteRefusedException(
 /**
  * The result of [RpcClient.executeWithMetadata]: the decoded output plus which
  * transport carried it. Mirrors mero-js's `{ returns, transport }`, so code
- * written against a node-or-relay abstraction reads the same shape.
+ * written against a node-or-relay abstraction reads the same shape (see
+ * [com.calimero.mero.transport.ExecuteTransport], whose untyped result is
+ * [com.calimero.mero.transport.ExecuteResult]).
  */
 data class RpcExecution<T>(
     val returns: T,
-    /** Always [TRANSPORT_NODE] here: this client talks to a node's `/jsonrpc`. */
+    /** [TRANSPORT_NODE] from this client, which talks to a node's `/jsonrpc`; [TRANSPORT_RELAY] through a relay. */
     val transport: String = TRANSPORT_NODE,
 ) {
     companion object {
+        /** A node's JSON-RPC ran it (mero-js `TransportKind` `'node'`). */
         const val TRANSPORT_NODE = "node"
+
+        /** A relay ran it under a warrant, or answered it by query (mero-js `'relay'`). */
+        const val TRANSPORT_RELAY = "relay"
     }
 }
 
@@ -128,19 +134,31 @@ class RpcClient(
         method: String,
         argsJson: JsonObject = JsonObject(emptyMap()),
     ): JsonElement {
+        val params =
+            buildJsonObject {
+                put("contextId", contextId)
+                put("method", method)
+                put("argsJson", argsJson)
+            }
+        return call("execute", params)?.get("output") ?: JsonObject(emptyMap())
+    }
+
+    /**
+     * One JSON-RPC 2.0 call to `/jsonrpc` — `{jsonrpc, id, method, params}` — returning
+     * `result` (or `null` when the node sent none). An `error` becomes [RpcException]
+     * (or [ReadOnlyWriteRefusedException]), keeping core's `type` and `data`; a body with no
+     * `code`/`message` (core's `{type, data}`) takes its `type` as the message.
+     */
+    internal suspend fun call(
+        rpcMethod: String,
+        params: JsonObject,
+    ): JsonObject? {
         val body =
             buildJsonObject {
                 put("jsonrpc", "2.0")
                 put("id", 1)
-                put("method", "execute")
-                put(
-                    "params",
-                    buildJsonObject {
-                        put("contextId", contextId)
-                        put("method", method)
-                        put("argsJson", argsJson)
-                    },
-                )
+                put("method", rpcMethod)
+                put("params", params)
             }
 
         val res =
@@ -164,7 +182,7 @@ class RpcClient(
             }
             throw RpcException(code = code, message = message, type = err.type, data = err.data)
         }
-        return parsed.result?.get("output") ?: JsonObject(emptyMap())
+        return parsed.result
     }
 
     /**

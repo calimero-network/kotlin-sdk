@@ -100,14 +100,12 @@ object LoginStatement {
 /**
  * Decides which key a relay's node signs with — the key a login statement names.
  *
- * mero-js learns it from the relay's TEE attestation and **verifies the TDX DCAP quote**
- * against Calimero's signed release before trusting it. That verification is not ported
- * yet, so the default ([TlsRelayKeyVerifier]) trusts the TLS connection to the relay and
- * only checks the answer is well-formed and claims to bind our nonce and the key.
- *
- * TODO(follow-up): DCAP quote verification on mobile — or the cloud manager publishing a
- * signed node key beside `relay_url`. Plug either in by implementing this interface.
- * Writes (warrant intents) do not depend on this key; Bearer reads and SSE do.
+ * The default, [DcapRelayKeyVerifier], learns it from the relay's TEE attestation and verifies
+ * the TDX quote on the device (Intel's chain via DCAP, the signed mero-tee release the relay
+ * runs, every register of its image, our nonce and the key binding) before trusting it, as
+ * mero-js does. [PinnedRelayKeyVerifier] answers with a key known out of band;
+ * [TlsRelayKeyVerifier] trusts TLS and checks only the binding. Plug in another by implementing
+ * this interface. Writes (warrant intents) do not depend on this key; Bearer reads and SSE do.
  */
 fun interface RelayKeyVerifier {
     /**
@@ -138,12 +136,13 @@ class RelayKeyRefusedException(
 ) : Exception(message)
 
 /**
- * The v1 mobile verifier: trusts TLS to the relay, and checks the attestation is shaped
- * like one made for this request — a well-formed node key, and report data that carries
- * our nonce and `SHA256("calimero.tee-attest.key-binding.v1" ‖ 0^32 ‖ nodeKey)`.
+ * A verifier that trusts TLS to the relay, and checks only that the attestation is shaped like
+ * one made for this request — a well-formed node key, and report data that carries our nonce
+ * and `SHA256("calimero.tee-attest.key-binding.v1" ‖ 0^32 ‖ nodeKey)`. The SDK's default before
+ * [DcapRelayKeyVerifier].
  *
- * **It does not verify the quote's signature or measurements.** A relay that lies about
- * its key over a valid TLS connection is not caught here; see [RelayKeyVerifier].
+ * **It does not verify the quote's signature or measurements.** A relay that lies about its key
+ * over a valid TLS connection is not caught here; prefer [DcapRelayKeyVerifier].
  *
  * A MOCK quote (dev rigs) is accepted only from a loopback relay unless [allowMock].
  */
@@ -164,7 +163,7 @@ class TlsRelayKeyVerifier(
                 throw RelayKeyRefusedException("the relay's quote is not base64: ${e.message}")
             }
         val (reportData, mock) = RelayAttest.reportDataOf(quote)
-        if (mock && !(allowMock || isLoopback(relayUrl))) {
+        if (mock && !(allowMock || isLoopbackRelay(relayUrl))) {
             throw RelayKeyRefusedException("the relay answered with a MOCK quote, which proves nothing about the hardware")
         }
         if (!reportData.copyOfRange(0, 32).contentEquals(nonce)) {
@@ -175,11 +174,43 @@ class TlsRelayKeyVerifier(
         }
         return nodeKey
     }
+}
 
-    private fun isLoopback(url: String): Boolean {
-        val host = runCatching { URI(url).host }.getOrNull()?.trim('[', ']') ?: return false
-        return host == "localhost" || host == "127.0.0.1" || host == "::1" || host == "10.0.2.2"
+/**
+ * Whether [url] is a local rig: `localhost`, `127.0.0.1`, `::1`, or the Android emulator's
+ * host alias `10.0.2.2`. Such a relay answers mock quotes and takes the request proof as a
+ * node does (mero-js `isLoopback`, plus the emulator alias).
+ */
+internal fun isLoopbackRelay(url: String): Boolean {
+    val host = runCatching { URI(url).host }.getOrNull()?.trim('[', ']') ?: return false
+    return host == "localhost" || host == "127.0.0.1" || host == "::1" || host == "10.0.2.2"
+}
+
+/**
+ * A verifier that answers with a node key pinned out of band — from the relay's operator, a
+ * config file, or an earlier attestation the app stored — whatever the relay attests to. The
+ * relay is still asked to attest (the request proves it is up), but its answer does not
+ * choose the key: a login statement then names [nodeKey], and a relay that does not hold it
+ * cannot use the session. Port of the Swift SDK's `PinnedRelayKeyVerifier`.
+ *
+ * To skip the attestation round trip altogether for one account, pin the key with
+ * [com.calimero.mero.account.CloudAccount.pinRelayNodeKey] instead.
+ */
+class PinnedRelayKeyVerifier(
+    nodeKey: String,
+) : RelayKeyVerifier {
+    /** The pinned key, 64 lower-case hex. */
+    val nodeKey: String = nodeKey.trim().lowercase()
+
+    init {
+        require(Hex.isHex32(this.nodeKey)) { "nodeKey must be 64 hex characters" }
     }
+
+    override suspend fun verify(
+        relayUrl: String,
+        nonce: ByteArray,
+        attestation: RelayAttestation,
+    ): String = nodeKey
 }
 
 /** TEE attestation byte layouts (mero-js `src/relay-attestation/attest-node-key.ts`). */
@@ -213,7 +244,8 @@ object RelayAttest {
  * [LoginStatement]. The result is an ordinary Bearer token pair, so the existing
  * [com.calimero.mero.Mero] admin and SSE clients work against the relay.
  *
- * Port of mero-js `src/login/session.ts` plus `attestRelayNodeKey`.
+ * Port of mero-js `src/login/session.ts` plus `attestRelayNodeKey` ([attestNodeKey] hands the
+ * relay's answer to the [RelayKeyVerifier], by default [DcapRelayKeyVerifier]).
  */
 class RelayLogin internal constructor(
     private val http: PlainJsonHttp,
@@ -223,7 +255,7 @@ class RelayLogin internal constructor(
     private val ttlSeconds: Long,
 ) {
     constructor(
-        verifier: RelayKeyVerifier = TlsRelayKeyVerifier(),
+        verifier: RelayKeyVerifier = DcapRelayKeyVerifier(),
         clientName: String = "mero-kotlin-sdk",
         audience: Audience = Audience.Cli,
         ttlSeconds: Long = DEFAULT_TTL_SECONDS,
@@ -292,6 +324,27 @@ class RelayLogin internal constructor(
             (data["access_token"] as? JsonPrimitive)?.contentOrNull ?: error("the relay minted no session")
         val refresh = (data["refresh_token"] as? JsonPrimitive)?.contentOrNull.orEmpty()
         return TokenData(access, refresh, expiresAtFromJwt(access, System.currentTimeMillis() + ONE_HOUR_MS))
+    }
+
+    /**
+     * Retire a relay session's refresh token (`POST {relay}/auth/logout {refresh_token}`, core
+     * rc.83), so a copy that leaked can never mint another access token. Best effort: returns
+     * true when the relay acknowledged it, false for an empty token, a refusal (`401` for a
+     * token already invalid) or a network failure — it never throws. Swift `RelayLogin.logout`;
+     * the mero-js equivalent is `MeroJs.logout()` on a client pointed at the relay, which is
+     * [com.calimero.mero.account.RelayConnection.logout] here.
+     */
+    suspend fun logout(
+        relayUrl: String,
+        refreshToken: String,
+    ): Boolean {
+        if (refreshToken.isBlank()) return false
+        val body = buildJsonObject { put("refresh_token", refreshToken) }
+        return try {
+            http.execute("POST", relayUrl.trimBase() + "/auth/logout", body.toString()).isSuccessful
+        } catch (_: Exception) {
+            false
+        }
     }
 
     private companion object {

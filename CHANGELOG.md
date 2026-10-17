@@ -5,6 +5,468 @@
 Pinned to `0.11.0-rc.83` in `ci/core-version` (and the matching
 `ghcr.io/calimero-network/merod:0.11.0-rc.83` image in every merobox scenario).
 
+### Breaking — mero-js parity (auth hardening)
+
+- **`parseAuthCallback` adopts tokens only for a login this app began.**
+  `buildAuthLoginUrl` (and `SsoLauncher.launch`) now records a random,
+  single-use, 10-minute `auth_state` in a `PendingAuthStates` store and adds it
+  to the callback URL; `parseAuthCallback` returns `null` for a callback without
+  a pending state, and spends it on success. A crafted deep link carrying an
+  attacker's tokens is refused. The default store is in memory — set
+  `PendingAuthStates.shared = PendingAuthStates(EncryptedPrefsSecureStore(context, "mero_auth_state"))`
+  so a login survives the process dying while the Custom Tab is open, or pass
+  `pending =` explicitly. `parseAuthCallback(url, allowUnsolicited = true)` keeps
+  the old behaviour for a host that injects tokens itself. Port of mero-js
+  `auth/index.ts` (same storage key and shape). Existing calls compile
+  unchanged; a callback for a login not started with `buildAuthLoginUrl` in this
+  process (or a persistent store) is now `null`.
+- **Persisted tokens are bound to the node that issued them.** `TokenData`
+  gains an optional `nodeOrigin` (`node_origin`; bundles without it still
+  decode). `Mero` tags what it persists with `nodeOriginOf(baseUrl)` — origin
+  plus path prefix, trailing slashes dropped — and reads a stored bundle for any
+  other node, **or with no tag**, as empty. So a bundle persisted by an earlier
+  SDK version is ignored once: those users sign in again. `getTokenData()`
+  returns bundles without the tag; `clearToken()` leaves another node's bundle in
+  a shared store alone. Port of mero-js `TokenData.node_origin`.
+
+### Added — mero-js parity
+
+- `Capabilities.Presets` (`NONE`, `JOIN_ONLY`, `CONTRIBUTOR` = 7,
+  `COLLABORATOR` = 231), `Capabilities.PRESETS` / `BY_NAME`, `capMask(names)` /
+  `capMask(base, names)` (refuses an unknown name) and `capNames(mask)` — mero-js
+  `CAPABILITY_PRESETS`, `capMask`, `capNames`.
+  `MeroClient.DEFAULT_SPACE_CAPABILITIES` is now `Presets.COLLABORATOR`.
+- `classifyError(Throwable?)` → `ClassifiedError(kind, status, retryable,
+  message)` with `ErrorKind` (`INVALID`, `UNAUTHORIZED`, `FORBIDDEN`,
+  `NOT_FOUND`, `CONFLICT`, `GONE`, `TOO_LARGE`, `RATE_LIMITED`, `UNAVAILABLE`,
+  `SERVER`, `UNREACHABLE`, `UNKNOWN`), plus `statusOf` / `messageOf` — mero-js
+  `errors/classify.ts`, mapped over the SDK's exceptions.
+- Local node discovery (`com.calimero.mero.discovery`):
+  `DEFAULT_LOCAL_NODE_PORTS`, `localNodeUrl(port, host)`, `nodeEndpoint`,
+  `probeNodeHealth`, `discoverLocalNodes` (parallel, per-probe timeout) and
+  `ANDROID_EMULATOR_HOST` (`10.0.2.2`) — mero-js `nodeDiscovery.ts`.
+- `AdminApi.listNamespaceRevokedDevices(namespaceId)` →
+  `NamespaceRevokedDevices` (`GET /admin-api/namespaces/{id}/revoked-devices`)
+  and `AuthApi.getLoginPage()` (`GET /auth/login`).
+- `PinnedRelayKeyVerifier(nodeKey)`, `RelayLogin.logout(relayUrl,
+  refreshToken)` and `RelayConnection.logout()`. `MeroClient.signOut` now
+  retires the relay session on the relay (`POST /auth/logout`) instead of only
+  dropping it.
+- `MeroClient.login(nodeUrl, username, password)` — **development only** —
+  signs the Compose client in to a node you run yourself (Swift MeroKitUI
+  parity); `MeroAuthState` gains `nodeUrl`, `username` and `isDevNodeSession`.
+- `FakeNode` answers `GET /admin-api/health`.
+
+### Added — events and presence (mero-js parity)
+
+- **`SseConnection`** (`Mero.sse`, `SseClient.connection()`): one long-lived SSE
+  connection — mero-js `SseClient`. `subscribe(contextIds, groupIds)` /
+  `unsubscribe(...)` change a **live** session (`POST /sse/subscription`, only the ids
+  that changed, 10 s timeout); `isSubscribed` / `isSubscribedToGroup`; every
+  remembered id is re-subscribed on each `connect` frame, *then* `connects` emits the
+  session id. Hot `events`, `errors` and `failure` (the terminal refusal). Reconnects
+  on mero-js's fixed 3 s delay — SSE has no backoff in mero-js, so none here. A failed
+  subscription POST is reported on `errors` rather than thrown, as in mero-js. The
+  existing `events` / `groupEvents` / `nodeEvents` flows now run on it unchanged.
+- **Typed events**: `AppVersionChangedEvent`, `GroupMigrationEvent`
+  (`MigrationStarted`, `MigrationProgress`, `CascadeProgress`, `MigrationCompleted`)
+  and `GroupMembershipEvent` (`MemberJoined`, `MemberAdded`, `MemberRemoved`), with
+  core's field names; `appVersionChanges` / `migrationEvents` / `membershipEvents`
+  flows on `Mero`, `SseClient` and `SseConnection`, callback forms
+  `onAppVersionChanged` / `onMigrationEvent`, and `asAppVersionChanged()` /
+  `asMigrationEvent()` / `asMembershipEvent()` on a raw event.
+- **`presenceSeed(contextId)`**: the latest `Ephemeral` entry per author of each
+  subscribed context, `ageMs` advanced by the time since arrival; replayed to a late
+  presence subscriber, cleared on reconnect and unsubscribe.
+- **`WsClient`** (`Mero.ws`, `@ExperimentalMeroApi` as in mero-js): OkHttp WebSocket on
+  `GET /ws` (Bearer header; core also takes `?token=`), `subscribe` / `unsubscribe`
+  messages `{"id":null,"method":…,"params":{contextIds?,groupIds?}}`, re-subscribe on
+  every open, reconnect after `min(1 s·2ⁿ, 30 s)`; a `403` upgrade stops it.
+- **`EphemeralClient`** (`Mero.ephemeral`): `set(contextId, state, codec)` via
+  JSON-RPC `set_ephemeral {contextId, state: [bytes]}`, `subscribe(contextId, codec)`
+  → `Flow<EphemeralEntry>` (`author`, `account`, `state`, `removed`, `ageMs`), and
+  `subscribePresence` (filter `Ephemeral`, replay the seed, connect and subscribe).
+  `Codec`, `JsonCodec` / `jsonCodec<T>()` (bytes identical to mero-js) and `RawCodec`.
+- **`RelayPresenceClient`** (`RelayConnection.presence`, `MeroClient.presence`): an
+  account's presence signed with the device key and posted to `presence-intents`,
+  resent every 2.5 s while set; `set(ctx, null)` / `clear(ctx)` retracts, `close()`
+  stops; 429/5xx/network failures wait for the next resend, other refusals throw and
+  stop. `RelayConnection.logout()` closes it.
+- **`PresenceStatement`**: `PRESENCE_DOMAIN` (`calimero/presence/1`), `stateHash`,
+  `presenceStatementBytes` (pinned to core's `statement_vector_is_stable`), `sign` and
+  `signedRequest` — so `AdminApi.presenceIntent` callers no longer hand-supply a
+  signature. `RelayClient.publishPresence(contextId, state, seq)` signs for you;
+  `RelayClient` implements `PresenceRelay` and exposes `authorSigner`.
+- SDK Explorer: a **Presence** category (`presence.set`, `presence.clear`,
+  `publishPresence`, `ephemeral.set`).
+
+### Added — signing primitives (mero-js parity)
+
+- **Owner-op root proofs** (`com.calimero.mero.ownerop`, mero-js `owner-op`): `OwnerOpKind` /
+  `OWNER_OP_KIND`, `OwnerOpPlane`, `OwnerOp`, the encoders `transferOwnershipOp`,
+  `groupDeleteOp`, `adminChangedOp`, `teeAuthoringPolicyOp`, `teeAdmissionPolicyOp`,
+  `teeReleaseAdmissionPolicyOp` (+ `TeeAdmissionPolicyOpInput`,
+  `TeeReleaseAdmissionPolicyOpInput`, `teeAdmissionPolicyOpOf(request)`), `ownerOpDigest`,
+  `ownerOpSigningPayload`, `signOwnerOpProof(OwnerOpProofInput)` — the hex borsh of core's
+  `SignedOwnerOp` (`AccountProof<OwnerOpAuthorization>`) — and `rootGuardedOpBytes`, pinned to
+  core's `owner_op.rs` and `root_guarded_vectors_are_stable` vectors.
+- **Root-signed owner ops**: `AdminApi.transferOwnership(groupId, newOwner, root)`,
+  `changeNamespaceAdmin(namespaceId, newAdmin, root)`, `ownerDeleteGroup(groupId, root)`,
+  `setTeeAuthoringPolicy(groupId, allowedMrtd, root)`, `disableTeeAuthoringPolicy(groupId, root)`
+  and `setTeeAdmissionPolicy(groupId, request, root)` read `namespaceId` / `ownerOpCounter`,
+  encode the op the node builds and mint `rootProof` with the root `DeviceSigner` (optional
+  `keyEpoch` / `chain`); `AdminApi.mintRootProof(groupId, op, root)` is the shared step. The
+  `rootProof`-taking forms are unchanged.
+- **Account roots** (mero-js `account/account.ts` + `wordlist.ts`): `ENGLISH_WORDLIST` (BIP39,
+  checked against its canonical SHA-256), `generateAccountRoot()` (24 words; the entropy *is*
+  the Ed25519 seed — no PBKDF2, no BIP32, exactly as mero-js), `accountRootFromPhrase`,
+  `accountRootFromSecret`, `AccountRoot` / `RecoverableAccountRoot`, `AccountRootSigner` /
+  `NewAccountRootSigner` (a `DeviceSigner` with no `secret`; the seed is kept only in a
+  `SecureStore` by `AccountRootKeyStore` and read per signature — `EncryptedPrefsSecureStore`
+  on a device, since AndroidKeyStore has no Ed25519 below API 33), `createAccountRootSigner`,
+  `accountRootSignerFromPhrase`, `resolveRoot` / `resolveRootPair` / `ResolvedRoot`, and
+  `signAccountLink` / `signAccountLogin` (`AccountLinkInput` / `AccountLoginInput`; standard
+  base64, reproducing mdma's verifier vector).
+- **Device scopes** (mero-js `device-cert/device-scope.ts`): `signDeviceScope(DeviceScopeInput)`
+  and `deviceScopePayload`, pinned to core's `DeviceScope::sign` vectors, and
+  `AdminApi.linkAccountDevice(namespaceId, credential, root, applications, scopeEpoch)`, which
+  signs the scope for the device the credential names. (`rescopeDevice` takes no signature:
+  core runs it on the node holding the root.)
+- **Request proofs** (mero-js `request/` + `request-proof/`): `requestBodyHash`, `signRequest`
+  (`RequestSigInput`), `callerProof` (`CallerProofInput`), `createProofSigner`
+  (`ProofSignerOptions`, or a `ProofCredential` for the two-link chain), `signRequestProof`
+  (`RequestProofInput`), `REQUEST_PROOF_HEADER` (`X-Calimero-Proof`), `createProofAuthorizer`,
+  `proofAuthorizerOf`, `signedPath`, `carriesProof`, `ProofRequest` / `RequestToAuthorize`,
+  `ProofSigner` and `RequestAuthorizer`, pinned to core's `request_wire_fixture` and
+  `proof_auth` (`chain_for(1, key(7))`) vectors.
+- **`MeroConfig.requestProof`** (mero-js `MeroJsConfig.requestProof`): a
+  `RequestProofInterceptor` signs each request's method, request-line path and query (base
+  path included) and exact body. With a proof configured the OkHttp clients do not follow
+  redirects, and a 3xx answering a proof-carrying request throws
+  `ProofRedirectRefusedException` (status `0`, `redirectStatus`, `location`) — mero-js
+  `refuseProofRedirect`. A signing failure surfaces as itself, not as a `NetworkException`.
+- `SseClient`, `SseConnection` and `WsClient` take an `authorize: RequestAuthorizer` hook
+  (called for `GET /sse`, each subscription POST over its body, and the `GET /ws` upgrade);
+  `Mero` wires it to send the session token when there is one and the proof otherwise.
+- `signerFromSecret(secret, label)` and `resolveSigner(secret, signer, label)` (mero-js
+  `signer.ts`); `SeedSigner` takes an error `label`, and its `toString` names its public key.
+- SDK Explorer: a **Signing** category (`generateAccountRoot`, `accountRootFromPhrase`,
+  `signOwnerOpProof`, root-signed `transferOwnership`, `signDeviceScope`, `signRequestProof`).
+- Docs: [Account roots](docs/src/content/docs/guides/account-roots.mdx) and
+  [Signing offline](docs/src/content/docs/guides/signing.mdx) guides.
+
+### Added — Calimero Cloud sessions and account linking (mero-js parity)
+
+- **`CloudClient` session half** (mero-js `cloud-client.ts`): `signInWithGoogle`,
+  `signInWithAccount` (root secret or signer) / `getAccountLoginChallenge` /
+  `submitAccountLogin`, `refreshSession`, `signOut` (clears locally even when the server call
+  fails), `getSession()` / `isSignedIn`, rolling refresh from `x-mdma-session-refresh`, and
+  the new constructor parameters `sessionToken`, `onSession` and `sessionStore`
+  (`CloudSessionStore` over any `SecureStore`). The session type is `CloudLoginSession`
+  (+ `CloudUser`), so it does not clash with `DelegatedSession`. Session routes refuse
+  locally with `MeroStateException` when nobody is signed in.
+- `getMyNamespaces`, `getNamespaceRelays` (`CloudRelay` with `canExecute`, `teeRole`,
+  `admission`, `join`), `findExecutingRelay` / `CloudClient.pickExecutingRelay`,
+  `getMyMachines` and `findAdmitter`. mero-js `getMyNode` is **not** ported: it is
+  deprecated there and reads a retired ledger.
+- HA: `claimNamespace`, `enableNamespaceHa(ns, admitterAddrs)`,
+  `enableFoundedNamespaceHa`, `disableNamespaceHa`, `enableHaUrl` / `disableHaUrl`
+  (the `/enable-ha` and `/disable-ha` pages), `readHaPageCallback`, and
+  `admitterAddrsFromNetworkStatus`. `signAccountOwnershipClaim` and
+  `ACCOUNT_OWNERSHIP_AUDIENCE` (`mdma:enable-ha-namespace`) sign the session route's claim.
+- Account linking: `linkAccount`, `getAccountLinkChallenge`, `submitAccountLink`,
+  `linkAccountWithGrant` (anonymous), `getMyAccounts`, `CloudClient.accountLinkHandoff` /
+  `readAccountLinkCallback`, and `CloudLink.cloudLinkUrl` / `readCloudLinkCallback` /
+  `completeCloudLink` / `withoutLinkState`, over a single-use, account-bound, 10-minute
+  `PendingCloudLinks` store (mero-js `link-state.ts` key and shape). A grant this app did
+  not ask for is refused (`UnexpectedCloudLinkException` / `"unexpected_callback"`).
+  `callbackIsForeign(returnTo, pageOrigin)`.
+- `CloudWebLauncher` (Android) opens the HA pages and the link consent page in a Custom Tab:
+  `enableHA`, `disableHA`, `beginCloudLink`, `openAccountLinkHandoff`.
+- **`connectCloud(ConnectCloudOptions)` / `connectCloudWithAccount(...)`** (mero-js
+  `connect.ts`) return a `CloudConnection` (`cloud`, `relay`, `namespaceId`, `namespace`,
+  `relayInfo`, `client`, `canSubscribe`, `execute`). `client` is the existing
+  `RelayConnection`, built over the same `RelayClient`. When nothing can be built yet, they
+  throw `CloudNotReadyException` with mero-js's messages. The `seal` option is not ported
+  yet: the sealed transport comes separately.
+- Errors: `AccountHaRefusedException` now extends `HttpException` (existing `catch` blocks
+  still work) and is thrown as one of `AccountNotLinkedException`,
+  `AccountLinkedToSeveralUsersException`, `HaRequestPendingException`,
+  `UnknownRelayException` or `RelayNotDialableException`, readable as a typed `HaRefusal`.
+  It maps by status as well as code (409 vs 422), as mero-js does. `classifyError` reads
+  `CloudNotReadyException` as `UNAVAILABLE` and `CloudLinkDeclinedException` as `FORBIDDEN`.
+- `FakeCloud` serves `/api/auth/*`, `/api/cloud/me/*`, claim, enable/disable-ha and
+  `/api/cloud/accounts/link`, with Bearer checks and an opt-in rolling refresh.
+- Docs: [Calimero Cloud](docs/src/content/docs/guides/cloud.mdx) guide and
+  [CloudClient](docs/src/content/docs/reference/cloud.mdx) reference.
+
+### Breaking — delegated accounts (mero-js parity)
+
+- **Security fix (mero-js #264): an invitation's unsigned `admitter_addrs` is never used as a
+  relay.** It sits outside the inviter's signature, so an http(s) entry there could name a host
+  that proxies a genuine relay. `Join.resolveRelayFromInvitation` no longer falls back to it:
+  a namespace the cloud lists no node for is `JoinStep.NO_NODES`. And
+  `CloudAccount.createNamespaceInvitation` refuses a namespace the cloud routes nowhere with
+  `InvitationNotClaimableException` (`reason = InvitationNotClaimableReason.NOT_HOSTED`), where
+  it used to put the relay's URL in `admitter_addrs`. `InvitationNotClaimableException` takes a
+  `reason` (`NOT_HOSTED` / `NO_NAMED_NODE`); `notHosted` and the boolean constructor remain.
+- **`CloudAccount.bootstrapFromInvitation` returns a `BootstrapResult`** (`Success(session, relay,
+  published)` / `Failure(step, reason, status)`) and never throws for an expected failure, as in
+  mero-js. It persists nothing. `JoinStep` (alias `BootstrapStep`) gains `INVITED_UNREACHABLE`
+  and `NO_CREDENTIAL` and a `wire` spelling. `CloudAccount.joinAsAccount(namespaceId, …)` still
+  throws `JoinException`, and now also records the relay in the account's relay map.
+- **`AdminApi` implements `AdminSurface`.** Every method is now an `override` and its default
+  arguments are declared on the interface. Calls compile unchanged. A subclass that overrode
+  an `AdminApi` method must drop the defaults it re-declared.
+- **Founding attests the relay afresh** (`foundDelegatedNamespace`, which
+  `CloudAccount.foundNamespace` now delegates to): a pinned key no longer stands in for the
+  attestation. Founding uses the first of the account's known relays, and learns the executor
+  account from the relay map when the session does not name it.
+- The HA refusal advice for `account_not_linked` is mero-js's current wording
+  (`HA_ACCOUNT_NOT_LINKED_MESSAGE`); `AccountHaRefusedException.ADVICE` is `HA_REFUSAL_MESSAGES`.
+
+### Added — delegated accounts and the unified transport (mero-js parity)
+
+- **Relay map** (mero-js `session.ts`), per account in the `CloudAccount`'s `SecureStore` under
+  mero-js's keys: `RelayMap`, `readRelayMap`, `rememberRelay`, `relayForContext`, `knownRelays`,
+  `listDelegatedContexts` / `listDelegatedNamespaces` (the union across every known relay, each
+  recorded as served by the relay that listed it; `DelegatedContext` / `DelegatedNamespace`),
+  `carryExecutorAccount`, `rememberGroupNamespace` / `namespaceOfGroup`, `persistedNonces` and
+  `markContextNonceSpent`.
+- **Relay node key learning**: `CloudAccount.attemptRelayNodeKey(relayUrl, fresh)` →
+  `RelayNodeKeyAttempt` (`Learned` / `Unavailable` / `Refused`), `resolveRelayNodeKey`,
+  `learnRelayNodeKey(relayUrl, retryMs = RELAY_NODE_KEY_RETRY_MS)` (1, 2, 5, 10, then every
+  30 s, cancelled with its coroutine, `null` on a refusal), `readPinnedRelayNodeKey`.
+- **`CloudAccount.buildDelegatedClient(session, contextId?)`**: a relay-transport client whose
+  requests carry the device certificate's request proof, whose reads try `/query` first (a
+  `409` marks the method a write and falls back to a warrant), and whose events stay inert on a
+  hosted relay until its key is known. `null` without a relay. The write-method cache is shared
+  per relay, context and method, as in mero-js (`forgetMethodKinds()` for tests).
+- **`MeroTransportClient`** (`com.calimero.mero.transport`, mero-js `MeroClient`):
+  `MeroTransportConfig.Node` / `.Relay`, with `rpc` as an `ExecuteTransport`
+  (`execute` / `executeWithMetadata` → `ExecuteResult(returns, transport, rootHash?)` /
+  `migrateMyEntries` / `countMyPending`, plus `executeAs<T>`), `canSubscribe`, `node`, `relay`,
+  `admin`, `auth`, `events`, `ws` (refused for a proof-only relay client), `ephemeral`
+  (`TransportEphemeral.Node` / `.Relay`), `cloud` and `close()`. Also `NodeTransport`,
+  `RelayTransport`, `RelayObserver` / `RelayObserveConfig` (a lazily minted, single-flight
+  `account_proof` session that re-mints near expiry), `createMeroClient`, and
+  `RpcExecution.TRANSPORT_RELAY`.
+- **Account admin** (mero-js `account-admin.ts`): `createAccountAdmin(session, read, app, deps)`
+  / `CloudAccount.accountAdmin(...)` return an `AdminSurface`. Writes become governance ops,
+  delegated creations, or invitations signed by this device; node-only calls throw
+  `NotForAccountException`; with no relay, listings are empty and other calls throw
+  `NoRelayException`. `AccountApp`, `AccountAdminDeps` / `CloudAccountAdminDeps`.
+  `createNodeAdmin(admin, app)` installs the app from the registry before `createNamespace`.
+  `CreateNamespaceResponseData` gains `haEnabled` / `haError` (account admin only).
+  `classifyError` reads `NotForAccountException` as `FORBIDDEN`, and `NoRelayException` /
+  `InvitationNotClaimableException` as `UNAVAILABLE`, as Swift does.
+- **Delegated governance** (mero-js `create-context.ts`, `govern.ts`): `createDelegatedContext`
+  (creation nonce `0`, the relay remembered), `createDelegatedPrivateContext` (a restricted
+  subgroup, its members, the context), `delegatedGovernance` (per-(relay, group)
+  clock-floored nonces), `governGroup` / `governRoot`, `foundDelegatedNamespace`,
+  `latestPublishedVersion`, `HA_ACCOUNT_NOT_LINKED_MESSAGE`, `HA_REFUSAL_MESSAGES`,
+  `CreateDelegatedContextRequest` / `CreatedDelegatedContext`.
+- **Invitation redemption** (mero-js `redeem-invitation.ts`): `redeemInvitation(namespaceId,
+  invitation, InviteRedeemer)` → `RedeemOutcome` (`Joined` / `AlreadyMember` /
+  `Failed(message, reason, retryable)`), `InviteFailureReason`, `isSettled`, `shouldRetain`,
+  and `AdminSurface.redeemInvitation(namespaceId, invitation, groupName, teamName)`.
+  `CloudAccount.joinAsAccount(session, namespaceId, invitation, cloudBaseUrl, onJoined)`
+  remembers the relay and moves the session onto it. `ResolvedRelay.peerId`.
+- `FakeCloud`: proof-authenticated reads (`acceptProofs`), `listedContexts`,
+  `listedNamespaces`, `contextGroups`, `groupNamespaces`, context-intents, `attestStatus` /
+  `attestBindsWrongKey`, `refuseNextGovernance`, `registryBundles`. A subgroup's create
+  answers the new group id.
+- SDK Explorer: `redeemInvitation`.
+- Docs: [Delegated accounts](docs/src/content/docs/guides/delegated-accounts.mdx) guide and
+  [Transport](docs/src/content/docs/reference/transport.mdx) reference.
+
+### Breaking — TEE trust (mero-js parity)
+
+- **The relay's node key is verified by its TDX quote, on the device.** `DcapRelayKeyVerifier` is
+  now the default `RelayKeyVerifier` of `CloudAccount` and `RelayLogin` (it was
+  `TlsRelayKeyVerifier`, which trusted TLS and checked only the binding). A hosted relay's key is
+  learned only if its quote verifies with DCAP against Intel's root. Its image must be the
+  `locked-read-only` profile of the signed mero-tee release it names, at `MIN_RELAY_RELEASE`
+  (`2.3.99`) or newer. Its report data must bind our nonce and the key. A relay that fails any of
+  these is `RelayNodeKeyAttempt.Refused`. If the release mirror does not answer, the attempt is
+  `Unavailable` (`RelayKeyTransportException`). Mock quotes are still accepted from loopback
+  relays. Pass `relayKeyVerifier = TlsRelayKeyVerifier()` for the old check.
+- **A delegated session seals every request to a hosted relay.** Intents, admin reads, queries,
+  the relay login and events go through `relayTransportClient(relayUrl)`, sealed to the relay's
+  attested TD (mero-js `relayTransportFetch`). A relay that cannot seal is not reached in the
+  clear: its requests fail. Logged-in calls go out plain only after the TD answers
+  `403 sealed_route_unguarded` from inside the envelope. `CloudAccount(sealRelays = false)` opts
+  out, and `forgetRelaySealing()` resets.
+- **`connectCloud` seals a hosted relay by default.** With no `seal`, the relay is sealed against
+  its signed release (`DcapRelayKeyVerifier.signedReleaseVerifier`), with the same
+  `sealed_route_unguarded` fallback. `ConnectCloudOptions(sealRelays = false)` (and
+  `ConnectCloudWithAccountOptions`) opts out for plain test rigs. mero-js seals only with `seal`.
+  This follows the Swift SDK.
+- `classifyError` reads `RelayKeyTransportException` as `UNAVAILABLE`, retryable.
+
+### Added — TEE trust: signed releases, DCAP, sealed transport, agent gate (mero-js parity)
+
+- **Sigstore** (`com.calimero.mero.tee`, mero-js `sigstore.ts`, `sigstore-trust-root.ts`,
+  `x509.ts`): `Sigstore.verifyCosignBundle` and `chainsToFulcio`, against the embedded trust root
+  `FULCIO_AUTHORITIES` / `REKOR_LOGS` (copied exactly). DER, X.509 and ECDSA P-256/P-384 helpers
+  are internal and built on Bouncy Castle. Nothing reads the clock: certificates are checked at
+  Rekor's `integratedTime`.
+- **Signed node releases** (mero-js `release.ts`): `NODE_RELEASE_SIGNER`,
+  `DEFAULT_RELEASE_MIRROR`, `SignedNodeRelease`, `verifySignedNodeRelease`, `fetchNodeRelease`,
+  `nodeReleaseVersionFromImage`, `fetchNodeReleaseVersion`, `cloudNodeReleaseUrl`,
+  `trustSignedRelease`, `createSignedReleaseVerifier` (`SignedReleaseVerifierOptions`) and
+  `createSignedReleaseSealedFetch` (`SignedReleaseSealedFetchOptions`, `NodeReleaseRequest`).
+  Release versions are compared as semver.
+- **DCAP quote verification** (mero-js `verify.ts`): `createQuoteVerifier(QuoteVerifierOptions)`,
+  `PRODUCTION_PROFILE` (`locked-read-only`), `trustedMeasurementsFromReleases` → `TrustedImages`,
+  `PublishedMrtds`, `TrustedMeasurements`, `DcapCollateral` (hex or byte arrays), `DcapVerifiedReport`,
+  `DcapReport` (`Sgx` / `Td10` / `Td15`), `DcapVerify`, `VerifyTransportQuote`, `QuoteVerifier`,
+  `TransportQuote`. `createQuoteVerifier` makes exactly the checks `verify.ts` makes, including
+  refusing a debug TD whatever `dcapVerify` allows.
+  - `Dcap` is a built-in `DcapVerify`, a port of `@phala/dcap-qvl` 0.5.3's `verify`, so quotes are
+    verified on the device with no third-party library.
+  - `PccsCollateral.fetch` ports dcap-qvl's `getCollateral`, for quotes that carry their PCK chain.
+- **Sealed transport** (mero-js `noise.ts`, `sealed.ts`, wire-identical with core's
+  `crates/server/src/sealed.rs`): `SealedTransport` is an OkHttp `Interceptor` with a `.client`. It
+  - refuses URLs outside its base URL;
+  - takes the transport key as bytes or as a suspend attest step;
+  - re-attests and retries once when the node restarted;
+  - renews and replaces sessions, and waits out `busy`;
+  - streams sealed responses frame by frame;
+  - fails with `StaleTransportKeyException` / `SealedTransportException`.
+
+  Also `HANDSHAKE_PATH`, `SEALED_PATH`, `SEALED_CONTENT_TYPE`, `transportKeyBinding`,
+  `fetchAttestedTransportKey` (`TransportAttestation`, or an `AdminSurface`) and
+  `createAttestedSealedFetch`. The handshake, the envelope, the frames and the binding are pinned
+  to core's published vectors.
+- **Sealing wired in**: `ConnectCloudOptions.seal` / `ConnectCloudWithAccountOptions.seal` (the
+  relay only, as in mero-js). `MeroConfig.httpClient` is the client `Mero` builds on, with its
+  auth and proof interceptors in front, so a sealed client seals a node's whole surface, SSE
+  included.
+- **Relay node-key attestation** (mero-js `attest-node-key.ts`): `attestRelayNodeKey`
+  (`AttestedNodeKey`), `attestKeyBinding`, `reportDataOf` (`QuoteReportData`), reconciled with
+  `RelayAttest`. Also `DcapRelayKeyVerifier`, `AttestingRelayKeyVerifier`, `MIN_RELAY_RELEASE` and
+  `RelayKeyTransportException`.
+- **Agent gate** (`com.calimero.mero.agentgate`, mero-js `agent-gate/`, wire-identical with
+  mero-tee's mero-agent-gate `/attest`, `/provision`, `/release`): `attestAgent`, `checkOwner`,
+  `provisionAgent`, `releaseAgent`, `generateOwnerKey`, `ownerPublicKey`, `validateAgentId`,
+  `agentKeyBinding`, `provisionInfo`, `AGENT_ATTEST_DOMAIN`, `AGENT_PROVISION_INFO_DOMAIN`,
+  `AgentGateException`, `VerifiedAgent`, `OwnerKey`, `ProvisionedAgent`, `KMS_RELEASE_SIGNER`,
+  `AgentPolicy`, `verifySignedAgentPolicy` and `agentQuoteVerifier`.
+  - HPKE Auth mode (X25519, HKDF-SHA256, ChaCha20-Poly1305) is pinned to the gate's Rust-sealed
+    fixture and cross-checked against Bouncy Castle's HPKE.
+  - A verifier that returns `false` refuses here, where mero-js refuses only one that throws.
+- `TeeTrustException`: every trust check's refusal, with the reason.
+- Fixtures: mero-js's `src/sealed/fixtures/` (the real mero-tee 2.3.86 / 2.3.87 and mero-kms
+  2.3.87 signed files, dcap-qvl's sample TDX quote and collateral) and the agent gate's
+  `rust-sealed-bundle.json`, copied byte for byte into `mero-core/src/test/resources/fixtures/`.
+- Docs: [TEE trust](docs/src/content/docs/guides/tee-trust.mdx),
+  [Sealed transport](docs/src/content/docs/guides/sealed-transport.mdx) and
+  [Agent gate](docs/src/content/docs/guides/agent-gate.mdx) guides.
+
+### Changed — SSE reconnect backoff
+
+- **Breaking:** `SseConnection(reconnectDelayMs = …)` and `SseClient(reconnectDelayMs = …)`
+  are replaced by `backoff: ReconnectBackoff`, and
+  `SseConnection.DEFAULT_RECONNECT_DELAY_MS` is gone. The default,
+  `ReconnectBackoff.SSE`, waits 3 s first (as before, and as mero-js), then doubles
+  up to 30 s while attempts keep failing, ±20% jitter, and resets once a stream
+  opens — the Swift SDK's policy. `ReconnectBackoff.fixed(3_000)` is the old flat
+  3 s (mero-js `reconnectDelayMs`); `ReconnectBackoff.WEB_SOCKET` names
+  `WsClient`'s unchanged `1 s · 2ⁿ ≤ 30 s` schedule.
+
+### Fixed — mero-compose
+
+- mero-compose applies the kotlinx.serialization plugin: the invitation
+  pending-intent store's `@Serializable` model did not compile in the Android build.
+- `MeroClient` learns an account's application id over the relay connection it
+  already holds, instead of listing contexts through a new client per relay. That
+  second relay login superseded the live session on a relay keeping one session per
+  device, so the next query 401'd and a read fell through to a warrant.
+- mero-compose publishes a placeholder javadoc jar: AGP 8.5's Dokka cannot read
+  sealed classes compiled for Java 17 (`PermittedSubclasses`), which mero-compose's
+  API now names. The KDoc ships in the sources jar.
+- `buildInviteLink(host = "calimero:/")` (or `"calimero:"`) gives
+  `calimero://<slug>/join?invitation=…`; it used to drop a slash.
+- `normalizeNodeUrl` leaves a URL that already names a scheme alone, so
+  `isValidNodeUrl("ftp://node.example")` is false instead of reading it as
+  `https://ftp://…`.
+
+### Changed — mero-compose (mero-react parity)
+
+- `ConnectButton` follows mero-react: "Connect" opens a `LoginSheet` in a dialog (or calls
+  `onConnect`), "Reconnecting..." while a node's stream is down, "Connected" with a menu
+  (account or node, relay note, Log out). It no longer opens the wallet directly; new
+  `labels`, `logoOnly`, `tabs` and `theme` parameters.
+- `LoginSheet` has **Node** and **Cloud** tabs (`tabs`, `initialTab = LoginModalTab.CLOUD`) and
+  its colours default to `LoginSheetColors.from(LocalMeroTheme.current)` (mero-react's dark
+  `defaultMeroTheme`). Pass `colors = LoginSheetColors()` and `tabs = listOf(LoginModalTab.CLOUD)`
+  for the previous light, Cloud-only sheet (the sample does). Existing test tags are unchanged.
+- `MeroClient.signOut` / `logout` also clear `MeroAppStorage` (node URL, application, context)
+  and the node session; `restore()` returns whether a session came back and restores a stored
+  node session when no Cloud account is signed in. `MeroAuthState.isDevNodeSession` now needs a
+  `username` (an SSO node session is `isNodeSession`).
+
+### Added — mero-compose (mero-react parity)
+
+- **Provider**: `AppMode` (`MULTI_CONTEXT`, `ADMIN`, deprecated `SINGLE_CONTEXT`) and
+  `permissionsFor(mode)`; `MeroCapabilities` (`NODE`, `account(hasPackage)`, `NONE`) as
+  `MeroClient.can`; `MeroAppConfig` (mode, package, registry, cloud, `allowedNodeUrls`,
+  timeout). `MeroClient.connectToNode` / `nodeLoginUrl` / `handleAuthCallback` /
+  `handleDeepLink` / `restoreNodeSession` sign in through a node's own login page, adopting the
+  callback only from a trusted node (`sameOrigin`, `resolveTrustedNodeUrl` — mero-react
+  `auth/node-trust.ts`) and only when safe (`decodeJwtClaims`, `resolveTokenAdoption`,
+  `TokenAdoptionReason` — `auth/token-adoption.ts`), then validate with `/auth/validate`.
+  `MeroAuthState` gains `isOnline`, `applicationId`, `contextId`, `contextIdentity`,
+  `isNodeSession`, `isDelegated`. `isOnline` follows the node's SSE (`OnlineMonitor`,
+  `streamFailureVerdict`: a revoked family or a `403` with an `x-auth-error` logs out, a `401`
+  recovers). `MeroClient.session` (`MeroSession`: session `admin` — `createNodeAdmin` or
+  `createAccountAdmin` — `rawAdmin`, `rpc`, `events`, `presence`, `isDelegated`, `delegated`,
+  `can`), `admin`, `isDelegated`, `delegatedSession`, `connectWithAccount` (in memory),
+  `selectContext`; an account's `applicationId` is resolved from the registry by `packageName`,
+  else from its contexts. `MeroAppStorage` (SharedPreferences, mero-react's keys) with
+  `KeyValueStore`, `SharedPreferencesStore`, `MemoryKeyValueStore`.
+- **State holders** (`com.calimero.mero.compose.state`): `AsyncResource` / `ResourceState`,
+  `AsyncMutation` / `AdminMutation` / `MutationState`, `NotConnectedException`; `MeroReads`
+  (contexts, groups, members, subgroups, capabilities, visibility, upgrade status, metadata,
+  namespaces, node identity, blob info, `isBlobNotFound`); a write holder per write hook
+  (`CreateContext`, `CreatePrivateContext`, `JoinContext`, `JoinNamespace`, `RedeemInvitation`,
+  `UpgradeGroup`, `InstallFromRegistry`, `UploadBlob`, …); `ExecuteState`,
+  `SubscriptionState`, `EphemeralState`, `ContextDiscoveryState`, `GroupCapabilitiesState`,
+  `MigrationEventsState`, `MigrationStatusState` (SSE, 5 s poll fallback), `AppVersionState`,
+  `LatestVersionState`, `GroupAppVersionState`, `MyAuthoredMigrationState`, `BlobFileState`;
+  and `remember*` composables for each.
+- **Invitations** (`com.calimero.mero.compose.invitations`): `InvitationCapture`,
+  `primeInvitationCapture`, `onInvitation`, `peekInvitation`, `subscribeInvitation`,
+  `CapturedInvitation`, `buildInviteLink`, `invitationFromRaw`, `urlWithoutInvitation`,
+  `MAX_AUTO_JOIN_ATTEMPTS`; `InviteRedemption` / `InviteState` / `ParsedInvitation`,
+  `describeInviteFailure`, `JustJoinedNamespaces`, `JoinSync` (+ `JOIN_SYNC_*`),
+  `InvitationDialogModel` / `invitationDialogCopy` / `INVITATION_READY_MS`,
+  `decideInvitationGate` / `invitationGateCopy`, `JoinInvitation` / `JoinInvitationStep` /
+  `isFinalInvitationError`, `DelegatedBootstrap`; `AccountEnrolment` and `isReturningFromWallet`.
+- **Composables**: `MeroTheme` / `defaultMeroTheme` / `lightMeroTheme` / `LocalMeroTheme` /
+  `ProvideMeroTheme`, `CalimeroLogo` / `CalimeroLogoVector`, `AccountSignInPanel`,
+  `LoginModalTab` (`LoginTab`) with `NodeLoginState`, `isValidNodeUrl`, `localDiscoveryHost`,
+  `MigrationPendingBanner`, `MigrationAdminPanel`, `InvitationDialog`, `InvitationGate`,
+  `JoinSyncBanner`, `rememberInviteRedemption`, `rememberJoinSync`, `rememberPendingInvitation`.
+- Not ported: mero-react's `useNamespaceIdentity` (core serves no namespace-identity route),
+  `MigrationStatus.fleetCompletedAt` (not in the Kotlin type yet).
+- Docs: [Compose frontend](docs/src/content/docs/guides/compose-frontend.mdx),
+  [Compose state holders](docs/src/content/docs/guides/compose-state.mdx) and
+  [Invitations in Compose](docs/src/content/docs/guides/compose-invitations.mdx).
+
+### Changed — events and presence
+
+- An SSE `401` whose `x-auth-error` is `token_reuse` / `token_revoked` now ends the
+  stream like a `403` (`AuthRevokedException`); a `401 token_expired` still reconnects.
+- A group-only SSE subscription no longer sends an empty `contextIds` (both lists are
+  sent only when non-empty, as in mero-js; core defaults either).
+- `RelayClient.presenceIntent` is no longer retried on `429` (presence resends every
+  2.5 s anyway, as in mero-js).
+- The re-subscribe after a `connect` frame runs beside the frame reader instead of
+  blocking it, so a frame that follows `connect` closely may be delivered before the
+  subscription POST returns.
+
 ### Breaking
 
 - `RpcClient.execute` / `executeRaw` / `executeWithMetadata` no longer take
@@ -174,9 +636,8 @@ by mero-js's golden vectors (which are core's own fixtures):
 
 ### Known gaps
 
-- **Relay node key.** The default `TlsRelayKeyVerifier` trusts TLS and checks the attestation's
-  report data binds this request's nonce and the named key; it does **not** verify the TDX DCAP
-  quote. mero-js does. Writes never depend on the key; Bearer reads and SSE do.
+- ~~**Relay node key.** The default `TlsRelayKeyVerifier` does not verify the TDX DCAP quote.~~
+  Closed in Unreleased: `DcapRelayKeyVerifier` verifies the quote on the device.
 - **App-scheme callbacks** work in the SDK, but the hosted wallet only redirects to `https://`
   today. Until mero-wallet accepts app schemes, use a verified https App Link as the callback.
 

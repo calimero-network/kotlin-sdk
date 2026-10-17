@@ -20,6 +20,7 @@ management**. Every method is a `suspend fun`.
 | `getHealth(): HealthResponse` | `GET /auth/health` |
 | `getIdentity(): IdentityResponse` | `GET /admin/identity` |
 | `getProviders(): ProvidersResponse` | `GET /auth/providers` |
+| `getLoginPage(): String` | `GET /auth/login` (the hosted login UI, as HTML) |
 | `generateTokens(request: TokenRequest): TokenResponse` | `POST /auth/token` |
 | `refreshToken(request: RefreshTokenRequest): TokenResponse` | `POST /auth/refresh` |
 | `logout(request: LogoutRequest): LogoutResponse` | `POST /auth/logout` (core rc.83) |

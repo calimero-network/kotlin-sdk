@@ -2,6 +2,10 @@ package com.calimero.mero.sample.explorer
 
 import com.calimero.mero.account.ApplicationIds
 import com.calimero.mero.account.DeviceCert
+import com.calimero.mero.account.DeviceScopeInput
+import com.calimero.mero.account.accountRootFromPhrase
+import com.calimero.mero.account.generateAccountRoot
+import com.calimero.mero.account.signDeviceScope
 import com.calimero.mero.admin.AccountSignWithRootRequest
 import com.calimero.mero.admin.AddGroupMembersRequest
 import com.calimero.mero.admin.AdmitJoinRequest
@@ -50,6 +54,7 @@ import com.calimero.mero.admin.SetMemberMetadataRequest
 import com.calimero.mero.admin.SetSubgroupVisibilityRequest
 import com.calimero.mero.admin.SetTeeAdmissionPolicyRequest
 import com.calimero.mero.admin.SetTeeAuthoringPolicyRequest
+import com.calimero.mero.admin.SignedGroupOpenInvitation
 import com.calimero.mero.admin.SyncGroupRequest
 import com.calimero.mero.admin.TeeAttestRequest
 import com.calimero.mero.admin.TeeRegistrationAttestRequest
@@ -68,6 +73,11 @@ import com.calimero.mero.auth.TokenRequest
 import com.calimero.mero.auth.UpdateKeyPermissionsRequest
 import com.calimero.mero.compose.MeroClient
 import com.calimero.mero.crypto.Hex
+import com.calimero.mero.crypto.SeedSigner
+import com.calimero.mero.ephemeral.RawCodec
+import com.calimero.mero.ownerop.OwnerOpProofInput
+import com.calimero.mero.ownerop.signOwnerOpProof
+import com.calimero.mero.ownerop.transferOwnershipOp
 import com.calimero.mero.relay.ApplicationTarget
 import com.calimero.mero.relay.CreateContextInput
 import com.calimero.mero.relay.FoundNamespaceInput
@@ -76,6 +86,8 @@ import com.calimero.mero.relay.GovernanceOp
 import com.calimero.mero.relay.GovernanceOpKind
 import com.calimero.mero.relay.GovernanceOps
 import com.calimero.mero.relay.RelayExecutor
+import com.calimero.mero.request.RequestProofInput
+import com.calimero.mero.request.signRequestProof
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.jsonObject
@@ -122,6 +134,9 @@ private val authOps =
         },
         SDKOperation("auth.providers", "Auth & Identity", "getProviders", "Available auth providers", emptyList()) { m, _ ->
             Fmt.json(m.auth.getProviders())
+        },
+        SDKOperation("auth.loginPage", "Auth & Identity", "getLoginPage", "GET /auth/login (the hosted login UI, as HTML)", emptyList()) { m, _ ->
+            m.auth.getLoginPage().take(4_000)
         },
         SDKOperation(
             "auth.gen", "Auth & Identity", "generateTokens", "POST /auth/token (provider handshake)",
@@ -434,6 +449,18 @@ private val nsOps =
             "ns.join", "Namespaces", "joinNamespace", "Join a namespace",
             listOf(OpField.line("namespaceId", "Namespace ID"), OpField.json("body", "JoinNamespaceRequest")),
         ) { m, i -> Fmt.json(m.admin.joinNamespace(i.v("namespaceId"), Fmt.decode<JoinNamespaceRequest>(i.v("body")))) },
+        SDKOperation(
+            "ns.redeem", "Namespaces", "redeemInvitation", "Redeem an invitation (joined / already a member / why not)",
+            listOf(
+                OpField.line("namespaceId", "Namespace ID"),
+                OpField.json("invitation", "SignedGroupOpenInvitation"),
+                OpField.line("groupName", "Group name (optional)", ""),
+            ),
+        ) { m, i ->
+            m.admin
+                .redeemInvitation(i.v("namespaceId"), Fmt.decode<SignedGroupOpenInvitation>(i.v("invitation")), i.opt("groupName")?.ifBlank { null })
+                .toString()
+        },
         SDKOperation(
             "ns.leave", "Namespaces", "leaveNamespace", "Leave a namespace",
             listOf(OpField.line("namespaceId", "Namespace ID"), OpField.json("body", "Body (optional)", "")),
@@ -774,6 +801,10 @@ private val accountOps =
             listOf(OpField.line("namespaceId", "Namespace ID"), OpField.json("body", "RevokeDeviceRequest")),
         ) { m, i -> Fmt.json(m.admin.revokeAccountDevice(i.v("namespaceId"), Fmt.decode<RevokeDeviceRequest>(i.v("body")))) },
         SDKOperation(
+            "acc.revokedList", "Account & Devices", "listNamespaceRevokedDevices", "Revoked devices and withdrawn slots",
+            listOf(OpField.line("namespaceId", "Namespace ID")),
+        ) { m, i -> Fmt.json(m.admin.listNamespaceRevokedDevices(i.v("namespaceId"))) },
+        SDKOperation(
             "acc.admit", "Account & Devices", "admitJoin", "Publish a keyholder's join",
             listOf(OpField.line("namespaceId", "Namespace ID"), OpField.json("body", "AdmitJoinRequest")),
         ) { m, i -> Fmt.json(m.admin.admitJoin(i.v("namespaceId"), Fmt.decode<AdmitJoinRequest>(i.v("body")))) },
@@ -1105,11 +1136,133 @@ private val rpcOps =
         ) { m, i -> "pending = ${m.rpc.countMyPending(i.v("contextId"))}" },
     )
 
+// Presence: an account's (device-signed through its relay) and a node's own (`set_ephemeral`).
+// Live presence and events are read by the chat screen, not a form.
+private val presenceOps =
+    listOf(
+        SDKOperation(
+            "pre.set", "Presence", "presence.set", "Set this account's presence (signed, resent every 2.5 s)",
+            listOf(OpField.line("contextId", "Context ID"), OpField.json("state", "State (any JSON)", "{\"typing\":true}")),
+        ) { e, i ->
+            val presence = e.client.presence ?: error("No relay connection")
+            presence.set(i.v("contextId"), i.v("state").encodeToByteArray(), RawCodec)
+            "presence set; resending until cleared"
+        },
+        SDKOperation(
+            "pre.clear", "Presence", "presence.clear", "Retract this account's presence",
+            listOf(OpField.line("contextId", "Context ID")),
+        ) { e, i ->
+            (e.client.presence ?: error("No relay connection")).clear(i.v("contextId"))
+            "presence retracted"
+        },
+        SDKOperation(
+            "pre.publish", "Presence", "publishPresence", "Sign and post one presence update (no heartbeat)",
+            listOf(OpField.line("contextId", "Context ID"), OpField.line("state", "State (text, empty to retract)")),
+        ) { e, i ->
+            e.relay.publishPresence(i.v("contextId"), i.opt("state")?.encodeToByteArray(), seq = System.currentTimeMillis())
+            "presence posted"
+        },
+        SDKOperation(
+            "pre.ephemeralSet", "Presence", "ephemeral.set", "A node's own presence slice (set_ephemeral)",
+            listOf(OpField.line("contextId", "Context ID"), OpField.json("state", "State (any JSON)", "{\"cursor\":1}")),
+        ) { m, i ->
+            m.mero.ephemeral.set(i.v("contextId"), i.v("state").encodeToByteArray(), RawCodec)
+            "slice set"
+        },
+    )
+
+// Signing primitives: an account root, owner-op root proofs, device scopes and request
+// proofs, all offline. Secrets typed here stay in this process; this is a developer tool.
+private val signingOps =
+    listOf(
+        SDKOperation(
+            "sig.generateRoot", "Signing", "generateAccountRoot", "Mint an account root and its 24-word phrase",
+            emptyList(),
+        ) { _, _ ->
+            val root = generateAccountRoot()
+            "accountId: ${root.accountId}\npublicKey: ${root.publicKey}\nphrase: ${root.phrase}"
+        },
+        SDKOperation(
+            "sig.rootFromPhrase", "Signing", "accountRootFromPhrase", "Restore a root's identity from its phrase",
+            listOf(OpField.line("phrase", "24-word phrase")),
+        ) { _, i ->
+            val root = accountRootFromPhrase(i.v("phrase"))
+            "accountId: ${root.accountId}\npublicKey: ${root.publicKey}"
+        },
+        SDKOperation(
+            "sig.ownerOpProof", "Signing", "signOwnerOpProof", "Sign a transfer-ownership root proof offline",
+            listOf(
+                OpField.line("namespaceId", "Namespace ID"),
+                OpField.line("groupId", "Group ID"),
+                OpField.line("newOwner", "New owner account"),
+                OpField.line("counter", "ownerOpCounter", "0"),
+                OpField.line("rootSecret", "Root secret (hex)"),
+            ),
+        ) { _, i ->
+            signOwnerOpProof(
+                OwnerOpProofInput(
+                    namespaceId = i.v("namespaceId"),
+                    groupId = i.v("groupId"),
+                    op = transferOwnershipOp(i.v("newOwner")),
+                    counter = i.v("counter").toLong(),
+                    rootSecret = i.v("rootSecret"),
+                ),
+            )
+        },
+        SDKOperation(
+            "sig.transferWithRoot", "Signing", "transferOwnership", "Transfer a group, root proof minted here",
+            listOf(
+                OpField.line("groupId", "Group ID"),
+                OpField.line("newOwner", "New owner account"),
+                OpField.line("rootSecret", "Root secret (hex)"),
+            ),
+        ) { m, i ->
+            m.admin.transferOwnership(i.v("groupId"), i.v("newOwner"), SeedSigner(i.v("rootSecret"), "rootSecret"))
+            "ownership transferred"
+        },
+        SDKOperation(
+            "sig.deviceScope", "Signing", "signDeviceScope", "Scope a device to applications (empty = all)",
+            listOf(
+                OpField.line("device", "Device ID"),
+                OpField.line("applications", "Application IDs, comma-separated"),
+                OpField.line("rootSecret", "Root secret (hex)"),
+            ),
+        ) { _, i ->
+            val apps =
+                i
+                    .v("applications")
+                    .split(',')
+                    .map { it.trim() }
+                    .filter { it.isNotEmpty() }
+            signDeviceScope(DeviceScopeInput(device = i.v("device"), applications = apps, rootSecret = i.v("rootSecret")))
+        },
+        SDKOperation(
+            "sig.requestProof", "Signing", "signRequestProof", "The X-Calimero-Proof value for one request",
+            listOf(
+                OpField.line("method", "Method", "GET"),
+                OpField.line("path", "Path and query", "/admin-api/namespaces"),
+                OpField.line("credential", "Device credential (hex)"),
+                OpField.line("deviceSecret", "Device secret (hex)"),
+                OpField.json("body", "Body (exact bytes, optional)", ""),
+            ),
+        ) { _, i ->
+            signRequestProof(
+                RequestProofInput(
+                    method = i.v("method"),
+                    path = i.v("path"),
+                    credential = i.v("credential"),
+                    body = i.opt("body")?.encodeToByteArray(),
+                    deviceSecret = i.v("deviceSecret"),
+                ),
+            )
+        },
+    )
+
 /** The full registry, in display order. */
 val sdkOperations: List<SDKOperation> =
     sessionOps + cloudOps + spaceOps + relayOps + healthOps + authOps + keyOps + appOps + pkgOps + ctxOps + ctxIdOps +
         aliasOps + blobOps + nsOps + groupOps + memberOps + settingsOps + upgradeOps +
-        accountOps + teeOps + rc83Ops + rpcOps
+        accountOps + teeOps + rc83Ops + presenceOps + signingOps + rpcOps
 
 /** Categories in display order (as first seen in [sdkOperations]). */
 val sdkCategories: List<String> = sdkOperations.map { it.category }.distinct()

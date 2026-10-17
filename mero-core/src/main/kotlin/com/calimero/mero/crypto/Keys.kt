@@ -85,15 +85,49 @@ interface DeviceSigner {
     fun sign(message: ByteArray): ByteArray
 }
 
-/** A [DeviceSigner] over a 32-byte seed held in memory. */
+/**
+ * A [DeviceSigner] over a 32-byte seed held in memory.
+ *
+ * @param label what to call the seed in an error — `deviceSecret`, `rootSecret`.
+ */
 class SeedSigner(
     secretHex: String,
+    label: String = "deviceSecret",
 ) : DeviceSigner {
-    private val seed = Hex.decode(secretHex, "deviceSecret", Ed25519.SEED_BYTES)
+    private val seed = Hex.decode(secretHex, label, Ed25519.SEED_BYTES)
 
     override val publicKey: String = Hex.encode(Ed25519.publicKey(seed))
 
     override fun sign(message: ByteArray): ByteArray = Ed25519.sign(seed, message)
+
+    override fun toString(): String = "SeedSigner(publicKey=$publicKey)"
+}
+
+/**
+ * A signer over a raw 32-byte Ed25519 seed, hex — mero-js `signerFromSecret`. The public
+ * half is derived from the seed, never accepted beside it.
+ *
+ * @param label what to call it in an error — `deviceSecret`, `rootSecret`.
+ */
+fun signerFromSecret(
+    secret: String,
+    label: String = "secret",
+): DeviceSigner = SeedSigner(secret, label)
+
+/**
+ * The signer an input describes, from either form — mero-js `resolveSigner`. Exactly one
+ * of [secret] and [signer] must be given: both is refused rather than silently preferring
+ * one, because they could name different keys.
+ *
+ * @throws IllegalArgumentException with both or neither.
+ */
+fun resolveSigner(
+    secret: String?,
+    signer: DeviceSigner?,
+    label: String,
+): DeviceSigner {
+    require(signer == null || secret == null) { "pass either $label or signer, not both — they may name different keys" }
+    return signer ?: secret?.let { signerFromSecret(it, label) } ?: throw IllegalArgumentException("$label or signer is required")
 }
 
 /** Check a signer's output is a 64-byte Ed25519 signature before it goes into a structure. */

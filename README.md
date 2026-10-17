@@ -15,15 +15,15 @@ See [`ROADMAP-TASKS/task-2-android-sdk.md`] in the planning repo for the full de
 > a node with credentials, drive the whole
 > ~140-method Admin API (contexts, groups, namespaces, invitations, registry install, root/client
 > keys and permissions), call contracts over JSON-RPC, and subscribe to live node events over SSE.
-> The sample app is an **SDK Explorer** over all 182 catalogued methods plus a native Calimero chat
+> The sample app is an **SDK Explorer** over all 194 catalogued methods plus a native Calimero chat
 > client — feature-for-feature with the Swift SDK's sample. See [Roadmap](#roadmap).
 
 ## Modules
 
 | Module         | What it is                                                                 |
 |----------------|-----------------------------------------------------------------------------|
-| `mero-core`    | The SDK: the Cloud account layer (`account`, `cloud`, `relay`, `crypto` packages: `CloudAccount`, device keys, enrolment, `CloudClient`, `RelayClient`, warrants), plus `Mero`, HTTP transport (OkHttp), `AuthApi` (incl. root/client keys + permissions), `AdminApi` (~140 methods), `RefreshCoordinator`, `TokenStore`, `RpcClient`, `SseClient`/`events()`, `Capabilities`. |
-| `mero-compose` | Optional Jetpack Compose UI kit, Cloud-only: `MeroClient` (`signInWithCloud`, `handleEnrolmentCallback`), `LoginSheet` ("Continue with Calimero"), `ConnectButton`, `MeroProvider`/`useMero`. |
+| `mero-core`    | The SDK: the Cloud account layer (`account`, `cloud`, `relay`, `crypto` packages: `CloudAccount`, device keys, enrolment, `CloudClient` (device-proven routing plus cloud login sessions, HA and account linking), `connectCloud`, `RelayClient`, warrants), plus `Mero`, HTTP transport (OkHttp), `AuthApi` (incl. root/client keys + permissions), `AdminApi` (~140 methods), `RefreshCoordinator`, `TokenStore` (node-bound bundles), `RpcClient`, `SseClient`/`events()` + the long-lived `SseConnection` (`Mero.sse`, live subscribe/unsubscribe, typed migration/membership/app-version events), an experimental `WsClient`, ephemeral presence (`Mero.ephemeral`, device-signed `RelayPresenceClient`), `Capabilities` (+ presets, `capMask`/`capNames`), `classifyError`, local-node discovery, SSO with single-use callback state, and TEE trust (`tee`: Sigstore-verified releases, on-device DCAP, `SealedTransport`; `agentgate`: the mero-agent-gate client). |
+| `mero-compose` | Optional Jetpack Compose kit, the mero-react port: `MeroClient` as the provider (Cloud sign-in, node SSO with node-URL trust and token adoption, `AppMode`, `can`, the session admin, SSE-driven `isOnline`, `MeroAppStorage`, plus a development-only `login(nodeUrl, username, password)`), a state holder and `remember*` composable for every mero-react hook (reads, writes, execute, subscriptions, presence, migrations, blobs), invitations (capture from intents, `InviteRedemption`, `InvitationDialog`, `InvitationGate`, `JoinSync`, `JoinInvitation`), and `LoginSheet` (Node and Cloud tabs), `ConnectButton`, `MeroTheme`, `CalimeroLogo`, `MigrationPendingBanner`, `MigrationAdminPanel`. |
 | `mero-testkit` | Test-support: `FakeNode`, a stateful in-memory node on OkHttp MockWebServer, and `FakeCloud` (its cloud-manager + hosted-relay routes), for driving whole sign-in → call → sign-out journeys with no live service. |
 | `sample-app`   | A Compose sample in the light Calimero style: Cloud sign-in, a native chat client and an **SDK Explorer** over the relay session, plus a deterministic mock mode that drives the instrumented UI test. |
 
@@ -102,16 +102,25 @@ client.mero?.events(listOf(contextId))                      // live events over 
   yet: `state.signedInWithoutRelay` is true and `state.relayNote` says why. Redeeming an invitation
   (`client.joinWithInvitation(namespaceId, invitation)`) admits the account and gives it a relay.
 - **Relay node key.** Bearer reads and SSE need the relay's node key, learned from its TEE
-  attestation behind a pluggable `RelayKeyVerifier`. The default `TlsRelayKeyVerifier` trusts TLS
-  and checks the attestation is bound to this request; **full DCAP quote verification is a
-  follow-up**. Writes do not depend on it.
+  attestation behind a pluggable `RelayKeyVerifier`. The default `DcapRelayKeyVerifier` verifies
+  the TDX quote **on the device**: Intel's chain (a built-in DCAP port), the signed mero-tee release
+  the relay runs, every register of its image, and the nonce and key binding. Writes do not depend
+  on it.
+- **Sealed to the TD.** A delegated session seals every request to a hosted relay to its attested
+  TD, so TLS that ends outside the enclave reads none of it (`SealedTransport`; `connectCloud`'s
+  `seal`). See the [TEE trust](docs/src/content/docs/guides/tee-trust.mdx) and
+  [sealed transport](docs/src/content/docs/guides/sealed-transport.mdx) guides. Private agents in a
+  TD are attested and provisioned with the [agent gate](docs/src/content/docs/guides/agent-gate.mdx)
+  client.
 
 Without Compose, `CloudAccount` runs the same flow: `beginEnrolment(callbackUrl)` →
 `completeEnrolment(url)` → `connect()`.
 
 ## Quick start (core, self-hosted node)
 
-For servers, tools and tests that talk to a node you run (not available in the Compose UI kit):
+For servers, tools and tests that talk to a node you run (the Compose kit has a development-only
+`MeroClient.login(nodeUrl, username, password)`; `discoverLocalNodes(host = ANDROID_EMULATOR_HOST)`
+finds running dev nodes):
 
 ```kotlin
 val mero = Mero(
@@ -136,6 +145,10 @@ val contexts = mero.admin.getContexts()
 scope.launch {
     mero.events(listOf(contextId)).collect { event -> /* e.g. re-fetch messages */ }
 }
+
+// Presence: publish your cursor, watch everyone's (replayed to late subscribers).
+mero.ephemeral.set(contextId, Cursor(line = 3, col = 7))
+scope.launch { mero.ephemeral.subscribe<Cursor>(contextId).collect { entry -> /* render */ } }
 
 // Logout (best-effort POST /auth/logout + revoke, then local clear).
 mero.logout(clientId = null)
@@ -190,7 +203,8 @@ from the release pinned in [`ci/core-version`](ci/core-version). See
 See **[TESTING.md](TESTING.md)** for the full matrix (mock vs live node, env vars, emulator setup).
 Unit + mock tests cover the highest-risk logic: single-flight/cross-process refresh, the terminal
 `x-auth-error` path, the full login→call→refresh→logout journey via `FakeNode`, Admin API request
-shaping, JSON-RPC unwrap/error mapping, JWT `exp` parsing, and SSO callback parsing. A live-node
+shaping, JSON-RPC unwrap/error mapping, JWT `exp` parsing, SSO callback parsing and its single-use state,
+node-bound token persistence, error classification and local-node discovery. A live-node
 `RealNodeE2ETest` runs in CI's `e2e.yml` (and self-skips locally unless `MERO_E2E_NODE_URL` is set).
 
 ## Roadmap
@@ -201,8 +215,29 @@ shaping, JSON-RPC unwrap/error mapping, JWT `exp` parsing, and SSO callback pars
 - [x] **M4** — SSO in-app flow (Custom Tabs + deep-link callback) in the sample app.
 - [x] **M4.5** — Cloud-only sign-in on mobile: device keys, wallet enrolment, cloud routing, relay
   login, warranted writes (golden vectors shared with mero-js).
-- [ ] DCAP / TDX quote verification for the relay node key (today: TLS + binding checks).
-- [ ] **M5** — More Compose hooks (`useSubscription`, `useMigrationStatus`, …).
+- [x] **M4.6** — mero-js parity: single-use SSO callback state, node-bound tokens, capability
+  presets, `classifyError`, local-node discovery, pinned relay keys and relay logout.
+- [x] **M4.7** — mero-js parity: long-lived SSE connection with live subscriptions and
+  typed group events, experimental WebSocket client, ephemeral presence (node and
+  device-signed relay presence).
+- [x] **M4.8** — mero-js parity: signing primitives. Owner-op root proofs (and root-signed
+  owner-op calls), BIP39 account roots with store-held root signers, cloud link/login
+  proofs, device scopes, and request proofs (`X-Calimero-Proof`) on HTTP, SSE and WebSocket.
+- [x] **M4.9** — mero-js parity: Calimero Cloud login sessions (Google or account root),
+  owned namespaces, relays and machines, HA (API and Custom Tab pages), account linking
+  (direct and through the consent page), `connectCloud` / `connectCloudWithAccount`.
+- [x] **M4.10** — mero-js parity: delegated accounts (multi-relay map, relay key learning,
+  delegated client reading by query, account admin facade over `AdminSurface`, delegated
+  governance and founding, step-typed invitation bootstrap, `redeemInvitation`) and the
+  unified `MeroTransportClient` (node or relay).
+- [x] **M4.11** — mero-js parity: TEE trust. Sigstore-verified mero-tee releases, on-device DCAP
+  quote verification (`Dcap`, a dcap-qvl port), DCAP-verified relay node keys, the sealed
+  transport (Noise NK, wire-identical with core) for `connectCloud` and delegated sessions, and
+  the mero-agent-gate client (HPKE Auth mode, signed agent policies).
+- [x] **M5** — mero-react parity in Compose: the provider (app modes, node SSO trust and token
+  adoption, online state, account/node admin, `can`), a state holder per hook, the invitation
+  flow (capture, redemption, dialog, gate, join sync), and the Node/Cloud login sheet, connect
+  button, theme and migration composables.
 - [ ] **M6** — Maven Central publishing, version-aligned to the mero-js contract.
 
 ## License

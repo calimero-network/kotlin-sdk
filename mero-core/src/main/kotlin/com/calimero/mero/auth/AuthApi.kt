@@ -30,6 +30,17 @@ class AuthApi(
 
     // ---- Authentication --------------------------------------------------------------------
 
+    /**
+     * The node's hosted login page (`GET /auth/login`), as HTML. Apps normally open it in a
+     * browser with [buildAuthLoginUrl] / [SsoLauncher] instead; this reads it raw, e.g. to
+     * check a node serves its auth UI.
+     */
+    suspend fun getLoginPage(): String =
+        http
+            .execute("GET", "/auth/login", headers = mapOf("Accept" to "text/html"))
+            .ensureSuccessful()
+            .body
+
     suspend fun generateTokens(request: TokenRequest): TokenResponse =
         http.postJson("/auth/token", request)
 

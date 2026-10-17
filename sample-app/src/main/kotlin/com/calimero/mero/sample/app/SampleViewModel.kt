@@ -9,7 +9,7 @@ import androidx.lifecycle.viewModelScope
 import com.calimero.mero.account.CloudAccount
 import com.calimero.mero.account.MemorySecureStore
 import com.calimero.mero.compose.MeroClient
-import com.calimero.mero.relay.TlsRelayKeyVerifier
+import com.calimero.mero.relay.DcapRelayKeyVerifier
 import com.calimero.mero.sample.mock.MockWallet
 import com.calimero.mero.storage.MemoryTokenStore
 import com.calimero.mero.testkit.FakeNode
@@ -62,7 +62,7 @@ class SampleViewModel(
                         MemorySecureStore(),
                         cloudBaseUrl = base,
                         walletUrl = MOCK_WALLET_URL,
-                        relayKeyVerifier = TlsRelayKeyVerifier(allowMock = true),
+                        relayKeyVerifier = DcapRelayKeyVerifier(allowMock = true),
                     )
                 client = MeroClient(account, MemoryTokenStore(), launchWallet = { _, url -> MockWallet.pendingUrl = url })
             } catch (e: Exception) {

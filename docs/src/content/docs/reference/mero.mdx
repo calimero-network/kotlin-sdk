@@ -30,12 +30,20 @@ Properties that expose the API clients over the shared transport:
 | `mero.admin` | `AdminApi` | contexts, apps, namespaces, groups, blobs, TEE — [reference](/reference/admin-api/) |
 | `mero.rpc` | `RpcClient` | execute WASM methods — [reference](/reference/rpc/) |
 | `mero.http` | `HttpClient` | the transport in use (advanced) |
+| `mero.sse` | `SseConnection` | the one long-lived SSE connection; subscribe while live — [reference](/reference/events/) |
+| `mero.ws` | `WsClient` | WebSocket events, `@ExperimentalMeroApi` — [reference](/reference/events/) |
+| `mero.ephemeral` | `EphemeralClient` | presence slices (`set_ephemeral`) — [guide](/guides/presence/) |
 
-Plus one method, not an accessor:
+Plus event methods, each a cold flow on its own connection:
 
 | Method | Returns | Description |
 | --- | --- | --- |
 | `mero.events(contextIds)` | `Flow<ContextEvent>` | live SSE events — [reference](/reference/events/) |
+| `mero.groupEvents(groupIds)` | `Flow<GroupEvent>` | group-keyed events (membership, migration) |
+| `mero.nodeEvents(contextIds, groupIds)` | `Flow<NodeEvent>` | both on one stream |
+| `mero.appVersionChanges(contextIds)` | `Flow<AppVersionChangedEvent>` | parsed bundle-version flips |
+| `mero.migrationEvents(groupIds)` | `Flow<GroupMigrationEvent>` | typed migration phases |
+| `mero.membershipEvents(groupIds)` | `Flow<GroupMembershipEvent>` | typed membership changes |
 
 ## Authentication
 
@@ -70,8 +78,33 @@ On `Mero`'s companion (also available as top-level functions in
 `com.calimero.mero.auth`):
 
 ```kotlin
-fun parseAuthCallback(url: String): AuthCallbackResult?
-fun buildAuthLoginUrl(nodeUrl: String, options: AuthLoginOptions): String
+fun parseAuthCallback(
+    url: String,
+    allowUnsolicited: Boolean = false,
+    pending: PendingAuthStates = PendingAuthStates.shared,
+): AuthCallbackResult?
+fun buildAuthLoginUrl(
+    nodeUrl: String,
+    options: AuthLoginOptions,
+    pending: PendingAuthStates = PendingAuthStates.shared,
+): String
+```
+
+`buildAuthLoginUrl` records a single-use `auth_state` in `pending` and adds it to
+the callback URL; `parseAuthCallback` returns `null` for a callback that carries
+no pending state (unless `allowUnsolicited`). See
+[only callbacks this app asked for](/get-started/authentication/#only-callbacks-this-app-asked-for).
+
+```kotlin
+class PendingAuthStates(
+    store: SecureStore = MemorySecureStore(),   // EncryptedPrefsSecureStore to survive process death
+    clock: () -> Long = System::currentTimeMillis,
+) {
+    fun begin(): String                 // a fresh state, 16 random bytes hex, 10-minute lifetime
+    fun take(state: String?): Boolean   // spend it: true once, if pending and unexpired
+    fun clear()
+    companion object { var shared: PendingAuthStates }
+}
 ```
 
 ```kotlin
@@ -87,7 +120,7 @@ data class AuthLoginOptions(
 )
 ```
 
-On Android, `SsoLauncher.launch(context, nodeUrl, options)` opens the login URL in
+On Android, `SsoLauncher.launch(context, nodeUrl, options, pending)` opens the login URL in
 a Chrome Custom Tab. See [authentication](/get-started/authentication/#hosted-sso-deep-link).
 
 ## Configuration types
@@ -101,8 +134,17 @@ data class MeroConfig(
     val timeoutMs: Long = 10_000,        // connect/read/write; default 10s
     val tokenStore: TokenStore? = null,  // defaults to in-memory when null
     val refreshLockFile: File? = null,   // cross-process refresh lock; null = in-process only
+    val requestProof: ProofSigner? = null, // sign each request (X-Calimero-Proof); see below
 )
 ```
+
+`requestProof` signs every request with a device key: its method, its path and query,
+and its exact body, sent as `X-Calimero-Proof`. It is mero-js's
+`MeroJsConfig.requestProof`. Build one with `createProofSigner(ProofCredential(...))`
+or `createProofSigner(ProofSignerOptions(...))`. With a proof configured, the HTTP
+clients do not follow redirects, and a 3xx throws `ProofRedirectRefusedException`. SSE
+and the WebSocket send the session token when there is one, and the proof otherwise.
+See [request proofs](/guides/signing/#request-proofs-x-calimero-proof).
 
 ### `Credentials`
 
@@ -120,12 +162,22 @@ data class TokenData(
     val accessToken: String,   // wire: access_token
     val refreshToken: String,  // wire: refresh_token
     val expiresAt: Long,       // wire: expires_at (epoch ms; derived from the JWT `exp`)
+    val nodeOrigin: String? = null, // wire: node_origin — the issuing node, set by Mero on persist
 )
+
+fun nodeOriginOf(baseUrl: String): String  // "https://host/node1/" → "https://host/node1"
 ```
 
 Wire/storage keys are snake_case, portable with the mero-js token bundle. Pass
 `expiresAt = 0L` to `setTokenData` to have the SDK derive the real expiry from the
 access token's JWT.
+
+`Mero` tags every bundle it persists with `nodeOrigin = nodeOriginOf(baseUrl)`
+(origin plus path prefix, as mero-js's `node_origin`) and reads a stored bundle
+tagged for another node — or untagged, from before the field existed — as empty,
+so tokens are never sent to a node that did not issue them. `getTokenData()`
+returns bundles without the tag; `clearToken()` leaves another node's bundle in a
+shared store alone.
 
 ## Token stores
 

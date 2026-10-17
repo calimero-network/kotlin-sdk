@@ -1,0 +1,66 @@
+---
+title: Transport
+description: MeroTransportClient, ExecuteTransport and RelayObserver — one call shape over a node or through a relay.
+sidebar:
+  order: 9
+---
+
+`com.calimero.mero.transport`. A port of mero-js `src/transport/`. The transport is chosen once,
+when the client is built. After that, `client.rpc.execute(contextId, method, argsJson)` is the
+same call against a node and through a relay.
+
+```kotlin
+val node = createMeroClient(MeroTransportConfig.Node(MeroConfig(baseUrl = nodeUrl)))
+val relay = createMeroClient(
+    MeroTransportConfig.Relay(
+        relay = relayClient,                         // a RelayClient (connectCloud hands one back)
+        session = null,                              // suspend () -> String?: a relay Bearer token
+        observe = RelayObserveConfig(nodeKey),       // the relay node's key, for events through a session
+        proof = ProofCredential(credential, signer = deviceSigner), // request proofs for admin and SSE
+    ),
+)
+```
+
+## `MeroTransportClient`
+
+| member | node | relay |
+|---|---|---|
+| `transport` | `"node"` | `"relay"` |
+| `rpc: ExecuteTransport` | `NodeTransport(mero.rpc)` | `RelayTransport` (warrants) |
+| `canSubscribe` | `true` | a node key or a proof was given |
+| `node: Mero` | ✓ | throws `MeroStateException` |
+| `relay: RelayClient` | throws | ✓ |
+| `admin: AdminSurface` | the node's | the relay's, as the account (session, else proof); throws with neither |
+| `auth`, `cloud` | ✓ | throws |
+| `events: SseConnection` | `mero.sse` | observer's (session) or proof-authenticated; throws with neither |
+| `ws: WsClient` (experimental) | `mero.ws` | observer's; throws for a proof-only client |
+| `ephemeral: TransportEphemeral` | `Node(EphemeralClient)` | `Relay(RelayPresenceClient)` |
+| `close()` | closes streams | closes observer, proof stream, presence |
+
+A missing surface throws and names what is missing. Nothing connects to a node you did not choose.
+
+## `ExecuteTransport`
+
+```kotlin
+interface ExecuteTransport {
+    val kind: String                    // RpcExecution.TRANSPORT_NODE / TRANSPORT_RELAY
+    val canSubscribe: Boolean
+    suspend fun execute(contextId: String, method: String, argsJson: JsonObject = {}): JsonElement
+    suspend fun executeWithMetadata(...): ExecuteResult   // (returns, transport, rootHash?)
+    suspend fun migrateMyEntries(contextId: String): MigrateMyEntriesSummary
+    suspend fun countMyPending(contextId: String): Int
+}
+```
+
+`executeAs<T>(…)` decodes the return. A `null` output is `JsonNull` on both transports.
+`rootHash` is set only for a relay write. `null` means "unknown here", never "nothing changed".
+
+## `RelayObserver`
+
+A node session over the relay, minted lazily by `RelayLogin` (`account_proof`) against the
+pinned node key. `accessToken()` is single-flight: callers asking at once share one login. It
+re-mints within 30 s of expiry, and on every call when the token's `exp` cannot be read.
+`events` / `ws` are fed by it, and `close()` closes what was opened.
+`RelayObserver.of(nodeUrl, nodeKey, …)` returns `null` without a key.
+
+For an account's delegated client, see [Delegated accounts](/guides/delegated-accounts/).

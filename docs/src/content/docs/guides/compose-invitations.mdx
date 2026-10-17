@@ -1,0 +1,114 @@
+---
+title: Invitations in Compose
+description: Invitation links on Android — capture from intents, redemption with confirmation, the invitation dialog and gate, the join-sync gate, and joining as a node or an account.
+sidebar:
+  order: 7
+---
+
+import { Aside } from '@astrojs/starlight/components';
+
+`com.calimero.mero.compose.invitations` is mero-react's `invitations` module: one way
+for an invitation link to reach the app, be confirmed, be joined, and wait for the
+namespace's data.
+
+## Capture
+
+The shareable link is `buildInviteLink(slug, token)` —
+`https://links.calimero.network/<slug>/join?invitation=…` (pass `host = "calimero://"`
+for the device-local `calimero://<slug>/join?invitation=…`). On the device, declare an
+intent filter for your slug (the app's package id) and hand every intent to the capture:
+
+```xml
+<activity android:name=".MainActivity" android:launchMode="singleTop" android:exported="true">
+    <intent-filter>
+        <action android:name="android.intent.action.VIEW" />
+        <category android:name="android.intent.category.DEFAULT" />
+        <category android:name="android.intent.category.BROWSABLE" />
+        <data android:scheme="calimero" android:host="com.example.app" android:pathPrefix="/join" />
+    </intent-filter>
+    <!-- Optionally an https App Link on a domain you own (android:autoVerify="true"). -->
+</activity>
+```
+
+```kotlin
+override fun onCreate(savedInstanceState: Bundle?) {
+    super.onCreate(savedInstanceState)
+    primeInvitationCapture(this, appKey = "com.example.app", slugs = listOf("com.example.app"))
+    InvitationCapture.shared.capture(intent)          // a cold open
+    setContent { App() }
+}
+
+override fun onNewIntent(intent: Intent) {
+    super.onNewIntent(intent)
+    InvitationCapture.shared.capture(intent)          // a link while the app runs
+}
+```
+
+The capture dedups links by a content nonce, persists them in SharedPreferences (an
+invitation survives process death and the sign-in), replays them to a listener that
+subscribes late, and drops one only when the app acks it. A `join` link for another
+app's slug is acked and dropped. Each invitation auto-joins at most
+`MAX_AUTO_JOIN_ATTEMPTS` (3) launches; after that it is still handed over, so a prompt
+or field can offer it again. `onInvitation`, `peekInvitation`, `subscribeInvitation`,
+`invitationFromRaw` and `urlWithoutInvitation` are the rest of mero-react's surface.
+
+## Redeem and prompt
+
+```kotlin
+@Composable
+fun AppRoot(client: MeroClient) {
+    val join = rememberJoinInvitation()
+    val redemption =
+        rememberInviteRedemption(
+            parse = { token, _ -> myCodec(token) },             // → BasicParsedInvitation(namespaceId, invitation, teamName)
+            redeem = { p -> redeemInvitation(p.namespaceId, p.invitation, join.invitationRedeemer(JoinInvitationInput(p.namespaceId, p.invitation)), p.teamName) },
+            enabled = client.state.collectAsStateWithLifecycle().value.isAuthenticated,
+        )
+    InvitationGate(callbackUrl = "myapp://calimero-enrol", parse = { t, p -> myCodec(t) }, noun = "space") {
+        Home()
+    }
+    InvitationDialog(redemption, noun = "space", appName = "My App")
+}
+```
+
+`InviteRedemption` goes `Idle` → `AwaitingConfirmation` (joining is a state change, so
+it asks by default) → `Joining` → `Joined` / `AlreadyMember` / `Failed`. `accept`,
+`decline` (acks it, so "Not now" does not return every launch), `retry` and `dismiss`
+drive it; the invitation is acked on a settled outcome, never on the render.
+`describeInviteFailure(reason, noun)` says what happened in plain words.
+
+`InvitationDialog` adds `SYNCING`: a join returns before the namespace's data arrives,
+so it waits while the namespace is flagged just-joined (`JustJoinedNamespaces`), offers
+"Continue in background" after 30 s, lets go at 120 s, and shows "You're in" for 1.2 s.
+`InvitationGate` is the signed-out landing: a spinner while the session restores, "You're
+invited to join …" with Not now / Log in to join, or "This invitation can't be read".
+Their logic is plain Kotlin — `InvitationDialogModel`, `invitationDialogCopy`,
+`decideInvitationGate`, `invitationGateCopy` — and unit-tested.
+
+## Wait for the data
+
+On the screen that shows the namespace:
+
+```kotlin
+val sync = rememberJoinSync(namespaceId, settled = documents.loaded)   // an empty answer is settled
+val syncing by sync.isSyncing.collectAsStateWithLifecycle()
+JoinSyncBanner(show = syncing, what = "documents", onDismiss = sync::dismiss)
+```
+
+The gate lifts when the data settles, after `JOIN_SYNC_WATCHDOG_MS` (30 s) with nothing
+in flight, or at `JOIN_SYNC_MAX_MS` (120 s) whatever is reported.
+
+## Join, whatever the connection
+
+`JoinInvitation.joinInvitation(input)` joins as the session can: on a node, the
+namespace and then the named context; as an account, `DelegatedBootstrap` resolves the
+node the invitation names, has it admit the account, and connects through it. The
+result is step-typed (`JoinInvitationStep`, with a label per step) and says whether the
+invitation itself is dead (`final`, `isFinalInvitationError`). `AccountEnrolment` and
+`isReturningFromWallet(url)` wrap the Cloud sign-in for apps that drive it themselves.
+
+<Aside type="note">
+  `JoinInvitation.invitationRedeemer(input)` is an `InviteRedeemer`, so the standard
+  `redeemInvitation` (join once, then check membership) runs over it and a join that
+  landed although its request failed reads as `AlreadyMember`.
+</Aside>

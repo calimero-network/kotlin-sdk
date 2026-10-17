@@ -191,7 +191,7 @@ Nodes can attest directly; verify the quote client-side (the node's
 ```kotlin
 val teeInfo = mero.admin.getTeeInfo()
 val attest  = mero.admin.teeAttest(TeeAttestRequest(nonce = nonce, includeCollateral = true))
-// attest.quote, attest.collateral → your DCAP verifier
+// attest.quoteB64 + attest.collateral → createQuoteVerifier(...) / Dcap.verify (see TEE trust)
 ```
 
 ## Owner operations
@@ -207,6 +207,11 @@ mero.admin.ownerDeleteGroup(groupId)          // group must hold no contexts
 
 Omit `rootProof` on a node that holds the root; it signs for itself. A `409`
 means the counter moved — re-read and re-sign.
+
+When this device holds the root (a nodeless account, or a cold root), pass it, and the
+SDK reads the counter and mints the proof:
+`mero.admin.transferOwnership(groupId, newOwner, root)`. The other owner ops have the
+same overload. See [Signing offline](/guides/signing/#owner-operations-root-proofs).
 
 ## Upgrades & migration
 

@@ -1,0 +1,152 @@
+---
+title: Signing offline
+description: Root proofs for owner operations, device scopes for a nodeless account, and request proofs (X-Calimero-Proof) on HTTP, SSE and WebSocket.
+sidebar:
+  order: 7
+---
+
+import { Aside } from '@astrojs/starlight/components';
+
+Some statements have to be signed by a key the node does not hold. This page covers
+three of them, each a byte-for-byte port of mero-js and pinned to core's own test
+vectors:
+
+| Statement | Signed by | Sent as |
+| --- | --- | --- |
+| Owner-op root proof | the account **root** | `rootProof` on the owner-op routes |
+| Device scope | the account **root** | `scope` on `link-device` |
+| Request proof | the **device** key, per request | the `X-Calimero-Proof` header |
+
+A root can be a hex secret or any `DeviceSigner`, for example an
+[`AccountRootSigner`](/guides/account-roots/).
+
+## Owner operations: root proofs
+
+Since core rc.83 a stolen device can no longer take a group from its owner. Transfer,
+owner delete, a namespace admin change and the TEE policies need an authorisation
+signed by the account **root**. A node that holds the root (`merod init` provisions one)
+signs it for you. Otherwise pass the root, and the SDK mints the proof:
+
+```kotlin
+mero.admin.transferOwnership(groupId, newOwner, root)
+mero.admin.changeNamespaceAdmin(namespaceId, newAdmin, root)
+mero.admin.ownerDeleteGroup(groupId, root)
+mero.admin.setTeeAuthoringPolicy(namespaceId, listOf(mrtd), root)
+mero.admin.disableTeeAuthoringPolicy(namespaceId, root)
+mero.admin.setTeeAdmissionPolicy(namespaceId, SetTeeAdmissionPolicyRequest.signedRelease(listOf("locked-read-only")), root)
+```
+
+Each call first reads `namespaceId` and `ownerOpCounter` with `getGroupInfo`. It then
+encodes the op the node will build from the request, has the root sign it, and sends
+the request with `rootProof` set. The proof is single-use, because the node advances
+the counter when the op applies. A `409` means the counter moved between the read and
+the send, so call again. A root that was handed off takes `keyEpoch` and `chain`.
+
+To sign somewhere else (a cold machine) and send the hex later, use the primitives
+directly:
+
+```kotlin
+import com.calimero.mero.ownerop.*
+
+val info = mero.admin.getGroupInfo(groupId)
+val proof = signOwnerOpProof(
+    OwnerOpProofInput(
+        namespaceId = info.namespaceId!!,
+        groupId = groupId,
+        op = transferOwnershipOp(newOwner),
+        counter = info.ownerOpCounter!!,
+        rootSecret = rootSecretHex,       // or signer = root
+    ),
+)
+mero.admin.transferOwnership(groupId, TransferOwnershipRequest(newOwner, rootProof = proof))
+```
+
+The encoders are `transferOwnershipOp`, `groupDeleteOp`, `adminChangedOp` (a root op,
+whose group is the namespace root), `teeAuthoringPolicyOp`, `teeAdmissionPolicyOp` and
+`teeReleaseAdmissionPolicyOp`. `teeAdmissionPolicyOpOf(request)` picks the right one
+for a request body. `ownerOpDigest`, `ownerOpSigningPayload`, `rootGuardedOpBytes` and
+`OWNER_OP_KIND` expose the intermediate bytes. The proof is the hex borsh of core's
+`SignedOwnerOp`, that is `AccountProof<OwnerOpAuthorization>`: genesis (version 2 and
+the root key), the handoff chain, then account, namespace, group, kind, op digest,
+counter (u64), key epoch (u32) and the signature.
+
+<Aside type="caution" title="Sign the op the node builds">
+The proof covers the op's exact bytes. For a signed-release policy the node trims
+`minReleaseVersion` and drops its `mero-tee-v` prefix before building the op. The
+root-signer overload of `setTeeAdmissionPolicy` normalises it the same way. If you
+call `teeReleaseAdmissionPolicyOp` yourself, pass the normalised `X.Y.Z`.
+</Aside>
+
+## Device scopes: linking a device without a node
+
+A device certificate (`DeviceCert.sign`) says a key is a device of the account. A
+**scope** says which applications that device may speak for. A namespace binds a
+device only when both arrive together. A node that pairs a device signs the scope
+itself. An account with no node signs it here:
+
+```kotlin
+// Signs the scope for the device the credential names, then calls link-device.
+mero.admin.linkAccountDevice(namespaceId, credential, root, applications = listOf(appId))
+
+// Or by hand:
+val scope = signDeviceScope(DeviceScopeInput(device = deviceId, applications = emptyList(), signer = root))
+mero.admin.linkAccountDevice(namespaceId, LinkAccountDeviceRequest(credential, scope))
+```
+
+An empty `applications` list means every application. `scopeEpoch` orders scopes for
+one device, and only a higher epoch supersedes. `rescopeDevice` takes no signature,
+because core runs it on the node that holds the root, and that node signs the
+replacement itself.
+
+## Request proofs: `X-Calimero-Proof`
+
+A request proof lets a keyholder call a node or relay with **no session**. The device
+key signs the request itself, and the certificate shows whose key it is. Core verifies
+the chain statelessly (`crates/server/src/proof_auth.rs`). It signs over:
+
+- the method, unfolded (`HEAD` is not `GET`);
+- the path **and query** exactly as on the request line, base path included, with no
+  re-encoding or reordering;
+- a hash of the exact body bytes;
+- an issue time and an expiry. The expiry bounds replay, so keep it short.
+
+Turn it on for every request a `Mero` makes:
+
+```kotlin
+val mero = Mero(
+    MeroConfig(
+        baseUrl = relayUrl,
+        requestProof = createProofSigner(ProofCredential(credential, signer = deviceKeys.signer())),
+    ),
+)
+```
+
+`createProofSigner(ProofSignerOptions(credential, signerSecret, session = loginStatement))`
+builds the three-link chain, where a session key signs each request. You can also pass
+your own `ProofSigner`, a `suspend (ProofRequest) -> String?`, when the key must not
+reach the SDK at all. When it returns `null`, that request goes out without a proof.
+
+What the transport does:
+
+- An OkHttp interceptor (`RequestProofInterceptor`) signs each request as it is sent,
+  using its final URL (`signedPath`) and its body bytes. It refuses a one-shot or
+  duplex body, because it cannot hash one without consuming it.
+- **Redirects are not followed.** A proof is signed for one path, so a client with a
+  proof configured has `followRedirects(false)`. A 3xx that answers a proof-carrying
+  request throws `ProofRedirectRefusedException`, with status `0` and the redirect in
+  `redirectStatus` and `location`. This matches mero-js `refuseProofRedirect`.
+- **SSE and WebSocket** take an `authorize: RequestAuthorizer` hook
+  (`SseClient`, `SseConnection`, `WsClient`). It is called for `GET /sse`, for every
+  subscription POST (over its body) and for the `GET /ws` upgrade. `Mero` wires it to
+  send the session token when there is one, and the proof otherwise.
+- Without `Mero`, `createProofAuthorizer(ProofCredential(...))` returns the
+  `{X-Calimero-Proof: …}` headers for one request. `signRequestProof`, `signRequest`,
+  `callerProof` and `requestBodyHash` are the underlying primitives.
+
+<Aside type="note" title="What the node answers">
+Core consults a proof only when the request carries **no** token, so a request with
+both is authenticated by the token. A proof from an account the node does not serve
+gets a `403`, unless the node runs with `--delegated-access`. A proof that does not
+verify gets a `401` with `x-auth-error: invalid_proof`. A proven request's body is
+capped at 1 MiB (`413`), and core allows 30 s of clock skew.
+</Aside>

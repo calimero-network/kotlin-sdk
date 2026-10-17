@@ -49,7 +49,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.calimero.mero.compose.LoginModalTab
 import com.calimero.mero.compose.LoginSheet
+import com.calimero.mero.compose.LoginSheetColors
 import com.calimero.mero.compose.MeroAuthState
 import com.calimero.mero.compose.MeroClient
 import com.calimero.mero.sample.chat.ChatInvite
@@ -133,7 +135,14 @@ private fun LoginScreen(
     ) {
         CalLogo(name = "Mero Sample")
         Spacer(Modifier.size(8.dp))
-        LoginSheet(callbackUrl = options.callbackUrl, client = client, modifier = Modifier.widthIn(max = 480.dp))
+        // Cloud sign-in only, in the sample's light style (the kit also offers a Node tab).
+        LoginSheet(
+            callbackUrl = options.callbackUrl,
+            client = client,
+            modifier = Modifier.widthIn(max = 480.dp),
+            colors = LoginSheetColors(),
+            tabs = listOf(LoginModalTab.CLOUD),
+        )
         options.mockWallet?.invoke()
         Text(
             "Sign-in happens in the Calimero wallet, with your passkey. This app never sees your account key.",

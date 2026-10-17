@@ -4,8 +4,12 @@ import com.calimero.mero.account.CloudAccount
 import com.calimero.mero.account.DeviceCert
 import com.calimero.mero.account.MemorySecureStore
 import com.calimero.mero.crypto.SeedSigner
+import com.calimero.mero.relay.DcapRelayKeyVerifier
 import com.calimero.mero.storage.MemoryTokenStore
 import com.calimero.mero.testkit.FakeNode
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.JsonPrimitive
 import okhttp3.HttpUrl.Companion.toHttpUrl
@@ -86,6 +90,35 @@ class MeroClientTest {
             assertNotNull(client.mero!!.getTokenData())
         }
 
+    /**
+     * The sample's emulator test: after sign-in the client learns the account's application id
+     * in the background. That lookup must not open a second relay login — FakeNode (like a relay
+     * that keeps one session per device) then retires the connection's token, the query 401s and
+     * the call falls through to a warrant. The call waits for the lookup to finish.
+     */
+    @Test
+    fun `learning the application id in the background leaves the relay session usable`() =
+        runBlocking {
+            val base = server.url("/").toString().trimEnd('/')
+            // The sample's mock setup: a relay whose (mock) attestation is accepted, so the
+            // account's relays can be listed.
+            val account =
+                CloudAccount(
+                    MemorySecureStore(),
+                    cloudBaseUrl = base,
+                    walletUrl = "https://wallet.example/account-enroll",
+                    relayKeyVerifier = DcapRelayKeyVerifier(allowMock = true),
+                )
+            val background = SupervisorJob()
+            val inline = MeroClient(account, MemoryTokenStore(), launchWallet = { _, url -> opened = url }, scope = CoroutineScope(background + Dispatchers.IO))
+            inline.signInWithCloud(android.content.ContextWrapper(null), callback)
+            assertTrue(inline.handleEnrolmentCallback(walletAnswer()))
+            val logins = node.tokenCalls
+            background.children.forEach { it.join() }
+            assertEquals(JsonPrimitive(42), inline.relay!!.call("demo-context", "get"))
+            assertEquals("no further relay login", logins, node.tokenCalls)
+        }
+
     @Test
     fun `a declined enrolment is cancelled, not an error`() =
         runBlocking {
@@ -127,9 +160,66 @@ class MeroClientTest {
             assertTrue(again.state.value.isAuthenticated)
             assertNotNull(again.relay)
 
+            assertTrue(again.connection.value!!.ensureSession())
             again.signOut()
+            // The relay session was retired on the relay, not just dropped locally.
+            assertEquals(1, node.logoutCalls)
             assertFalse(again.state.value.isAuthenticated)
             assertNull(again.relay)
             assertFalse(client.account.isSignedIn)
+        }
+
+    // ---- Development node login ----------------------------------------------------------
+
+    @Test
+    fun `login signs in to a development node with a username and password`() =
+        runBlocking {
+            val base = server.url("/").toString()
+            assertTrue(client.login(base, "admin", "secret"))
+            val state = client.state.value
+            assertTrue(state.isAuthenticated)
+            assertTrue(state.isDevNodeSession)
+            assertFalse(state.signedInWithoutRelay)
+            assertEquals(base.trimEnd('/'), state.nodeUrl)
+            assertEquals("admin", state.username)
+            assertNull(client.relay)
+
+            val body = node.lastTokenRequestBody!!
+            assertTrue(body, body.contains("\"auth_method\":\"user_password\""))
+            assertTrue(body, body.contains("\"password\":\"secret\""))
+            assertEquals(JsonPrimitive(42), client.mero!!.rpc.execute<JsonPrimitive>("ctx", "get"))
+
+            client.signOut()
+            assertEquals(1, node.logoutCalls)
+            assertFalse(client.state.value.isAuthenticated)
+            assertNull(client.mero)
+        }
+
+    @Test
+    fun `login refuses a malformed url or empty credentials without a request`() =
+        runBlocking {
+            assertFalse(client.login("not a url", "admin", "secret"))
+            assertTrue(
+                client.state.value.error!!
+                    .contains("valid node URL"),
+            )
+            assertFalse(client.login(server.url("/").toString(), "admin", ""))
+            assertTrue(
+                client.state.value.error!!
+                    .contains("required"),
+            )
+            assertEquals(0, node.tokenCalls)
+            assertFalse(client.state.value.isAuthenticated)
+        }
+
+    @Test
+    fun `login reports an unreachable node in words`() =
+        runBlocking {
+            val closed = java.net.ServerSocket(0).use { it.localPort }
+            assertFalse(client.login("http://127.0.0.1:$closed", "admin", "secret"))
+            val state = client.state.value
+            assertFalse(state.isAuthenticated)
+            assertFalse(state.isLoading)
+            assertTrue(state.error!!, state.error!!.startsWith("Can't reach the node at http://127.0.0.1:$closed"))
         }
 }
