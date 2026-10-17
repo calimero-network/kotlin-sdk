@@ -50,8 +50,8 @@ import java.util.concurrent.ConcurrentHashMap
  * **Spent nonces.** No node serves a "where does my sequence stand" lookup, so [nonces]
  * (persist it: [PersistedNonceSource]) is the only record of where the sequence is. A
  * warrant refused for its nonce surfaces as [IntentRefusedException] with `retryable`
- * set, as in mero-js. Only when the refusal itself names the last nonce spent
- * (`… (last: N)`) does the client advance [nonces] past `N` and sign once more.
+ * set after one attempt, as in mero-js and swift-sdk; the next call signs a fresh nonce.
+ * Only a `429` is retried (the throttled request never reached the node).
  */
 class RelayClient
     @Suppress("LongParameterList")
@@ -121,7 +121,7 @@ class RelayClient
             method: String,
             argsJson: JsonElement = JsonObject(emptyMap()),
         ): IntentResult =
-            withNonceRecovery {
+            run {
                 val described = describe(contextId)
                 val executor = checkedExecutor(described.executorAccount, described.executorKey)
                 val releaseBytecodeId = Hex.encode(Hex.decode(described.releaseBytecodeId.orEmpty(), "the relay's releaseBytecodeId", 32))
@@ -423,21 +423,6 @@ class RelayClient
 
         // ---- Plumbing ------------------------------------------------------------------------
 
-        /**
-         * Run [block]; if the relay refuses it for its nonce **and** the refusal names the
-         * last nonce spent, advance [nonces] past that floor and run it once more. Any other
-         * refusal, including a nonce refusal that reveals no floor, is surfaced unchanged.
-         */
-        private suspend fun <T> withNonceRecovery(block: suspend () -> T): T =
-            try {
-                block()
-            } catch (e: IntentRefusedException) {
-                val floor = if (e.retryable) spentNonceFloor(e.reason) else null
-                if (floor == null || floor == ULong.MAX_VALUE) throw e
-                nonces.advanceTo(floor + 1u)
-                block()
-            }
-
         private fun checkedExecutor(
             account: String?,
             key: String?,
@@ -636,21 +621,6 @@ class IntentRefusedException(
     val retryable: Boolean,
     val status: Int,
 ) : Exception("relay refused the intent (HTTP $status): $reason")
-
-private val LAST_SPENT_NONCE = Regex("""\blast:\s*(\d+)""")
-
-/**
- * The last nonce spent, when a refusal's [reason] names it (core's stale-nonce wording is
- * `nonce N already processed (last: M)`); `null` when it reveals no floor, which is what
- * the intent route's own "already been spent" refusal does. Read from the text so a u64
- * past 2^53 survives.
- */
-internal fun spentNonceFloor(reason: String): ULong? =
-    LAST_SPENT_NONCE
-        .find(reason)
-        ?.groupValues
-        ?.get(1)
-        ?.toULongOrNull()
 
 /** `/query` answered 409: [method] is not a view in the app's ABI. */
 class NotAViewException(

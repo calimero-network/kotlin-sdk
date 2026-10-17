@@ -30,9 +30,8 @@ relay that cannot be reached, or whose key cannot be learned, is skipped. `remem
 relay. Warrant nonces are one rising sequence per relay (`persistedNonces(relayUrl)`);
 `markContextNonceSpent` moves it past a creation nonce. No node serves a lookup of where the
 sequence stands, so that persisted counter is the only record of it. A write refused for its
-nonce throws `IntentRefusedException` with `retryable = true`; `RelayClient.execute` signs once
-more on its own only when the refusal names the last nonce spent (`… (last: N)`), after
-advancing the counter past `N`.
+nonce throws `IntentRefusedException` with `retryable = true` after one attempt (only a `429` is
+retried); call again and the next warrant signs a fresh nonce.
 
 ## The relay's node key
 

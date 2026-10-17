@@ -20,10 +20,10 @@ mero-js removed the same API. Removed:
 
 Nonces come only from the device's own counter (`NonceSource`: `MemoryNonceSource`,
 `PersistedNonceSource`, `advanceTo`), which was already the only path that worked
-on a relay. A warrant refused for its nonce now surfaces as `IntentRefusedException`
-with `retryable = true` instead of triggering a lookup. When the refusal itself
-names the last nonce spent (`… (last: N)`), `RelayClient.execute` advances the
-counter past `N` and signs once more.
+on a relay. `RelayClient.execute` is a single attempt (only a `429` is retried):
+a warrant refused for its nonce surfaces as `IntentRefusedException` with
+`retryable = true` instead of triggering a lookup and re-signing, and the next
+call signs a fresh nonce — as in mero-js and swift-sdk.
 
 ## Unreleased — core 0.11.0-rc.83
 

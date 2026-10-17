@@ -221,17 +221,20 @@ class CloudSignInFlowTest {
         }
 
     @Test
-    fun `a refusal naming the last spent nonce advances the counter past it and signs once more`() =
+    fun `after a nonce refusal the next execute signs the next nonce`() =
         runBlocking {
             val session = account.completeEnrolment(walletApproves(account.beginEnrolment(callback)))!!
             val connection = account.connect(session, MemoryTokenStore())
-            node.cloud.refuseNextIntent = "nonce 1 already processed (last: 49)"
-            connection.relay.execute("11".repeat(32), "set", buildJsonObject { put("k", "v") })
+            val ctx = "11".repeat(32)
+            node.cloud.refuseNextIntent = "this warrant's nonce has already been spent by this author device"
+            val refused = runCatching { connection.relay.execute(ctx, "set", buildJsonObject { put("k", "v") }) }.exceptionOrNull()
+            assertTrue((refused as IntentRefusedException).retryable)
 
+            connection.relay.execute(ctx, "set", buildJsonObject { put("k", "v") })
             val posts = node.cloud.recorded("/intents").filter { it.method == "POST" }
             assertEquals(2, posts.size)
-            assertEquals(1uL, nonceOf(posts.first().bodyJson!!))
-            assertEquals(50uL, nonceOf(posts.last().bodyJson!!))
+            val first = nonceOf(posts.first().bodyJson!!)
+            assertEquals(first + 1uL, nonceOf(posts.last().bodyJson!!))
         }
 
     @Test

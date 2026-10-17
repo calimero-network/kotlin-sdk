@@ -109,8 +109,8 @@ client.mero?.events(listOf(contextId))                      // live events over 
 - **Warrant nonces.** Each write spends a nonce from a counter the device keeps
   (`PersistedNonceSource`, one rising sequence per relay). No node serves a lookup of where the
   sequence stands, so keep that counter in durable storage. A write refused for its nonce throws
-  `IntentRefusedException` with `retryable = true`; the client signs once more on its own only
-  when the refusal names the last nonce spent.
+  `IntentRefusedException` with `retryable = true` after one attempt; call again and the next
+  warrant signs a fresh nonce.
 - **Sealed to the TD.** A delegated session seals every request to a hosted relay to its attested
   TD, so TLS that ends outside the enclave reads none of it (`SealedTransport`; `connectCloud`'s
   `seal`). See the [TEE trust](docs/src/content/docs/guides/tee-trust.mdx) and

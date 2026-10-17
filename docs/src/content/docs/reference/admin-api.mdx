@@ -376,7 +376,8 @@ false` is an answer, not an error — an admin of `groupId` grants
 Core serves no route that reports where an author device's nonce sequence
 stands, so the SDK has none either. Keep the counter on the device
 (`PersistedNonceSource`); a warrant refused for its nonce comes back as
-`IntentRefusedException` with `retryable = true`.
+`IntentRefusedException` with `retryable = true`; the next call signs a fresh
+nonce.
 :::
 
 ## TEE
