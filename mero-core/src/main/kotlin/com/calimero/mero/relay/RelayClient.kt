@@ -42,15 +42,16 @@ import java.util.concurrent.ConcurrentHashMap
  * | [describeGovernance] / [govern] | `GET`/`POST /admin-api/groups/{g}/governance-intents` |
  * | [foundNamespace] | `POST /admin-api/groups/{foundedNamespaceId}/governance-intents` (genesis) |
  * | [presenceIntent] | `POST /admin-api/contexts/{ctx}/presence-intents` |
- * | [getWarrantNonce] / [getWarrantNonceAsAuthor] | `GET /…/warrant-nonce/{key}` / `POST /…/warrant-nonce` |
  *
  * Intents carry their own authority (the warrant), so they go out without a Bearer token.
- * Reads by query and nonce lookups use [session] when given — the token minted by
+ * Reads by query use [session] when given — the token minted by
  * [RelayLogin] — because a hosted relay's forward-auth answers only Bearer there.
  *
- * **Nonce recovery.** A warrant refused for its nonce (another install of this device
- * spent it, or local storage was lost) is answered by asking the relay where this
- * device's sequence stands, advancing [nonces] past it and signing once more.
+ * **Spent nonces.** No node serves a "where does my sequence stand" lookup, so [nonces]
+ * (persist it: [PersistedNonceSource]) is the only record of where the sequence is. A
+ * warrant refused for its nonce surfaces as [IntentRefusedException] with `retryable`
+ * set after one attempt, as in mero-js and swift-sdk; the next call signs a fresh nonce.
+ * Only a `429` is retried (the throttled request never reached the node).
  */
 class RelayClient
     @Suppress("LongParameterList")
@@ -120,7 +121,7 @@ class RelayClient
             method: String,
             argsJson: JsonElement = JsonObject(emptyMap()),
         ): IntentResult =
-            withNonceRecovery(contextId) {
+            run {
                 val described = describe(contextId)
                 val executor = checkedExecutor(described.executorAccount, described.executorKey)
                 val releaseBytecodeId = Hex.encode(Hex.decode(described.releaseBytecodeId.orEmpty(), "the relay's releaseBytecodeId", 32))
@@ -420,46 +421,7 @@ class RelayClient
             PresenceStatement.sign(signer, contextId, seq, sentAtMs, state),
         )
 
-        // ---- Nonce discovery -----------------------------------------------------------------
-
-        /** Where [authorDeviceKey] stands in its warrant-nonce sequence in [contextId]. */
-        suspend fun getWarrantNonce(
-            contextId: String,
-            authorDeviceKey: String = signer.publicKey,
-        ): RelayWarrantNonceState {
-            val res = raw("GET", "/admin-api/contexts/${enc(contextId)}/warrant-nonce/${enc(authorDeviceKey)}", null, authed = true)
-            return RelayWarrantNonceState.parse(res.ensureSuccessful().body)
-        }
-
-        /** Where this device stands, proven by the [authorProof] rather than named by key. */
-        suspend fun getWarrantNonceAsAuthor(contextId: String): RelayWarrantNonceState {
-            val body = buildJsonObject { put("authorProof", authorProof) }
-            val res = raw("POST", "/admin-api/contexts/${enc(contextId)}/warrant-nonce", body, authed = true)
-            return RelayWarrantNonceState.parse(res.ensureSuccessful().body)
-        }
-
-        /** Advance [nonces] past what the relay has seen from this device in [contextId]. */
-        suspend fun recoverNonce(contextId: String) {
-            when (val state = getWarrantNonceAsAuthor(contextId)) {
-                is RelayWarrantNonceState.Open -> nonces.advanceTo(state.nextNonce)
-                is RelayWarrantNonceState.Exhausted -> throw WarrantNonceExhaustedException(contextId)
-            }
-        }
-
         // ---- Plumbing ------------------------------------------------------------------------
-
-        private suspend fun <T> withNonceRecovery(
-            contextId: String,
-            block: suspend () -> T,
-        ): T =
-            try {
-                block()
-            } catch (e: IntentRefusedException) {
-                if (!e.retryable) throw e
-                val recovered = runCatching { recoverNonce(contextId) }
-                if (recovered.exceptionOrNull() is WarrantNonceExhaustedException) throw recovered.exceptionOrNull()!!
-                block()
-            }
 
         private fun checkedExecutor(
             account: String?,

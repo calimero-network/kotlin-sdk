@@ -161,8 +161,7 @@ try {
 coroutine timeout too, with no status). Account and relay exceptions that carry a
 status (`IntentRefusedException`, `JoinException`, `AccountHaRefusedException`)
 classify by it; an intent refused for its nonce stays retryable.
-`ReadOnlyWriteRefusedException` is `FORBIDDEN`, `WarrantNonceExhaustedException`
-`CONFLICT`. Of the cloud errors, `CloudNotReadyException` (`connectCloud` has no
+`ReadOnlyWriteRefusedException` is `FORBIDDEN`. Of the cloud errors, `CloudNotReadyException` (`connectCloud` has no
 namespace or relay to use yet) is `UNAVAILABLE`, and `CloudLinkDeclinedException` is
 `FORBIDDEN`. An `AccountHaRefusedException` reports its advice as the message (see
 [CloudClient](/reference/cloud/#errors)). Anything else is `UNKNOWN`.

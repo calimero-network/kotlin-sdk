@@ -30,8 +30,6 @@ import com.calimero.mero.admin.TeeAttestRequest
 import com.calimero.mero.admin.TeeAttestResponseData
 import com.calimero.mero.admin.TeeRegistrationAttestRequest
 import com.calimero.mero.admin.TransferOwnershipRequest
-import com.calimero.mero.admin.WarrantNonceRouteUnavailableException
-import com.calimero.mero.admin.WarrantNonceState
 import com.calimero.mero.auth.ApiEnvelope
 import com.calimero.mero.auth.GenerateClientKeyRequest
 import com.calimero.mero.http.HttpException
@@ -561,49 +559,6 @@ class Rc83WireShapeTest {
 
             val bare = json.decodeFromString(IssueOwnershipProofResponseData.serializer(), """{"signerPublicKey":"pk","signedPayload":"p","signature":"s"}""")
             assertNull(bare.founding)
-        }
-
-    // ---- Warrant nonces ------------------------------------------------------
-
-    /** A u64 past 2^53 must survive: a rounded nonce looks ordinary and is refused forever. */
-    @Test
-    fun `warrant nonce parses u64 digits exactly`() =
-        runBlocking {
-            server.enqueue(
-                MockResponse().setBody(
-                    """{"data":{"contextId":"c","authorDeviceKey":"k","seen":true,""" +
-                        """"highWaterNonce":18446744073709551614,"windowWidth":64,"nextNonce":18446744073709551615}}""",
-                ),
-            )
-            val state = mero.admin.getWarrantNonce("c", "k")
-            assertTrue(state is WarrantNonceState.Open)
-            assertEquals(ULong.MAX_VALUE, (state as WarrantNonceState.Open).nextNonce)
-            assertEquals(ULong.MAX_VALUE - 1uL, state.highWaterNonce)
-            assertEquals("/admin-api/contexts/c/warrant-nonce/k", server.takeRequest().path)
-        }
-
-    @Test
-    fun `an absent nextNonce is exhaustion`() =
-        runBlocking {
-            server.enqueue(MockResponse().setBody("""{"data":{"contextId":"c","authorDeviceKey":"k","seen":true,"windowWidth":64}}"""))
-            val state = mero.admin.getWarrantNonceAsAuthor("c", "proof")
-            assertTrue(state is WarrantNonceState.Exhausted)
-            val req = server.takeRequest()
-            assertEquals("POST", req.method)
-            assertEquals(setOf("authorProof"), keysOf(req))
-        }
-
-    /** rc.83 does not serve the route; a 404 says so in its own type, not as "not found". */
-    @Test
-    fun `a 404 on warrant nonce is route unavailable`() =
-        runBlocking {
-            server.enqueue(MockResponse().setResponseCode(404))
-            try {
-                mero.admin.getWarrantNonce("c", "k")
-                fail("expected WarrantNonceRouteUnavailableException")
-            } catch (e: WarrantNonceRouteUnavailableException) {
-                assertTrue(e.path.endsWith("/warrant-nonce/k"))
-            }
         }
 
     // ---- Errors, RPC, events ------------------------------------------------

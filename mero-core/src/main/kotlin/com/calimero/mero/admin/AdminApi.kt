@@ -7,8 +7,6 @@ import com.calimero.mero.account.signDeviceScope
 import com.calimero.mero.auth.ApiEnvelope
 import com.calimero.mero.crypto.DeviceSigner
 import com.calimero.mero.http.HttpClient
-import com.calimero.mero.http.HttpException
-import com.calimero.mero.http.HttpResponse
 import com.calimero.mero.http.MeroStateException
 import com.calimero.mero.http.deleteJson
 import com.calimero.mero.http.getJson
@@ -26,7 +24,6 @@ import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.encodeToString
-import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
@@ -1486,48 +1483,6 @@ class AdminApi(
         send("POST", "/admin-api/contexts/$contextId/presence-intents", http.json.encodeToString(JsonObject.serializer(), body))
     }
 
-    /**
-     * Where [authorDeviceKey] (base58 or 64 hex) stands in its warrant-nonce
-     * sequence in [contextId].
-     *
-     * ⚠️ Not served by core 0.11.0-rc.83: a `404` throws
-     * [WarrantNonceRouteUnavailableException] — fall back to a local counter
-     * rather than retry. The `u64` fields are read from the literal digits, never
-     * through a `Double`.
-     */
-    override suspend fun getWarrantNonce(
-        contextId: String,
-        authorDeviceKey: String,
-    ): WarrantNonceState {
-        val path = "/admin-api/contexts/$contextId/warrant-nonce/${encodeComponent(authorDeviceKey)}"
-        return parseWarrantNonce(path, http.execute("GET", path))
-    }
-
-    /**
-     * [getWarrantNonce] asked the way a delegated client must: by presenting the
-     * device's own credential ([authorProof], hex borsh `AccountProof<DeviceCert>`),
-     * which self-scopes the request. Same answer, same `404` caveat.
-     */
-    override suspend fun getWarrantNonceAsAuthor(
-        contextId: String,
-        authorProof: String,
-    ): WarrantNonceState {
-        val path = "/admin-api/contexts/$contextId/warrant-nonce"
-        val body = buildJsonObject { put("authorProof", authorProof) }
-        return parseWarrantNonce(path, http.execute("POST", path, http.json.encodeToString(JsonObject.serializer(), body)))
-    }
-
-    private fun parseWarrantNonce(
-        path: String,
-        res: HttpResponse,
-    ): WarrantNonceState {
-        if (res.status == 404) {
-            val cause = HttpException(res.status, res.body, res.headers, res.url)
-            throw WarrantNonceRouteUnavailableException(path, cause)
-        }
-        return parseWarrantNonceBody(res.ensureSuccessful().body, http.json)
-    }
-
     // ---- Account root, device links, sealing (rc.83) ------------------------
 
     /**
@@ -1759,38 +1714,3 @@ data class CapabilityChange(
     /** The resulting u32 mask. */
     val capabilities: Long,
 )
-
-/**
- * Parse a warrant-nonce body into [WarrantNonceState]. The `u64` fields are taken
- * from the literal JSON digits ([JsonPrimitive.content]), so a value past 2^53
- * survives. An absent `nextNonce` is the one absence with a meaning: exhausted.
- */
-internal fun parseWarrantNonceBody(
-    body: String,
-    json: Json,
-): WarrantNonceState {
-    val data =
-        (json.parseToJsonElement(body) as? JsonObject)?.get("data") as? JsonObject
-            ?: error("warrant-nonce response had no `data`: ${body.take(200)}")
-
-    fun u64(field: String): ULong? {
-        val value = data[field] ?: return null
-        if (value is JsonNull) return null
-        val content = (value as? JsonPrimitive)?.content
-        return content?.toULongOrNull() ?: error("warrant-nonce field `$field` is not a u64: $value")
-    }
-
-    fun str(field: String): String = (data[field] as? JsonPrimitive)?.content.orEmpty()
-
-    val contextId = str("contextId")
-    val authorDeviceKey = str("authorDeviceKey")
-    val highWater = u64("highWaterNonce")
-    val window = u64("windowWidth") ?: 0uL
-    val next = u64("nextNonce")
-    return if (next == null) {
-        WarrantNonceState.Exhausted(contextId, authorDeviceKey, highWater ?: ULong.MAX_VALUE, window)
-    } else {
-        val seen = (data["seen"] as? JsonPrimitive)?.content == "true"
-        WarrantNonceState.Open(contextId, authorDeviceKey, seen, highWater, window, next)
-    }
-}

@@ -823,14 +823,6 @@ private val rc83Ops =
             listOf(OpField.line("contextId", "Context ID")),
         ) { m, i -> Fmt.json(m.admin.getIntentRelay(i.v("contextId"))) },
         SDKOperation(
-            "ctx.warrantNonce", "Delegated & Owner Ops", "getWarrantNonce", "An author device's next warrant nonce",
-            listOf(OpField.line("contextId", "Context ID"), OpField.line("deviceKey", "Author device key")),
-        ) { m, i -> m.admin.getWarrantNonce(i.v("contextId"), i.v("deviceKey")).toString() },
-        SDKOperation(
-            "ctx.warrantNonceAuthor", "Delegated & Owner Ops", "getWarrantNonceAsAuthor", "Warrant nonce, asked with the author's proof",
-            listOf(OpField.line("contextId", "Context ID"), OpField.line("authorProof", "Author proof (hex)")),
-        ) { m, i -> m.admin.getWarrantNonceAsAuthor(i.v("contextId"), i.v("authorProof")).toString() },
-        SDKOperation(
             "ctx.presenceIntent", "Delegated & Owner Ops", "presenceIntent", "Carry a signed presence statement",
             listOf(
                 OpField.line("contextId", "Context ID"),
@@ -1069,10 +1061,6 @@ private val relayOps =
             val r = e.relay.execute(i.v("contextId"), i.v("method"), argsOf(i.opt("args")))
             "rootHash: ${r.rootHash}\nreturns:\n${pretty(r.returns)}"
         },
-        SDKOperation(
-            "rel.nonce", "Relay", "getWarrantNonceAsAuthor", "Where this device's nonce sequence stands",
-            listOf(OpField.line("contextId", "Context ID")),
-        ) { e, i -> e.relay.getWarrantNonceAsAuthor(i.v("contextId")).toString() },
         SDKOperation(
             "rel.describeCreation", "Relay", "describeCreation", "Who would create a context in a group",
             listOf(OpField.line("groupId", "Group ID")),

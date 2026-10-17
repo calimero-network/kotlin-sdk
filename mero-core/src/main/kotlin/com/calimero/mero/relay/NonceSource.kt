@@ -10,6 +10,10 @@ import kotlinx.coroutines.sync.withLock
  * Port of mero-js `src/relay/nonce-source.ts`. A node keeps a window of seen nonces per
  * (context, device) and refuses a replay; a sequence that only rises — even with gaps —
  * is always accepted.
+ *
+ * No node serves a lookup of that window, so the client's own counter is the only record
+ * of where the sequence stands: persist it ([PersistedNonceSource]). [advanceTo] lets a
+ * caller that learns a higher spent nonce out of band — a refusal naming it — skip ahead.
  */
 interface NonceSource {
     /** The next nonce to sign with. Never returns the same value twice. */
@@ -72,64 +76,3 @@ class PersistedNonceSource(
         ): PersistedNonceSource = PersistedNonceSource(store, "calimero.nonce.${relayUrl.trimEnd('/')}")
     }
 }
-
-/** Where a device stands in its warrant-nonce sequence in one context (core rc.83 `warrant-nonce` route). */
-sealed class RelayWarrantNonceState {
-    abstract val contextId: String
-    abstract val authorDeviceKey: String
-
-    /** The next nonce the node would accept. */
-    data class Open(
-        override val contextId: String,
-        override val authorDeviceKey: String,
-        val nextNonce: ULong,
-        val seen: Boolean,
-        val highWaterNonce: ULong?,
-    ) : RelayWarrantNonceState()
-
-    /** Every nonce is spent: the device must re-key to write here again. */
-    data class Exhausted(
-        override val contextId: String,
-        override val authorDeviceKey: String,
-    ) : RelayWarrantNonceState()
-
-    companion object {
-        /**
-         * Parse the route's body. u64 fields are read from the **text**, never through a
-         * double, so a nonce past 2^53 survives; an absent `nextNonce` means exhausted.
-         */
-        fun parse(body: String): RelayWarrantNonceState {
-            val data = body.substringAfter("\"data\"", missingDelimiterValue = "")
-            require(data.isNotEmpty()) { "warrant-nonce response had no `data`: ${body.take(200)}" }
-
-            fun str(field: String) =
-                Regex("\"$field\"\\s*:\\s*\"([^\"]*)\"")
-                    .find(data)
-                    ?.groupValues
-                    ?.get(1)
-                    .orEmpty()
-
-            fun u64(field: String): ULong? =
-                Regex("\"$field\"\\s*:\\s*\"?(\\d+)\"?")
-                    .find(data)
-                    ?.groupValues
-                    ?.get(1)
-                    ?.toULongOrNull()
-            val contextId = str("contextId")
-            val device = str("authorDeviceKey")
-            val next = u64("nextNonce") ?: return Exhausted(contextId, device)
-            return Open(
-                contextId = contextId,
-                authorDeviceKey = device,
-                nextNonce = next,
-                seen = Regex("\"seen\"\\s*:\\s*true").containsMatchIn(data),
-                highWaterNonce = u64("highWaterNonce"),
-            )
-        }
-    }
-}
-
-/** The device has spent every nonce in a context. */
-class WarrantNonceExhaustedException(
-    val contextId: String,
-) : Exception("this device has spent every nonce in context $contextId; it must re-key to write again")

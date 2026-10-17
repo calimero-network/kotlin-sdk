@@ -9,6 +9,7 @@ import com.calimero.mero.admin.SignedGroupOpenInvitation
 import com.calimero.mero.crypto.Hex
 import com.calimero.mero.crypto.SeedSigner
 import com.calimero.mero.crypto.readU64le
+import com.calimero.mero.relay.IntentRefusedException
 import com.calimero.mero.storage.MemoryTokenStore
 import com.calimero.mero.testkit.FakeNode
 import kotlinx.coroutines.runBlocking
@@ -203,19 +204,37 @@ class CloudSignInFlowTest {
         }
 
     @Test
-    fun `recovers a spent nonce from the relay and signs once more`() =
+    fun `a spent-nonce refusal that names no floor surfaces, with no lookup and no retry`() =
         runBlocking {
             val session = account.completeEnrolment(walletApproves(account.beginEnrolment(callback)))!!
             val connection = account.connect(session, MemoryTokenStore())
-            node.cloud.refuseNextIntent = "warrant nonce already used"
-            node.cloud.nextNonce = 50
-            connection.relay.execute("11".repeat(32), "set", buildJsonObject { put("k", "v") })
+            node.cloud.refuseNextIntent = "this warrant's nonce has already been spent by this author device"
+            try {
+                connection.relay.execute("11".repeat(32), "set", buildJsonObject { put("k", "v") })
+                throw AssertionError("expected IntentRefusedException")
+            } catch (e: IntentRefusedException) {
+                assertTrue(e.retryable)
+                assertEquals(400, e.status)
+            }
+            assertEquals(1, node.cloud.recorded("/intents").count { it.method == "POST" })
+            assertTrue(node.cloud.recorded("warrant-nonce").isEmpty())
+        }
 
-            val lookup = node.cloud.recorded("/warrant-nonce").single()
-            assertEquals(setOf("authorProof"), lookup.bodyJson!!.keys)
+    @Test
+    fun `after a nonce refusal the next execute signs the next nonce`() =
+        runBlocking {
+            val session = account.completeEnrolment(walletApproves(account.beginEnrolment(callback)))!!
+            val connection = account.connect(session, MemoryTokenStore())
+            val ctx = "11".repeat(32)
+            node.cloud.refuseNextIntent = "this warrant's nonce has already been spent by this author device"
+            val refused = runCatching { connection.relay.execute(ctx, "set", buildJsonObject { put("k", "v") }) }.exceptionOrNull()
+            assertTrue((refused as IntentRefusedException).retryable)
+
+            connection.relay.execute(ctx, "set", buildJsonObject { put("k", "v") })
             val posts = node.cloud.recorded("/intents").filter { it.method == "POST" }
             assertEquals(2, posts.size)
-            assertEquals(50uL, nonceOf(posts.last().bodyJson!!))
+            val first = nonceOf(posts.first().bodyJson!!)
+            assertEquals(first + 1uL, nonceOf(posts.last().bodyJson!!))
         }
 
     @Test
