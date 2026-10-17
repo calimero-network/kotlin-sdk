@@ -364,8 +364,6 @@ credential).
 | `governanceIntent(groupId, request): GovernanceIntentResponseData` | `POST /groups/{groupId}/governance-intents` |
 | `getGovernanceIntentRelay(groupId): GovernanceIntentRelayInfo` | `GET /groups/{groupId}/governance-intents` |
 | `presenceIntent(contextId, request)` | `POST /contexts/{contextId}/presence-intents` (`204`) |
-| `getWarrantNonce(contextId, authorDeviceKey): WarrantNonceState` | `GET /contexts/{contextId}/warrant-nonce/{key}` |
-| `getWarrantNonceAsAuthor(contextId, authorProof): WarrantNonceState` | `POST /contexts/{contextId}/warrant-nonce` |
 
 Read `getIntentRelay` **before** signing: a warrant must name exactly its
 `executorAccount`, `executorKey`, `releaseBytecodeId` and `releaseVersion`, and a
@@ -374,10 +372,11 @@ false` is an answer, not an error — an admin of `groupId` grants
 `Capabilities.CAN_AUTHOR_ON_BEHALF` (`openToDelegatedExecution` /
 `grantAuthorship`).
 
-:::caution[Warrant-nonce routes are newer than rc.83]
-A node without them answers `404`, which the SDK throws as
-`WarrantNonceRouteUnavailableException` — fall back to your own counter. Nonces
-are `ULong`, parsed from the literal digits, never through a `Double`.
+:::note[No warrant-nonce lookup]
+Core serves no route that reports where an author device's nonce sequence
+stands, so the SDK has none either. Keep the counter on the device
+(`PersistedNonceSource`); a warrant refused for its nonce comes back as
+`IntentRefusedException` with `retryable = true`.
 :::
 
 ## TEE

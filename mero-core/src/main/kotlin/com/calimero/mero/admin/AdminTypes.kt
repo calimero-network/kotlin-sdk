@@ -1,6 +1,5 @@
 package com.calimero.mero.admin
 
-import com.calimero.mero.http.MeroException
 import kotlinx.serialization.KSerializer
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
@@ -2013,55 +2012,6 @@ data class PresenceIntentRequest(
     /** Hex borsh `AccountProof<DeviceCert>` of the author. */
     val authorProof: String,
 )
-
-// ---- Warrant nonces --------------------------------------------------------
-
-/**
- * Where an author device stands in its warrant-nonce sequence in one context.
- *
- * ⚠️ **Not served by core 0.11.0-rc.83** — the routes are newer than this pin,
- * and a node without them answers `404`, which [AdminApi.getWarrantNonce] turns
- * into [WarrantNonceRouteUnavailableException]. Fall back to your own counter.
- *
- * Nonces are `u64`, held as [ULong]: a value past 2^53 must not round through a
- * `Double` on its way past, or the nonce looks ordinary and is refused forever.
- */
-sealed class WarrantNonceState {
-    abstract val contextId: String
-    abstract val authorDeviceKey: String
-    abstract val seen: Boolean
-    abstract val highWaterNonce: ULong?
-    abstract val windowWidth: ULong
-
-    /** Mint the next warrant at [nextNonce]. */
-    data class Open(
-        override val contextId: String,
-        override val authorDeviceKey: String,
-        override val seen: Boolean,
-        override val highWaterNonce: ULong?,
-        override val windowWidth: ULong,
-        val nextNonce: ULong,
-    ) : WarrantNonceState()
-
-    /** `u64::MAX` is spent: this device can mint no further warrant here. */
-    data class Exhausted(
-        override val contextId: String,
-        override val authorDeviceKey: String,
-        override val highWaterNonce: ULong?,
-        override val windowWidth: ULong,
-    ) : WarrantNonceState() {
-        override val seen: Boolean get() = true
-    }
-}
-
-/** The node answered the warrant-nonce route with `404`: it does not serve it. */
-class WarrantNonceRouteUnavailableException(
-    val path: String,
-    cause: Throwable,
-) : MeroException(
-        "this node does not serve warrant-nonce discovery (404 on $path); fall back to a local nonce counter",
-        cause,
-    )
 
 // ---- Account root and device links (core rc.83) ----------------------------
 

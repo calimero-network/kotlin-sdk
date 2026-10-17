@@ -1,5 +1,30 @@
 # Changelog
 
+## Unreleased
+
+### Breaking — drop the warrant-nonce routes core does not serve
+
+Core (`crates/server/endpoints.json`, `admin/service.rs`) mounts neither
+`GET /admin-api/contexts/{ctx}/warrant-nonce/{deviceKey}` nor
+`POST /admin-api/contexts/{ctx}/warrant-nonce`, so every call could only fail.
+mero-js removed the same API. Removed:
+
+- `AdminApi.getWarrantNonce` / `getWarrantNonceAsAuthor` (and on `AdminSurface`
+  and the no-relay admin), `WarrantNonceState`, `WarrantNonceRouteUnavailableException`
+  and the internal `parseWarrantNonceBody`.
+- `RelayClient.getWarrantNonce` / `getWarrantNonceAsAuthor` / `recoverNonce`,
+  `RelayWarrantNonceState` and `WarrantNonceExhaustedException` (and its
+  `CONFLICT` mapping in `classifyError`).
+- The SDK Explorer entries `ctx.warrantNonce`, `ctx.warrantNonceAuthor` and
+  `rel.nonce`, and FakeCloud's warrant-nonce route and `nextNonce`.
+
+Nonces come only from the device's own counter (`NonceSource`: `MemoryNonceSource`,
+`PersistedNonceSource`, `advanceTo`), which was already the only path that worked
+on a relay. A warrant refused for its nonce now surfaces as `IntentRefusedException`
+with `retryable = true` instead of triggering a lookup. When the refusal itself
+names the last nonce spent (`… (last: N)`), `RelayClient.execute` advances the
+counter past `N` and signs once more.
+
 ## Unreleased — core 0.11.0-rc.83
 
 Pinned to `0.11.0-rc.83` in `ci/core-version` (and the matching

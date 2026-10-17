@@ -4,14 +4,12 @@ import com.calimero.mero.account.InvitationNotClaimableException
 import com.calimero.mero.account.JoinException
 import com.calimero.mero.account.NoRelayException
 import com.calimero.mero.account.NotForAccountException
-import com.calimero.mero.admin.WarrantNonceRouteUnavailableException
 import com.calimero.mero.cloud.AccountHaRefusedException
 import com.calimero.mero.cloud.CloudLinkDeclinedException
 import com.calimero.mero.cloud.CloudNotReadyException
 import com.calimero.mero.relay.IntentRefusedException
 import com.calimero.mero.relay.NotAViewException
 import com.calimero.mero.relay.RelayKeyTransportException
-import com.calimero.mero.relay.WarrantNonceExhaustedException
 import com.calimero.mero.rpc.ReadOnlyWriteRefusedException
 import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.serialization.json.Json
@@ -124,11 +122,10 @@ data class ClassifiedError(
  * - [NetworkException]: [ErrorKind.UNREACHABLE], status `0` (mero-js's status-0 `HTTPError`).
  *   A bare [IOException] or a coroutine timeout is unreachable too, with no status.
  * - Exceptions that carry a status ([IntentRefusedException], [JoinException],
- *   [AccountHaRefusedException], [WarrantNonceRouteUnavailableException] = 404,
- *   [NotAViewException] = 409): by that status. An intent refused for its nonce stays
+ *   [AccountHaRefusedException], [NotAViewException] = 409): by that status. An intent refused for its nonce stays
  *   retryable (re-sign with a fresh nonce); a Cloud HA refusal reports its advice.
  * - [ReadOnlyWriteRefusedException]: [ErrorKind.FORBIDDEN], not retryable — this node's role
- *   cannot write; [WarrantNonceExhaustedException]: [ErrorKind.CONFLICT].
+ *   cannot write.
  * - [CloudLinkDeclinedException] (the account link was declined): [ErrorKind.FORBIDDEN];
  *   [CloudNotReadyException] (no namespace or relay to connect to yet): [ErrorKind.UNAVAILABLE],
  *   retryable — Swift `linkDeclined` / `cloudNotReady`.
@@ -150,7 +147,6 @@ fun classifyError(error: Throwable?): ClassifiedError {
             error is NoRelayException -> ErrorKind.UNAVAILABLE
             error is InvitationNotClaimableException -> ErrorKind.UNAVAILABLE
             error is RelayKeyTransportException -> ErrorKind.UNAVAILABLE
-            error is WarrantNonceExhaustedException -> ErrorKind.CONFLICT
             status != null -> ErrorKind.forStatus(status)
             error is IOException || error is TimeoutCancellationException -> ErrorKind.UNREACHABLE
             else -> ErrorKind.UNKNOWN
@@ -167,7 +163,6 @@ fun statusOf(error: Throwable?): Int? =
         is NetworkException -> 0
         is IntentRefusedException -> error.status
         is JoinException -> error.status
-        is WarrantNonceRouteUnavailableException -> HTTP_NOT_FOUND
         is NotAViewException -> HTTP_CONFLICT
         else -> null
     }
@@ -208,5 +203,4 @@ private fun text(element: JsonElement?): String? {
     return if (primitive.isString) primitive.contentOrNull?.takeIf { it.isNotBlank() } else null
 }
 
-private const val HTTP_NOT_FOUND = 404
 private const val HTTP_CONFLICT = 409

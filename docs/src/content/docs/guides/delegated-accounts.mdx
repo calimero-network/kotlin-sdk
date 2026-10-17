@@ -28,7 +28,11 @@ Each relay answers only for itself and this caller, so the union is exactly the 
 relay that cannot be reached, or whose key cannot be learned, is skipped. `rememberGroupNamespace`
 / `namespaceOfGroup` remember which namespace a subgroup is in, so a group op goes to the right
 relay. Warrant nonces are one rising sequence per relay (`persistedNonces(relayUrl)`);
-`markContextNonceSpent` moves it past a creation nonce.
+`markContextNonceSpent` moves it past a creation nonce. No node serves a lookup of where the
+sequence stands, so that persisted counter is the only record of it. A write refused for its
+nonce throws `IntentRefusedException` with `retryable = true`; `RelayClient.execute` signs once
+more on its own only when the refusal names the last nonce spent (`… (last: N)`), after
+advancing the counter past `N`.
 
 ## The relay's node key
 

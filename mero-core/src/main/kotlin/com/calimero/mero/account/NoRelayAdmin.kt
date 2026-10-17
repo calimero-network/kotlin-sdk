@@ -144,7 +144,6 @@ import com.calimero.mero.admin.UpgradeGroupRequest
 import com.calimero.mero.admin.UpgradeGroupResponseData
 import com.calimero.mero.admin.UploadBlobRequest
 import com.calimero.mero.admin.UploadBlobResponseData
-import com.calimero.mero.admin.WarrantNonceState
 import com.calimero.mero.crypto.DeviceSigner
 import kotlinx.serialization.json.JsonElement
 
@@ -698,16 +697,6 @@ internal object NoRelayAdmin : AdminSurface {
         contextId: String,
         request: PresenceIntentRequest,
     ): Unit = throw NoRelayException("presenceIntent")
-
-    override suspend fun getWarrantNonce(
-        contextId: String,
-        authorDeviceKey: String,
-    ): WarrantNonceState = throw NoRelayException("getWarrantNonce")
-
-    override suspend fun getWarrantNonceAsAuthor(
-        contextId: String,
-        authorProof: String,
-    ): WarrantNonceState = throw NoRelayException("getWarrantNonceAsAuthor")
 
     override suspend fun signWithAccountRoot(
         request: AccountSignWithRootRequest,

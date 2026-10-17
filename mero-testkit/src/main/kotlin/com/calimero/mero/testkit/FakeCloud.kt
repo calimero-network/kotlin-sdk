@@ -56,9 +56,6 @@ class FakeCloud internal constructor(
     /** When non-null, the next intent is refused 400 with this reason (e.g. a stale nonce). */
     @Volatile var refuseNextIntent: String? = null
 
-    /** The `nextNonce` the warrant-nonce route reports. */
-    @Volatile var nextNonce: Long = 1
-
     /** Whether the relay reports it attested a founding (`teeEnabled`), which gates HA. */
     @Volatile var teeOnFounding: Boolean = true
 
@@ -361,23 +358,6 @@ class FakeCloud internal constructor(
                         ok(buildJsonObject { put("data", buildJsonObject { put("returns", outputFor(m)) }) })
                     }
                 }
-            seg.size == 4 && seg[0] == "admin-api" && seg[1] == "contexts" && seg[3] == "warrant-nonce" && method == "POST" -> {
-                record()
-                ok(
-                    JsonObject(
-                        mapOf(
-                            "data" to
-                                buildJsonObject {
-                                    put("contextId", seg[2])
-                                    put("authorDeviceKey", "")
-                                    put("seen", true)
-                                    put("nextNonce", nextNonce)
-                                    put("windowWidth", 64)
-                                },
-                        ),
-                    ),
-                )
-            }
             // ---- relay: governance + group reads ------------------------------------------------
             seg.size == 4 && seg[0] == "admin-api" && seg[1] == "groups" && seg[3] == "governance-intents" && method == "GET" -> {
                 record()

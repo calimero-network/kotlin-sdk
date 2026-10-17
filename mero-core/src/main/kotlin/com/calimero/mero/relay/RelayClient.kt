@@ -42,15 +42,16 @@ import java.util.concurrent.ConcurrentHashMap
  * | [describeGovernance] / [govern] | `GET`/`POST /admin-api/groups/{g}/governance-intents` |
  * | [foundNamespace] | `POST /admin-api/groups/{foundedNamespaceId}/governance-intents` (genesis) |
  * | [presenceIntent] | `POST /admin-api/contexts/{ctx}/presence-intents` |
- * | [getWarrantNonce] / [getWarrantNonceAsAuthor] | `GET /…/warrant-nonce/{key}` / `POST /…/warrant-nonce` |
  *
  * Intents carry their own authority (the warrant), so they go out without a Bearer token.
- * Reads by query and nonce lookups use [session] when given — the token minted by
+ * Reads by query use [session] when given — the token minted by
  * [RelayLogin] — because a hosted relay's forward-auth answers only Bearer there.
  *
- * **Nonce recovery.** A warrant refused for its nonce (another install of this device
- * spent it, or local storage was lost) is answered by asking the relay where this
- * device's sequence stands, advancing [nonces] past it and signing once more.
+ * **Spent nonces.** No node serves a "where does my sequence stand" lookup, so [nonces]
+ * (persist it: [PersistedNonceSource]) is the only record of where the sequence is. A
+ * warrant refused for its nonce surfaces as [IntentRefusedException] with `retryable`
+ * set, as in mero-js. Only when the refusal itself names the last nonce spent
+ * (`… (last: N)`) does the client advance [nonces] past `N` and sign once more.
  */
 class RelayClient
     @Suppress("LongParameterList")
@@ -120,7 +121,7 @@ class RelayClient
             method: String,
             argsJson: JsonElement = JsonObject(emptyMap()),
         ): IntentResult =
-            withNonceRecovery(contextId) {
+            withNonceRecovery {
                 val described = describe(contextId)
                 val executor = checkedExecutor(described.executorAccount, described.executorKey)
                 val releaseBytecodeId = Hex.encode(Hex.decode(described.releaseBytecodeId.orEmpty(), "the relay's releaseBytecodeId", 32))
@@ -420,44 +421,20 @@ class RelayClient
             PresenceStatement.sign(signer, contextId, seq, sentAtMs, state),
         )
 
-        // ---- Nonce discovery -----------------------------------------------------------------
-
-        /** Where [authorDeviceKey] stands in its warrant-nonce sequence in [contextId]. */
-        suspend fun getWarrantNonce(
-            contextId: String,
-            authorDeviceKey: String = signer.publicKey,
-        ): RelayWarrantNonceState {
-            val res = raw("GET", "/admin-api/contexts/${enc(contextId)}/warrant-nonce/${enc(authorDeviceKey)}", null, authed = true)
-            return RelayWarrantNonceState.parse(res.ensureSuccessful().body)
-        }
-
-        /** Where this device stands, proven by the [authorProof] rather than named by key. */
-        suspend fun getWarrantNonceAsAuthor(contextId: String): RelayWarrantNonceState {
-            val body = buildJsonObject { put("authorProof", authorProof) }
-            val res = raw("POST", "/admin-api/contexts/${enc(contextId)}/warrant-nonce", body, authed = true)
-            return RelayWarrantNonceState.parse(res.ensureSuccessful().body)
-        }
-
-        /** Advance [nonces] past what the relay has seen from this device in [contextId]. */
-        suspend fun recoverNonce(contextId: String) {
-            when (val state = getWarrantNonceAsAuthor(contextId)) {
-                is RelayWarrantNonceState.Open -> nonces.advanceTo(state.nextNonce)
-                is RelayWarrantNonceState.Exhausted -> throw WarrantNonceExhaustedException(contextId)
-            }
-        }
-
         // ---- Plumbing ------------------------------------------------------------------------
 
-        private suspend fun <T> withNonceRecovery(
-            contextId: String,
-            block: suspend () -> T,
-        ): T =
+        /**
+         * Run [block]; if the relay refuses it for its nonce **and** the refusal names the
+         * last nonce spent, advance [nonces] past that floor and run it once more. Any other
+         * refusal, including a nonce refusal that reveals no floor, is surfaced unchanged.
+         */
+        private suspend fun <T> withNonceRecovery(block: suspend () -> T): T =
             try {
                 block()
             } catch (e: IntentRefusedException) {
-                if (!e.retryable) throw e
-                val recovered = runCatching { recoverNonce(contextId) }
-                if (recovered.exceptionOrNull() is WarrantNonceExhaustedException) throw recovered.exceptionOrNull()!!
+                val floor = if (e.retryable) spentNonceFloor(e.reason) else null
+                if (floor == null || floor == ULong.MAX_VALUE) throw e
+                nonces.advanceTo(floor + 1u)
                 block()
             }
 
@@ -659,6 +636,21 @@ class IntentRefusedException(
     val retryable: Boolean,
     val status: Int,
 ) : Exception("relay refused the intent (HTTP $status): $reason")
+
+private val LAST_SPENT_NONCE = Regex("""\blast:\s*(\d+)""")
+
+/**
+ * The last nonce spent, when a refusal's [reason] names it (core's stale-nonce wording is
+ * `nonce N already processed (last: M)`); `null` when it reveals no floor, which is what
+ * the intent route's own "already been spent" refusal does. Read from the text so a u64
+ * past 2^53 survives.
+ */
+internal fun spentNonceFloor(reason: String): ULong? =
+    LAST_SPENT_NONCE
+        .find(reason)
+        ?.groupValues
+        ?.get(1)
+        ?.toULongOrNull()
 
 /** `/query` answered 409: [method] is not a view in the app's ABI. */
 class NotAViewException(

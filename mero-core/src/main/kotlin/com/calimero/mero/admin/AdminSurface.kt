@@ -558,16 +558,6 @@ interface AdminSurface {
         request: PresenceIntentRequest,
     )
 
-    suspend fun getWarrantNonce(
-        contextId: String,
-        authorDeviceKey: String,
-    ): WarrantNonceState
-
-    suspend fun getWarrantNonceAsAuthor(
-        contextId: String,
-        authorProof: String,
-    ): WarrantNonceState
-
     suspend fun signWithAccountRoot(
         request: AccountSignWithRootRequest,
     ): AccountSignWithRootResponseData

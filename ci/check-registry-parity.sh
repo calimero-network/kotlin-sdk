@@ -35,10 +35,6 @@ EXCLUDED=(
   subscribe          # SSE subscription plumbing
   blobPath           # internal: blob path + context_id query builder
   send               # internal: status-only request helper
-  parseWarrantNonce  # internal: warrant-nonce 404 / body handling
-  parseWarrantNonceBody  # internal: u64-exact warrant-nonce decoder
-  str                # internal: local helper inside parseWarrantNonceBody
-  u64                # ditto
 )
 
 methods() {
