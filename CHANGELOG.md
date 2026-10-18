@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+### Fixed — sign namespace ops at schema version 25
+
+`NamespaceOp.signMemberJoinOp` signed at schema version 24, so every node on
+core 0.11.0-rc.85 or later (calimero-network/core#4552) refused the join:
+`signed_op signature does not verify: schema version mismatch: expected 25,
+got 24`. A keyholder could not join a namespace from an invitation through a
+current relay. `NamespaceOp.SCHEMA_VERSION` is 25 now, matching mero-js
+(its #261). Found by Mero Chat's Android live tests against a real relay.
+
 ### Breaking — drop the warrant-nonce routes core does not serve
 
 Core (`crates/server/endpoints.json`, `admin/service.rs`) mounts neither
