@@ -54,6 +54,7 @@ import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontFamily
@@ -61,6 +62,10 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.calimero.mero.Mero
+import com.calimero.mero.admin.CreateContextRequest
+import com.calimero.mero.admin.CreateGroupInNamespaceRequest
+import com.calimero.mero.admin.CreateNamespaceRequest
 import com.calimero.mero.compose.MeroClient
 import com.calimero.mero.sample.ui.Cal
 import com.calimero.mero.sample.ui.CalCard
@@ -274,15 +279,44 @@ class RunAllModel {
 
     data class Result(
         val id: Int,
-        val op: SDKOperation,
+        /** The explorer operation, or null for a contract test case. */
+        val op: SDKOperation?,
+        val title: String,
+        val subtitle: String,
+        val summary: String,
         val phase: String,
+        /** The contract case, for a "Contract" row. */
+        val contractCase: ContractSpec.Case? = null,
         /** Index into the lifecycle steps, for a lifecycle row. */
         val step: Int? = null,
         val inputs: Map<String, String> = emptyMap(),
         val status: Status = Status.Pending,
         val output: String = "",
         val millis: Long = 0,
-    )
+    ) {
+        companion object {
+            fun of(
+                id: Int,
+                op: SDKOperation,
+                phase: String,
+                step: Int? = null,
+                status: Status = Status.Pending,
+            ) = Result(id, op, op.name, op.category, op.summary, phase, step = step, status = status)
+
+            fun of(
+                id: Int,
+                contractCase: ContractSpec.Case,
+            ) = Result(
+                id,
+                null,
+                contractCase.name,
+                contractCase.group,
+                "scaffolding-e2e · ${contractCase.id}",
+                PHASE_CONTRACT,
+                contractCase = contractCase,
+            )
+        }
+    }
 
     val results = mutableStateListOf<Result>()
     var running by mutableStateOf(false)
@@ -299,6 +333,7 @@ class RunAllModel {
     suspend fun run(
         client: MeroClient,
         signedInToNode: Boolean,
+        contractSpec: ContractSpec? = null,
     ) {
         if (running) return
         running = true
@@ -309,11 +344,13 @@ class RunAllModel {
             val steps = if (signedInToNode) RunAllPlan.lifecycle((System.currentTimeMillis() / MILLIS).toString()) else emptyList()
 
             val planned = mutableListOf<Result>()
-            reads.forEach { planned += Result(planned.size, it, PHASE_READS) }
-            steps.forEachIndexed { index, step -> byId[step.opId]?.let { planned += Result(planned.size, it, PHASE_LIFECYCLE, step = index) } }
-            val covered = planned.map { it.op.id }.toSet()
+            reads.forEach { planned += Result.of(planned.size, it, PHASE_READS) }
+            steps.forEachIndexed { index, step -> byId[step.opId]?.let { planned += Result.of(planned.size, it, PHASE_LIFECYCLE, step = index) } }
+            val covered = planned.mapNotNull { it.op?.id }.toSet()
+            val spec = if (signedInToNode) contractSpec else null
+            spec?.cases?.forEach { planned += Result.of(planned.size, it) }
             sdkOperations.filter { it.id !in covered }.forEach {
-                planned += Result(planned.size, it, PHASE_SKIPPED, status = Status.Skipped(RunAllPlan.skipReason(it, signedInToNode)))
+                planned += Result.of(planned.size, it, PHASE_SKIPPED, status = Status.Skipped(RunAllPlan.skipReason(it, signedInToNode)))
             }
             results.clear()
             results.addAll(planned)
@@ -333,8 +370,9 @@ class RunAllModel {
             }
 
             for (i in results.indices) {
-                if (results[i].status == Status.Pending) runOne(i, steps, env, fixtures)
+                if (results[i].status == Status.Pending && results[i].op != null) runOne(i, steps, env, fixtures)
             }
+            if (spec != null) runContract(spec, env.mero)
         } finally {
             running = false
             finished = true
@@ -364,7 +402,7 @@ class RunAllModel {
         results[i] = results[i].copy(inputs = inputs, status = Status.Running)
         val started = System.currentTimeMillis()
         try {
-            val output = results[i].op.run(env, inputs)
+            val output = results[i].op!!.run(env, inputs)
             val millis = System.currentTimeMillis() - started
             val reason = step?.expect?.invoke(output)
             results[i] =
@@ -386,6 +424,67 @@ class RunAllModel {
         step?.captures?.forEach { (key, jsonKey) -> find(jsonKey, output)?.let { fixtures[key] = it } }
     }
 
+    /**
+     * The scaffolding-e2e contract tests: install the app from the registry, make a namespace,
+     * group and context, run every case in order with one shared `${run}` prefix, then delete what
+     * was made (the app only when this run installed it).
+     */
+    @Suppress("LongMethod")
+    private suspend fun runContract(
+        spec: ContractSpec,
+        mero: Mero,
+    ) {
+        val rows = results.indices.filter { results[it].phase == PHASE_CONTRACT }
+        try {
+            val installedBefore =
+                runCatching {
+                    mero.admin
+                        .listApplications()
+                        .apps
+                        .any { it.packageName == spec.packageName }
+                }.getOrNull()
+            val version = mero.admin.getRegistryVersions(RunAllPlan.REGISTRY, spec.packageName).firstOrNull()
+            if (version == null) {
+                rows.forEach { results[it] = results[it].copy(status = Status.Skipped("${spec.packageName} is not on the registry")) }
+                return
+            }
+            val app = mero.admin.installFromRegistry(spec.packageName, version)
+            val ns = mero.admin.createNamespace(CreateNamespaceRequest(applicationId = app.applicationId, name = "run-all-contract"))
+            val group =
+                mero.admin.createGroupInNamespace(
+                    ns.namespaceId,
+                    CreateGroupInNamespaceRequest(groupName = "contract", visibility = CreateGroupInNamespaceRequest.VISIBILITY_OPEN),
+                )
+            val context =
+                mero.admin.createContext(CreateContextRequest(applicationId = app.applicationId, groupId = group.groupId, name = "contract"))
+
+            val runner = ContractCaseRunner(mero, context.contextId, "e2e_" + (System.currentTimeMillis() / MILLIS).toString(BASE36))
+            for (i in rows) {
+                val testCase = results[i].contractCase ?: continue
+                results[i] = results[i].copy(status = Status.Running)
+                val started = System.currentTimeMillis()
+                val why = runner.run(testCase)
+                results[i] =
+                    results[i].copy(
+                        millis = System.currentTimeMillis() - started,
+                        status = why?.let { Status.Failed(it) } ?: Status.Passed,
+                        output = why ?: "passed",
+                    )
+            }
+
+            runCatching { mero.admin.deleteContext(context.contextId) }
+            runCatching { mero.admin.deleteNamespace(ns.namespaceId) }
+            if (installedBefore == false) runCatching { mero.admin.uninstallApplication(app.applicationId) }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            val message = e.message ?: e.toString()
+            rows.filter { results[it].status == Status.Pending }.forEach {
+                results[it] = results[it].copy(status = Status.Failed("Setup failed: $message"))
+            }
+        }
+    }
+
     fun report(): String =
         buildString {
             append("MeroKit Run all — $passed passed, $failed failed, $skipped skipped")
@@ -393,10 +492,10 @@ class RunAllModel {
                 append('\n')
                 append(
                     when (val s = r.status) {
-                        Status.Passed -> "PASS  ${r.op.name} (${r.millis} ms)"
-                        is Status.Failed -> "FAIL  ${r.op.name}: ${s.why}"
-                        is Status.Skipped -> "SKIP  ${r.op.name}: ${s.why}"
-                        else -> "....  ${r.op.name}"
+                        Status.Passed -> "PASS  ${r.title} (${r.millis} ms)"
+                        is Status.Failed -> "FAIL  ${r.title}: ${s.why}"
+                        is Status.Skipped -> "SKIP  ${r.title}: ${s.why}"
+                        else -> "....  ${r.title}"
                     },
                 )
             }
@@ -405,9 +504,11 @@ class RunAllModel {
     companion object {
         const val PHASE_READS = "Reads"
         const val PHASE_LIFECYCLE = "Lifecycle"
+        const val PHASE_CONTRACT = "Contract"
         const val PHASE_SKIPPED = "Skipped"
-        val PHASES = listOf(PHASE_READS, PHASE_LIFECYCLE, PHASE_SKIPPED)
+        val PHASES = listOf(PHASE_READS, PHASE_LIFECYCLE, PHASE_CONTRACT, PHASE_SKIPPED)
         private const val MILLIS = 1000L
+        private const val BASE36 = 36
 
         /** The first string value under [key] anywhere in a JSON document, or a top-level array's first element for `$first`. */
         fun find(
@@ -481,6 +582,8 @@ fun RunAllScreen(
 ) {
     val scope = rememberCoroutineScope()
     val clipboard = LocalClipboardManager.current
+    val context = LocalContext.current
+    val contractSpec = remember { ContractSpec.load(context) }
     var filter by remember { mutableStateOf(RunFilter.ALL) }
     var copied by remember { mutableStateOf(false) }
     var detail by remember { mutableStateOf<RunAllModel.Result?>(null) }
@@ -527,7 +630,8 @@ fun RunAllScreen(
                         Text(
                             if (signedInToNode) {
                                 "Runs every read, then a full lifecycle on a throwaway kv-store app (install, namespace, " +
-                                    "context, RPC, aliases, blob), and deletes what it made."
+                                    "context, RPC, aliases, blob), then the scaffolding-e2e contract tests, and deletes " +
+                                    "what it made."
                             } else {
                                 "Runs every read through your Cloud session. The lifecycle needs a node you sign in to " +
                                     "directly (Manually enter node URL)."
@@ -559,7 +663,7 @@ fun RunAllScreen(
                                 onClick = {
                                     copied = false
                                     filter = RunFilter.ALL
-                                    scope.launch { model.run(client, signedInToNode) }
+                                    scope.launch { model.run(client, signedInToNode, contractSpec) }
                                 },
                                 enabled = !model.running,
                                 icon =
@@ -667,12 +771,12 @@ private fun RunResultRow(
         }
         Spacer(Modifier.width(12.dp))
         Column(Modifier.weight(1f)) {
-            Text(result.op.name, color = Cal.text, fontSize = 14.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(result.title, color = Cal.text, fontSize = 14.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
             val (detail, color) =
                 when (val s = result.status) {
                     is RunAllModel.Status.Failed -> s.why to Cal.error
                     is RunAllModel.Status.Skipped -> s.why to Cal.textFaint
-                    else -> result.op.category to Cal.textFaint
+                    else -> result.subtitle to Cal.textFaint
                 }
             Text(detail, color = color, fontSize = 12.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
         }
@@ -689,7 +793,7 @@ private fun RunResultDetail(
     onBack: () -> Unit,
 ) {
     Column(Modifier.fillMaxSize().background(Cal.bg)) {
-        TopBar(result.op.name, subtitle = result.op.category, onBack = onBack)
+        TopBar(result.title, subtitle = result.subtitle, onBack = onBack)
         Column(
             Modifier
                 .fillMaxSize()
@@ -697,7 +801,7 @@ private fun RunResultDetail(
                 .padding(horizontal = screenPad, vertical = 16.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
-            Text(result.op.summary, color = Cal.textDim, fontSize = 14.sp)
+            Text(result.summary, color = Cal.textDim, fontSize = 14.sp)
             if (result.inputs.isNotEmpty()) {
                 Block(
                     "Inputs",
