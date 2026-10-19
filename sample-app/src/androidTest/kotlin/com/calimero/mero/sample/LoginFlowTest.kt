@@ -6,6 +6,7 @@ import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createEmptyComposeRule
 import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onNodeWithTag
+import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
 import androidx.test.core.app.ActivityScenario
@@ -89,5 +90,29 @@ class LoginFlowTest {
 
         waitForTag("cloudLoginCancelled")
         composeRule.onNodeWithTag("loginTitle").assertIsDisplayed()
+    }
+
+    /** SDK tab → Login component: mero-compose's LoginView, switching between Cloud and a node. */
+    @Test
+    fun loginComponentSwitchesBetweenCloudAndNode() {
+        val scenario = launchMock()
+        signIn(scenario) { MockWallet.approve(it) }
+        waitForTag("homeTitle")
+
+        composeRule.onNodeWithTag("tabSdk").performClick()
+        waitForTag("componentsEntry")
+        composeRule.onNodeWithTag("componentsEntry").performClick()
+
+        waitForTag("cloudSignInButton")
+        composeRule.onNodeWithText("Welcome to Calimero").assertIsDisplayed()
+        composeRule.onNodeWithTag("manualNode").performClick()
+
+        waitForTag("nodeConnectButton")
+        composeRule.onNodeWithText("Connect to a node").assertIsDisplayed()
+        // The preview starts on username + password.
+        composeRule.onNodeWithTag("nodeUserInput").assertIsDisplayed()
+        composeRule.onNodeWithTag("nodePasswordInput").assertIsDisplayed()
+        composeRule.onNodeWithTag("useCloud").performClick()
+        waitForTag("cloudSignInButton")
     }
 }

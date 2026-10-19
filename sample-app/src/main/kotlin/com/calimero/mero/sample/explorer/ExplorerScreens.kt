@@ -405,11 +405,12 @@ private fun SignedIn(
     var inChannel by remember { mutableStateOf(false) }
     var sdkOp by remember { mutableStateOf<SDKOperation?>(null) }
     var runAll by remember { mutableStateOf(false) }
+    var components by remember { mutableStateOf(false) }
     val runAllModel = remember(client, state.nodeUrl, state.account) { RunAllModel() }
     var showLogs by remember { mutableStateOf(false) }
     val chat = remember(client, state.nodeUrl, state.account) { ChatService(client, options.chatDisplayName) }
 
-    BackHandler(enabled = tab != Tab.HOME && !inChannel && sdkOp == null && !runAll && !showLogs) { tab = Tab.HOME }
+    BackHandler(enabled = tab != Tab.HOME && !inChannel && sdkOp == null && !runAll && !components && !showLogs) { tab = Tab.HOME }
 
     if (showLogs) {
         DiagnosticsScreen(onBack = { showLogs = false })
@@ -432,7 +433,13 @@ private fun SignedIn(
                     val op = sdkOp
                     when {
                         runAll -> RunAllScreen(client, runAllModel, signedInToNode = state.isNodeSession, onBack = { runAll = false })
-                        op == null -> SdkListScreen(onOpenOp = { sdkOp = it }, onOpenRunAll = { runAll = true })
+                        components -> LoginComponentPreview(onBack = { components = false })
+                        op == null ->
+                            SdkListScreen(
+                                onOpenOp = { sdkOp = it },
+                                onOpenRunAll = { runAll = true },
+                                onOpenComponents = { components = true },
+                            )
                         else -> {
                             BackHandler { sdkOp = null }
                             OperationRunner(client, op, onBack = { sdkOp = null })
@@ -441,8 +448,8 @@ private fun SignedIn(
                 }
             }
         }
-        // The bottom bar hides inside a channel, where the composer sits.
-        if (!(tab == Tab.CHAT && inChannel)) {
+        // The bottom bar hides inside a channel, where the composer sits, and over the login preview.
+        if (!(tab == Tab.CHAT && inChannel) && !(tab == Tab.SDK && components)) {
             Hairline()
             NavigationBar(containerColor = Cal.surface, tonalElevation = 0.dp) {
                 Tab.entries.forEach { t ->
@@ -648,6 +655,7 @@ private const val ACCOUNT_LOG = 12
 private fun SdkListScreen(
     onOpenOp: (SDKOperation) -> Unit,
     onOpenRunAll: () -> Unit,
+    onOpenComponents: () -> Unit,
     onBack: (() -> Unit)? = null,
 ) {
     var search by remember { mutableStateOf("") }
@@ -669,7 +677,10 @@ private fun SdkListScreen(
             Modifier.fillMaxSize().padding(horizontal = screenPad).testTag("opList"),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            if (search.isEmpty()) item { Box(Modifier.padding(top = 16.dp)) { RunAllEntry(onClick = onOpenRunAll) } }
+            if (search.isEmpty()) {
+                item { Box(Modifier.padding(top = 16.dp)) { RunAllEntry(onClick = onOpenRunAll) } }
+                item { ComponentsEntry(onClick = onOpenComponents) }
+            }
             item {
                 Row(
                     Modifier
