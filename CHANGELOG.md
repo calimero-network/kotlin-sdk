@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+### Fixed — alias create and delete
+
+`createContextAlias`, `createApplicationAlias`, `deleteContextAlias` and
+`deleteApplicationAlias` threw on success: core answers its `Empty` as
+`{"data": null}`, and these four treated a null `data` as an error. They return
+`Empty()` now, like the other `Empty` routes and Swift's `emptyOK`.
+
 ### Fixed — a method that returns nothing
 
 `RpcClient.executeRaw` answered `{}` when `result.output` was missing (a method
