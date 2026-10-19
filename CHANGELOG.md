@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+### Fixed — a method that returns nothing
+
+`RpcClient.executeRaw` answered `{}` when `result.output` was missing (a method
+returning `()`, such as kv-store's `set`), so `execute<String?>` failed to
+decode and a `JsonElement` caller saw an empty object. It answers `JsonNull`
+now: optional and `JsonElement` results decode to null, and a non-nullable
+type still fails to decode. Same fix as the Swift SDK.
+
 ### Changed — core 0.11.0-rc.89
 
 The SDK now targets core `0.11.0-rc.89` (`ci/core-version`, and the merod image

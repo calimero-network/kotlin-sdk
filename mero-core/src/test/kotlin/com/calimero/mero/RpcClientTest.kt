@@ -3,10 +3,14 @@ package com.calimero.mero
 import com.calimero.mero.rpc.RpcException
 import com.calimero.mero.storage.MemoryTokenStore
 import kotlinx.coroutines.runBlocking
+import kotlinx.serialization.SerializationException
+import kotlinx.serialization.json.JsonNull
 import okhttp3.mockwebserver.MockResponse
 import okhttp3.mockwebserver.MockWebServer
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Assert.fail
 import org.junit.Before
 import org.junit.Test
@@ -60,6 +64,29 @@ class RpcClientTest {
                 assertEquals(-32000, e.code)
                 assertEquals("boom", e.message)
                 assertEquals("ContractError", e.type)
+            }
+        }
+
+    @Test
+    fun `a method returning nothing decodes to null, with output absent or null`() =
+        runBlocking {
+            for (result in listOf("""{}""", """{"output":null}""")) {
+                server.enqueue(MockResponse().setBody("""{"jsonrpc":"2.0","id":1,"result":$result}"""))
+                assertEquals(JsonNull, mero.rpc.executeRaw("ctx", "set"))
+                server.enqueue(MockResponse().setBody("""{"jsonrpc":"2.0","id":1,"result":$result}"""))
+                assertNull(mero.rpc.execute<String?>("ctx", "set"))
+            }
+        }
+
+    @Test
+    fun `no output still fails for a non-nullable type`() =
+        runBlocking {
+            server.enqueue(MockResponse().setBody("""{"jsonrpc":"2.0","id":1,"result":{}}"""))
+            try {
+                mero.rpc.execute<String>("ctx", "get")
+                fail("expected a decode failure")
+            } catch (e: SerializationException) {
+                assertTrue(e.message.orEmpty().isNotEmpty())
             }
         }
 }
