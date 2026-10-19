@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 #
 # android-e2e.sh — run the full-feature Android end-to-end suite (AppE2ETest)
-# against a LIVE node, on one emulator. The "Playwright for Android" run: login →
-# explorer method call → chat install → space → channel → send/read a message.
+# against a LIVE node, on one emulator. The "Playwright for Android" run: node
+# sign-in → explorer method call → chat install → space → channel → send/read a
+# message → Run all (reads, kv-store lifecycle, scaffolding-e2e contract tests).
 #
 # It boots a fresh merod on :4001 (admin dev/dev-password), reuses a running
 # emulator (or launches one from your AVDs), then runs the AppE2ETest instrumented

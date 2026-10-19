@@ -183,7 +183,10 @@ class AppE2ETest {
                 .getOrNull(SemanticsProperties.Text)
                 ?.joinToString()
                 .orEmpty()
-        Log.i("MeroE2E", report)
+        // Between markers, one line at a time: android-e2e.yml lifts it out of logcat into the run's summary.
+        Log.i("MeroE2E", "RUN-ALL-REPORT-BEGIN")
+        report.lines().forEach { Log.i("MeroE2E", it) }
+        Log.i("MeroE2E", "RUN-ALL-REPORT-END")
         val failures = report.lines().filter { it.startsWith("FAIL") }
         assertTrue("Run all failed:\n${failures.joinToString("\n")}", failures.isEmpty())
     }
