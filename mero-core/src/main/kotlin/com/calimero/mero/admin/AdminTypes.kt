@@ -1403,8 +1403,8 @@ data class TeeInfoResponseData(
 )
 
 /**
- * `POST /admin-api/tee/attest`. The three flags are additive (core rc.83) and
- * default to `false` on the node; `null` leaves them off the wire.
+ * `POST /admin-api/tee/attest`. The flags are additive (core rc.83; `eventLog`
+ * rc.88) and default to `false` on the node; `null` leaves them off the wire.
  */
 @Serializable
 data class TeeAttestRequest(
@@ -1416,6 +1416,11 @@ data class TeeAttestRequest(
     val bindTransportKey: Boolean? = null,
     /** Return the DCAP collateral a verifier needs beside the quote. */
     val includeCollateral: Boolean? = null,
+    /**
+     * Also return the TD's event log ([TeeAttestResponseData.eventLogB64]) (core rc.88).
+     * A node running a mock TEE answers `400`: it has no event log.
+     */
+    val eventLog: Boolean? = null,
 )
 
 /** `POST /admin-api/tee/registration-attest` (core rc.83): a quote for fleet registration. */
@@ -1480,6 +1485,8 @@ data class TeeAttestResponseData(
     val transportPublicKey: String? = null,
     /** DCAP collateral, raw, when `includeCollateral` was asked. */
     val collateral: JsonElement? = null,
+    /** Base64 of the TD's CCEL event log, when `eventLog` was asked (core rc.88). */
+    val eventLogB64: String? = null,
 )
 
 // ---- Network ---------------------------------------------------------------

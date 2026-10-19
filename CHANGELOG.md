@@ -2,6 +2,26 @@
 
 ## Unreleased
 
+### Changed — core 0.11.0-rc.89
+
+The SDK now targets core `0.11.0-rc.89` (`ci/core-version`, and the merod image
+in every `ci/merobox/*.yml`). Nothing on the wire was taken away between rc.83
+and rc.89; what moved is already in this SDK or is additive:
+
+- Request proofs sign the path *and query* under `calimero.auth.request.v2`
+  (core#4549). `RequestSig` already signs that preimage.
+- Signed namespace ops are at schema version 25 (core#4552, rc.85): the fix
+  below.
+- `TeeAttestRequest.eventLog` / `TeeAttestResponseData.eventLogB64` (core#4591):
+  ask `POST /admin-api/tee/attest` for the TD's CCEL event log, base64. A mock
+  TEE answers `400`.
+- `listNamespaceRevokedDevices` (core#4589) was already added.
+- A nested subgroup is created `Open` unless the caller says otherwise
+  (core#4543); `createGroupInNamespace` always sends a visibility, so nothing
+  changes for callers.
+- A client key bound to an application acts only for that application
+  (core#4564).
+
 ### Fixed — sign namespace ops at schema version 25
 
 `NamespaceOp.signMemberJoinOp` signed at schema version 24, so every node on

@@ -334,6 +334,9 @@ class Rc83WireShapeTest {
         assertEquals(setOf("nonce"), keysOf(req))
         req = capture { mero.admin.teeAttest(TeeAttestRequest(nonce = "n", bindTransportKey = true, includeCollateral = true)) }
         assertEquals(setOf("nonce", "bindTransportKey", "includeCollateral"), keysOf(req))
+        // core rc.88 (core#4591): ask for the TD's event log.
+        req = capture { mero.admin.teeAttest(TeeAttestRequest(nonce = "n", eventLog = true)) }
+        assertEquals(setOf("nonce", "eventLog"), keysOf(req))
     }
 
     @Test
