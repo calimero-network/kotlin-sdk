@@ -15,12 +15,14 @@ import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performTextInput
+import androidx.compose.ui.test.performTextReplacement
 import androidx.test.core.app.ActivityScenario
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
-import org.junit.Ignore
+import org.junit.After
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -31,10 +33,6 @@ import org.junit.runner.RunWith
  * logcat by the harness) and the guest reads it from the `invite` runner arg. Reads `nodeUrl`,
  * `user`, `pass`, `invite` from the instrumentation runner arguments. Excluded from the mock CI.
  */
-@Ignore(
-    "Drove the removed node-URL + username/password login. Mobile sign-in is Calimero Cloud only now; " +
-        "this journey needs a live wallet + relay and is to be rewritten against MockWallet or a staging account.",
-)
 @RunWith(AndroidJUnit4::class)
 class ChatMultiUserTest {
     @get:Rule
@@ -58,7 +56,15 @@ class ChatMultiUserTest {
         // Handing the invite in as an extra makes the chat screen install the app and join on open —
         // the Android analog of the Swift harness's TEST_RUNNER_E2E_JOIN.
         if (!joinInvite.isNullOrEmpty()) intent.putExtra("invite", joinInvite)
-        ActivityScenario.launch<MainActivity>(intent)
+        scenario = ActivityScenario.launch(intent)
+    }
+
+    private var scenario: ActivityScenario<MainActivity>? = null
+
+    /** Close the activity, so its live event stream does not hold a connection into the next test. */
+    @After
+    fun tearDown() {
+        scenario?.close()
     }
 
     private fun waitForTag(
@@ -75,9 +81,12 @@ class ChatMultiUserTest {
 
     private fun login() {
         waitForTag("loginTitle")
-        composeRule.onNodeWithTag("usernameField").performTextInput(user)
-        composeRule.onNodeWithTag("passwordField").performTextInput(pass)
-        composeRule.onNodeWithTag("loginButton").performClick()
+        // The `nodeUrl` launch extra opens "Manually enter node URL" with the URL filled in; the
+        // username field remembers the last one, so replace rather than append.
+        composeRule.onNodeWithTag("usernameField").performTextReplacement(user)
+        composeRule.onNodeWithTag("passwordField").performTextReplacement(pass)
+        // The keyboard is up after typing and can push the button out of view.
+        composeRule.onNodeWithTag("loginButton").performScrollTo().performClick()
         // A first login on a fresh node is slow; on timeout report the on-screen error.
         try {
             waitForTag("openChat", timeoutMs = 60_000)
@@ -192,7 +201,7 @@ class ChatMultiUserTest {
         val autoJoined = runCatching { waitForText("shared", timeoutMs = 120_000) }.isSuccess
         if (!autoJoined) {
             composeRule.onNodeWithTag("chatAdd").performClick()
-            composeRule.onNodeWithText("Join existing space").performClick()
+            composeRule.onNodeWithText("Join with an invite").performClick()
             composeRule.waitUntil(60_000) {
                 composeRule
                     .onAllNodes(hasTestTag("joinField").and(isEnabled()))

@@ -5,6 +5,7 @@ import android.net.Uri
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.activity.enableEdgeToEdge
 import androidx.activity.viewModels
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
@@ -31,7 +32,8 @@ import kotlinx.coroutines.launch
  *    [MockWallet]. Drives the CI instrumented `LoginFlowTest`.
  *  - default: the hosted Calimero wallet, cloud manager and relay.
  *
- * Sign-in is Calimero Cloud only. The wallet redirects back to [callbackUrl]
+ * Sign-in is Calimero Cloud, or "Manually enter node URL" for a node you run (a local `merod`).
+ * The wallet redirects back to [callbackUrl]
  * (`mero-sample://enrol#credential=…` by default, see the manifest's intent filter); the redirect
  * arrives on the launch intent or through [onNewIntent] and goes to
  * [com.calimero.mero.compose.MeroClient.handleEnrolmentCallback].
@@ -45,6 +47,7 @@ class MainActivity : ComponentActivity() {
         get() = intent?.getStringExtra(EXTRA_CALLBACK_URL) ?: DEFAULT_CALLBACK_URL
 
     override fun onCreate(savedInstanceState: Bundle?) {
+        enableEdgeToEdge()
         super.onCreate(savedInstanceState)
         val mock = intent?.getBooleanExtra(EXTRA_MOCK, false) ?: false
         vm.start(mock)
@@ -54,6 +57,7 @@ class MainActivity : ComponentActivity() {
                 initialContextId = intent?.getStringExtra(EXTRA_CONTEXT) ?: if (mock) MOCK_CONTEXT else "",
                 chatDisplayName = intent?.getStringExtra(EXTRA_CHAT_USER),
                 autoJoinInvite = intent?.getStringExtra(EXTRA_INVITE),
+                nodeUrl = intent?.getStringExtra(EXTRA_NODE_URL),
                 mockWallet =
                     if (mock) {
                         {
@@ -121,6 +125,9 @@ class MainActivity : ComponentActivity() {
         const val EXTRA_CONTEXT = "contextId"
         const val EXTRA_CHAT_USER = "chatUser"
         const val EXTRA_INVITE = "invite"
+
+        /** Prefills "Manually enter node URL" and opens the sign-in screen on it (the live e2e tests). */
+        const val EXTRA_NODE_URL = "nodeUrl"
 
         /** Must match the `<data android:scheme="mero-sample" android:host="enrol" />` intent filter. */
         const val DEFAULT_CALLBACK_URL = "mero-sample://enrol"

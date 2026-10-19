@@ -20,9 +20,12 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.outlined.ChevronRight
@@ -55,6 +58,9 @@ import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.input.VisualTransformation
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -90,8 +96,8 @@ object Cal {
     val success = Color(0xFF2F7A00)
     val successSoft = Color(0xFFEEF8E4)
 
-    val radiusControl = 8.dp
-    val radiusCard = 14.dp
+    val radiusControl = 12.dp
+    val radiusCard = 18.dp
     val cardPad = 20.dp
 }
 
@@ -131,7 +137,7 @@ fun CalPrimaryButton(
     Button(
         onClick = onClick,
         enabled = enabled,
-        modifier = modifier.heightIn(min = 44.dp),
+        modifier = modifier.heightIn(min = 52.dp),
         shape = RoundedCornerShape(Cal.radiusControl),
         border = BorderStroke(1.dp, Cal.limeEdge),
         contentPadding = PaddingValues(horizontal = 16.dp),
@@ -158,7 +164,7 @@ fun CalSecondaryButton(
     OutlinedButton(
         onClick = onClick,
         enabled = enabled,
-        modifier = modifier.heightIn(min = 44.dp),
+        modifier = modifier.heightIn(min = 48.dp),
         shape = RoundedCornerShape(Cal.radiusControl),
         border = BorderStroke(1.dp, Cal.borderStrong),
         contentPadding = PaddingValues(horizontal = 16.dp),
@@ -195,7 +201,7 @@ private fun RowScope.ButtonContent(
         Icon(icon, contentDescription = null, modifier = Modifier.size(18.dp))
         Spacer(Modifier.width(8.dp))
     }
-    Text(text, fontWeight = FontWeight.Medium, fontSize = 14.sp)
+    Text(text, fontWeight = FontWeight.SemiBold, fontSize = 15.sp)
 }
 
 /** A white card: 1px hairline, radius 14, padding 20. */
@@ -246,7 +252,7 @@ fun IconTile(
     Box(
         Modifier
             .size(size)
-            .clip(RoundedCornerShape(9.dp))
+            .clip(RoundedCornerShape(size * 0.3f))
             .background(if (accent) Cal.accentSoft else Cal.bgSubtle),
         contentAlignment = Alignment.Center,
     ) {
@@ -296,7 +302,7 @@ fun TopBar(
     onBack: (() -> Unit)? = null,
     actions: @Composable RowScope.() -> Unit = {},
 ) {
-    Column(modifier.fillMaxWidth().background(Cal.surface)) {
+    Column(modifier.fillMaxWidth().background(Cal.surface).statusBarsPadding()) {
         Row(
             Modifier.fillMaxWidth().heightIn(min = 56.dp).padding(horizontal = 8.dp),
             verticalAlignment = Alignment.CenterVertically,
@@ -322,7 +328,10 @@ fun TopBar(
     }
 }
 
-/** Single-line (or multi-line) text input: white, strong hairline, ink focus. */
+/**
+ * Single-line (or multi-line) text input: white, strong hairline, ink focus. [modifier] goes on
+ * the field itself (so a test tag lands on the editable node); [password] masks the text.
+ */
 @Composable
 @Suppress("LongParameterList")
 fun CalTextField(
@@ -334,8 +343,11 @@ fun CalTextField(
     enabled: Boolean = true,
     placeholder: String? = null,
     mono: Boolean = false,
+    password: Boolean = false,
+    keyboardOptions: KeyboardOptions = KeyboardOptions.Default,
+    keyboardActions: KeyboardActions = KeyboardActions.Default,
 ) {
-    Column(modifier.fillMaxWidth()) {
+    Column(Modifier.fillMaxWidth()) {
         Text(label, color = Cal.text, fontSize = 13.sp, fontWeight = FontWeight.Medium)
         Spacer(Modifier.height(6.dp))
         OutlinedTextField(
@@ -343,6 +355,9 @@ fun CalTextField(
             onValueChange = onValueChange,
             singleLine = singleLine,
             enabled = enabled,
+            visualTransformation = if (password) PasswordVisualTransformation() else VisualTransformation.None,
+            keyboardOptions = keyboardOptions,
+            keyboardActions = keyboardActions,
             placeholder = placeholder?.let { { Text(it, color = Cal.textFaint, fontSize = 14.sp) } },
             textStyle =
                 MaterialTheme.typography.bodyMedium.copy(
@@ -350,7 +365,7 @@ fun CalTextField(
                     color = Cal.text,
                 ),
             shape = RoundedCornerShape(Cal.radiusControl),
-            modifier = Modifier.fillMaxWidth(),
+            modifier = modifier.fillMaxWidth(),
             colors =
                 OutlinedTextFieldDefaults.colors(
                     focusedContainerColor = Cal.surface,
@@ -524,14 +539,15 @@ fun EmptyState(
         modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(Cal.radiusCard))
-            .border(1.dp, Cal.borderStrong, RoundedCornerShape(Cal.radiusCard))
-            .padding(horizontal = 20.dp, vertical = 28.dp),
+            .background(Cal.surface.copy(alpha = 0.6f))
+            .dashedBorder(Cal.borderStrong, Cal.radiusCard)
+            .padding(horizontal = 20.dp, vertical = 32.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         IconTile(icon, size = 40.dp)
-        Text(title, color = Cal.text, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
-        Text(body, color = Cal.textDim, fontSize = 14.sp, lineHeight = 20.sp)
+        Text(title, color = Cal.text, fontSize = 15.sp, fontWeight = FontWeight.SemiBold, textAlign = TextAlign.Center)
+        Text(body, color = Cal.textDim, fontSize = 14.sp, lineHeight = 20.sp, textAlign = TextAlign.Center)
         action?.invoke()
     }
 }
