@@ -105,14 +105,15 @@ class LoginFlowTest {
 
         waitForTag("cloudSignInButton")
         composeRule.onNodeWithText("Welcome to Calimero").assertIsDisplayed()
-        composeRule.onNodeWithTag("manualNode").performClick()
+        // On a small screen (CI's default AVD) the node card pushes these links below the fold.
+        composeRule.onNodeWithTag("manualNode").performScrollTo().performClick()
 
         waitForTag("nodeConnectButton")
         composeRule.onNodeWithText("Connect to a node").assertIsDisplayed()
         // The preview starts on username + password.
-        composeRule.onNodeWithTag("nodeUserInput").assertIsDisplayed()
-        composeRule.onNodeWithTag("nodePasswordInput").assertIsDisplayed()
-        composeRule.onNodeWithTag("useCloud").performClick()
+        composeRule.onNodeWithTag("nodeUserInput").performScrollTo().assertIsDisplayed()
+        composeRule.onNodeWithTag("nodePasswordInput").performScrollTo().assertIsDisplayed()
+        composeRule.onNodeWithTag("useCloud").performScrollTo().performClick()
         waitForTag("cloudSignInButton")
     }
 }

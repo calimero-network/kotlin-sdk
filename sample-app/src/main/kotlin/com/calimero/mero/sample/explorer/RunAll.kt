@@ -233,6 +233,12 @@ object RunAllPlan {
         )
     }
 
+    /** A TEE read that failed only because the node has no TEE (HTTP 500, or "TEE not configured"). */
+    fun isMissingTee(
+        opId: String?,
+        message: String,
+    ): Boolean = opId == "tee.info" && (message.contains("HTTP 500") || message.contains("TEE not configured", ignoreCase = true))
+
     /** Why an operation is not run automatically. */
     fun skipReason(
         op: SDKOperation,
@@ -412,7 +418,10 @@ class RunAllModel {
             throw e
         } catch (e: Exception) {
             val message = e.message ?: e.toString()
-            results[i] = results[i].copy(output = message, millis = System.currentTimeMillis() - started, status = Status.Failed(message))
+            val millis = System.currentTimeMillis() - started
+            // A node without TDX (a Linux CI node, say) answers `tee/info` with 500: nothing to test.
+            val status = if (RunAllPlan.isMissingTee(results[i].op?.id, message)) Status.Skipped(NO_TEE) else Status.Failed(message)
+            results[i] = results[i].copy(output = message, millis = millis, status = status)
         }
     }
 
@@ -509,6 +518,7 @@ class RunAllModel {
         val PHASES = listOf(PHASE_READS, PHASE_LIFECYCLE, PHASE_CONTRACT, PHASE_SKIPPED)
         private const val MILLIS = 1000L
         private const val BASE36 = 36
+        private const val NO_TEE = "No TEE on this node"
 
         /** The first string value under [key] anywhere in a JSON document, or a top-level array's first element for `$first`. */
         fun find(
