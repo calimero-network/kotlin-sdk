@@ -1,6 +1,7 @@
 package com.calimero.mero.sample
 
 import android.content.Intent
+import android.util.Log
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.semantics.getOrNull
 import androidx.compose.ui.test.ComposeTimeoutException
@@ -18,6 +19,7 @@ import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import org.junit.After
+import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -160,5 +162,29 @@ class AppE2ETest {
         composeRule.onNodeWithTag("messageField").performTextInput("e2e hello")
         composeRule.onNodeWithTag("sendMessage").performClick()
         waitForText("e2e hello")
+    }
+
+    /** "Run all" on a node session: every read plus the kv-store lifecycle, with nothing failing. */
+    @Test
+    fun runAllHasNoFailures() {
+        launchExplorer()
+        login()
+        composeRule.onNodeWithTag("exploreSDK").performClick()
+        waitForTag("runAllEntry")
+        composeRule.onNodeWithTag("runAllEntry").performClick()
+        composeRule.onNodeWithTag("runAllButton").performClick()
+        // Installs kv-store from the registry and walks the lifecycle: give it room.
+        waitForTag("runAllReport", timeoutMs = 300_000)
+        val report =
+            composeRule
+                .onNodeWithTag("runAllReport")
+                .fetchSemanticsNode()
+                .config
+                .getOrNull(SemanticsProperties.Text)
+                ?.joinToString()
+                .orEmpty()
+        Log.i("MeroE2E", report)
+        val failures = report.lines().filter { it.startsWith("FAIL") }
+        assertTrue("Run all failed:\n${failures.joinToString("\n")}", failures.isEmpty())
     }
 }

@@ -404,10 +404,12 @@ private fun SignedIn(
     var tab by rememberSaveable { mutableStateOf(Tab.HOME) }
     var inChannel by remember { mutableStateOf(false) }
     var sdkOp by remember { mutableStateOf<SDKOperation?>(null) }
+    var runAll by remember { mutableStateOf(false) }
+    val runAllModel = remember(client, state.nodeUrl, state.account) { RunAllModel() }
     var showLogs by remember { mutableStateOf(false) }
     val chat = remember(client, state.nodeUrl, state.account) { ChatService(client, options.chatDisplayName) }
 
-    BackHandler(enabled = tab != Tab.HOME && !inChannel && sdkOp == null && !showLogs) { tab = Tab.HOME }
+    BackHandler(enabled = tab != Tab.HOME && !inChannel && sdkOp == null && !runAll && !showLogs) { tab = Tab.HOME }
 
     if (showLogs) {
         DiagnosticsScreen(onBack = { showLogs = false })
@@ -428,11 +430,13 @@ private fun SignedIn(
                 Tab.CHAT -> ChatScreen(chat, autoJoinInvite = options.autoJoinInvite, onInChannel = { inChannel = it })
                 Tab.SDK -> {
                     val op = sdkOp
-                    if (op == null) {
-                        SdkListScreen(onOpenOp = { sdkOp = it })
-                    } else {
-                        BackHandler { sdkOp = null }
-                        OperationRunner(client, op, onBack = { sdkOp = null })
+                    when {
+                        runAll -> RunAllScreen(client, runAllModel, signedInToNode = state.isNodeSession, onBack = { runAll = false })
+                        op == null -> SdkListScreen(onOpenOp = { sdkOp = it }, onOpenRunAll = { runAll = true })
+                        else -> {
+                            BackHandler { sdkOp = null }
+                            OperationRunner(client, op, onBack = { sdkOp = null })
+                        }
                     }
                 }
             }
@@ -643,6 +647,7 @@ private const val ACCOUNT_LOG = 12
 @Suppress("LongMethod")
 private fun SdkListScreen(
     onOpenOp: (SDKOperation) -> Unit,
+    onOpenRunAll: () -> Unit,
     onBack: (() -> Unit)? = null,
 ) {
     var search by remember { mutableStateOf("") }
@@ -664,6 +669,7 @@ private fun SdkListScreen(
             Modifier.fillMaxSize().padding(horizontal = screenPad).testTag("opList"),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
+            if (search.isEmpty()) item { Box(Modifier.padding(top = 16.dp)) { RunAllEntry(onClick = onOpenRunAll) } }
             item {
                 Row(
                     Modifier

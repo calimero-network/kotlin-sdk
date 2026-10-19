@@ -1252,5 +1252,8 @@ val sdkOperations: List<SDKOperation> =
         aliasOps + blobOps + nsOps + groupOps + memberOps + settingsOps + upgradeOps +
         accountOps + teeOps + rc83Ops + presenceOps + signingOps + rpcOps
 
+/** Operations that run on a Cloud session's account layer or relay (the Swift sample's `cloudRun`). */
+val cloudOperationIds: Set<String> = (sessionOps + cloudOps + spaceOps + relayOps).mapTo(HashSet()) { it.id }
+
 /** Categories in display order (as first seen in [sdkOperations]). */
 val sdkCategories: List<String> = sdkOperations.map { it.category }.distinct()
