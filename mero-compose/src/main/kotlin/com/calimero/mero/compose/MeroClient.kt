@@ -217,6 +217,11 @@ class MeroClient(
     /** The wallet URL [signInWithCloud] would open, for apps that launch it themselves. */
     fun enrolmentUrl(callbackUrl: String): String = account.beginEnrolment(callbackUrl)
 
+    /** Forget the last sign-in error (the sign-in screen does this when switching between Cloud and a node). */
+    fun clearError() {
+        _state.update { it.copy(error = null, cancelled = false) }
+    }
+
     /** Stop showing a spinner if the person closed the wallet (or login page) without an answer. */
     fun cancelPendingSignIn() {
         _state.update { it.copy(isLoading = false) }

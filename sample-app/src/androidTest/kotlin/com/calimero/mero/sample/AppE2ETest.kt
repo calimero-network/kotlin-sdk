@@ -1,6 +1,7 @@
 package com.calimero.mero.sample
 
 import android.content.Intent
+import android.util.Log
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.semantics.getOrNull
 import androidx.compose.ui.test.ComposeTimeoutException
@@ -10,12 +11,15 @@ import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performTextInput
+import androidx.compose.ui.test.performTextReplacement
 import androidx.test.core.app.ActivityScenario
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
-import org.junit.Ignore
+import org.junit.After
+import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -25,10 +29,6 @@ import org.junit.runner.RunWith
  * `AppE2ETests`. Excluded from the mock CI (run via `-Pandroid.testInstrumentationRunnerArguments`
  * with `notClass`). Reads `nodeUrl`, `user`, `pass` from the instrumentation runner arguments.
  */
-@Ignore(
-    "Drove the removed node-URL + username/password login. Mobile sign-in is Calimero Cloud only now; " +
-        "this journey needs a live wallet + relay and is to be rewritten against MockWallet or a staging account.",
-)
 @RunWith(AndroidJUnit4::class)
 class AppE2ETest {
     @get:Rule
@@ -39,12 +39,20 @@ class AppE2ETest {
     private val user = args.getString("user") ?: "dev"
     private val pass = args.getString("pass") ?: "dev-password"
 
+    private var scenario: ActivityScenario<MainActivity>? = null
+
     private fun launchExplorer() {
         val intent =
             Intent(ApplicationProvider.getApplicationContext(), MainActivity::class.java)
                 .putExtra("mock", false)
                 .putExtra("nodeUrl", nodeUrl)
-        ActivityScenario.launch<MainActivity>(intent)
+        scenario = ActivityScenario.launch(intent)
+    }
+
+    /** Close the activity, so its live event stream does not hold a connection into the next test. */
+    @After
+    fun tearDown() {
+        scenario?.close()
     }
 
     private fun waitForTag(
@@ -71,9 +79,12 @@ class AppE2ETest {
 
     private fun login() {
         waitForTag("loginTitle")
-        composeRule.onNodeWithTag("usernameField").performTextInput(user)
-        composeRule.onNodeWithTag("passwordField").performTextInput(pass)
-        composeRule.onNodeWithTag("loginButton").performClick()
+        // The `nodeUrl` launch extra opens "Manually enter node URL" with the URL filled in; the
+        // username field remembers the last one, so replace rather than append.
+        composeRule.onNodeWithTag("usernameField").performTextReplacement(user)
+        composeRule.onNodeWithTag("passwordField").performTextReplacement(pass)
+        // The keyboard is up after typing and can push the button out of view.
+        composeRule.onNodeWithTag("loginButton").performScrollTo().performClick()
         // The landing shows the two big entries once the session is authenticated. A first login on
         // a fresh node is slow (password hashing + key setup), hence the generous window — and when
         // it does time out, report the on-screen error instead of a bare "condition not satisfied".
@@ -151,5 +162,32 @@ class AppE2ETest {
         composeRule.onNodeWithTag("messageField").performTextInput("e2e hello")
         composeRule.onNodeWithTag("sendMessage").performClick()
         waitForText("e2e hello")
+    }
+
+    /** "Run all" on a node session: every read plus the kv-store lifecycle, with nothing failing. */
+    @Test
+    fun runAllHasNoFailures() {
+        launchExplorer()
+        login()
+        composeRule.onNodeWithTag("exploreSDK").performClick()
+        waitForTag("runAllEntry")
+        composeRule.onNodeWithTag("runAllEntry").performClick()
+        composeRule.onNodeWithTag("runAllButton").performClick()
+        // Installs kv-store from the registry and walks the lifecycle: give it room.
+        waitForTag("runAllReport", timeoutMs = 300_000)
+        val report =
+            composeRule
+                .onNodeWithTag("runAllReport")
+                .fetchSemanticsNode()
+                .config
+                .getOrNull(SemanticsProperties.Text)
+                ?.joinToString()
+                .orEmpty()
+        // Between markers, one line at a time: android-e2e.yml lifts it out of logcat into the run's summary.
+        Log.i("MeroE2E", "RUN-ALL-REPORT-BEGIN")
+        report.lines().forEach { Log.i("MeroE2E", it) }
+        Log.i("MeroE2E", "RUN-ALL-REPORT-END")
+        val failures = report.lines().filter { it.startsWith("FAIL") }
+        assertTrue("Run all failed:\n${failures.joinToString("\n")}", failures.isEmpty())
     }
 }

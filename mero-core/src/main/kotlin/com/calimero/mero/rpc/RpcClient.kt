@@ -6,6 +6,7 @@ import kotlinx.serialization.DeserializationStrategy
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
@@ -123,7 +124,8 @@ class RpcClient(
     ): T = http.json.decodeFromJsonElement(executeRaw(contextId, method, argsJson))
 
     /**
-     * Execute and return the raw `result.output` [JsonElement] without decoding.
+     * Execute and return the raw `result.output` [JsonElement] without decoding — [JsonNull] when
+     * the method returned nothing.
      *
      * There is no `executorPublicKey`: core's execute request is `deny_unknown_fields` with only
      * `contextId`, `method` and `argsJson`, so naming one was a refusal. The call runs as the
@@ -140,7 +142,10 @@ class RpcClient(
                 put("method", method)
                 put("argsJson", argsJson)
             }
-        return call("execute", params)?.get("output") ?: JsonObject(emptyMap())
+        // A method returning `()` (kv-store's `set`, say) answers with no `output`, or a null one:
+        // that is JSON null, so an optional or JsonElement result decodes to null and a
+        // non-nullable type still fails to decode.
+        return call("execute", params)?.get("output") ?: JsonNull
     }
 
     /**

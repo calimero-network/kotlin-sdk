@@ -1,17 +1,33 @@
 name: Android E2E (vs live merod)
 
-# End-to-end Android tests against a REAL merod node (heavier than the in-app-mock
-# instrumented run in instrumented.yml, so this runs on main pushes / manually /
-# weekly, not on every PR). Two jobs:
-#   * single-node — full-feature AppE2ETest (login → explorer → chat) on 1 node + 1 emulator.
+# End-to-end Android tests against a REAL merod node (the core release in
+# ci/core-version). Two jobs:
+#   * single-node — full-feature AppE2ETest on 1 node + 1 emulator: node sign-in →
+#     explorer → chat → Run all (every read, the kv-store lifecycle and the
+#     scaffolding-e2e contract tests). Runs on PRs that touch the SDK or the sample app,
+#     so a change that breaks the live path fails before merge; the Run all report
+#     goes on the run's summary page.
 #   * multi-node  — two nodes + two emulators, cross-user chat (ChatMultiUserTest),
-#     driven by chat-multi-e2e.sh. All three roles pass as of run 30154354592;
-#     still continue-on-error while we see how stable an emulator pair is here.
+#     driven by chat-multi-e2e.sh. Not on PRs (two emulators plus cross-node sync is
+#     too slow and flaky for a merge gate); continue-on-error on main / weekly.
 on:
   workflow_dispatch:
   push:
     branches:
       - main
+  pull_request:
+    branches:
+      - main
+    paths:
+      - 'mero-core/**'
+      - 'mero-compose/**'
+      - 'mero-testkit/**'
+      - 'sample-app/**'
+      - 'ci/core-version'
+      - 'android-e2e.sh'
+      - 'gradle/**'
+      - '*.gradle.kts'
+      - '.github/workflows/android-e2e.yml'
   schedule:
     - cron: '0 7 * * 1'  # Mondays 07:00 UTC
 
@@ -82,6 +98,20 @@ jobs:
           disable-animations: true
           script: ./android-e2e.sh
 
+      # The Run all report (PASS / FAIL / SKIP per method and contract case), on the
+      # run's summary page. AppE2ETest.runAllHasNoFailures logs it between markers.
+      - name: Run all report
+        if: always()
+        run: |
+          {
+            echo '## Run all (Android, live merod)'
+            echo
+            echo '```'
+            sed -n '/RUN-ALL-REPORT-BEGIN/,/RUN-ALL-REPORT-END/p' .e2e-logcat.log 2>/dev/null \
+              | grep -v 'RUN-ALL-REPORT' | sed 's/^.*MeroE2E[^:]*: //' | head -400
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
       - name: Upload logs
         if: always()
         uses: actions/upload-artifact@v4
@@ -106,6 +136,8 @@ jobs:
     # job is reported as "cancelled", so it read as a mystery. The script now fails fast with the
     # emulator log instead of spinning; 45m is plenty once it does.
     timeout-minutes: 45
+    # Off PRs: see the header.
+    if: github.event_name != 'pull_request'
     # Informational for now — green end-to-end since run 30154354592, but an
     # emulator pair plus cross-node sync has more moving parts than the rest of CI.
     continue-on-error: true

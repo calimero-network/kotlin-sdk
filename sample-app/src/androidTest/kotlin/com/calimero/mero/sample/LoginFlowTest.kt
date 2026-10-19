@@ -3,11 +3,12 @@ package com.calimero.mero.sample
 import android.content.Intent
 import android.net.Uri
 import androidx.compose.ui.test.assertIsDisplayed
-import androidx.compose.ui.test.assertTextContains
 import androidx.compose.ui.test.junit4.createEmptyComposeRule
 import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onNodeWithTag
+import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollTo
 import androidx.test.core.app.ActivityScenario
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
@@ -53,7 +54,7 @@ class LoginFlowTest {
         scenario: ActivityScenario<MainActivity>,
         answer: (String) -> String,
     ) {
-        waitForTag("cloudLoginTitle")
+        waitForTag("loginTitle")
         composeRule.onNodeWithTag("cloudLoginButton").performClick()
         composeRule.waitUntil(10_000) { MockWallet.pendingUrl != null }
         val callback = answer(MockWallet.pendingUrl!!)
@@ -64,21 +65,22 @@ class LoginFlowTest {
     }
 
     @Test
-    fun signInRunCallAndSignOut() {
+    fun signInOpenChatAndSignOut() {
         val scenario = launchMock()
         signIn(scenario) { MockWallet.approve(it) }
 
         waitForTag("homeTitle")
         composeRule.onNodeWithTag("homeAccount").assertIsDisplayed()
 
-        // The quick call reads `get` in `demo-context` through the relay: FakeCloud answers 42.
-        waitForTag("runRpcButton")
-        composeRule.onNodeWithTag("runRpcButton").performClick()
-        waitForTag("rpcResult")
-        composeRule.onNodeWithTag("rpcResult").assertTextContains("42", substring = true)
+        // "Try it" → Chat switches to the Chat tab; a Cloud session needs no install, so the
+        // spaces list (and its + menu) is there at once.
+        composeRule.onNodeWithTag("openChat").performClick()
+        waitForTag("chatAdd")
 
-        composeRule.onNodeWithTag("signOutButton").performClick()
-        waitForTag("cloudLoginTitle")
+        composeRule.onNodeWithTag("tabHome").performClick()
+        waitForTag("signOutButton")
+        composeRule.onNodeWithTag("signOutButton").performScrollTo().performClick()
+        waitForTag("loginTitle")
     }
 
     @Test
@@ -87,6 +89,31 @@ class LoginFlowTest {
         signIn(scenario) { MockWallet.decline(it) }
 
         waitForTag("cloudLoginCancelled")
-        composeRule.onNodeWithTag("cloudLoginTitle").assertIsDisplayed()
+        composeRule.onNodeWithTag("loginTitle").assertIsDisplayed()
+    }
+
+    /** SDK tab → Login component: mero-compose's LoginView, switching between Cloud and a node. */
+    @Test
+    fun loginComponentSwitchesBetweenCloudAndNode() {
+        val scenario = launchMock()
+        signIn(scenario) { MockWallet.approve(it) }
+        waitForTag("homeTitle")
+
+        composeRule.onNodeWithTag("tabSdk").performClick()
+        waitForTag("componentsEntry")
+        composeRule.onNodeWithTag("componentsEntry").performClick()
+
+        waitForTag("cloudSignInButton")
+        composeRule.onNodeWithText("Welcome to Calimero").assertIsDisplayed()
+        // On a small screen (CI's default AVD) the node card pushes these links below the fold.
+        composeRule.onNodeWithTag("manualNode").performScrollTo().performClick()
+
+        waitForTag("nodeConnectButton")
+        composeRule.onNodeWithText("Connect to a node").assertIsDisplayed()
+        // The preview starts on username + password.
+        composeRule.onNodeWithTag("nodeUserInput").performScrollTo().assertIsDisplayed()
+        composeRule.onNodeWithTag("nodePasswordInput").performScrollTo().assertIsDisplayed()
+        composeRule.onNodeWithTag("useCloud").performScrollTo().performClick()
+        waitForTag("cloudSignInButton")
     }
 }

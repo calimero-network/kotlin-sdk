@@ -2,6 +2,37 @@
 
 ## Unreleased
 
+### Added — `LoginView`, login modes and the extended theme (mero-compose)
+
+- **`LoginView`**, redesigned like the Swift SDK's: a soft glow, the emblem on a 76dp tile, a big
+  title, "Continue with Calimero Cloud", and a node card (URL, optional username and password,
+  "Connect to node", rescan).
+- **`LoginMode`** (`CLOUD_AND_NODE`, the default, with a "Manually enter node URL" link;
+  `CLOUD_ONLY`; `NODE_ONLY`), **`NodeSignInMethod`** (`LOGIN_PAGE`, the default; `PASSWORD`,
+  through `MeroClient.login`) and **`LoginBranding`** (titles, subtitles, button, logo).
+- **`LoginSheet`** keeps its parameters and draws `LoginView`; `tabs` become a mode
+  (`LoginMode.from`). Its test tags are now `LoginView`'s (`loginTitle`, `cloudSignInButton`, …).
+- **`MeroTheme`** gains `surface`, `textTertiary`, `success`, `warning`, `cardRadius`,
+  `controlHeight`, `titleFontFamily` and `showsGlow`, and presets `MeroTheme.calimeroLight` and
+  `MeroTheme.calimero`. **`LocalMeroTheme` now defaults to `calimeroLight`** (it was the dark
+  `defaultMeroTheme`), matching the Swift SDK; provide `MeroTheme.calimero` to keep the dark look.
+- `MeroClient.clearError()`.
+
+### Fixed — alias create and delete
+
+`createContextAlias`, `createApplicationAlias`, `deleteContextAlias` and
+`deleteApplicationAlias` threw on success: core answers its `Empty` as
+`{"data": null}`, and these four treated a null `data` as an error. They return
+`Empty()` now, like the other `Empty` routes and Swift's `emptyOK`.
+
+### Fixed — a method that returns nothing
+
+`RpcClient.executeRaw` answered `{}` when `result.output` was missing (a method
+returning `()`, such as kv-store's `set`), so `execute<String?>` failed to
+decode and a `JsonElement` caller saw an empty object. It answers `JsonNull`
+now: optional and `JsonElement` results decode to null, and a non-nullable
+type still fails to decode. Same fix as the Swift SDK.
+
 ### Changed — core 0.11.0-rc.89
 
 The SDK now targets core `0.11.0-rc.89` (`ci/core-version`, and the merod image

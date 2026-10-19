@@ -489,17 +489,19 @@ class AdminApi(
 
     // ---- Alias Management --------------------------------------------------
 
+    // The alias create/delete routes answer core's `Empty`, which is `{"data": null}` on the wire:
+    // success with nothing to return, the same as Swift's `emptyOK`.
     override suspend fun createContextAlias(request: CreateContextAliasRequest): CreateAliasResponseData =
         http
             .postJson<CreateContextAliasRequest, ApiEnvelope<CreateAliasResponseData>>(
                 "/admin-api/alias/create/context", request,
-            ).data ?: error("createContextAlias")
+            ).data ?: Empty()
 
     override suspend fun createApplicationAlias(request: CreateApplicationAliasRequest): CreateAliasResponseData =
         http
             .postJson<CreateApplicationAliasRequest, ApiEnvelope<CreateAliasResponseData>>(
                 "/admin-api/alias/create/application", request,
-            ).data ?: error("createApplicationAlias")
+            ).data ?: Empty()
 
     override suspend fun lookupContextAlias(name: String): LookupAliasResponseData =
         http
@@ -517,13 +519,13 @@ class AdminApi(
         http
             .postJson<JsonObject, ApiEnvelope<DeleteAliasResponseData>>(
                 "/admin-api/alias/delete/context/${encodeComponent(name)}", JsonObject(emptyMap()),
-            ).data ?: error("deleteContextAlias")
+            ).data ?: Empty()
 
     override suspend fun deleteApplicationAlias(name: String): DeleteAliasResponseData =
         http
             .postJson<JsonObject, ApiEnvelope<DeleteAliasResponseData>>(
                 "/admin-api/alias/delete/application/${encodeComponent(name)}", JsonObject(emptyMap()),
-            ).data ?: error("deleteApplicationAlias")
+            ).data ?: Empty()
 
     /**
      * ⚠️ The list routes answer a **map** — `{"data": {"<alias>": "<value>"}}`, and

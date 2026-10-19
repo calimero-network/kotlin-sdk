@@ -189,7 +189,8 @@ All default their `client` to `useMero()` and their colours to the ambient `Mero
 | --- | --- |
 | `MeroProvider(client) { … }` | provides the `MeroClient` via a `CompositionLocal` |
 | `useMero()` | reads the provided client (throws if no provider above) |
-| `LoginSheet(callbackUrl, tabs, initialTab, nodeCallbackUrl, onConnectNode, colors)` | **Cloud** tab (`AccountSignInPanel`, "Continue with Calimero") and **Node** tab (local nodes found on `10.0.2.2` on an emulator, `localhost` on a device, plus a manual URL) |
+| `LoginView(callbackUrl, mode, nodeSignIn, branding, nodeCallbackUrl, onConnectNode)` | the sign-in screen: **Cloud** ("Continue with Calimero Cloud") and, behind a "Manually enter node URL" link, a **node** (local nodes found on `10.0.2.2` on an emulator, `localhost` on a device, plus a manual URL) |
+| `LoginSheet(callbackUrl, tabs, initialTab, nodeCallbackUrl, onConnectNode, colors)` | the older form of `LoginView`: `tabs` map to a `LoginMode` |
 | `ConnectButton(callbackUrl, onConnect, labels, logoOnly, tabs)` | "Connect" (opens the sheet), "Reconnecting...", or "Connected" with the account / node and "Log out" |
 | `CalimeroLogo(size, color)` | the emblem (`CalimeroLogoVector`) |
 | `MigrationPendingBanner(contextId, onMigrated)` | "re-sign your entries" with a one-tap convert |
@@ -197,29 +198,47 @@ All default their `client` to `useMero()` and their colours to the ambient `Mero
 | `InvitationDialog`, `InvitationGate`, `JoinSyncBanner` | see [Invitations](/guides/compose-invitations/) |
 
 ```kotlin
-LoginSheet(
+LoginView(
     callbackUrl = "myapp://calimero-enrol",
-    tabs = listOf(LoginModalTab.CLOUD),          // Cloud only; the default has both, Cloud selected
+    mode = LoginMode.CLOUD_AND_NODE,             // or CLOUD_ONLY / NODE_ONLY
+    nodeSignIn = NodeSignInMethod.LOGIN_PAGE,    // PASSWORD: admin username + password (a dev merod)
+    branding = LoginBranding(cloudTitle = "Welcome to My App"),
     onAuthenticated = { /* navigate home */ },
 )
 
 ConnectButton(callbackUrl = "myapp://calimero-enrol")
 ```
 
-`LoginModalTab` (also `LoginTab`) is `NODE` or `CLOUD`. The sheet's existing test tags
-(`cloudLoginTitle`, `cloudLoginButton`, `cloudLoginError`, `cloudLoginCancelled`) are
-unchanged; the Node tab adds `loginTabNode`, `nodeOption-…`, `nodeUrlInput` and
-`nodeConnectButton`.
+- `LoginMode`: `CLOUD_AND_NODE` (Cloud, with a small "Manually enter node URL" link that
+  toggles to "Use Calimero Cloud instead"), `CLOUD_ONLY` or `NODE_ONLY`. `LoginMode.from(tabs)`
+  maps the older `LoginModalTab` lists.
+- `NodeSignInMethod`: `LOGIN_PAGE` (the node's own login page; the default) or `PASSWORD`
+  (`MeroClient.login`).
+- `LoginBranding`: `cloudTitle`, `cloudSubtitle`, `nodeTitle`, `nodeSubtitle`, `cloudButton`, `logo`.
+
+Test tags: `loginTitle`, `loginError`, `cloudSignInButton`, `loginButton` (the Cloud panel),
+`cloudLoginCancelled`, `manualNode` / `useCloud`, `nodeDiscovering`, `nodeOption-…`,
+`nodeUrlInput`, `nodeUserInput`, `nodePasswordInput`, `rescanButton` and `nodeConnectButton`.
+They replace the sheet's earlier `cloudLoginTitle` / `cloudLoginButton` / `loginTabNode` tags.
 
 ### Theme
 
 `MeroTheme` has mero-react's tokens (`primary`, `primaryHover`, `primaryText`,
 `background`, `backgroundSecondary`, `backgroundTertiary`, `border`, `text`,
-`textSecondary`, `error`, `overlay`, `radius`). `defaultMeroTheme` is mero-react's dark
-palette (accent `#A5FF11`); `lightMeroTheme` is the light Calimero style. Provide one
-with `ProvideMeroTheme(theme) { … }` and restyle with `copy(...)`.
-`LoginSheetColors.from(theme)` derives the sheet's colours; `LoginSheetColors()` is
-still the light set.
+`textSecondary`, `error`, `overlay`, `radius`) plus, as in the Swift SDK, `surface`,
+`textTertiary`, `success`, `warning`, `cardRadius`, `controlHeight`, `titleFontFamily` and
+`showsGlow` (each derived from the others when not given).
+
+Presets: `MeroTheme.calimeroLight` (warm off-white, white cards, lime fills; the default
+`LocalMeroTheme`) and `MeroTheme.calimero` (mero-react's dark palette, also
+`defaultMeroTheme`). Provide one with `ProvideMeroTheme(theme) { … }` and restyle with
+`copy(...)`:
+
+```kotlin
+ProvideMeroTheme(MeroTheme.calimeroLight.copy(primary = Color(0xFF5B5BD6), primaryText = Color.White, showsGlow = false)) {
+    LoginView(callbackUrl = "myapp://calimero-enrol")
+}
+```
 
 <Aside type="note">
   For tests or a mock backend, build a `CloudAccount(MemorySecureStore(), cloudBaseUrl = …)`
