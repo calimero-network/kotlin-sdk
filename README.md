@@ -159,14 +159,14 @@ scope.launch { mero.ephemeral.subscribe<Cursor>(contextId).collect { entry -> /*
 mero.logout(clientId = null)
 ```
 
-### Core 0.11.0-rc.89; re-login after upgrading from before rc.83
+### Core 0.11.0-rc.90; re-login after upgrading from before rc.83
 
-The SDK is pinned to core `0.11.0-rc.89` ([`ci/core-version`](ci/core-version)). rc.83 made
+The SDK is pinned to core `0.11.0-rc.90` ([`ci/core-version`](ci/core-version)). rc.83 made
 `key_id` a required JWT claim, so tokens minted by an older node no longer verify: after upgrading
 the node, users sign in again. When `/auth/refresh` answers `401` the SDK drops the stored bundle,
 so `mero.isAuthenticated` turns `false` instead of every call failing. `mero.logout()` now also
 retires the refresh token on the node (`POST /auth/logout`). See [CHANGELOG.md](CHANGELOG.md) for
-the full rc.41 → rc.89 delta.
+the full rc.41 → rc.90 delta.
 
 ### 401 → refresh, done right
 
