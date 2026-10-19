@@ -2,6 +2,22 @@
 
 ## Unreleased
 
+### Added — `LoginView`, login modes and the extended theme (mero-compose)
+
+- **`LoginView`**, redesigned like the Swift SDK's: a soft glow, the emblem on a 76dp tile, a big
+  title, "Continue with Calimero Cloud", and a node card (URL, optional username and password,
+  "Connect to node", rescan).
+- **`LoginMode`** (`CLOUD_AND_NODE`, the default, with a "Manually enter node URL" link;
+  `CLOUD_ONLY`; `NODE_ONLY`), **`NodeSignInMethod`** (`LOGIN_PAGE`, the default; `PASSWORD`,
+  through `MeroClient.login`) and **`LoginBranding`** (titles, subtitles, button, logo).
+- **`LoginSheet`** keeps its parameters and draws `LoginView`; `tabs` become a mode
+  (`LoginMode.from`). Its test tags are now `LoginView`'s (`loginTitle`, `cloudSignInButton`, …).
+- **`MeroTheme`** gains `surface`, `textTertiary`, `success`, `warning`, `cardRadius`,
+  `controlHeight`, `titleFontFamily` and `showsGlow`, and presets `MeroTheme.calimeroLight` and
+  `MeroTheme.calimero`. **`LocalMeroTheme` now defaults to `calimeroLight`** (it was the dark
+  `defaultMeroTheme`), matching the Swift SDK; provide `MeroTheme.calimero` to keep the dark look.
+- `MeroClient.clearError()`.
+
 ### Fixed — alias create and delete
 
 `createContextAlias`, `createApplicationAlias`, `deleteContextAlias` and

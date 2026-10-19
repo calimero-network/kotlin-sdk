@@ -1,6 +1,7 @@
+@file:Suppress("TooManyFunctions")
+
 package com.calimero.mero.compose
 
-import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -8,15 +9,23 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Info
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material.icons.outlined.Lock
+import androidx.compose.material.icons.outlined.Refresh
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.OutlinedTextField
@@ -24,7 +33,6 @@ import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.RadioButtonDefaults
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -35,172 +43,280 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.graphics.vector.addPathNodes
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextDecoration
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlinx.coroutines.launch
 
 /**
- * The sign-in sheet — mero-react's `LoginModal`, inline. Two tabs:
+ * Sign-in, bound to [MeroClient]. (== mero-react `LoginModal`; the Swift SDK's `LoginView`.)
  *
- * - **Cloud** (the default): "Continue with Calimero" ([AccountSignInPanel]). The person approves
- *   this device in the Calimero wallet (a passkey, in a Custom Tab); the redirect comes back to
- *   [callbackUrl], which the app hands to [MeroClient.handleDeepLink].
- * - **Node**: running local nodes (found on [ANDROID_EMULATOR_HOST][com.calimero.mero.discovery.ANDROID_EMULATOR_HOST]
- *   on an emulator, `localhost` on a device) plus a manual URL. Connecting opens the node's own
- *   login page ([MeroClient.connectToNode], back to [nodeCallbackUrl]) — or calls [onConnectNode].
+ * - **Cloud**: one "Continue with Calimero Cloud" button that opens the Calimero wallet (a
+ *   passkey, in a Custom Tab); the redirect comes back to [callbackUrl], which the app hands to
+ *   [MeroClient.handleDeepLink].
+ * - **Node**: the local nodes discovery found and a URL field. By default Connect opens the node's
+ *   own login page ([MeroClient.connectToNode], back to [nodeCallbackUrl]); with
+ *   [NodeSignInMethod.PASSWORD] it asks for the node's admin username and password instead.
  *
- * Pass `tabs = listOf(LoginModalTab.CLOUD)` for the Cloud panel alone (no tab row). Colours come
- * from the ambient [MeroTheme] unless [colors] is given.
+ * [mode] picks which are offered: [LoginMode.CLOUD_AND_NODE] (Cloud, with a small "Manually enter
+ * node URL" link under it), [LoginMode.CLOUD_ONLY] or [LoginMode.NODE_ONLY]. Colours, radii and
+ * type come from the ambient [MeroTheme]; words and the logo from [branding].
  *
- * Test tags: `cloudLoginTitle`, `cloudLoginButton`, `cloudLoginError`, `cloudLoginCancelled`,
- * `loginTabNode`, `loginTabCloud`, `nodeDiscovering`, `nodeOption-<host:port>`, `nodeOption-custom`,
- * `nodeUrlInput`, `nodeRescan`, `nodeConnectButton`, `nodeLoginError`.
+ * Test tags: `loginTitle`, `loginError`, `cloudSignInButton` (the button), `loginButton` (the
+ * Cloud panel), `cloudLoginCancelled`, `manualNode` / `useCloud` (the link between them), and on
+ * the node side `nodeDiscovering`, `nodeOption-<host:port>`, `nodeOption-custom`, `nodeUrlInput`,
+ * `nodeUserInput`, `nodePasswordInput`, `rescanButton` and `nodeConnectButton`.
  */
 @Suppress("LongMethod", "LongParameterList")
+@Composable
+fun LoginView(
+    callbackUrl: String,
+    modifier: Modifier = Modifier,
+    client: MeroClient = useMero(),
+    mode: LoginMode = LoginMode.CLOUD_AND_NODE,
+    nodeSignIn: NodeSignInMethod = NodeSignInMethod.LOGIN_PAGE,
+    branding: LoginBranding = LoginBranding(),
+    nodeCallbackUrl: String = callbackUrl,
+    initialTab: LoginModalTab = mode.tabs.first(),
+    onConnectNode: ((String) -> Unit)? = null,
+    onAuthenticated: () -> Unit = {},
+) {
+    val theme = LocalMeroTheme.current
+    val state by client.state.collectAsStateWithLifecycle()
+    var tab by rememberSaveable(mode) { mutableStateOf(if (initialTab in mode.tabs) initialTab else mode.tabs.first()) }
+    LaunchedEffect(state.isAuthenticated) { if (state.isAuthenticated) onAuthenticated() }
+
+    Box(
+        modifier
+            .fillMaxSize()
+            .background(theme.background)
+            .then(if (theme.showsGlow) Modifier.glow(theme.primary) else Modifier),
+    ) {
+        Column(
+            Modifier
+                .fillMaxSize()
+                .imePadding()
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = 24.dp, vertical = 24.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            Spacer(Modifier.heightIn(min = if (tab == LoginModalTab.NODE) 36.dp else 88.dp))
+            Column(
+                Modifier.widthIn(max = 440.dp).fillMaxWidth(),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(14.dp),
+            ) {
+                Hero(tab, branding, theme)
+                Spacer(Modifier.heightIn(min = 12.dp))
+                state.error?.let { ErrorRow(it, theme, "loginError") }
+                when (tab) {
+                    LoginModalTab.CLOUD -> AccountSignInPanel(callbackUrl = callbackUrl, client = client, buttonTitle = branding.cloudButton)
+                    LoginModalTab.NODE ->
+                        Box(
+                            Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(theme.cardRadius))
+                                .background(theme.surface)
+                                .border(1.dp, theme.border, RoundedCornerShape(theme.cardRadius))
+                                .padding(18.dp),
+                        ) {
+                            NodeLoginPanel(client, nodeCallbackUrl, nodeSignIn, onConnectNode)
+                        }
+                }
+                if (mode == LoginMode.CLOUD_AND_NODE) {
+                    Text(
+                        if (tab == LoginModalTab.CLOUD) "Manually enter node URL" else "Use Calimero Cloud instead",
+                        color = theme.textSecondary,
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.Medium,
+                        textDecoration = if (tab == LoginModalTab.CLOUD) TextDecoration.Underline else null,
+                        modifier =
+                            Modifier
+                                .clip(RoundedCornerShape(8.dp))
+                                .clickable {
+                                    tab = if (tab == LoginModalTab.CLOUD) LoginModalTab.NODE else LoginModalTab.CLOUD
+                                    client.clearError()
+                                }.padding(horizontal = 8.dp, vertical = 8.dp)
+                                .testTag(if (tab == LoginModalTab.CLOUD) "manualNode" else "useCloud"),
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun Hero(
+    tab: LoginModalTab,
+    branding: LoginBranding,
+    theme: MeroTheme,
+) {
+    Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(18.dp)) {
+        Box(
+            Modifier
+                .size(76.dp)
+                .clip(RoundedCornerShape(22.dp))
+                .background(theme.primary)
+                .border(1.dp, Color(0x0F000000), RoundedCornerShape(22.dp)),
+            contentAlignment = Alignment.Center,
+        ) {
+            val logo = branding.logo
+            if (logo != null) {
+                Icon(logo, contentDescription = null, tint = theme.primaryText, modifier = Modifier.size(44.dp))
+            } else {
+                CalimeroLogo(size = 40.dp, color = theme.primaryText)
+            }
+        }
+        Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text(
+                if (tab == LoginModalTab.NODE) branding.nodeTitle else branding.cloudTitle,
+                color = theme.text,
+                fontSize = 32.sp,
+                lineHeight = 38.sp,
+                fontWeight = FontWeight.Bold,
+                fontFamily = theme.titleFontFamily,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.testTag("loginTitle"),
+            )
+            Text(
+                if (tab == LoginModalTab.NODE) branding.nodeSubtitle else branding.cloudSubtitle,
+                color = theme.textSecondary,
+                fontSize = 16.sp,
+                lineHeight = 22.sp,
+                textAlign = TextAlign.Center,
+            )
+        }
+    }
+}
+
+/** A soft glow of [color] behind the top of the screen. */
+private fun Modifier.glow(color: Color): Modifier =
+    drawBehind {
+        if (size.width <= 0f || size.height <= 0f) return@drawBehind
+        drawRect(
+            Brush.radialGradient(
+                colorStops = arrayOf(0f to color.copy(alpha = 0.35f), GLOW_MID to color.copy(alpha = 0.08f), 1f to Color.Transparent),
+                center = Offset(size.width / 2f, 0f),
+                radius = GLOW_RADIUS.dp.toPx(),
+            ),
+        )
+    }
+
+private const val GLOW_MID = 0.45f
+private const val GLOW_RADIUS = 420
+
+/**
+ * The sign-in sheet, as before [LoginView]: [tabs] map to a [LoginMode] and [title] to the Cloud
+ * title. Kept for existing callers; new code uses [LoginView]. [colors], when given, overrides the
+ * ambient [MeroTheme]'s matching tokens.
+ */
+@Suppress("LongParameterList")
 @Composable
 fun LoginSheet(
     callbackUrl: String,
     modifier: Modifier = Modifier,
     client: MeroClient = useMero(),
-    colors: LoginSheetColors = LoginSheetColors.from(LocalMeroTheme.current),
-    title: String = "Connect to Calimero",
+    colors: LoginSheetColors? = null,
+    title: String = LoginBranding().cloudTitle,
     onAuthenticated: () -> Unit = {},
     tabs: List<LoginModalTab> = listOf(LoginModalTab.NODE, LoginModalTab.CLOUD),
     initialTab: LoginModalTab = LoginModalTab.CLOUD,
     nodeCallbackUrl: String = callbackUrl,
     onConnectNode: ((String) -> Unit)? = null,
 ) {
-    val state by client.state.collectAsStateWithLifecycle()
-    var tab by rememberSaveable { mutableStateOf(if (initialTab in tabs) initialTab else tabs.first()) }
-
-    LaunchedEffect(state.isAuthenticated) { if (state.isAuthenticated) onAuthenticated() }
-
-    Column(
-        modifier =
-            modifier
-                .fillMaxWidth()
-                .background(colors.surface, RoundedCornerShape(14.dp))
-                .border(BorderStroke(1.dp, colors.border), RoundedCornerShape(14.dp))
-                .padding(24.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(16.dp),
-    ) {
-        Box(
-            modifier =
-                Modifier
-                    .size(44.dp)
-                    .background(colors.accent, RoundedCornerShape(10.dp))
-                    .border(1.dp, Color(0x0F000000), RoundedCornerShape(10.dp)),
-            contentAlignment = Alignment.Center,
-        ) {
-            CalimeroLogo(size = 24.dp, color = colors.onAccent)
-        }
-        Text(
-            title,
-            color = colors.text,
-            fontSize = 20.sp,
-            fontWeight = FontWeight.SemiBold,
-            textAlign = TextAlign.Center,
-            modifier = Modifier.testTag("cloudLoginTitle"),
+    val base = LocalMeroTheme.current
+    val theme = colors?.let { base.with(it) } ?: base
+    ProvideMeroTheme(theme) {
+        LoginView(
+            callbackUrl = callbackUrl,
+            modifier = modifier,
+            client = client,
+            mode = LoginMode.from(tabs),
+            branding = LoginBranding(cloudTitle = title),
+            nodeCallbackUrl = nodeCallbackUrl,
+            initialTab = initialTab,
+            onConnectNode = onConnectNode,
+            onAuthenticated = onAuthenticated,
         )
-        if (tabs.size > 1) LoginTabs(tabs, tab, colors) { tab = it }
-        when (tab) {
-            LoginModalTab.CLOUD -> AccountSignInPanel(callbackUrl = callbackUrl, client = client, colors = colors)
-            LoginModalTab.NODE -> NodeLoginPanel(client = client, colors = colors, callbackUrl = nodeCallbackUrl, onConnectNode = onConnectNode)
-        }
     }
 }
 
-@Composable
-private fun LoginTabs(
-    tabs: List<LoginModalTab>,
-    selected: LoginModalTab,
-    colors: LoginSheetColors,
-    onSelect: (LoginModalTab) -> Unit,
-) {
-    Row(
-        modifier =
-            Modifier
-                .fillMaxWidth()
-                .background(colors.border.copy(alpha = 0.35f), RoundedCornerShape(10.dp))
-                .padding(4.dp),
-        horizontalArrangement = Arrangement.spacedBy(4.dp),
-    ) {
-        tabs.forEach { t ->
-            val active = t == selected
-            val label = if (t == LoginModalTab.NODE) "Node" else "Cloud"
-            Box(
-                modifier =
-                    Modifier
-                        .weight(1f)
-                        .background(if (active) colors.surface else Color.Transparent, RoundedCornerShape(8.dp))
-                        .clickable { onSelect(t) }
-                        .padding(vertical = 8.dp)
-                        .testTag(if (t == LoginModalTab.NODE) "loginTabNode" else "loginTabCloud"),
-                contentAlignment = Alignment.Center,
-            ) {
-                Text(label, color = if (active) colors.text else colors.textDim, fontWeight = if (active) FontWeight.SemiBold else FontWeight.Normal)
-            }
-        }
-    }
-}
+/** [this] with [colors]' tokens laid over it. */
+internal fun MeroTheme.with(colors: LoginSheetColors): MeroTheme =
+    copy(
+        surface = colors.surface,
+        border = colors.border,
+        text = colors.text,
+        textSecondary = colors.textDim,
+        textTertiary = colors.textFaint,
+        primary = colors.accent,
+        primaryText = colors.onAccent,
+        error = colors.danger,
+    )
 
 /**
- * The Cloud tab — mero-react `AccountSignInPanel`: one "Continue with Calimero" button, what it
- * does, and whatever the last attempt had to say. The flow itself is [MeroClient.signInWithCloud].
+ * The Cloud side: one button to the wallet, what it does, and what the last attempt had to say.
+ * The flow itself is [MeroClient.signInWithCloud]. (== mero-react `AccountSignInPanel`.)
+ *
+ * Test tags: `loginButton` (the panel), `cloudSignInButton`, `cloudLoginCancelled`.
  */
-@Suppress("LongMethod")
 @Composable
 fun AccountSignInPanel(
     callbackUrl: String,
     modifier: Modifier = Modifier,
     client: MeroClient = useMero(),
-    colors: LoginSheetColors = LoginSheetColors.from(LocalMeroTheme.current),
+    buttonTitle: String = LoginBranding().cloudButton,
 ) {
+    val theme = LocalMeroTheme.current
     val state by client.state.collectAsStateWithLifecycle()
     val context = LocalContext.current
     val customWallet = client.account.walletUrl != com.calimero.mero.account.Enrolment.DEFAULT_WALLET_URL
-    Column(modifier = modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(16.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-        Text(
-            "You'll approve this device on the Calimero wallet's own page, then come back here. " +
-                "Your account key stays in the wallet — the relay only ever sees the certificate it signs for this device.",
-            color = colors.textDim,
-            fontSize = 14.sp,
-            lineHeight = 21.sp,
-            textAlign = TextAlign.Center,
-        )
-        Text(
-            "That one certificate does the rest: finding the relay that serves your account, writing through it, " +
-                "reading your contexts and live updates. Nothing to paste in.",
-            color = colors.textFaint,
-            fontSize = 13.sp,
-            lineHeight = 19.sp,
-            textAlign = TextAlign.Center,
-        )
-        state.error?.let { error -> ErrorRow(error, colors, "cloudLoginError") }
+    Column(
+        modifier.fillMaxWidth().testTag("loginButton"),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        PrimaryButton(
+            text = buttonTitle,
+            icon = { Icon(CloudIcon, contentDescription = null, modifier = Modifier.size(18.dp)) },
+            loading = state.isLoading,
+            enabled = !state.isLoading,
+            theme = theme,
+            tag = "cloudSignInButton",
+        ) { client.signInWithCloud(context, callbackUrl) }
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Icon(Icons.Outlined.Lock, contentDescription = null, tint = theme.textTertiary, modifier = Modifier.size(14.dp))
+            Spacer(Modifier.width(6.dp))
+            Text("Opens the Calimero wallet to approve this device", color = theme.textTertiary, fontSize = 12.sp)
+        }
         if (state.cancelled) {
             Text(
                 "Sign-in was cancelled in the wallet.",
-                color = colors.textFaint,
+                color = theme.textSecondary,
                 fontSize = 13.sp,
                 modifier = Modifier.testTag("cloudLoginCancelled"),
             )
         }
-        PrimaryButton(
-            text = if (state.isLoading) "  Waiting for the wallet…" else "Continue with Calimero",
-            loading = state.isLoading,
-            enabled = !state.isLoading,
-            colors = colors,
-            tag = "cloudLoginButton",
-        ) { client.signInWithCloud(context, callbackUrl) }
+        state.relayNote?.let { Text(it, color = theme.textSecondary, fontSize = 13.sp, textAlign = TextAlign.Center) }
         if (customWallet) {
-            Text("Enrolling at ${client.account.walletUrl}, not the hosted wallet.", color = colors.textFaint, fontSize = 12.sp, textAlign = TextAlign.Center)
+            Text("Enrolling at ${client.account.walletUrl}, not the hosted wallet.", color = theme.textTertiary, fontSize = 12.sp, textAlign = TextAlign.Center)
         }
     }
 }
@@ -209,10 +325,11 @@ fun AccountSignInPanel(
 @Composable
 private fun NodeLoginPanel(
     client: MeroClient,
-    colors: LoginSheetColors,
     callbackUrl: String,
+    method: NodeSignInMethod,
     onConnectNode: ((String) -> Unit)?,
 ) {
+    val theme = LocalMeroTheme.current
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
     val login = remember(client) { NodeLoginState(scope, initialUrl = client.storage.nodeUrl) }
@@ -224,63 +341,106 @@ private fun NodeLoginPanel(
     val loading by login.loading.collectAsStateWithLifecycle()
     val error by login.error.collectAsStateWithLifecycle()
     val state by client.state.collectAsStateWithLifecycle()
+    var username by rememberSaveable { mutableStateOf("") }
+    var password by remember { mutableStateOf("") }
 
-    Column(modifier = Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        (error ?: state.error)?.let { ErrorRow(it, colors, "nodeLoginError") }
+    val credentialsReady = method == NodeSignInMethod.LOGIN_PAGE || (username.isNotEmpty() && password.isNotEmpty())
+    val canConnect = !loading && !discovering && !state.isLoading && (selected != null || isValidNodeUrl(customUrl)) && credentialsReady
+    val connect: () -> Unit = {
+        scope.launch {
+            val url = login.connect() ?: return@launch
+            when {
+                onConnectNode != null -> onConnectNode(url)
+                method == NodeSignInMethod.PASSWORD -> client.login(url, username, password)
+                else -> client.connectToNode(context, url, callbackUrl)
+            }
+        }
+    }
+
+    Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         if (discovering) {
-            Row(
-                modifier = Modifier.fillMaxWidth().testTag("nodeDiscovering"),
-                horizontalArrangement = Arrangement.Center,
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                CircularProgressIndicator(color = colors.accent, strokeWidth = 2.dp, modifier = Modifier.size(16.dp))
-                Text("  Searching for local nodes…", color = colors.textDim, fontSize = 14.sp)
+            Row(Modifier.fillMaxWidth().testTag("nodeDiscovering"), horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically) {
+                CircularProgressIndicator(color = theme.text, strokeWidth = 2.dp, modifier = Modifier.size(16.dp))
+                Spacer(Modifier.width(8.dp))
+                Text("Searching for local nodes…", color = theme.textSecondary, fontSize = 14.sp)
             }
         } else {
-            Text(
-                if (discovered.isEmpty()) "No local node found. Enter a node URL to continue." else "Select your Calimero node to continue.",
-                color = colors.textDim,
-                fontSize = 14.sp,
-                textAlign = TextAlign.Center,
-                modifier = Modifier.fillMaxWidth(),
-            )
+            discovered.forEach { url ->
+                NodeOption(displayNodeUrl(url), "local", selected == url, theme, "nodeOption-${displayNodeUrl(url)}") { login.select(url) }
+            }
             if (discovered.isNotEmpty()) {
-                discovered.forEach { url -> NodeOption(displayNodeUrl(url), "local", selected == url, colors, "nodeOption-${displayNodeUrl(url)}") { login.select(url) } }
-                NodeOption("Enter node URL manually", null, selected == null, colors, "nodeOption-custom") { login.select(null) }
+                NodeOption("Enter node URL manually", null, selected == null, theme, "nodeOption-custom") { login.select(null) }
             }
             if (selected == null) {
-                OutlinedTextField(
-                    value = customUrl,
-                    onValueChange = login::setCustomUrl,
-                    singleLine = true,
-                    placeholder = { Text("https://your-node-url.calimero.network") },
-                    colors =
-                        OutlinedTextFieldDefaults.colors(
-                            focusedBorderColor = colors.accent,
-                            unfocusedBorderColor = colors.border,
-                            focusedTextColor = colors.text,
-                            unfocusedTextColor = colors.text,
-                        ),
-                    modifier = Modifier.fillMaxWidth().testTag("nodeUrlInput"),
-                )
+                Field("Node URL", customUrl, login::setCustomUrl, "http://localhost:4001", theme, "nodeUrlInput", keyboardType = KeyboardType.Uri)
             }
-            TextButton(onClick = login::rescan, modifier = Modifier.align(Alignment.CenterHorizontally).testTag("nodeRescan")) {
-                Text("↻ Rescan local nodes", color = colors.textDim, fontSize = 13.sp)
+            if (method == NodeSignInMethod.PASSWORD) {
+                Field("Username", username, { username = it }, "dev", theme, "nodeUserInput")
+                Field("Password", password, { password = it }, "Admin password", theme, "nodePasswordInput", secure = true)
             }
+            error?.let { Text(it, color = theme.error, fontSize = 13.sp, modifier = Modifier.fillMaxWidth()) }
         }
-        val canConnect = !loading && !discovering && (selected != null || isValidNodeUrl(customUrl))
         PrimaryButton(
-            text = if (loading) "  Connecting to node…" else "Connect",
-            loading = loading,
+            text = "Connect to node",
+            icon = { Icon(ServerIcon, contentDescription = null, modifier = Modifier.size(18.dp)) },
+            loading = loading || state.isLoading,
             enabled = canConnect,
-            colors = colors,
+            theme = theme,
             tag = "nodeConnectButton",
-        ) {
-            scope.launch {
-                val url = login.connect() ?: return@launch
-                onConnectNode?.invoke(url) ?: client.connectToNode(context, url, callbackUrl)
+            onClick = connect,
+        )
+        if (!discovering) {
+            Row(
+                Modifier
+                    .align(Alignment.CenterHorizontally)
+                    .clip(RoundedCornerShape(8.dp))
+                    .clickable(onClick = login::rescan)
+                    .padding(horizontal = 8.dp, vertical = 6.dp)
+                    .testTag("rescanButton"),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Icon(Icons.Outlined.Refresh, contentDescription = null, tint = theme.textSecondary, modifier = Modifier.size(15.dp))
+                Spacer(Modifier.width(6.dp))
+                Text("Rescan local nodes", color = theme.textSecondary, fontSize = 13.sp, fontWeight = FontWeight.Medium)
             }
         }
+    }
+}
+
+@Suppress("LongParameterList")
+@Composable
+private fun Field(
+    title: String,
+    value: String,
+    onValueChange: (String) -> Unit,
+    placeholder: String,
+    theme: MeroTheme,
+    tag: String,
+    secure: Boolean = false,
+    keyboardType: KeyboardType = KeyboardType.Text,
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        Text(title, color = theme.text, fontSize = 13.sp, fontWeight = FontWeight.Medium)
+        OutlinedTextField(
+            value = value,
+            onValueChange = onValueChange,
+            singleLine = true,
+            placeholder = { Text(placeholder, color = theme.textTertiary) },
+            visualTransformation = if (secure) PasswordVisualTransformation() else VisualTransformation.None,
+            keyboardOptions = KeyboardOptions(keyboardType = if (secure) KeyboardType.Password else keyboardType),
+            shape = RoundedCornerShape(theme.radius),
+            colors =
+                OutlinedTextFieldDefaults.colors(
+                    focusedContainerColor = theme.surface,
+                    unfocusedContainerColor = theme.surface,
+                    focusedBorderColor = theme.text,
+                    unfocusedBorderColor = theme.border,
+                    focusedTextColor = theme.text,
+                    unfocusedTextColor = theme.text,
+                    cursorColor = theme.text,
+                ),
+            modifier = Modifier.fillMaxWidth().heightIn(min = theme.controlHeight - 4.dp).testTag(tag),
+        )
     }
 }
 
@@ -290,7 +450,7 @@ private fun NodeOption(
     label: String,
     meta: String?,
     active: Boolean,
-    colors: LoginSheetColors,
+    theme: MeroTheme,
     tag: String,
     onClick: () -> Unit,
 ) {
@@ -298,36 +458,39 @@ private fun NodeOption(
         modifier =
             Modifier
                 .fillMaxWidth()
-                .border(1.dp, if (active) colors.accent else colors.border, RoundedCornerShape(8.dp))
-                .background(if (active) colors.accent.copy(alpha = 0.15f) else Color.Transparent, RoundedCornerShape(8.dp))
+                .clip(RoundedCornerShape(theme.radius))
+                .background(if (active) theme.primary.copy(alpha = 0.15f) else theme.surface)
+                .border(1.dp, theme.border, RoundedCornerShape(theme.radius))
                 .clickable(onClick = onClick)
-                .padding(horizontal = 12.dp, vertical = 4.dp)
+                .padding(horizontal = 6.dp, vertical = 2.dp)
                 .testTag(tag),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        RadioButton(selected = active, onClick = onClick, colors = RadioButtonDefaults.colors(selectedColor = colors.accent))
-        Text(label, color = colors.text, fontSize = 14.sp, modifier = Modifier.weight(1f))
-        meta?.let { Text(it, color = colors.textFaint, fontSize = 12.sp) }
+        RadioButton(selected = active, onClick = onClick, colors = RadioButtonDefaults.colors(selectedColor = theme.text, unselectedColor = theme.textTertiary))
+        Text(label, color = theme.text, fontSize = 14.sp, modifier = Modifier.weight(1f))
+        meta?.let { Text(it, color = theme.textTertiary, fontSize = 12.sp, modifier = Modifier.padding(end = 8.dp)) }
     }
 }
 
 @Composable
 private fun ErrorRow(
     message: String,
-    colors: LoginSheetColors,
+    theme: MeroTheme,
     tag: String,
 ) {
     Row(
         modifier =
             Modifier
                 .fillMaxWidth()
-                .background(colors.dangerSoft, RoundedCornerShape(10.dp))
-                .padding(horizontal = 14.dp, vertical = 12.dp)
+                .clip(RoundedCornerShape(theme.radius))
+                .background(theme.error.copy(alpha = 0.1f))
+                .padding(12.dp)
                 .testTag(tag),
-        horizontalArrangement = Arrangement.spacedBy(10.dp),
+        verticalAlignment = Alignment.CenterVertically,
     ) {
-        Icon(Icons.Outlined.Info, contentDescription = null, tint = colors.danger, modifier = Modifier.size(18.dp))
-        Text(message, color = colors.danger, fontSize = 13.sp)
+        Icon(Icons.Outlined.Info, contentDescription = null, tint = theme.error, modifier = Modifier.size(18.dp))
+        Spacer(Modifier.width(10.dp))
+        Text(message, color = theme.error, fontSize = 13.sp)
     }
 }
 
@@ -335,27 +498,68 @@ private fun ErrorRow(
 @Composable
 private fun PrimaryButton(
     text: String,
+    icon: @Composable () -> Unit,
     loading: Boolean,
     enabled: Boolean,
-    colors: LoginSheetColors,
+    theme: MeroTheme,
     tag: String,
+    height: Dp = theme.controlHeight,
     onClick: () -> Unit,
 ) {
-    Button(
-        onClick = onClick,
-        enabled = enabled,
-        shape = RoundedCornerShape(8.dp),
-        border = BorderStroke(1.dp, Color(0x0F000000)),
-        colors =
-            ButtonDefaults.buttonColors(
-                containerColor = colors.accent,
-                contentColor = colors.onAccent,
-                disabledContainerColor = colors.accent.copy(alpha = 0.5f),
-                disabledContentColor = colors.onAccent.copy(alpha = 0.6f),
-            ),
-        modifier = Modifier.fillMaxWidth().height(48.dp).testTag(tag),
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .heightIn(min = height)
+            .clip(RoundedCornerShape(theme.radius))
+            .background(theme.primary.copy(alpha = if (enabled) 1f else DISABLED_ALPHA))
+            .border(1.dp, Color(0x0F000000), RoundedCornerShape(theme.radius))
+            .clickable(enabled = enabled, onClick = onClick)
+            .testTag(tag),
+        horizontalArrangement = Arrangement.Center,
+        verticalAlignment = Alignment.CenterVertically,
     ) {
-        if (loading) CircularProgressIndicator(color = colors.onAccent, strokeWidth = 2.dp, modifier = Modifier.size(16.dp))
-        Text(text, fontWeight = FontWeight.Medium)
+        Box(Modifier.size(18.dp), contentAlignment = Alignment.Center) {
+            if (loading) {
+                CircularProgressIndicator(color = theme.primaryText, strokeWidth = 2.dp, modifier = Modifier.size(16.dp))
+            } else {
+                androidx.compose.runtime.CompositionLocalProvider(
+                    androidx.compose.material3.LocalContentColor provides theme.primaryText,
+                    content = icon,
+                )
+            }
+        }
+        Spacer(Modifier.width(10.dp))
+        Text(text, color = theme.primaryText, fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
     }
 }
+
+private const val DISABLED_ALPHA = 0.5f
+
+/** Material's "cloud" glyph, inline: mero-compose ships only the core icon set. */
+private val CloudIcon: ImageVector by lazy {
+    materialIcon(
+        "Cloud",
+        "M19.35,10.04C18.67,6.59 15.64,4 12,4 9.11,4 6.6,5.64 5.35,8.04 2.34,8.36 0,10.91 0,14c0,3.31 2.69,6 6,6h13" +
+            "c2.76,0 5,-2.24 5,-5 0,-2.64 -2.05,-4.78 -4.65,-4.96z",
+    )
+}
+
+/** Material's "dns" (server) glyph, inline. */
+private val ServerIcon: ImageVector by lazy {
+    materialIcon(
+        "Server",
+        "M20,13H4c-0.55,0 -1,0.45 -1,1v6c0,0.55 0.45,1 1,1h16c0.55,0 1,-0.45 1,-1v-6c0,-0.55 -0.45,-1 -1,-1z" +
+            "M7,19c-1.1,0 -2,-0.9 -2,-2s0.9,-2 2,-2 2,0.9 2,2 -0.9,2 -2,2z" +
+            "M20,3H4c-0.55,0 -1,0.45 -1,1v6c0,0.55 0.45,1 1,1h16c0.55,0 1,-0.45 1,-1V4c0,-0.55 -0.45,-1 -1,-1z" +
+            "M7,9c-1.1,0 -2,-0.9 -2,-2s0.9,-2 2,-2 2,0.9 2,2 -0.9,2 -2,2z",
+    )
+}
+
+private fun materialIcon(
+    name: String,
+    path: String,
+): ImageVector =
+    ImageVector
+        .Builder(name = name, defaultWidth = 24.dp, defaultHeight = 24.dp, viewportWidth = 24f, viewportHeight = 24f)
+        .addPath(pathData = addPathNodes(path), fill = SolidColor(Color.Black))
+        .build()
