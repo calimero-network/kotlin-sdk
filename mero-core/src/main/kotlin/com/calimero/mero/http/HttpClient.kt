@@ -21,6 +21,29 @@ data class HttpResponse(
 }
 
 /**
+ * A parsed HTTP response whose body is kept as raw bytes (any status) — what
+ * [HttpClient.executeBytes] returns. Binary content such as a blob must never pass through a
+ * [String]: that is a charset round-trip, and every byte `>= 0x80` would be rewritten.
+ */
+class HttpBytesResponse(
+    val status: Int,
+    val headers: Map<String, String>,
+    val body: ByteArray,
+    val url: String,
+) {
+    val isSuccessful: Boolean get() = status in 200..299
+
+    /** The body decoded as UTF-8 — for an error body or a JSON answer to a binary request. */
+    val bodyText: String get() = body.toString(Charsets.UTF_8)
+
+    /** Throws [HttpException] (or [AuthRevokedException]) when the status is not 2xx. */
+    fun ensureSuccessful(): HttpBytesResponse {
+        if (isSuccessful) return this
+        throw HttpException(status, bodyText, headers, url)
+    }
+}
+
+/**
  * The transport contract every API client is built on. The OkHttp-backed implementation
  * ([OkHttpTransport]) owns the Bearer-injection interceptor, the reactive 401→refresh
  * [okhttp3.Authenticator], and terminal `x-auth-error` detection.
@@ -45,6 +68,23 @@ interface HttpClient {
         headers: Map<String, String> = emptyMap(),
         contentType: String = "application/json",
     ): HttpResponse
+
+    /**
+     * [execute] with a raw byte body in both directions: [body] goes on the wire verbatim, and
+     * the response body comes back unchanged. Use it for binary content (blob upload and
+     * download) — [execute] carries text, and a binary body encoded through a [String] is
+     * corrupted.
+     *
+     * The default implementation throws: a transport has to opt in to carrying bytes. Every
+     * transport in this SDK does.
+     */
+    suspend fun executeBytes(
+        method: String,
+        path: String,
+        body: ByteArray? = null,
+        headers: Map<String, String> = emptyMap(),
+        contentType: String = "application/octet-stream",
+    ): HttpBytesResponse = throw UnsupportedOperationException("${this::class.simpleName} does not carry binary bodies (executeBytes)")
 }
 
 // ---- Typed helpers -------------------------------------------------------------------------

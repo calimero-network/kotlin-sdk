@@ -30,10 +30,28 @@ class OkHttpTransport(
         body: String?,
         headers: Map<String, String>,
         contentType: String,
-    ): HttpResponse =
+    ): HttpResponse {
+        val res = send(method, path, body?.toRequestBody(contentType.toMediaType()), headers)
+        return HttpResponse(res.status, res.headers, res.bodyText, res.url)
+    }
+
+    override suspend fun executeBytes(
+        method: String,
+        path: String,
+        body: ByteArray?,
+        headers: Map<String, String>,
+        contentType: String,
+    ): HttpBytesResponse = send(method, path, body?.toRequestBody(contentType.toMediaType()), headers)
+
+    /** One request, its response body read as raw bytes; [execute] decodes them as UTF-8. */
+    private suspend fun send(
+        method: String,
+        path: String,
+        requestBody: RequestBody?,
+        headers: Map<String, String>,
+    ): HttpBytesResponse =
         withContext(Dispatchers.IO) {
             val url = buildUrl(path)
-            val requestBody: RequestBody? = body?.toRequestBody(contentType.toMediaType())
 
             val builder = Request.Builder().url(url)
             when (method.uppercase()) {
@@ -57,7 +75,7 @@ class OkHttpTransport(
                 }
 
             response.use { resp ->
-                val bodyText = resp.body?.string() ?: ""
+                val bodyBytes = resp.body?.bytes() ?: ByteArray(0)
                 val responseHeaders = resp.headers.names().associateWith { resp.header(it) ?: "" }
                 val authError = resp.header("x-auth-error")
 
@@ -65,10 +83,10 @@ class OkHttpTransport(
                 // a distinguishable error. (mero-js §4.3 / overview §4.3.)
                 if ((resp.code == 401 || resp.code == 403) && authError != null && authError in TERMINAL_AUTH_ERRORS) {
                     onAuthRevoked?.invoke()
-                    throw AuthRevokedException(authError, resp.code, bodyText, responseHeaders, url)
+                    throw AuthRevokedException(authError, resp.code, bodyBytes.toString(Charsets.UTF_8), responseHeaders, url)
                 }
 
-                HttpResponse(resp.code, responseHeaders, bodyText, url)
+                HttpBytesResponse(resp.code, responseHeaders, bodyBytes, url)
             }
         }
 
