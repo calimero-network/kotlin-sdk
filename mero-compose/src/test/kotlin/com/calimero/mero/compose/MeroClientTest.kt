@@ -221,5 +221,151 @@ class MeroClientTest {
             assertFalse(state.isAuthenticated)
             assertFalse(state.isLoading)
             assertTrue(state.error!!, state.error!!.startsWith("Can't reach the node at http://127.0.0.1:$closed"))
+            assertEquals(MeroErrorReason.UNREACHABLE, state.errorReason)
+        }
+
+    @Test
+    fun `login says which input it refused`() =
+        runBlocking {
+            assertFalse(client.login("not a url", "admin", "secret"))
+            assertEquals(MeroErrorReason.INVALID_INPUT, client.state.value.errorReason)
+            client.clearError()
+            assertNull(client.state.value.errorReason)
+        }
+
+    /** A node that answers every request with [status] and [body], and records what it was sent. */
+    private fun refusingNode(
+        status: Int,
+        body: String,
+    ): MockWebServer =
+        MockWebServer().apply {
+            dispatcher =
+                object : okhttp3.mockwebserver.Dispatcher() {
+                    override fun dispatch(request: okhttp3.mockwebserver.RecordedRequest) =
+                        okhttp3.mockwebserver
+                            .MockResponse()
+                            .setResponseCode(status)
+                            .setHeader("Content-Type", "application/json")
+                            .setBody(body)
+                }
+            start()
+        }
+
+    @Test
+    fun `login tells bad credentials from a lockout by reason, keeping the message`() =
+        runBlocking {
+            val bad = refusingNode(401, """{"error":"Invalid username or password"}""")
+            val locked = refusingNode(429, """{"error":"Too many failed login attempts"}""")
+            try {
+                assertFalse(client.login(bad.url("/").toString(), "admin", "wrong"))
+                var state = client.state.value
+                assertEquals(MeroErrorReason.INVALID_CREDENTIALS, state.errorReason)
+                assertEquals(401, state.errorStatus)
+                assertEquals("Login failed — check the username and password.", state.error)
+
+                assertFalse(client.login(locked.url("/").toString(), "admin", "wrong"))
+                state = client.state.value
+                assertEquals(MeroErrorReason.RATE_LIMITED, state.errorReason)
+                assertEquals(429, state.errorStatus)
+                assertTrue(state.error!!, state.error!!.contains("Too many failed login attempts"))
+            } finally {
+                bad.shutdown()
+                locked.shutdown()
+            }
+        }
+
+    @Test
+    fun `a password session survives a relaunch`() =
+        runBlocking {
+            val tokens = MemoryTokenStore()
+            val storage = MeroAppStorage(MemoryKeyValueStore())
+            val base = server.url("/").toString().trimEnd('/')
+
+            fun launch() =
+                MeroClient(
+                    CloudAccount(MemorySecureStore(), cloudBaseUrl = base, walletUrl = "https://wallet.example/account-enroll"),
+                    tokens,
+                    storage = storage,
+                )
+
+            assertTrue(launch().login(base, "admin", "secret"))
+            assertEquals(base, storage.nodeUrl)
+            assertEquals("admin", storage.username)
+
+            val relaunched = launch()
+            assertTrue(relaunched.restore())
+            val state = relaunched.state.value
+            assertTrue(state.isDevNodeSession)
+            assertEquals(base, state.nodeUrl)
+            assertEquals("admin", state.username)
+            assertEquals(JsonPrimitive(42), relaunched.mero!!.rpc.execute<JsonPrimitive>("ctx", "get"))
+
+            relaunched.signOut()
+            assertNull(storage.nodeUrl)
+            assertNull(storage.username)
+            assertFalse(launch().restore())
+        }
+
+    @Test
+    fun `login with permissions signs in with a client key instead of the admin token`() =
+        runBlocking {
+            val base = server.url("/").toString()
+            val grants = permissionsFor(AppMode.MULTI_CONTEXT)
+            assertTrue(client.login(base, "admin", "secret", permissions = grants))
+
+            assertEquals(1, node.clientKeyCalls)
+            val body = node.lastClientKeyRequestBody!!
+            assertTrue(body, grants.all { body.contains("\"$it\"") })
+            // The session runs on the client key's tokens, the last pair the node minted.
+            assertEquals(node.accessToken, client.mero!!.getTokenData()!!.accessToken)
+            assertTrue(client.state.value.isDevNodeSession)
+        }
+
+    @Test
+    fun `a refused grant is its own reason and leaves no session behind`() =
+        runBlocking {
+            val tokens = MemoryTokenStore()
+            val storage = MeroAppStorage(MemoryKeyValueStore())
+            val base = server.url("/").toString().trimEnd('/')
+            val c =
+                MeroClient(
+                    CloudAccount(MemorySecureStore(), cloudBaseUrl = base, walletUrl = "https://wallet.example/account-enroll"),
+                    tokens,
+                    storage = storage,
+                )
+            assertFalse(c.login(base, "admin", "secret", permissions = listOf("keys:create")))
+            val state = c.state.value
+            assertFalse(state.isAuthenticated)
+            assertEquals(MeroErrorReason.PERMISSIONS_REFUSED, state.errorReason)
+            assertEquals(400, state.errorStatus)
+            assertTrue(state.error!!, state.error!!.contains("keys:create"))
+            assertNull(tokens.getTokens())
+            assertNull(storage.nodeUrl)
+        }
+
+    @Test
+    fun `node sessions are carried on the app's http client`() =
+        runBlocking {
+            val seen = refusingNode(401, "{}")
+            try {
+                val http =
+                    okhttp3.OkHttpClient
+                        .Builder()
+                        .addInterceptor { chain ->
+                            chain.proceed(
+                                chain
+                                    .request()
+                                    .newBuilder()
+                                    .header("X-App", "test")
+                                    .build(),
+                            )
+                        }.build()
+                val account = CloudAccount(MemorySecureStore(), cloudBaseUrl = server.url("/").toString().trimEnd('/'))
+                val c = MeroClient(account, MemoryTokenStore(), config = MeroAppConfig(httpClient = http))
+                assertFalse(c.login(seen.url("/").toString(), "admin", "secret"))
+                assertEquals("test", seen.takeRequest(2, java.util.concurrent.TimeUnit.SECONDS)!!.getHeader("X-App"))
+            } finally {
+                seen.shutdown()
+            }
         }
 }

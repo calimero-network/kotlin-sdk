@@ -2,6 +2,26 @@
 
 ## Unreleased
 
+### Fixed — `MeroClient.login` sessions, errors and grants (mero-compose)
+
+- **A password session survives a relaunch.** `login(nodeUrl, username, password)` now persists
+  the node URL (and the node the tokens came from) and the username in `MeroAppStorage`, so
+  `restore()` brings the session back while its tokens validate. It was not persisted, so a
+  relaunch always signed out. `MeroAppStorage.username` is new; `signOut` clears it.
+- **Typed login errors.** `MeroAuthState.errorReason` (`MeroErrorReason`: `INVALID_INPUT`,
+  `INVALID_CREDENTIALS`, `RATE_LIMITED`, `UNREACHABLE`, `NODE_ERROR`, `PERMISSIONS_REFUSED`,
+  `UNKNOWN`) and `errorStatus` (the HTTP status) sit beside `error`, so an app can tell a bad
+  password (401) from a lockout (429, "Too many failed login attempts") from a node that is
+  not there without matching the message. The messages are unchanged.
+- **Scoped grants.** `login(…, permissions = …)` signs in with a client key holding just those
+  grants, minted with the admin token through `POST /admin/client-key`; only the client key's
+  tokens are kept. Without `permissions` it is the admin token, as before.
+- **`MeroAppConfig.httpClient`.** Node sessions are built on this OkHttp client
+  (`MeroConfig.httpClient`), for interceptors and the like. `MeroClient.create` also hands it to
+  its `CloudAccount`.
+- `FakeNode` (mero-testkit) mints client keys on `POST /admin/client-key` (refusing `keys:*`, as
+  core does).
+
 ### Changed — Compose BOM 2024.12.01
 
 The Compose BOM moves from 2024.09.03 to 2024.12.01 (Compose 1.7.6). On an emulator, 2024.09.03

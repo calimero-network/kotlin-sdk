@@ -96,6 +96,14 @@ class MeroAppStorage(
         get() = store.get(KEY_TOKEN_NODE_URL)
         set(value) = write(KEY_TOKEN_NODE_URL, value)
 
+    /**
+     * The username of a password session ([MeroClient.login]) on [nodeUrl], so [MeroClient.restore]
+     * brings it back as one. Null for an SSO session.
+     */
+    var username: String?
+        get() = store.get(KEY_USERNAME)?.ifEmpty { null }
+        set(value) = write(KEY_USERNAME, value)
+
     var applicationId: String?
         get() = store.get(KEY_APPLICATION_ID)?.ifEmpty { null }
         set(value) = write(KEY_APPLICATION_ID, value)
@@ -123,6 +131,7 @@ class MeroAppStorage(
     companion object {
         const val KEY_NODE_URL = "mero:node_url"
         const val KEY_TOKEN_NODE_URL = "mero:token_node_url"
+        const val KEY_USERNAME = "mero:username"
         const val KEY_APPLICATION_ID = "mero:application_id"
         const val KEY_CONTEXT_ID = "mero:context_id"
         const val KEY_CONTEXT_IDENTITY = "mero:context_identity"
@@ -135,6 +144,7 @@ class MeroAppStorage(
                 "mero:expires_at",
                 KEY_NODE_URL,
                 KEY_TOKEN_NODE_URL,
+                KEY_USERNAME,
                 KEY_APPLICATION_ID,
                 KEY_CONTEXT_ID,
                 KEY_CONTEXT_IDENTITY,

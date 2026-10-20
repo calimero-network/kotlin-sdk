@@ -5,6 +5,7 @@ import com.calimero.mero.Capabilities
 import com.calimero.mero.Credentials
 import com.calimero.mero.Mero
 import com.calimero.mero.MeroConfig
+import com.calimero.mero.TokenData
 import com.calimero.mero.account.CloudAccount
 import com.calimero.mero.account.CloudAccountAdminDeps
 import com.calimero.mero.account.CreateDelegatedContextRequest
@@ -26,10 +27,12 @@ import com.calimero.mero.admin.ContextWithGroup
 import com.calimero.mero.admin.Namespace
 import com.calimero.mero.admin.SignedGroupOpenInvitation
 import com.calimero.mero.auth.AuthLoginOptions
+import com.calimero.mero.auth.GenerateClientKeyRequest
 import com.calimero.mero.auth.PendingAuthStates
 import com.calimero.mero.auth.buildAuthLoginUrl
 import com.calimero.mero.auth.parseAuthCallback
 import com.calimero.mero.cloud.CloudClient
+import com.calimero.mero.http.ClassifiedError
 import com.calimero.mero.http.ErrorKind
 import com.calimero.mero.http.classifyError
 import com.calimero.mero.presence.RelayPresenceClient
@@ -80,6 +83,7 @@ data class MeroAuthState(
     val relayNote: String? = null,
     /** The person declined at the wallet (not an error to report loudly). */
     val cancelled: Boolean = false,
+    /** What went wrong, in words a person can read. See [errorReason] to branch on it. */
     val error: String? = null,
     /** The node this client is signed in to ([MeroClient.connectToNode] or [MeroClient.login]), or null. */
     val nodeUrl: String? = null,
@@ -96,6 +100,15 @@ data class MeroAuthState(
     val contextId: String? = null,
     /** The executor identity in [contextId]. */
     val contextIdentity: String? = null,
+    /**
+     * Why [error] is set, for an app to branch on instead of matching [error]'s words: a bad
+     * password, a lockout, a node that is not there. Set by [MeroClient.login] (and by
+     * [MeroClient.connectToNode] for a malformed URL). Null when there is no error, and for an
+     * error this does not classify (a Cloud sign-in failure, say).
+     */
+    val errorReason: MeroErrorReason? = null,
+    /** The HTTP status behind [error], when the node answered one; `0` when no response arrived. */
+    val errorStatus: Int? = null,
 ) {
     /** Signed in, but no relay to write through yet. */
     val signedInWithoutRelay: Boolean get() = isAuthenticated && relayUrl == null && nodeUrl == null
@@ -108,6 +121,30 @@ data class MeroAuthState(
 
     /** An account on a relay rather than a node login (mero-react `isDelegated`). */
     val isDelegated: Boolean get() = isAuthenticated && nodeUrl == null
+}
+
+/** Why a sign-in failed — [MeroAuthState.errorReason]. */
+enum class MeroErrorReason {
+    /** The input was refused before any request: a malformed node URL, or no username or password. */
+    INVALID_INPUT,
+
+    /** The node refused the username and password (`401`, `403` or `400`). */
+    INVALID_CREDENTIALS,
+
+    /** The node asked the client to slow down (`429`): too many failed login attempts. */
+    RATE_LIMITED,
+
+    /** No response: the node is not running, the URL is wrong, the network is down, or a timeout. */
+    UNREACHABLE,
+
+    /** The node answered with a server error (`5xx`). */
+    NODE_ERROR,
+
+    /** The password was accepted, but the node would not mint a key with the requested permissions. */
+    PERMISSIONS_REFUSED,
+
+    /** Anything else. [MeroAuthState.error] has the detail. */
+    UNKNOWN,
 }
 
 /**
@@ -206,7 +243,7 @@ class MeroClient(
         context: Context,
         callbackUrl: String,
     ) {
-        _state.update { it.copy(isLoading = true, error = null, cancelled = false) }
+        _state.update { it.copy(isLoading = true, error = null, errorReason = null, errorStatus = null, cancelled = false) }
         try {
             launchWallet(context, account.beginEnrolment(callbackUrl))
         } catch (e: Exception) {
@@ -219,7 +256,7 @@ class MeroClient(
 
     /** Forget the last sign-in error (the sign-in screen does this when switching between Cloud and a node). */
     fun clearError() {
-        _state.update { it.copy(error = null, cancelled = false) }
+        _state.update { it.copy(error = null, errorReason = null, errorStatus = null, cancelled = false) }
     }
 
     /** Stop showing a spinner if the person closed the wallet (or login page) without an answer. */
@@ -234,7 +271,7 @@ class MeroClient(
      */
     suspend fun handleEnrolmentCallback(url: String): Boolean {
         if (!account.isEnrolmentCallback(url)) return false
-        _state.update { it.copy(isLoading = true, error = null, cancelled = false) }
+        _state.update { it.copy(isLoading = true, error = null, errorReason = null, errorStatus = null, cancelled = false) }
         try {
             account.completeEnrolment(url) ?: run {
                 _state.update { it.copy(isLoading = false) }
@@ -350,10 +387,10 @@ class MeroClient(
         callbackUrl: String,
     ) {
         if (nodeUrl.trim().toHttpUrlOrNull() == null) {
-            _state.update { it.copy(error = "Enter a valid node URL (e.g. http://10.0.2.2:2428).") }
+            _state.update { it.copy(error = INVALID_NODE_URL, errorReason = MeroErrorReason.INVALID_INPUT, errorStatus = null) }
             return
         }
-        _state.update { it.copy(isLoading = true, error = null, cancelled = false) }
+        _state.update { it.copy(isLoading = true, error = null, errorReason = null, errorStatus = null, cancelled = false) }
         try {
             launchLogin(context, nodeLoginUrl(nodeUrl, callbackUrl))
         } catch (e: Exception) {
@@ -385,7 +422,7 @@ class MeroClient(
             return true
         }
         val nodeUrl = trust.url?.trimEnd('/') ?: return true.also { _state.update { it.copy(isLoading = false) } }
-        _state.update { it.copy(isLoading = true, error = null) }
+        _state.update { it.copy(isLoading = true, error = null, errorReason = null, errorStatus = null) }
         val instance = newNode(nodeUrl)
         val decision = resolveTokenAdoption(callback.accessToken, callback.refreshToken, nodeUrl, instance.getTokenData(), tokenNode)
         decision.tokens?.let {
@@ -396,6 +433,8 @@ class MeroClient(
         callback.contextId.ifEmpty { null }?.let { storage.contextId = it }
         callback.contextIdentity.ifEmpty { null }?.let { storage.contextIdentity = it }
         storage.nodeUrl = nodeUrl
+        // An SSO session, not a password one: restore must not bring it back as one.
+        storage.username = null
         if (checkAuth(instance)) {
             installNode(instance, nodeUrl, username = null)
         } else {
@@ -404,7 +443,10 @@ class MeroClient(
         return true
     }
 
-    /** Bring back the node session [MeroAppStorage.nodeUrl] names, if its tokens still validate. */
+    /**
+     * Bring back the node session [MeroAppStorage.nodeUrl] names, if its tokens still validate:
+     * an SSO session, or a password session [login] persisted.
+     */
     suspend fun restoreNodeSession(): Boolean {
         val saved = storage.nodeUrl
         if (saved == null) {
@@ -414,7 +456,8 @@ class MeroClient(
         _state.update { it.copy(isLoading = true) }
         val instance = newNode(saved)
         if (checkAuth(instance)) {
-            installNode(instance, saved, username = null)
+            // A password session [login] persisted comes back as one (not health-monitored).
+            installNode(instance, saved, username = storage.username)
             return true
         }
         _state.value = stateFor()
@@ -433,31 +476,49 @@ class MeroClient(
      * From the Android emulator, the development machine's `localhost` is `10.0.2.2` (see
      * `com.calimero.mero.discovery`, which can find running local nodes).
      *
-     * The tokens go to this client's [TokenStore], bound to [nodeUrl]. A development session
-     * is not brought back by [restore]; log in again.
+     * The tokens go to this client's [TokenStore], bound to [nodeUrl], and the node URL and
+     * username to [storage], so [restore] brings the session back on the next launch while its
+     * tokens still validate. [signOut] forgets both.
      *
-     * @return true when signed in; on failure the reason is in [MeroAuthState.error].
+     * A password login on its own yields the node's **admin** token. Pass [permissions] to sign
+     * in with a narrower key instead: the admin token is used once, to mint a client key with
+     * just those grants (`POST /admin/client-key`), and only the client key's tokens are kept.
+     * [permissionsFor] gives the grants an [AppMode] asks for. Core refuses `keys:*` on a client
+     * key, and checks each grant against the admin's own ([MeroErrorReason.PERMISSIONS_REFUSED]).
+     *
+     * @return true when signed in; on failure the reason is in [MeroAuthState.error], and what
+     *   kind of failure it was in [MeroAuthState.errorReason].
      */
     suspend fun login(
         nodeUrl: String,
         username: String,
         password: String,
+        permissions: List<String>? = null,
     ): Boolean {
         val base = nodeUrl.trim().trimEnd('/')
         val invalid =
             when {
-                base.toHttpUrlOrNull() == null -> "Enter a valid node URL (e.g. http://10.0.2.2:2428)."
+                base.toHttpUrlOrNull() == null -> INVALID_NODE_URL
                 username.isEmpty() || password.isEmpty() -> "Username and password are required."
                 else -> null
             }
         if (invalid != null) {
-            _state.update { it.copy(isLoading = false, error = invalid) }
+            _state.update { it.copy(isLoading = false, error = invalid, errorReason = MeroErrorReason.INVALID_INPUT, errorStatus = null) }
             return false
         }
-        _state.update { it.copy(isLoading = true, error = null, cancelled = false) }
+        _state.update { it.copy(isLoading = true, error = null, errorReason = null, errorStatus = null, cancelled = false) }
         val client = newNode(base)
+        var minting = false
         return try {
             client.authenticate(Credentials(username, password))
+            if (permissions != null) {
+                minting = true
+                val key = client.auth.generateClientKey(GenerateClientKeyRequest(permissions = permissions)).data
+                client.setTokenData(TokenData(accessToken = key.accessToken, refreshToken = key.refreshToken, expiresAt = 0))
+            }
+            storage.nodeUrl = base
+            storage.tokenNodeUrl = base
+            storage.username = username
             installNode(client, base, username)
             true
         } catch (e: CancellationException) {
@@ -465,7 +526,17 @@ class MeroClient(
             throw e
         } catch (e: Exception) {
             node.value = null
-            _state.value = MeroAuthState(error = devLoginMessage(e, base))
+            // Neither a half-made session (the admin token, when the client key was refused) nor one
+            // from an earlier login on this node is left for restore to pick up. Another node's
+            // bundle is left alone (clearToken only drops this node's).
+            client.clearToken()
+            val c = classifyError(e)
+            _state.value =
+                MeroAuthState(
+                    error = devLoginMessage(c, base, minting),
+                    errorReason = if (minting) MeroErrorReason.PERMISSIONS_REFUSED else reasonFor(c.kind),
+                    errorStatus = c.status,
+                )
             false
         }
     }
@@ -513,7 +584,8 @@ class MeroClient(
 
     // ---- Wiring ---------------------------------------------------------------------------
 
-    private fun newNode(baseUrl: String): Mero = Mero(MeroConfig(baseUrl = baseUrl, tokenStore = tokenStore, timeoutMs = config.timeoutMs))
+    private fun newNode(baseUrl: String): Mero =
+        Mero(MeroConfig(baseUrl = baseUrl, tokenStore = tokenStore, timeoutMs = config.timeoutMs, httpClient = config.httpClient))
 
     /**
      * Is [instance]'s session alive? (mero-react `checkAuth`.) Asks `/auth/validate` — no
@@ -693,16 +765,26 @@ class MeroClient(
     }
 
     private fun devLoginMessage(
-        e: Exception,
+        c: ClassifiedError,
         nodeUrl: String,
-    ): String {
-        val c = classifyError(e)
-        return when (c.kind) {
-            ErrorKind.UNAUTHORIZED, ErrorKind.FORBIDDEN, ErrorKind.INVALID -> "Login failed — check the username and password."
-            ErrorKind.UNREACHABLE -> "Can't reach the node at $nodeUrl: ${c.message}"
+        minting: Boolean,
+    ): String =
+        when {
+            minting && c.kind != ErrorKind.UNREACHABLE -> "The node did not grant the requested permissions: ${c.message}"
+            c.kind == ErrorKind.UNAUTHORIZED || c.kind == ErrorKind.FORBIDDEN || c.kind == ErrorKind.INVALID ->
+                "Login failed — check the username and password."
+            c.kind == ErrorKind.UNREACHABLE -> "Can't reach the node at $nodeUrl: ${c.message}"
             else -> c.message
         }
-    }
+
+    private fun reasonFor(kind: ErrorKind): MeroErrorReason =
+        when (kind) {
+            ErrorKind.UNAUTHORIZED, ErrorKind.FORBIDDEN, ErrorKind.INVALID -> MeroErrorReason.INVALID_CREDENTIALS
+            ErrorKind.RATE_LIMITED -> MeroErrorReason.RATE_LIMITED
+            ErrorKind.UNREACHABLE -> MeroErrorReason.UNREACHABLE
+            ErrorKind.SERVER, ErrorKind.UNAVAILABLE -> MeroErrorReason.NODE_ERROR
+            else -> MeroErrorReason.UNKNOWN
+        }
 
     private fun stateFor(): MeroAuthState {
         val s = adoptedSession ?: account.session()
@@ -716,6 +798,9 @@ class MeroClient(
          * (231, [Capabilities.Presets.COLLABORATOR]).
          */
         const val DEFAULT_SPACE_CAPABILITIES: Long = Capabilities.Presets.COLLABORATOR
+
+        /** What [MeroAuthState.error] says for a node URL that does not parse. */
+        const val INVALID_NODE_URL = "Enter a valid node URL (e.g. http://10.0.2.2:2428)."
 
         /** What [MeroAuthState.error] says when an SSO callback named a node this app does not trust. */
         const val UNTRUSTED_CALLBACK =
@@ -734,7 +819,10 @@ class MeroClient(
             config: MeroAppConfig = MeroAppConfig(cloudBaseUrl = cloudBaseUrl),
         ): MeroClient {
             val appContext = context.applicationContext
-            val account = CloudAccount(EncryptedPrefsSecureStore(appContext), cloudBaseUrl = cloudBaseUrl, walletUrl = walletUrl)
+            val secure = EncryptedPrefsSecureStore(appContext)
+            val account =
+                config.httpClient?.let { CloudAccount(secure, cloudBaseUrl = cloudBaseUrl, walletUrl = walletUrl, httpClient = it) }
+                    ?: CloudAccount(secure, cloudBaseUrl = cloudBaseUrl, walletUrl = walletUrl)
             return MeroClient(
                 account,
                 EncryptedPrefsTokenStore(appContext, fileName = "mero_relay_tokens"),
