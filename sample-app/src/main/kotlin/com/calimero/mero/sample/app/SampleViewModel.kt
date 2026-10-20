@@ -22,7 +22,8 @@ import okhttp3.mockwebserver.MockWebServer
  * Owns the app's [MeroClient] for the activity's lifetime.
  *
  * - Real mode: [MeroClient.create] (Keystore-backed keys, session and relay tokens) against the
- *   hosted wallet and cloud manager, then [MeroClient.restore] to reconnect a saved session.
+ *   hosted wallet and cloud manager, then [MeroClient.restore] to reconnect a saved session: the
+ *   Cloud account's, or a node sign-in, including a username/password one, while its tokens validate.
  * - Mock mode: an in-app [FakeNode] plays both the cloud manager and the relay, and the
  *   wallet is [MockWallet] — so the whole sign-in runs with no network.
  */

@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+### sample-app
+
+- The node sign-in screen words its errors from `MeroAuthState.errorReason` instead of matching
+  `error`'s text, and now tells a lockout (`RATE_LIMITED`, "Too many failed sign-ins") and a node
+  error (`NODE_ERROR`, with its HTTP status) apart from a wrong password or an unreachable node.
+- A username/password session comes back on relaunch through `MeroClient.restore()`, which the
+  app already calls at startup; nothing app-side persists it.
+
 ### Fixed — `MeroClient.login` sessions, errors and grants (mero-compose)
 
 - **A password session survives a relaunch.** `login(nodeUrl, username, password)` now persists
