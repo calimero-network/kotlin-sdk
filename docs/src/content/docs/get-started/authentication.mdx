@@ -148,7 +148,11 @@ throws.
 For servers, tools and tests that talk to a node you run, exchange a username and
 password for a token bundle. In the Compose kit, `MeroClient.login(nodeUrl,
 username, password)` does the same for a development node — **development only**:
-it puts a node admin's password in the app; people sign in with Calimero.
+it puts a node admin's password in the app; people sign in with Calimero. It
+persists the node URL and username, so `restore()` brings the session back on the
+next launch while its tokens validate. Pass `permissions` (e.g.
+`permissionsFor(AppMode.MULTI_CONTEXT)`) to keep a client key with just those grants,
+minted through `POST /admin/client-key`, instead of the admin token.
 
 ```kotlin
 mero.authenticate(Credentials(username = "alice", password = "s3cr3t"))

@@ -97,15 +97,22 @@ override fun onNewIntent(intent: Intent) {
 A plain (non-composable) class: mero-react's `MeroProvider` state and actions.
 `MeroAuthState` carries `isAuthenticated`, `isLoading`, `account`, `device`,
 `relayUrl`, `sessionReady`, `relayNote`, `cancelled`, `error`, `nodeUrl`,
-`username`, `isOnline`, `applicationId`, `contextId` and `contextIdentity`, plus
-`signedInWithoutRelay`, `isNodeSession`, `isDevNodeSession` and `isDelegated`.
+`username`, `isOnline`, `applicationId`, `contextId`, `contextIdentity`,
+`errorReason` and `errorStatus`, plus `signedInWithoutRelay`, `isNodeSession`,
+`isDevNodeSession` and `isDelegated`.
+
+`errorReason` says what kind of failure `error` describes, so an app branches on it
+instead of matching words: `INVALID_INPUT`, `INVALID_CREDENTIALS` (401/403/400),
+`RATE_LIMITED` (429, too many failed attempts), `UNREACHABLE`, `NODE_ERROR` (5xx),
+`PERMISSIONS_REFUSED` or `UNKNOWN`. `login` and `connectToNode` set it; it is null
+for an error it does not classify. `errorStatus` is the HTTP status, when there was one.
 
 ```kotlin
 class MeroClient(
     val account: CloudAccount,
     tokenStore: TokenStore = MemoryTokenStore(),
     launchWallet: (Context, String) -> Unit = WalletLauncher::launch,
-    val config: MeroAppConfig = MeroAppConfig(),          // mode, packageName, allowedNodeUrls, …
+    val config: MeroAppConfig = MeroAppConfig(),          // mode, packageName, allowedNodeUrls, httpClient, …
     val storage: MeroAppStorage = MeroAppStorage(),       // node URL, application, context
     launchLogin: (Context, String) -> Unit = …,           // a node's login page, in a Custom Tab
     val pendingAuth: PendingAuthStates = PendingAuthStates.shared,
@@ -127,7 +134,10 @@ class MeroClient(
     fun selectContext(contextId: String?, contextIdentity: String? = null)
     suspend fun logout()                                  // clears tokens, session and storage
 
-    suspend fun login(nodeUrl: String, username: String, password: String): Boolean  // development only
+    suspend fun login(                                    // development only
+        nodeUrl: String, username: String, password: String,
+        permissions: List<String>? = null,                // a scoped client key instead of the admin token
+    ): Boolean
 
     companion object {
         fun create(context: Context, cloudBaseUrl: String = …, walletUrl: String = …, config: MeroAppConfig = …): MeroClient

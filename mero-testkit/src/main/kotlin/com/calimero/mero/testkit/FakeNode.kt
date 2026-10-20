@@ -59,6 +59,8 @@ class FakeNode {
         private set
     var protectedCalls = 0
         private set
+    var clientKeyCalls = 0
+        private set
 
     /** Canned contract output for `/jsonrpc`, keyed by method. */
     var rpcOutputs: MutableMap<String, JsonElement> = mutableMapOf("get" to JsonPrimitive(42))
@@ -71,6 +73,10 @@ class FakeNode {
 
     /** The last `POST /auth/token` body, verbatim (asserts the `account_proof` login shape). */
     @Volatile var lastTokenRequestBody: String? = null
+        private set
+
+    /** The last `POST /admin/client-key` body, verbatim. */
+    @Volatile var lastClientKeyRequestBody: String? = null
         private set
 
     /**
@@ -114,6 +120,7 @@ class FakeNode {
                 issueTokens()
             }
             "POST" to "/auth/refresh" -> refresh(request)
+            "POST" to "/admin/client-key" -> guarded(request) { mintClientKey(request) }
             "POST" to "/auth/logout" -> logout()
             "HEAD" to "/auth/validate" -> validate(request)
             "GET" to "/auth/health" ->
@@ -167,6 +174,32 @@ class FakeNode {
             familyRevoked = false
             tokenResponse(accessToken, refreshToken)
         }
+
+    /**
+     * `POST /admin/client-key`: mint a client key's token pair, which becomes the live session
+     * (this fake keeps one). Like core, a `keys:*` grant is refused with a `400`.
+     */
+    private fun mintClientKey(request: RecordedRequest): MockResponse {
+        val body = request.body.readUtf8()
+        lastClientKeyRequestBody = body
+        val refused =
+            runCatching {
+                json
+                    .parseToJsonElement(body)
+                    .jsonObject["permissions"]
+                    ?.let { it as? JsonArray }
+                    ?.map { it.jsonPrimitive.content }
+                    ?.firstOrNull { it.substringBefore(':').substringBefore('[').equals("keys", ignoreCase = true) }
+            }.getOrNull()
+        if (refused != null) {
+            return MockResponse()
+                .setResponseCode(400)
+                .setHeader("Content-Type", "application/json")
+                .setBody(buildJsonObject { put("error", "Permission cannot be granted to a client key: $refused") }.toString())
+        }
+        synchronized(lock) { clientKeyCalls++ }
+        return issueTokens()
+    }
 
     private fun refresh(request: RecordedRequest): MockResponse {
         val presented =

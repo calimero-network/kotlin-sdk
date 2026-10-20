@@ -1,5 +1,6 @@
 package com.calimero.mero.sample
 
+import android.content.Context
 import android.content.Intent
 import android.util.Log
 import androidx.compose.ui.semantics.SemanticsProperties
@@ -18,8 +19,10 @@ import androidx.test.core.app.ActivityScenario
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
+import com.calimero.mero.compose.MeroAppStorage
 import org.junit.After
 import org.junit.Assert.assertTrue
+import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -47,6 +50,15 @@ class AppE2ETest {
                 .putExtra("mock", false)
                 .putExtra("nodeUrl", nodeUrl)
         scenario = ActivityScenario.launch(intent)
+    }
+
+    /**
+     * Start every test signed out. A password login is persisted, so without this the next test's
+     * launch would restore the previous test's session and never show the sign-in screen.
+     */
+    @Before
+    fun forgetPersistedSession() {
+        MeroAppStorage(ApplicationProvider.getApplicationContext<Context>()).clearAll()
     }
 
     /** Close the activity, so its live event stream does not hold a connection into the next test. */

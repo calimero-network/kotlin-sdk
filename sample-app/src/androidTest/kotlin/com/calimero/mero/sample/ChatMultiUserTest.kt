@@ -22,7 +22,9 @@ import androidx.test.core.app.ActivityScenario
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
+import com.calimero.mero.compose.MeroAppStorage
 import org.junit.After
+import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -60,6 +62,15 @@ class ChatMultiUserTest {
     }
 
     private var scenario: ActivityScenario<MainActivity>? = null
+
+    /**
+     * Start every test signed out. A password login is persisted, so without this the next test's
+     * launch would restore the previous test's session and never show the sign-in screen.
+     */
+    @Before
+    fun forgetPersistedSession() {
+        MeroAppStorage(ApplicationProvider.getApplicationContext<Context>()).clearAll()
+    }
 
     /** Close the activity, so its live event stream does not hold a connection into the next test. */
     @After

@@ -3,6 +3,7 @@ package com.calimero.mero.compose
 import com.calimero.mero.account.AccountApp
 import com.calimero.mero.account.ApplicationIds
 import com.calimero.mero.cloud.CloudClient
+import okhttp3.OkHttpClient
 
 /**
  * What an app asks a node for at login, and so what its token may do — mero-react `AppMode`.
@@ -108,6 +109,15 @@ data class MeroAppConfig(
     val allowedNodeUrls: List<String> = emptyList(),
     /** Request timeout for node clients. */
     val timeoutMs: Long = DEFAULT_TIMEOUT_MS,
+    /**
+     * The OkHttp client node sessions are carried on ([com.calimero.mero.MeroConfig.httpClient]):
+     * add interceptors (logging, headers, certificate pinning) here. The SDK builds its own
+     * clients from it, with this config's timeouts and its auth and refresh handling in front.
+     * [MeroClient.create] also hands it to the [com.calimero.mero.account.CloudAccount] it
+     * builds, for the cloud and relay requests, which then run with this client's own timeouts.
+     * Null: a fresh client.
+     */
+    val httpClient: OkHttpClient? = null,
 ) {
     /** The app's registry identity, as the admins take it (mero-react `app`). */
     val app: AccountApp
