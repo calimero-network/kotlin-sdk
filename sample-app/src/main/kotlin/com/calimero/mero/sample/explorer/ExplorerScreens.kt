@@ -90,6 +90,7 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.calimero.mero.compose.MeroAuthState
 import com.calimero.mero.compose.MeroClient
+import com.calimero.mero.compose.MeroErrorReason
 import com.calimero.mero.sample.app.NodePrefs
 import com.calimero.mero.sample.app.SampleLog
 import com.calimero.mero.sample.chat.ChatScreen
@@ -188,7 +189,7 @@ private fun LoginScreen(
 
     val loading = state.isLoading
     val canConnect = !loading && nodeUrl.isNotBlank() && username.isNotEmpty() && password.isNotEmpty()
-    val error = localError ?: state.error?.let { friendlyNodeError(it, nodeUrl.trim()) }
+    val error = localError ?: friendlyNodeError(state, nodeUrl.trim())
 
     fun connect() {
         if (!canConnect) return
@@ -371,16 +372,24 @@ private fun LoadingPrimaryButton(
     }
 }
 
-/** The SDK's node-login messages, in the words the sign-in screen uses. */
+/**
+ * The SDK's node-login error, in the words the sign-in screen uses. It branches on
+ * [MeroAuthState.errorReason] (a bad password, a lockout, a node that is not there), never on the
+ * message; anything else shows [MeroAuthState.error] as is.
+ */
 private fun friendlyNodeError(
-    error: String,
+    state: MeroAuthState,
     nodeUrl: String,
-): String =
-    when {
-        error.startsWith("Can't reach the node") -> "Can't reach a node at $nodeUrl. Is merod running?"
-        error.startsWith("Login failed") -> "The node refused that username or password."
+): String? {
+    val error = state.error ?: return null
+    return when (state.errorReason) {
+        MeroErrorReason.UNREACHABLE -> "Can't reach a node at $nodeUrl. Is merod running?"
+        MeroErrorReason.INVALID_CREDENTIALS -> "The node refused that username or password."
+        MeroErrorReason.RATE_LIMITED -> "Too many failed sign-ins. Wait a little, then try again."
+        MeroErrorReason.NODE_ERROR -> "The node hit an error (HTTP ${state.errorStatus}). Check its logs."
         else -> error
     }
+}
 
 // ---- Signed in: Home, Chat, SDK -------------------------------------------------------------
 
