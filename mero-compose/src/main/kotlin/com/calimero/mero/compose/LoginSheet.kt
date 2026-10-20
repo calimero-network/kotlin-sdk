@@ -77,7 +77,7 @@ import kotlinx.coroutines.launch
  *
  * [mode] picks which are offered: [LoginMode.CLOUD_AND_NODE] (Cloud, with a small "Manually enter
  * node URL" link under it), [LoginMode.CLOUD_ONLY] or [LoginMode.NODE_ONLY]. Colours, radii and
- * type come from the ambient [MeroTheme]; words and the logo from [branding].
+ * type come from the ambient [MeroTheme]; every string and the logo from [branding].
  *
  * Test tags: `loginTitle`, `loginError`, `cloudSignInButton` (the button), `loginButton` (the
  * Cloud panel), `cloudLoginCancelled`, `manualNode` / `useCloud` (the link between them), and on
@@ -127,7 +127,7 @@ fun LoginView(
                 Spacer(Modifier.heightIn(min = 12.dp))
                 state.error?.let { ErrorRow(it, theme, "loginError") }
                 when (tab) {
-                    LoginModalTab.CLOUD -> AccountSignInPanel(callbackUrl = callbackUrl, client = client, buttonTitle = branding.cloudButton)
+                    LoginModalTab.CLOUD -> AccountSignInPanel(callbackUrl = callbackUrl, client = client, branding = branding)
                     LoginModalTab.NODE ->
                         Box(
                             Modifier
@@ -137,12 +137,12 @@ fun LoginView(
                                 .border(1.dp, theme.border, RoundedCornerShape(theme.cardRadius))
                                 .padding(18.dp),
                         ) {
-                            NodeLoginPanel(client, nodeCallbackUrl, nodeSignIn, onConnectNode)
+                            NodeLoginPanel(client, nodeCallbackUrl, nodeSignIn, onConnectNode, branding)
                         }
                 }
                 if (mode == LoginMode.CLOUD_AND_NODE) {
                     Text(
-                        if (tab == LoginModalTab.CLOUD) "Manually enter node URL" else "Use Calimero Cloud instead",
+                        if (tab == LoginModalTab.CLOUD) branding.manualNodeLink else branding.useCloudLink,
                         color = theme.textSecondary,
                         fontSize = 13.sp,
                         fontWeight = FontWeight.Medium,
@@ -223,9 +223,9 @@ private const val GLOW_MID = 0.45f
 private const val GLOW_RADIUS = 420
 
 /**
- * The sign-in sheet, as before [LoginView]: [tabs] map to a [LoginMode] and [title] to the Cloud
- * title. Kept for existing callers; new code uses [LoginView]. [colors], when given, overrides the
- * ambient [MeroTheme]'s matching tokens.
+ * The sign-in sheet, as before [LoginView]: [tabs] map to a [LoginMode] and [title], when given,
+ * to the Cloud title. Kept for existing callers; new code uses [LoginView]. [colors], when given,
+ * overrides the ambient [MeroTheme]'s matching tokens. [branding] sets every other string.
  */
 @Suppress("LongParameterList")
 @Composable
@@ -234,12 +234,13 @@ fun LoginSheet(
     modifier: Modifier = Modifier,
     client: MeroClient = useMero(),
     colors: LoginSheetColors? = null,
-    title: String = LoginBranding().cloudTitle,
+    title: String? = null,
     onAuthenticated: () -> Unit = {},
     tabs: List<LoginModalTab> = listOf(LoginModalTab.NODE, LoginModalTab.CLOUD),
     initialTab: LoginModalTab = LoginModalTab.CLOUD,
     nodeCallbackUrl: String = callbackUrl,
     onConnectNode: ((String) -> Unit)? = null,
+    branding: LoginBranding = LoginBranding(),
 ) {
     val base = LocalMeroTheme.current
     val theme = colors?.let { base.with(it) } ?: base
@@ -249,7 +250,7 @@ fun LoginSheet(
             modifier = modifier,
             client = client,
             mode = LoginMode.from(tabs),
-            branding = LoginBranding(cloudTitle = title),
+            branding = if (title != null) branding.copy(cloudTitle = title) else branding,
             nodeCallbackUrl = nodeCallbackUrl,
             initialTab = initialTab,
             onConnectNode = onConnectNode,
@@ -273,7 +274,8 @@ internal fun MeroTheme.with(colors: LoginSheetColors): MeroTheme =
 
 /**
  * The Cloud side: one button to the wallet, what it does, and what the last attempt had to say.
- * The flow itself is [MeroClient.signInWithCloud]. (== mero-react `AccountSignInPanel`.)
+ * The flow itself is [MeroClient.signInWithCloud]. (== mero-react `AccountSignInPanel`.) The words
+ * come from [branding]; [buttonTitle] overrides its `cloudButton`.
  *
  * Test tags: `loginButton` (the panel), `cloudSignInButton`, `cloudLoginCancelled`.
  */
@@ -282,7 +284,8 @@ fun AccountSignInPanel(
     callbackUrl: String,
     modifier: Modifier = Modifier,
     client: MeroClient = useMero(),
-    buttonTitle: String = LoginBranding().cloudButton,
+    branding: LoginBranding = LoginBranding(),
+    buttonTitle: String = branding.cloudButton,
 ) {
     val theme = LocalMeroTheme.current
     val state by client.state.collectAsStateWithLifecycle()
@@ -304,11 +307,11 @@ fun AccountSignInPanel(
         Row(verticalAlignment = Alignment.CenterVertically) {
             Icon(Icons.Outlined.Lock, contentDescription = null, tint = theme.textTertiary, modifier = Modifier.size(14.dp))
             Spacer(Modifier.width(6.dp))
-            Text("Opens the Calimero wallet to approve this device", color = theme.textTertiary, fontSize = 12.sp)
+            Text(branding.cloudHint, color = theme.textTertiary, fontSize = 12.sp)
         }
         if (state.cancelled) {
             Text(
-                "Sign-in was cancelled in the wallet.",
+                branding.cloudCancelled,
                 color = theme.textSecondary,
                 fontSize = 13.sp,
                 modifier = Modifier.testTag("cloudLoginCancelled"),
@@ -316,7 +319,7 @@ fun AccountSignInPanel(
         }
         state.relayNote?.let { Text(it, color = theme.textSecondary, fontSize = 13.sp, textAlign = TextAlign.Center) }
         if (customWallet) {
-            Text("Enrolling at ${client.account.walletUrl}, not the hosted wallet.", color = theme.textTertiary, fontSize = 12.sp, textAlign = TextAlign.Center)
+            Text(branding.customWalletNote(client.account.walletUrl), color = theme.textTertiary, fontSize = 12.sp, textAlign = TextAlign.Center)
         }
     }
 }
@@ -328,6 +331,7 @@ private fun NodeLoginPanel(
     callbackUrl: String,
     method: NodeSignInMethod,
     onConnectNode: ((String) -> Unit)?,
+    branding: LoginBranding,
 ) {
     val theme = LocalMeroTheme.current
     val scope = rememberCoroutineScope()
@@ -362,26 +366,26 @@ private fun NodeLoginPanel(
             Row(Modifier.fillMaxWidth().testTag("nodeDiscovering"), horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically) {
                 CircularProgressIndicator(color = theme.text, strokeWidth = 2.dp, modifier = Modifier.size(16.dp))
                 Spacer(Modifier.width(8.dp))
-                Text("Searching for local nodes…", color = theme.textSecondary, fontSize = 14.sp)
+                Text(branding.searchingNodes, color = theme.textSecondary, fontSize = 14.sp)
             }
         } else {
             discovered.forEach { url ->
-                NodeOption(displayNodeUrl(url), "local", selected == url, theme, "nodeOption-${displayNodeUrl(url)}") { login.select(url) }
+                NodeOption(displayNodeUrl(url), branding.localNodeTag, selected == url, theme, "nodeOption-${displayNodeUrl(url)}") { login.select(url) }
             }
             if (discovered.isNotEmpty()) {
-                NodeOption("Enter node URL manually", null, selected == null, theme, "nodeOption-custom") { login.select(null) }
+                NodeOption(branding.manualNodeOption, null, selected == null, theme, "nodeOption-custom") { login.select(null) }
             }
             if (selected == null) {
-                Field("Node URL", customUrl, login::setCustomUrl, "http://localhost:4001", theme, "nodeUrlInput", keyboardType = KeyboardType.Uri)
+                Field(branding.nodeUrlLabel, customUrl, login::setCustomUrl, branding.nodeUrlPlaceholder, theme, "nodeUrlInput", keyboardType = KeyboardType.Uri)
             }
             if (method == NodeSignInMethod.PASSWORD) {
-                Field("Username", username, { username = it }, "dev", theme, "nodeUserInput")
-                Field("Password", password, { password = it }, "Admin password", theme, "nodePasswordInput", secure = true)
+                Field(branding.usernameLabel, username, { username = it }, branding.usernamePlaceholder, theme, "nodeUserInput")
+                Field(branding.passwordLabel, password, { password = it }, branding.passwordPlaceholder, theme, "nodePasswordInput", secure = true)
             }
             error?.let { Text(it, color = theme.error, fontSize = 13.sp, modifier = Modifier.fillMaxWidth()) }
         }
         PrimaryButton(
-            text = "Connect to node",
+            text = branding.nodeButton,
             icon = { Icon(ServerIcon, contentDescription = null, modifier = Modifier.size(18.dp)) },
             loading = loading || state.isLoading,
             enabled = canConnect,
@@ -401,7 +405,7 @@ private fun NodeLoginPanel(
             ) {
                 Icon(Icons.Outlined.Refresh, contentDescription = null, tint = theme.textSecondary, modifier = Modifier.size(15.dp))
                 Spacer(Modifier.width(6.dp))
-                Text("Rescan local nodes", color = theme.textSecondary, fontSize = 13.sp, fontWeight = FontWeight.Medium)
+                Text(branding.rescanNodes, color = theme.textSecondary, fontSize = 13.sp, fontWeight = FontWeight.Medium)
             }
         }
     }

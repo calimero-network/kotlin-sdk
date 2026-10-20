@@ -40,6 +40,34 @@ class LoginOptionsTest {
     }
 
     @Test
+    fun `every string on the sign-in screen has its old default and can be replaced`() {
+        val b = LoginBranding()
+        assertEquals("Opens the Calimero wallet to approve this device", b.cloudHint)
+        assertEquals("Sign-in was cancelled in the wallet.", b.cloudCancelled)
+        assertEquals("Enrolling at https://w.example, not the hosted wallet.", b.customWalletNote("https://w.example"))
+        assertEquals("Manually enter node URL", b.manualNodeLink)
+        assertEquals("Use Calimero Cloud instead", b.useCloudLink)
+        assertEquals("Searching for local nodes…", b.searchingNodes)
+        assertEquals("Enter node URL manually", b.manualNodeOption)
+        assertEquals("Node URL", b.nodeUrlLabel)
+        assertEquals("Connect to node", b.nodeButton)
+        assertEquals("Rescan local nodes", b.rescanNodes)
+
+        val rebranded = b.copy(cloudHint = "Opens Acme ID", useCloudLink = "Use Acme instead", customWalletNote = { "Wallet: $it" })
+        assertEquals("Opens Acme ID", rebranded.cloudHint)
+        assertEquals("Use Acme instead", rebranded.useCloudLink)
+        assertEquals("Wallet: x", rebranded.customWalletNote("x"))
+    }
+
+    @Test
+    fun `the connect button's words have their old defaults`() {
+        val l = ConnectButtonLabels()
+        assertEquals("Account", l.account)
+        assertEquals("no relay yet", l.noRelay)
+        assertEquals("Log out", l.logOut)
+    }
+
+    @Test
     fun `the default theme is calimero light`() {
         val t = MeroTheme.calimeroLight
         assertEquals(Color(0xFFA5FF11), t.primary)

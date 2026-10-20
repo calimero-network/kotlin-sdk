@@ -47,7 +47,11 @@ enum class NodeSignInMethod {
     PASSWORD,
 }
 
-/** The words and mark [LoginView] shows. Every field has a default. (== the Swift SDK's `LoginBranding`.) */
+/**
+ * The words and mark [LoginView] shows: every user-visible string on the sign-in screen, so an app
+ * can rebrand it completely. Every field has a default, the Calimero copy.
+ * (== the Swift SDK's `LoginBranding`, plus the rest of the screen's strings.)
+ */
 @Immutable
 data class LoginBranding(
     /** Over the Cloud sign-in. */
@@ -60,4 +64,31 @@ data class LoginBranding(
     val cloudButton: String = "Continue with Calimero Cloud",
     /** The mark in the tile at the top; the Calimero logo when null. */
     val logo: ImageVector? = null,
+    /** Under the Cloud button ([AccountSignInPanel]): what pressing it does. */
+    val cloudHint: String = "Opens the Calimero wallet to approve this device",
+    /** Shown when the person declined in the wallet. */
+    val cloudCancelled: String = "Sign-in was cancelled in the wallet.",
+    /** Shown when the client enrols at a wallet other than the hosted one; given that wallet's URL. */
+    val customWalletNote: (walletUrl: String) -> String = { "Enrolling at $it, not the hosted wallet." },
+    /** The link from the Cloud sign-in to the node sign-in ([LoginMode.CLOUD_AND_NODE]). */
+    val manualNodeLink: String = "Manually enter node URL",
+    /** The link from the node sign-in back to the Cloud sign-in. */
+    val useCloudLink: String = "Use Calimero Cloud instead",
+    /** While local nodes are being discovered. */
+    val searchingNodes: String = "Searching for local nodes…",
+    /** The tag beside a discovered node. */
+    val localNodeTag: String = "local",
+    /** The option for typing a URL when nodes were discovered. */
+    val manualNodeOption: String = "Enter node URL manually",
+    val nodeUrlLabel: String = "Node URL",
+    val nodeUrlPlaceholder: String = "http://localhost:4001",
+    /** The username and password fields, for [NodeSignInMethod.PASSWORD]. */
+    val usernameLabel: String = "Username",
+    val usernamePlaceholder: String = "dev",
+    val passwordLabel: String = "Password",
+    val passwordPlaceholder: String = "Admin password",
+    /** The node panel's button. */
+    val nodeButton: String = "Connect to node",
+    /** The link that searches for local nodes again. */
+    val rescanNodes: String = "Rescan local nodes",
 )

@@ -210,7 +210,7 @@ class MeroClient(
         try {
             launchWallet(context, account.beginEnrolment(callbackUrl))
         } catch (e: Exception) {
-            _state.update { it.copy(isLoading = false, error = e.message ?: "Could not open the Calimero wallet") }
+            _state.update { it.copy(isLoading = false, error = e.message ?: "Could not open the wallet") }
         }
     }
 
@@ -373,7 +373,7 @@ class MeroClient(
     suspend fun handleAuthCallback(url: String): Boolean {
         val callback = parseAuthCallback(url, pending = pendingAuth) ?: return false
         if (account.isSignedIn) {
-            _state.update { it.copy(error = "Signed in with Calimero Cloud: sign out before connecting to a node.") }
+            _state.update { it.copy(error = "Signed in with a cloud account: sign out before connecting to a node.") }
             return true
         }
         val initiated = storage.nodeUrl
