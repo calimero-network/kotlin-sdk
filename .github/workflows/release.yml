@@ -51,7 +51,20 @@ jobs:
       # Uploaded as ONE bundle and left for a human to release in the Portal
       # (publishingType USER_MANAGED). A Central version can never be replaced, so
       # the last step before it becomes permanent is deliberately manual.
+      # Skipped, with a warning, until the Central secrets exist: a missing signing key
+      # must not stop the GitHub Packages build from getting its GitHub Release.
+      - name: Check for Maven Central credentials
+        id: central
+        env:
+          HAS_CENTRAL: ${{ secrets.MAVEN_CENTRAL_USERNAME != '' && secrets.SIGNING_KEY != '' }}
+        run: |
+          echo "enabled=${HAS_CENTRAL}" >> "$GITHUB_OUTPUT"
+          if [ "${HAS_CENTRAL}" != "true" ]; then
+            echo "::warning::MAVEN_CENTRAL_USERNAME / SIGNING_KEY are not set; skipping Maven Central. GitHub Packages has the release."
+          fi
+
       - name: Publish to Maven Central
+        if: steps.central.outputs.enabled == 'true'
         env:
           ORG_GRADLE_PROJECT_mavenCentralUsername: ${{ secrets.MAVEN_CENTRAL_USERNAME }}
           ORG_GRADLE_PROJECT_mavenCentralPassword: ${{ secrets.MAVEN_CENTRAL_PASSWORD }}

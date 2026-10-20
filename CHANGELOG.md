@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+### release workflow
+
+- A tag without the Maven Central secrets (`MAVEN_CENTRAL_USERNAME`, `SIGNING_KEY`) now skips the
+  Central step with a warning instead of failing, so the GitHub Release is still cut for the
+  GitHub Packages build. `v0.1.0` hit this: it reached GitHub Packages, and its Release was cut by
+  hand.
+
 ### sample-app
 
 - The node sign-in screen words its errors from `MeroAuthState.errorReason` instead of matching
