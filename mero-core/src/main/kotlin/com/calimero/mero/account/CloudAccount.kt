@@ -474,7 +474,7 @@ class CloudAccount(
         if (session == null) {
             return BootstrapResult.Failure(
                 JoinStep.NO_CREDENTIAL,
-                "This device holds no enrolled account, so there is nothing to admit: sign in with Calimero Cloud first.",
+                "This device holds no enrolled account, so there is nothing to admit: sign in with a cloud account first.",
             )
         }
         return try {
@@ -509,7 +509,7 @@ class CloudAccount(
         if (forgetDevice) deviceKeys.clear()
     }
 
-    internal fun requireSession(): DelegatedSession = session() ?: error("not signed in with Calimero Cloud")
+    internal fun requireSession(): DelegatedSession = session() ?: error("not signed in with a cloud account")
 
     internal companion object {
         const val KEY_SESSION = "calimero.delegated.connection"

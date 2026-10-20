@@ -2,6 +2,28 @@
 
 ## Unreleased
 
+### Added — every sign-in string is overridable (mero-compose)
+
+`LoginBranding` now carries every user-visible string on `LoginView`, not only the titles and the
+Cloud button, so an app can rebrand the sign-in screen completely: `cloudHint` ("Opens the
+Calimero wallet…"), `cloudCancelled`, `customWalletNote`, `manualNodeLink` ("Manually enter node
+URL"), `useCloudLink` ("Use Calimero Cloud instead"), `searchingNodes`, `localNodeTag`,
+`manualNodeOption`, the node URL / username / password labels and placeholders, `nodeButton` and
+`rescanNodes`. The defaults are the old strings.
+
+- `AccountSignInPanel` takes `branding` (its `buttonTitle` still overrides the button).
+- `LoginSheet` takes `branding`; `title` is now nullable and overrides `branding.cloudTitle` only
+  when given.
+- `ConnectButton` takes `branding` (passed to its sheet; its `logo` also replaces the Calimero
+  logo on the button), and `ConnectButtonLabels` gains `account`, `noRelay` and `logOut`.
+
+### Changed — neutral error wording
+
+`MeroAuthState.error` no longer names Calimero: "Could not open the wallet" (was "…the Calimero
+wallet"), "Signed in with a cloud account: sign out before connecting to a node." `CloudAccount`'s
+"sign in with Calimero Cloud first" and "not signed in with Calimero Cloud" now say "a cloud
+account".
+
 ### Fixed — binary blobs were corrupted on the wire
 
 `AdminApi.uploadBlob` sent `String(bytes, ISO_8859_1)` as the body, which OkHttp then encoded

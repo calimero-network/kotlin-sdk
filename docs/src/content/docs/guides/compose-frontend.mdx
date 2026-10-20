@@ -214,7 +214,13 @@ ConnectButton(callbackUrl = "myapp://calimero-enrol")
   maps the older `LoginModalTab` lists.
 - `NodeSignInMethod`: `LOGIN_PAGE` (the node's own login page; the default) or `PASSWORD`
   (`MeroClient.login`).
-- `LoginBranding`: `cloudTitle`, `cloudSubtitle`, `nodeTitle`, `nodeSubtitle`, `cloudButton`, `logo`.
+- `LoginBranding`: `cloudTitle`, `cloudSubtitle`, `nodeTitle`, `nodeSubtitle`, `cloudButton`, `logo`,
+  and every other string on the screen, so an app can rebrand it completely: `cloudHint`,
+  `cloudCancelled`, `customWalletNote`, `manualNodeLink`, `useCloudLink`, `searchingNodes`,
+  `localNodeTag`, `manualNodeOption`, `nodeUrlLabel` / `nodeUrlPlaceholder`, `usernameLabel` /
+  `usernamePlaceholder`, `passwordLabel` / `passwordPlaceholder`, `nodeButton` and `rescanNodes`.
+  The defaults are the Calimero copy. `LoginSheet`, `AccountSignInPanel` and `ConnectButton` take
+  the same `branding`.
 
 Test tags: `loginTitle`, `loginError`, `cloudSignInButton`, `loginButton` (the Cloud panel),
 `cloudLoginCancelled`, `manualNode` / `useCloud`, `nodeDiscovering`, `nodeOption-…`,
