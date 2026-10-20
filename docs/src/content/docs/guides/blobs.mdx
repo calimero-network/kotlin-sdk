@@ -22,7 +22,8 @@ val info = mero.admin.uploadBlob(
 val blobId = info.blobId
 ```
 
-The body is sent as raw `application/octet-stream` to `PUT /admin-api/blobs`.
+The bytes are sent verbatim as the `application/octet-stream` body of
+`PUT /admin-api/blobs`, with no text encoding in between.
 
 ## List
 
@@ -42,8 +43,8 @@ val meta = mero.admin.getBlobInfo(blobId)
 
 ## Download
 
-`getBlob` returns the raw bytes as a `ByteArray` (the endpoint streams the
-content, not JSON):
+`getBlob` returns the response body's raw bytes as a `ByteArray`, unchanged (the
+endpoint streams the content, not JSON):
 
 ```kotlin
 val data: ByteArray = mero.admin.getBlob(blobId)

@@ -13,6 +13,8 @@ import okhttp3.mockwebserver.Dispatcher
 import okhttp3.mockwebserver.MockResponse
 import okhttp3.mockwebserver.MockWebServer
 import okhttp3.mockwebserver.RecordedRequest
+import okio.Buffer
+import java.security.MessageDigest
 
 /**
  * A stateful, in-memory fake Calimero node backed by OkHttp [MockWebServer] — the Android analog of
@@ -60,6 +62,12 @@ class FakeNode {
 
     /** Canned contract output for `/jsonrpc`, keyed by method. */
     var rpcOutputs: MutableMap<String, JsonElement> = mutableMapOf("get" to JsonPrimitive(42))
+
+    /**
+     * The blob store behind `/admin-api/blobs`, keyed by blob id, holding exactly the bytes the
+     * client sent (assert on these to check a binary body reached the node unmodified).
+     */
+    val blobs: MutableMap<String, ByteArray> = java.util.concurrent.ConcurrentHashMap()
 
     /** The last `POST /auth/token` body, verbatim (asserts the `account_proof` login shape). */
     @Volatile var lastTokenRequestBody: String? = null
@@ -131,8 +139,11 @@ class FakeNode {
                     ok(buildJsonObject { put("data", buildJsonObject { put("contexts", JsonArray(cloud.listedContexts.toList())) }) })
                 }
             "POST" to "/jsonrpc" -> guarded(request) { jsonrpc(request) }
+            "PUT" to "/admin-api/blobs" -> guarded(request) { uploadBlob(request) }
+            "GET" to "/admin-api/blobs" -> guarded(request) { listBlobs() }
             else ->
-                cloud.handle(method, path, request) { guarded(request) { it() } }
+                blobRoute(method, path, request)
+                    ?: cloud.handle(method, path, request) { guarded(request) { it() } }
                     ?: MockResponse().setResponseCode(404)
         }
     }
@@ -206,6 +217,62 @@ class FakeNode {
             },
         )
     }
+
+    // ---- Blobs -----------------------------------------------------------------------------
+
+    /** `PUT /admin-api/blobs`: the raw request body is the blob, read as bytes (never as text). */
+    private fun uploadBlob(request: RecordedRequest): MockResponse {
+        val bytes = request.body.readByteArray()
+        val id = MessageDigest.getInstance("SHA-256").digest(bytes).joinToString("") { "%02x".format(it) }
+        blobs[id] = bytes
+        return ok(buildJsonObject { put("data", blobInfo(id, bytes)) })
+    }
+
+    private fun listBlobs(): MockResponse =
+        ok(buildJsonObject { put("data", buildJsonObject { put("blobs", JsonArray(blobs.map { (id, b) -> blobInfo(id, b) })) }) })
+
+    /** `GET` / `HEAD` / `DELETE /admin-api/blobs/{id}`, or `null` for any other route. */
+    private fun blobRoute(
+        method: String,
+        path: String,
+        request: RecordedRequest,
+    ): MockResponse? {
+        val id = path.removePrefix("/admin-api/blobs/").takeIf { path.startsWith("/admin-api/blobs/") && it.isNotEmpty() && '/' !in it }
+        if (id == null || method !in setOf("GET", "HEAD", "DELETE")) return null
+        return guarded(request) {
+            val bytes = blobs[id]
+            when {
+                method == "DELETE" ->
+                    ok(
+                        buildJsonObject {
+                            put("blob_id", id)
+                            put("deleted", blobs.remove(id) != null)
+                        },
+                    )
+                bytes == null -> MockResponse().setResponseCode(404)
+                method == "HEAD" ->
+                    MockResponse()
+                        .setResponseCode(200)
+                        .setHeader("x-blob-id", id)
+                        .setHeader("x-blob-hash", id)
+                        .setHeader("Content-Length", bytes.size)
+                else ->
+                    MockResponse()
+                        .setResponseCode(200)
+                        .setHeader("Content-Type", "application/octet-stream")
+                        .setBody(Buffer().write(bytes))
+            }
+        }
+    }
+
+    private fun blobInfo(
+        id: String,
+        bytes: ByteArray,
+    ): JsonElement =
+        buildJsonObject {
+            put("blob_id", id)
+            put("size", bytes.size)
+        }
 
     // ---- Auth guard ------------------------------------------------------------------------
 

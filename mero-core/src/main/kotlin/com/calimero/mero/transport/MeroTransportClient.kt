@@ -8,6 +8,7 @@ import com.calimero.mero.admin.AdminSurface
 import com.calimero.mero.auth.AuthApi
 import com.calimero.mero.cloud.CloudClient
 import com.calimero.mero.ephemeral.EphemeralClient
+import com.calimero.mero.http.HttpBytesResponse
 import com.calimero.mero.http.HttpClient
 import com.calimero.mero.http.HttpResponse
 import com.calimero.mero.http.MeroStateException
@@ -322,15 +323,22 @@ internal class BearerHttpClient(
         body: String?,
         headers: Map<String, String>,
         contentType: String,
-    ): HttpResponse {
-        val authed =
-            if (headers.keys.any { it.equals("Authorization", ignoreCase = true) }) {
-                headers
-            } else {
-                session()?.takeIf { it.isNotBlank() }?.let { headers + ("Authorization" to "Bearer $it") } ?: headers
-            }
-        return inner.execute(method, path, body, authed, contentType)
-    }
+    ): HttpResponse = inner.execute(method, path, body, withSession(headers), contentType)
+
+    override suspend fun executeBytes(
+        method: String,
+        path: String,
+        body: ByteArray?,
+        headers: Map<String, String>,
+        contentType: String,
+    ): HttpBytesResponse = inner.executeBytes(method, path, body, withSession(headers), contentType)
+
+    private suspend fun withSession(headers: Map<String, String>): Map<String, String> =
+        if (headers.keys.any { it.equals("Authorization", ignoreCase = true) }) {
+            headers
+        } else {
+            session()?.takeIf { it.isNotBlank() }?.let { headers + ("Authorization" to "Bearer $it") } ?: headers
+        }
 }
 
 /** A long-lived streaming copy of [client]: no read timeout. */

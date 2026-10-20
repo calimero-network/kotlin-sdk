@@ -428,13 +428,10 @@ class AdminApi(
                 request.contextId?.let { add("context_id=${encodeComponent(it)}") }
             }
         val path = if (query.isEmpty()) "/admin-api/blobs" else "/admin-api/blobs?" + query.joinToString("&")
-        // Body streamed verbatim as octet-stream. Core's BlobInfo is snake_case (`blob_id`).
-        val res =
-            http
-                .execute(
-                    "PUT", path, String(request.data, Charsets.ISO_8859_1), contentType = "application/octet-stream",
-                ).ensureSuccessful()
-        val inner = http.json.decodeFromString<ApiEnvelope<BlobWire>>(res.body).data ?: error("uploadBlob")
+        // Body sent as raw octet-stream bytes, never through a String (a charset round-trip
+        // rewrites every byte >= 0x80). Core's BlobInfo is snake_case (`blob_id`).
+        val res = http.executeBytes("PUT", path, request.data).ensureSuccessful()
+        val inner = http.json.decodeFromString<ApiEnvelope<BlobWire>>(res.bodyText).data ?: error("uploadBlob")
         return BlobInfo(blobId = inner.blobId, size = inner.size)
     }
 
@@ -463,10 +460,9 @@ class AdminApi(
         contextId: String?,
     ): ByteArray =
         http
-            .execute("GET", blobPath(blobId, contextId))
+            .executeBytes("GET", blobPath(blobId, contextId))
             .ensureSuccessful()
             .body
-            .toByteArray(Charsets.ISO_8859_1)
 
     /**
      * Fetch a blob's metadata without downloading it. `HEAD /admin-api/blobs/:id` returns

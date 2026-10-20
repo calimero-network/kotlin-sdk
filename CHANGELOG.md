@@ -2,6 +2,22 @@
 
 ## Unreleased
 
+### Fixed — binary blobs were corrupted on the wire
+
+`AdminApi.uploadBlob` sent `String(bytes, ISO_8859_1)` as the body, which OkHttp then encoded
+as UTF-8, and `getBlob` read the body as UTF-8 text. Every byte `>= 0x80` was rewritten in both
+directions. A round trip through the SDK hid it, because the two errors cancel, but the node
+stored the wrong bytes: a 21,327-byte JPEG was stored as 31,843 bytes. Both now carry raw bytes
+end to end.
+
+- **`HttpClient.executeBytes`** (new) sends a `ByteArray` body verbatim and returns an
+  **`HttpBytesResponse`** with the body as raw bytes. `OkHttpTransport` and the relay's
+  session-carrying admin client implement it. The interface's default implementation throws, so
+  a custom `HttpClient` keeps compiling and has to opt in to carrying bytes.
+- **`FakeNode`** (mero-testkit) serves the blob routes (`PUT`/`GET /admin-api/blobs`, and
+  `GET`/`HEAD`/`DELETE /admin-api/blobs/{id}`), keeps the bytes it received in `blobs`, and
+  serves them back raw.
+
 ### Changed — core 0.11.0-rc.90; namespace ops signed at schema version 26
 
 The SDK now targets core `0.11.0-rc.90` (`ci/core-version` and the merod image in every merobox
