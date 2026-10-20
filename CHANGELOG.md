@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+### Changed — Compose BOM 2024.12.01
+
+The Compose BOM moves from 2024.09.03 to 2024.12.01 (Compose 1.7.6). On an emulator, 2024.09.03
+crashed in a bottom sheet with "performMeasureAndLayout called during measure layout"; 2024.12.01
+does not. An app on an older BOM resolves the newer Compose through mero-compose.
+
 ### Added — every sign-in string is overridable (mero-compose)
 
 `LoginBranding` now carries every user-visible string on `LoginView`, not only the titles and the
