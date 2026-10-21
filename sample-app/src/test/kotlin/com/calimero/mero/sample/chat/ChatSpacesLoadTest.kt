@@ -102,6 +102,20 @@ class ChatSpacesLoadTest {
         }
 
     @Test
+    fun `an account no relay serves yet is new and empty, not a failure`() =
+        runBlocking {
+            node.cloud.accountHasRelay = false
+            signIn()
+            assertTrue(client.state.value.signedInWithoutRelay)
+            val chat = ChatService(client)
+            chat.loadSpaces()
+            assertEquals(SpacesLoad.LOADED, chat.spacesLoad)
+            assertTrue(chat.spaces.isEmpty())
+            assertFalse(chat.statusIsError)
+            assertEquals(0, namespaceRequests())
+        }
+
+    @Test
     fun `a failed listing is a failure, not an empty account, and offers no new space`() =
         runBlocking {
             signIn()
