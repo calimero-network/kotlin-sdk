@@ -64,6 +64,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -154,7 +155,12 @@ private fun ChatHome(
     val scope = rememberCoroutineScope()
     var newSpace by remember { mutableStateOf(false) }
     var joining by remember { mutableStateOf(false) }
-    LaunchedEffect(service.appId) { if (service.appId != null) service.loadSpaces() }
+    // Re-list whenever the session moves: a relay session that is still being attested lists
+    // nothing yet, and lands here again once it is ready (or has failed, which is shown).
+    val auth by service.session.collectAsState()
+    LaunchedEffect(service.appId, auth.sessionReady, auth.isLoading, auth.relayUrl) {
+        if (service.appId != null) service.loadSpaces()
+    }
 
     Box(Modifier.fillMaxSize().background(Cal.bg)) {
         Column(Modifier.fillMaxSize()) {
@@ -163,7 +169,7 @@ private fun ChatHome(
                 actions = {
                     if (service.appId != null) {
                         AddMenu(tag = "chatAdd") { close ->
-                            if (service.canCreateSpaces) {
+                            if (service.offerNewSpace) {
                                 MenuItem("New space", Icons.Outlined.AddComment) {
                                     close()
                                     newSpace = true
@@ -193,7 +199,23 @@ private fun ChatHome(
                     verticalArrangement = Arrangement.spacedBy(14.dp),
                 ) {
                     StatusLine(service)
-                    if (service.spaces.isEmpty()) {
+                    if (service.spaces.isEmpty() && service.spacesLoad == SpacesLoad.PENDING) {
+                        EmptyState(Icons.Outlined.Forum, "Loading spaces…", "Waiting for your session to connect.")
+                    } else if (service.spaces.isEmpty() && service.spacesLoad == SpacesLoad.FAILED) {
+                        // A failed listing is not an empty one: no "create" here, only a retry.
+                        EmptyState(
+                            Icons.Outlined.Forum,
+                            "Couldn't load your spaces",
+                            "Your spaces may still be there. Try again once the connection is back.",
+                        ) {
+                            CalSecondaryButton(
+                                "Try again",
+                                onClick = { scope.launch { service.loadSpaces() } },
+                                modifier = Modifier.testTag("chatRetrySpaces"),
+                                icon = Icons.Outlined.Refresh,
+                            )
+                        }
+                    } else if (service.spaces.isEmpty()) {
                         EmptyState(
                             Icons.Outlined.Forum,
                             "No spaces yet",

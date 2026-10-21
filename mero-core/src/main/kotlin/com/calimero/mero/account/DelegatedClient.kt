@@ -139,14 +139,17 @@ data class DelegatedNamespace(
 suspend fun CloudAccount.listDelegatedContexts(session: DelegatedSession): List<DelegatedContext> {
     val out = mutableListOf<DelegatedContext>()
     val learned = mutableMapOf<String, String>()
-    for (relayUrl in knownRelays(session)) {
-        listingOn(session, relayUrl) { client ->
-            client.admin.getContexts().contexts.forEach { c ->
-                out += DelegatedContext(c, relayUrl)
-                learned[c.id] = relayUrl
+    val relays = knownRelays(session)
+    val failures =
+        relays.mapNotNull { relayUrl ->
+            listingOn(session, relayUrl) { client ->
+                client.admin.getContexts().contexts.forEach { c ->
+                    out += DelegatedContext(c, relayUrl)
+                    learned[c.id] = relayUrl
+                }
             }
         }
-    }
+    if (relays.isNotEmpty() && failures.size == relays.size) throw RelaysUnavailableException(failures)
     updateRelayMap(session.account) { it.copy(contexts = it.contexts + learned) }
     return out
 }
@@ -159,13 +162,16 @@ suspend fun CloudAccount.listDelegatedContexts(session: DelegatedSession): List<
 suspend fun CloudAccount.listDelegatedNamespaces(session: DelegatedSession): List<DelegatedNamespace> {
     val out = mutableListOf<DelegatedNamespace>()
     val seen = mutableSetOf<String>()
-    for (relayUrl in knownRelays(session)) {
-        listingOn(session, relayUrl) { client ->
-            client.admin.listNamespaces().forEach { ns ->
-                if (seen.add(ns.namespaceId)) out += DelegatedNamespace(ns, relayUrl)
+    val relays = knownRelays(session)
+    val failures =
+        relays.mapNotNull { relayUrl ->
+            listingOn(session, relayUrl) { client ->
+                client.admin.listNamespaces().forEach { ns ->
+                    if (seen.add(ns.namespaceId)) out += DelegatedNamespace(ns, relayUrl)
+                }
             }
         }
-    }
+    if (relays.isNotEmpty() && failures.size == relays.size) throw RelaysUnavailableException(failures)
     updateRelayMap(session.account) { map ->
         val added = out.filter { it.namespace.namespaceId !in map.namespaces }.associate { it.namespace.namespaceId to it.relayUrl }
         map.copy(namespaces = map.namespaces + added)
@@ -173,23 +179,66 @@ suspend fun CloudAccount.listDelegatedNamespaces(session: DelegatedSession): Lis
     return out
 }
 
-/** Run [read] against a delegated client on [relayUrl], skipping a relay whose key or listing fails. */
+/**
+ * Run [read] against a delegated client on [relayUrl]. A relay whose key or listing fails is
+ * skipped, and returned as a failure: one relay down leaves the others' answer standing, but
+ * the callers throw when **every** relay failed, so a dead relay never reads as an empty account.
+ */
 private suspend fun CloudAccount.listingOn(
     session: DelegatedSession,
     relayUrl: String,
     read: suspend (MeroTransportClient) -> Unit,
-) {
+): RelayListingFailure? {
     try {
-        resolveRelayNodeKey(relayUrl) ?: return
-        val client = buildDelegatedClient(session.copy(relayUrl = relayUrl)) ?: return
+        when (val attempt = attemptRelayNodeKey(relayUrl)) {
+            is RelayNodeKeyAttempt.Learned -> Unit
+            is RelayNodeKeyAttempt.Refused -> return RelayListingFailure(relayUrl, RelayListingFailure.Kind.REFUSED, attempt.error)
+            is RelayNodeKeyAttempt.Unavailable ->
+                return RelayListingFailure(relayUrl, RelayListingFailure.Kind.UNAVAILABLE, attempt.error)
+        }
+        val client =
+            buildDelegatedClient(session.copy(relayUrl = relayUrl))
+                ?: return RelayListingFailure(relayUrl, RelayListingFailure.Kind.UNAVAILABLE, IllegalStateException("no client"))
         try {
             read(client)
         } finally {
             client.close()
         }
+        return null
     } catch (e: CancellationException) {
         throw e
-    } catch (_: Exception) {
-        // This relay's contexts simply do not appear.
+    } catch (e: Exception) {
+        return RelayListingFailure(relayUrl, RelayListingFailure.Kind.UNAVAILABLE, e)
     }
+}
+
+/** One relay a delegated listing could not read — mero-js `RelayListingFailure`. */
+data class RelayListingFailure(
+    val relayUrl: String,
+    val kind: Kind,
+    val error: Exception,
+) {
+    enum class Kind {
+        /** The relay's attestation did not hold: asking again will not help. */
+        REFUSED,
+
+        /** The relay, its login or its listing did not answer. */
+        UNAVAILABLE,
+    }
+}
+
+/**
+ * Every relay the account knows failed to list — mero-js `RelaysUnavailableError`. Thrown by
+ * [listDelegatedContexts] and [listDelegatedNamespaces] instead of an empty list, which an app
+ * would read as an account with nothing in it (and offer to create what already exists).
+ */
+class RelaysUnavailableException(
+    val failures: List<RelayListingFailure>,
+) : Exception(
+        "none of this account's relays answered: " +
+            failures.joinToString("; ") { "${it.relayUrl} (${it.kind.name.lowercase()}: ${it.error.message ?: it.error})" },
+        failures.firstOrNull()?.error,
+    ) {
+    /** True when every relay refused its attestation, so retrying will not help. */
+    val refused: Boolean get() = failures.isNotEmpty() && failures.all { it.kind == RelayListingFailure.Kind.REFUSED }
 }

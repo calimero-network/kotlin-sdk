@@ -679,8 +679,7 @@ class MeroClient(
             it.copy(
                 isLoading = false,
                 sessionReady = ready,
-                relayNote =
-                    note ?: if (ready) null else "Writes go through the relay; reads and live updates resume once it is attested.",
+                relayNote = note ?: if (ready) null else notReadyNote(connection.sessionError),
             )
         }
         publishDelegated(session, connection, ready)
@@ -762,6 +761,23 @@ class MeroClient(
         } catch (_: Exception) {
             // Left null: a read that did not answer must not unwind a connection that did.
         }
+    }
+
+    /**
+     * Why reads are off on a relay connection whose session could not be minted, naming the
+     * login's own failure when there is one: an expired credential, a refused attestation or
+     * an unreachable relay each read differently, where a bare "not attested" hid all three.
+     */
+    private fun notReadyNote(error: Exception?): String {
+        if (error == null) return "Writes go through the relay; reads and live updates resume once it is attested."
+        val c = classifyError(error)
+        val why =
+            when (c.kind) {
+                ErrorKind.UNAUTHORIZED, ErrorKind.FORBIDDEN -> "the relay refused this device's sign-in; sign in again"
+                ErrorKind.UNREACHABLE -> "the relay can't be reached (${c.message})"
+                else -> "the relay login failed (${c.message})"
+            }
+        return "Writes go through the relay, but reads and live updates are off: $why."
     }
 
     private fun devLoginMessage(

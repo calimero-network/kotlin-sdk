@@ -90,6 +90,22 @@ class MeroClientTest {
             assertNotNull(client.mero!!.getTokenData())
         }
 
+    /** 2026-10-21: a relay login that failed names its cause, not "resume once it is attested". */
+    @Test
+    fun `a relay session that could not be minted says why reads are off`() =
+        runBlocking {
+            node.cloud.attestStatus = 503
+            client.signInWithCloud(android.content.ContextWrapper(null), callback)
+            assertTrue(client.handleEnrolmentCallback(walletAnswer()))
+
+            val state = client.state.value
+            assertTrue(state.isAuthenticated)
+            assertFalse(state.sessionReady)
+            val note = state.relayNote!!
+            assertTrue(note, note.startsWith("Writes go through the relay, but reads and live updates are off: "))
+            assertTrue(note, note.contains("503"))
+        }
+
     /**
      * The sample's emulator test: after sign-in the client learns the account's application id
      * in the background. That lookup must not open a second relay login — FakeNode (like a relay

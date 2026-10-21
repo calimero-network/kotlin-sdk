@@ -122,6 +122,9 @@ class FakeCloud internal constructor(
     /** `GET /admin-api/groups/{g}` reports this namespace for a group (else the group itself). */
     val groupNamespaces: MutableMap<String, String> = java.util.concurrent.ConcurrentHashMap()
 
+    /** When non-null, `GET /admin-api/namespaces` answers this status instead of [listedNamespaces]. */
+    @Volatile var namespacesStatus: Int? = null
+
     /** When non-null, `POST /admin-api/tee/attest` answers this status (a 5xx: unavailable). */
     @Volatile var attestStatus: Int? = null
 
@@ -487,7 +490,8 @@ class FakeCloud internal constructor(
             seg.size == 2 && seg[0] == "admin-api" && seg[1] == "namespaces" && method == "GET" ->
                 guard {
                     record()
-                    ok(buildJsonObject { put("data", JsonArray(listedNamespaces.toList())) })
+                    namespacesStatus?.let { MockResponse().setResponseCode(it) }
+                        ?: ok(buildJsonObject { put("data", JsonArray(listedNamespaces.toList())) })
                 }
             seg.size == 4 && seg[0] == "admin-api" && seg[1] == "contexts" && seg[3] == "group" && method == "GET" ->
                 guard {

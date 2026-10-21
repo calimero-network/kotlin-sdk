@@ -35,6 +35,7 @@ import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import okhttp3.OkHttpClient
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.atomic.AtomicReference
 
 /**
  * A signed-in Cloud account on this device: who it is, the certificate that proves this
@@ -282,12 +283,44 @@ class CloudAccount(
         }
     }
 
-    /** Log in to the session's relay with the device certificate. */
+    /**
+     * Log in to the session's relay with the device certificate.
+     *
+     * A login under a **pinned** node key that fails is tried once more under a key attested
+     * now: the relay may have been rebuilt since the pin (a new TD, a new key), and a pin is
+     * otherwise never checked against the network again. When the relay cannot be attested
+     * either, the login's own error is what is thrown.
+     */
     suspend fun loginToRelay(session: DelegatedSession = requireSession()): TokenData {
         val relayUrl = session.relayUrl ?: error("this account has no relay yet")
+        val pinned = readPinnedRelayNodeKey(relayUrl)
         val nodeKey = relayNodeKey(relayUrl)
-        return relayLogin.login(relayUrl, nodeKey, session.credential, deviceKeys.loadOrCreate().signer())
+        val signer = deviceKeys.loadOrCreate().signer()
+        return try {
+            relayLogin.login(relayUrl, nodeKey, session.credential, signer)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            val fresh = pinned?.let { reattestAfterFailedLogin(relayUrl, nodeKey, e) } ?: throw e
+            relayLogin.login(relayUrl, fresh, session.credential, signer)
+        }
     }
+
+    /**
+     * The relay's key attested now, after a login under the pinned [nodeKey] failed with
+     * [loginError]: null when it is the same key (the pin was not the problem), and the
+     * attestation's refusal thrown when the relay no longer proves itself.
+     */
+    private suspend fun reattestAfterFailedLogin(
+        relayUrl: String,
+        nodeKey: String,
+        loginError: Exception,
+    ): String? =
+        when (val attempt = attemptRelayNodeKey(relayUrl, fresh = true)) {
+            is RelayNodeKeyAttempt.Learned -> attempt.nodeKey.takeIf { it != nodeKey }
+            is RelayNodeKeyAttempt.Unavailable -> null.also { loginError.addSuppressed(attempt.error) }
+            is RelayNodeKeyAttempt.Refused -> throw attempt.error
+        }
 
     /**
      * Everything an app needs to talk to the account's relay. The Bearer session is minted
@@ -303,8 +336,9 @@ class CloudAccount(
     ): RelayConnection {
         val relayUrl = session.relayUrl ?: error("this account has no relay yet")
         val mero = Mero(MeroConfig(baseUrl = relayUrl, tokenStore = tokenStore))
-        val bearer = RelayConnection.bearerSource(mero, loginMutex) { loginToRelay(session) }
-        return RelayConnection(session, mero, relayClient(session, relayUrl, bearer), bearer)
+        val loginError = AtomicReference<Exception?>(null)
+        val bearer = RelayConnection.bearerSource(mero, loginMutex, onLoginError = loginError::set) { loginToRelay(session) }
+        return RelayConnection(session, mero, relayClient(session, relayUrl, bearer), bearer, loginError::get)
     }
 
     /** A warrant client on [relayUrl] for [session], with this device's persisted nonces. */
@@ -532,8 +566,17 @@ class RelayConnection internal constructor(
     val mero: Mero,
     val relay: RelayClient,
     private val bearer: suspend () -> String?,
+    private val loginError: () -> Exception? = { null },
 ) {
     val relayUrl: String get() = relay.relayUrl
+
+    /**
+     * Why the last relay login failed — the relay unreachable, its attestation refused, the
+     * credential refused — or null once a session is minted (or before any login). A failed
+     * [ensureSession] leaves the cause here rather than swallowing it, so an app can say
+     * "sign in again" or "the relay is down" instead of a vague `401` on the next read.
+     */
+    val sessionError: Exception? get() = loginError()
 
     /**
      * This account's ephemeral presence through the relay: device-signed statements posted
@@ -567,10 +610,12 @@ class RelayConnection internal constructor(
         /**
          * The Bearer token for [mero]'s relay: the stored one while it has more than 30 s
          * left, else a fresh [login] (null when it fails), single-flight under [mutex].
+         * [onLoginError] hears each login's outcome: its error, or null once one succeeds.
          */
         fun bearerSource(
             mero: Mero,
             mutex: Mutex,
+            onLoginError: (Exception?) -> Unit = {},
             login: suspend () -> TokenData?,
         ): suspend () -> String? =
             {
@@ -580,7 +625,18 @@ class RelayConnection internal constructor(
                     if (current != null && current.expiresAt - System.currentTimeMillis() > REFRESH_MARGIN_MS) {
                         current.accessToken
                     } else {
-                        runCatching { login() }.getOrNull()?.also { mero.setTokenData(it) }?.accessToken
+                        try {
+                            login()
+                                ?.also {
+                                    mero.setTokenData(it)
+                                    onLoginError(null)
+                                }?.accessToken
+                        } catch (e: CancellationException) {
+                            throw e
+                        } catch (e: Exception) {
+                            onLoginError(e)
+                            null
+                        }
                     }
                 }
             }
