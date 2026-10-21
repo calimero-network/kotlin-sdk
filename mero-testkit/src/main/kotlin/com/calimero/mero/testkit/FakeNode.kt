@@ -71,6 +71,13 @@ class FakeNode {
      */
     val blobs: MutableMap<String, ByteArray> = java.util.concurrent.ConcurrentHashMap()
 
+    /**
+     * When true, an `account_proof` login whose statement names another node key than
+     * [FakeCloud.nodeKey] is refused `401`, as a relay rebuilt with a new key refuses a login
+     * made under the key pinned before.
+     */
+    @Volatile var refuseLoginsNamingOtherNodeKey = false
+
     /** The last `POST /auth/token` body, verbatim (asserts the `account_proof` login shape). */
     @Volatile var lastTokenRequestBody: String? = null
         private set
@@ -116,8 +123,13 @@ class FakeNode {
         val path = (request.path ?: "").substringBefore('?')
         return when (method to path) {
             "POST" to "/auth/token" -> {
-                lastTokenRequestBody = request.body.readUtf8()
-                issueTokens()
+                val body = request.body.readUtf8()
+                lastTokenRequestBody = body
+                if (refuseLoginsNamingOtherNodeKey && !body.contains("\"login_statement\":\"${cloud.nodeKey}")) {
+                    MockResponse().setResponseCode(401)
+                } else {
+                    issueTokens()
+                }
             }
             "POST" to "/auth/refresh" -> refresh(request)
             "POST" to "/admin/client-key" -> guarded(request) { mintClientKey(request) }

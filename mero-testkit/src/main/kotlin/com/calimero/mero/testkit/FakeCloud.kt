@@ -16,6 +16,7 @@ import okhttp3.mockwebserver.MockResponse
 import okhttp3.mockwebserver.RecordedRequest
 import java.security.MessageDigest
 import java.util.concurrent.CopyOnWriteArrayList
+import java.util.concurrent.atomic.AtomicInteger
 
 /**
  * The Calimero Cloud half of [FakeNode]: one server playing both the **cloud manager**
@@ -46,6 +47,12 @@ class FakeCloud internal constructor(
 
     /** When false, the cloud reports no relay for the account (a brand-new account). */
     var accountHasRelay: Boolean = true
+
+    /** When non-null, `GET /api/cloud/accounts/{a}/relays` answers this status (a failed lookup). */
+    @Volatile var accountRelaysStatus: Int? = null
+
+    /** How many of the next `GET /api/cloud/accounts/{a}/relays` answer 503 before it answers again. */
+    val accountRelaysFailures = AtomicInteger(0)
 
     /** Methods `/query` refuses with 409 (not a view), so a client falls back to a warrant. */
     val writeMethods: MutableSet<String> = mutableSetOf("send_message", "set")
@@ -122,6 +129,9 @@ class FakeCloud internal constructor(
     /** `GET /admin-api/groups/{g}` reports this namespace for a group (else the group itself). */
     val groupNamespaces: MutableMap<String, String> = java.util.concurrent.ConcurrentHashMap()
 
+    /** When non-null, `GET /admin-api/namespaces` answers this status instead of [listedNamespaces]. */
+    @Volatile var namespacesStatus: Int? = null
+
     /** When non-null, `POST /admin-api/tee/attest` answers this status (a 5xx: unavailable). */
     @Volatile var attestStatus: Int? = null
 
@@ -192,6 +202,8 @@ class FakeCloud internal constructor(
             method == "GET" && seg.size == 5 && seg.take(3) == listOf("api", "cloud", "accounts") && seg[4] == "relays" -> {
                 record()
                 if (headers["X-Calimero-Signature"].isNullOrEmpty()) return MockResponse().setResponseCode(401)
+                accountRelaysStatus?.let { return MockResponse().setResponseCode(it) }
+                if (accountRelaysFailures.getAndUpdate { if (it > 0) it - 1 else 0 } > 0) return MockResponse().setResponseCode(503)
                 ok(
                     buildJsonObject {
                         put("account_id", seg[3])
@@ -487,7 +499,8 @@ class FakeCloud internal constructor(
             seg.size == 2 && seg[0] == "admin-api" && seg[1] == "namespaces" && method == "GET" ->
                 guard {
                     record()
-                    ok(buildJsonObject { put("data", JsonArray(listedNamespaces.toList())) })
+                    namespacesStatus?.let { MockResponse().setResponseCode(it) }
+                        ?: ok(buildJsonObject { put("data", JsonArray(listedNamespaces.toList())) })
                 }
             seg.size == 4 && seg[0] == "admin-api" && seg[1] == "contexts" && seg[3] == "group" && method == "GET" ->
                 guard {

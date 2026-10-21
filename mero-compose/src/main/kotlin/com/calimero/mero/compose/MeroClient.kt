@@ -81,6 +81,12 @@ data class MeroAuthState(
     val sessionReady: Boolean = false,
     /** Why the relay situation is degraded or empty, in words a person can read. */
     val relayNote: String? = null,
+    /**
+     * The cloud answered that no relay serves this account: it is new, a member of nothing. Unlike
+     * [signedInWithoutRelay], false when the lookup failed or the assigned relays have no address
+     * yet, so an app can show an empty account only when it is one.
+     */
+    val confirmedNoRelay: Boolean = false,
     /** The person declined at the wallet (not an error to report loudly). */
     val cancelled: Boolean = false,
     /** What went wrong, in words a person can read. See [errorReason] to branch on it. */
@@ -666,8 +672,12 @@ class MeroClient(
         }
         if (session.relayUrl == null) {
             _connection.value = null
-            val why = note ?: account.lastRelayNote ?: runCatching { account.chooseRelay(session).note }.getOrNull()
-            _state.value = stateFor().copy(relayNote = why)
+            // No note from the lookup that ran (it failed, or none ran): ask once more, and let that
+            // answer decide both the note and whether the account is confirmed to have no relay.
+            val known = note ?: account.lastRelayNote
+            val fallback = if (known == null) runCatching { account.chooseRelay(session) }.getOrNull() else null
+            val confirmed = adopted == null && (account.lastRelayNone || fallback?.none == true)
+            _state.value = stateFor().copy(relayNote = known ?: fallback?.note, confirmedNoRelay = confirmed)
             publishDelegated(session, connection = null, ready = false)
             return
         }
@@ -679,8 +689,7 @@ class MeroClient(
             it.copy(
                 isLoading = false,
                 sessionReady = ready,
-                relayNote =
-                    note ?: if (ready) null else "Writes go through the relay; reads and live updates resume once it is attested.",
+                relayNote = note ?: if (ready) null else notReadyNote(connection.sessionError),
             )
         }
         publishDelegated(session, connection, ready)
@@ -762,6 +771,23 @@ class MeroClient(
         } catch (_: Exception) {
             // Left null: a read that did not answer must not unwind a connection that did.
         }
+    }
+
+    /**
+     * Why reads are off on a relay connection whose session could not be minted, naming the
+     * login's own failure when there is one: an expired credential, a refused attestation or
+     * an unreachable relay each read differently, where a bare "not attested" hid all three.
+     */
+    private fun notReadyNote(error: Exception?): String {
+        if (error == null) return "Writes go through the relay; reads and live updates resume once it is attested."
+        val c = classifyError(error)
+        val why =
+            when (c.kind) {
+                ErrorKind.UNAUTHORIZED, ErrorKind.FORBIDDEN -> "the relay refused this device's sign-in; sign in again"
+                ErrorKind.UNREACHABLE -> "the relay can't be reached (${c.message})"
+                else -> "the relay login failed (${c.message})"
+            }
+        return "Writes go through the relay, but reads and live updates are off: $why."
     }
 
     private fun devLoginMessage(

@@ -13,6 +13,7 @@ import com.calimero.mero.admin.CreateNamespaceRequest
 import com.calimero.mero.admin.JoinNamespaceRequest
 import com.calimero.mero.admin.SetSubgroupVisibilityRequest
 import com.calimero.mero.admin.SignedGroupOpenInvitation
+import com.calimero.mero.compose.MeroAuthState
 import com.calimero.mero.compose.MeroClient
 import com.calimero.mero.invite.InviteCodec
 import com.calimero.mero.invite.InviteLink
@@ -23,6 +24,7 @@ import com.calimero.mero.sse.ContextEvent
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.emptyFlow
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
@@ -159,6 +161,18 @@ data class ChatInvite(
     }
 }
 
+/** Where [ChatService.spaces] stands. Mirrors the Swift sample's `SpacesLoad`. */
+enum class SpacesLoad {
+    /** Not listed yet: the first listing, or the session it waits for, is on its way. */
+    PENDING,
+
+    /** Listed: [ChatService.spaces] is the answer, empty or not. */
+    LOADED,
+
+    /** The listing failed, or the session it needs could not be had. */
+    FAILED,
+}
+
 // ---- ChatService -----------------------------------------------------------
 
 /**
@@ -187,6 +201,20 @@ class ChatService(
         private set
     var spaces by mutableStateOf<List<ChatSpace>>(emptyList())
         private set
+
+    /**
+     * Where the spaces listing stands. Only [SpacesLoad.LOADED] with no spaces means "no spaces
+     * yet": a listing still waiting for the session, or one that failed, is not an empty one,
+     * and offering to create a space then would make a duplicate of one that exists.
+     */
+    var spacesLoad by mutableStateOf(SpacesLoad.PENDING)
+        private set
+
+    /** Bumped by every [loadSpaces]: only the newest one's answer is applied. */
+    private var spacesGeneration = 0
+
+    /** The failure [loadSpaces] last reported, cleared from [status] once a listing answers. */
+    private var spacesError: String? = null
     var channels by mutableStateOf<List<ChatChannel>>(emptyList())
         private set
     var messages by mutableStateOf<List<ChatMessage>>(emptyList())
@@ -223,6 +251,9 @@ class ChatService(
             ?: "mobile"
 
     private val mero: Mero? get() = client.mero
+
+    /** The session the chat runs on; the Chat tab re-lists spaces when it changes. */
+    val session: StateFlow<MeroAuthState> get() = client.state
 
     /** Live events for a channel's context, or nothing while reads are off. */
     fun eventStream(channel: ChatChannel): Flow<ContextEvent> {
@@ -263,23 +294,60 @@ class ChatService(
 
     // ---- spaces ------------------------------------------------------------
 
+    /**
+     * List the spaces. A relay lists only once its session is minted: before that the relay's
+     * admin API would be asked without a token. While the session is still connecting the
+     * listing stays [SpacesLoad.PENDING] (the Chat tab calls this again when the session
+     * changes); a session that could not be minted, or a listing that failed, is
+     * [SpacesLoad.FAILED], never an empty list. An account the cloud says no relay serves is
+     * new: it is a member of nothing, so that is an empty listing, not a failed one. A relay
+     * lookup that failed, or relays with no address yet, say nothing of the sort.
+     */
     suspend fun loadSpaces() {
+        val generation = ++spacesGeneration
         val m = mero
-        if (m == null) {
-            say("Reads are off until the relay session is established. Writes still work.", error = true)
+        val auth = client.state.value
+        if (auth.signedInWithoutRelay && auth.confirmedNoRelay && !auth.isLoading) {
+            spaces = emptyList()
+            spacesLoad = SpacesLoad.LOADED
+            spacesError = null
+            return
+        }
+        if (m == null || (isRelay && !auth.sessionReady)) {
+            if (isRelay && auth.isLoading) {
+                if (spaces.isEmpty()) spacesLoad = SpacesLoad.PENDING
+                return
+            }
+            failSpaces(auth.relayNote ?: "Reads are off until the relay session is established. Writes still work.")
             return
         }
         try {
-            spaces = m.admin.listNamespaces().map { ChatSpace(it.namespaceId, it.name ?: "Space", it.targetApplicationId) }
+            val listed = m.admin.listNamespaces().map { ChatSpace(it.namespaceId, it.name ?: "Space", it.targetApplicationId) }
+            if (generation != spacesGeneration) return
+            spaces = listed
+            spacesLoad = SpacesLoad.LOADED
+            if (spacesError != null && status == spacesError) say("")
+            spacesError = null
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
-            say("Couldn't load spaces: ${short(e)}", error = true)
+            if (generation != spacesGeneration) return
+            // The spaces already shown stay; the failure is reported, not read as "none".
+            failSpaces("Couldn't load spaces: ${short(e)}")
         }
+    }
+
+    private fun failSpaces(message: String) {
+        spacesLoad = SpacesLoad.FAILED
+        spacesError = message
+        say(message, error = true)
     }
 
     /** A node creates spaces; a Cloud account founds them through its relay. */
     val canCreateSpaces: Boolean get() = isNode || client.relay != null
+
+    /** Offer "New space" only once the listing answered, so a failed one can't lead to a duplicate. */
+    val offerNewSpace: Boolean get() = canCreateSpaces && spacesLoad == SpacesLoad.LOADED
 
     suspend fun createSpace(name: String) {
         if (isRelay) {
