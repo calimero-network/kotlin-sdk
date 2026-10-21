@@ -16,6 +16,7 @@ import okhttp3.mockwebserver.MockResponse
 import okhttp3.mockwebserver.RecordedRequest
 import java.security.MessageDigest
 import java.util.concurrent.CopyOnWriteArrayList
+import java.util.concurrent.atomic.AtomicInteger
 
 /**
  * The Calimero Cloud half of [FakeNode]: one server playing both the **cloud manager**
@@ -49,6 +50,9 @@ class FakeCloud internal constructor(
 
     /** When non-null, `GET /api/cloud/accounts/{a}/relays` answers this status (a failed lookup). */
     @Volatile var accountRelaysStatus: Int? = null
+
+    /** How many of the next `GET /api/cloud/accounts/{a}/relays` answer 503 before it answers again. */
+    val accountRelaysFailures = AtomicInteger(0)
 
     /** Methods `/query` refuses with 409 (not a view), so a client falls back to a warrant. */
     val writeMethods: MutableSet<String> = mutableSetOf("send_message", "set")
@@ -199,6 +203,7 @@ class FakeCloud internal constructor(
                 record()
                 if (headers["X-Calimero-Signature"].isNullOrEmpty()) return MockResponse().setResponseCode(401)
                 accountRelaysStatus?.let { return MockResponse().setResponseCode(it) }
+                if (accountRelaysFailures.getAndUpdate { if (it > 0) it - 1 else 0 } > 0) return MockResponse().setResponseCode(503)
                 ok(
                     buildJsonObject {
                         put("account_id", seg[3])

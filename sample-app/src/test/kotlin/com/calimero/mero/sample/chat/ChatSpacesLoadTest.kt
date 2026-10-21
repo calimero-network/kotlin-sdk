@@ -117,6 +117,42 @@ class ChatSpacesLoadTest {
         }
 
     @Test
+    fun `a failed lookup whose retry finds no relay is a confirmed empty account`() =
+        runBlocking {
+            // The sign-in lookup fails; connect asks again for a note, and that answer (no relay at
+            // all) decides both the note and the confirmation, so they agree.
+            node.cloud.accountHasRelay = false
+            node.cloud.accountRelaysFailures.set(1)
+            signIn()
+            val state = client.state.value
+            assertTrue(state.confirmedNoRelay)
+            assertTrue(state.relayNote.orEmpty().contains("member of nothing"))
+            val chat = ChatService(client)
+            chat.loadSpaces()
+            assertEquals(SpacesLoad.LOADED, chat.spacesLoad)
+        }
+
+    @Test
+    fun `a later failed lookup forgets the earlier new-account answer`() =
+        runBlocking {
+            node.cloud.accountHasRelay = false
+            signIn()
+            assertTrue(client.state.value.confirmedNoRelay)
+            // The relay lookup now fails every time: nothing says the account is still new.
+            node.cloud.accountRelaysStatus = 503
+            client.restore()
+            assertFalse(client.state.value.confirmedNoRelay)
+            assertFalse(
+                client.state.value.relayNote
+                    .orEmpty()
+                    .contains("member of nothing"),
+            )
+            val chat = ChatService(client)
+            chat.loadSpaces()
+            assertEquals(SpacesLoad.FAILED, chat.spacesLoad)
+        }
+
+    @Test
     fun `a relay lookup that failed is not an empty account`() =
         runBlocking {
             // The cloud could not say which relay serves the account: its spaces may well exist.

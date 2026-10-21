@@ -672,8 +672,12 @@ class MeroClient(
         }
         if (session.relayUrl == null) {
             _connection.value = null
-            val why = note ?: account.lastRelayNote ?: runCatching { account.chooseRelay(session).note }.getOrNull()
-            _state.value = stateFor().copy(relayNote = why, confirmedNoRelay = adopted == null && account.lastRelayNone)
+            // No note from the lookup that ran (it failed, or none ran): ask once more, and let that
+            // answer decide both the note and whether the account is confirmed to have no relay.
+            val known = note ?: account.lastRelayNote
+            val fallback = if (known == null) runCatching { account.chooseRelay(session) }.getOrNull() else null
+            val confirmed = adopted == null && (account.lastRelayNone || fallback?.none == true)
+            _state.value = stateFor().copy(relayNote = known ?: fallback?.note, confirmedNoRelay = confirmed)
             publishDelegated(session, connection = null, ready = false)
             return
         }

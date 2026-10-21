@@ -181,7 +181,9 @@ class CloudAccount(
 
     /** Ask the cloud manager which relay serves the account, and persist the choice. */
     suspend fun findRelay(session: DelegatedSession = requireSession()): DelegatedSession {
+        // Both describe the lookup in flight: a failed one leaves neither, not the last one's.
         lastRelayNone = false
+        lastRelayNote = null
         val choice = chooseRelay(session)
         lastRelayNote = choice.note
         lastRelayNone = choice.none
