@@ -24,7 +24,8 @@ import java.util.concurrent.TimeUnit
  * The Chat tab's spaces listing on a Calimero Cloud account (the 2026-10-21 incident): a
  * listing that failed, or a relay session that could not be minted, is never shown as
  * "No spaces yet" with a "New space" offer — that is how a duplicate space gets made.
- * Mirrors the Swift sample's `ChatSpacesLoadTests`.
+ * The Swift sample's `ChatService.loadSpaces` follows the same rules; that sample has only UI
+ * tests, so these cover the logic for both.
  */
 class ChatSpacesLoadTest {
     private lateinit var node: FakeNode
