@@ -717,6 +717,7 @@ class CloudClient internal constructor(
                 null,
                 "Signed in, with nowhere to write yet: a new account is a member of nothing, so no node serves it. " +
                     "Redeeming an invitation admits this account to a namespace and gives it a relay.",
+                none = true,
             )
         }
     }
@@ -817,6 +818,11 @@ data class RelayChoice(
     val executorAccount: String?,
     /** A human-readable note for a degraded or empty choice; null for a fresh relay. */
     val note: String?,
+    /**
+     * True only when the cloud answered that no relay serves the account at all: a new account,
+     * a member of nothing. Not when relays are assigned but have no address yet.
+     */
+    val none: Boolean = false,
 )
 
 /** One node serving a namespace. */

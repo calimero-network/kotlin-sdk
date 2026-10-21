@@ -299,14 +299,15 @@ class ChatService(
      * admin API would be asked without a token. While the session is still connecting the
      * listing stays [SpacesLoad.PENDING] (the Chat tab calls this again when the session
      * changes); a session that could not be minted, or a listing that failed, is
-     * [SpacesLoad.FAILED], never an empty list. An account no relay serves yet is new: it is
-     * a member of nothing, so that is an empty listing, not a failed one.
+     * [SpacesLoad.FAILED], never an empty list. An account the cloud says no relay serves is
+     * new: it is a member of nothing, so that is an empty listing, not a failed one. A relay
+     * lookup that failed, or relays with no address yet, say nothing of the sort.
      */
     suspend fun loadSpaces() {
         val generation = ++spacesGeneration
         val m = mero
         val auth = client.state.value
-        if (auth.signedInWithoutRelay && !auth.isLoading) {
+        if (auth.signedInWithoutRelay && auth.confirmedNoRelay && !auth.isLoading) {
             spaces = emptyList()
             spacesLoad = SpacesLoad.LOADED
             spacesError = null

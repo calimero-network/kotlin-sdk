@@ -169,10 +169,22 @@ class CloudAccount(
     var lastRelayNote: String? = null
         private set
 
+    /**
+     * True when the last relay lookup ANSWERED that no relay serves the account
+     * ([RelayChoice.none]). False before any lookup, after one that failed, and when relays are
+     * assigned without an address: none of those says the account is a member of nothing.
+     * In memory only.
+     */
+    @Volatile
+    var lastRelayNone: Boolean = false
+        private set
+
     /** Ask the cloud manager which relay serves the account, and persist the choice. */
     suspend fun findRelay(session: DelegatedSession = requireSession()): DelegatedSession {
+        lastRelayNone = false
         val choice = chooseRelay(session)
         lastRelayNote = choice.note
+        lastRelayNone = choice.none
         val updated =
             session.copy(
                 relayUrl = choice.relayUrl?.trimBase() ?: session.relayUrl,

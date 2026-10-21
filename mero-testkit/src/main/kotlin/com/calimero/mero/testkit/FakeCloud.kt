@@ -47,6 +47,9 @@ class FakeCloud internal constructor(
     /** When false, the cloud reports no relay for the account (a brand-new account). */
     var accountHasRelay: Boolean = true
 
+    /** When non-null, `GET /api/cloud/accounts/{a}/relays` answers this status (a failed lookup). */
+    @Volatile var accountRelaysStatus: Int? = null
+
     /** Methods `/query` refuses with 409 (not a view), so a client falls back to a warrant. */
     val writeMethods: MutableSet<String> = mutableSetOf("send_message", "set")
 
@@ -195,6 +198,7 @@ class FakeCloud internal constructor(
             method == "GET" && seg.size == 5 && seg.take(3) == listOf("api", "cloud", "accounts") && seg[4] == "relays" -> {
                 record()
                 if (headers["X-Calimero-Signature"].isNullOrEmpty()) return MockResponse().setResponseCode(401)
+                accountRelaysStatus?.let { return MockResponse().setResponseCode(it) }
                 ok(
                     buildJsonObject {
                         put("account_id", seg[3])

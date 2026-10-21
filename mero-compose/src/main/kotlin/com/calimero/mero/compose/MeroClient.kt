@@ -81,6 +81,12 @@ data class MeroAuthState(
     val sessionReady: Boolean = false,
     /** Why the relay situation is degraded or empty, in words a person can read. */
     val relayNote: String? = null,
+    /**
+     * The cloud answered that no relay serves this account: it is new, a member of nothing. Unlike
+     * [signedInWithoutRelay], false when the lookup failed or the assigned relays have no address
+     * yet, so an app can show an empty account only when it is one.
+     */
+    val confirmedNoRelay: Boolean = false,
     /** The person declined at the wallet (not an error to report loudly). */
     val cancelled: Boolean = false,
     /** What went wrong, in words a person can read. See [errorReason] to branch on it. */
@@ -667,7 +673,7 @@ class MeroClient(
         if (session.relayUrl == null) {
             _connection.value = null
             val why = note ?: account.lastRelayNote ?: runCatching { account.chooseRelay(session).note }.getOrNull()
-            _state.value = stateFor().copy(relayNote = why)
+            _state.value = stateFor().copy(relayNote = why, confirmedNoRelay = adopted == null && account.lastRelayNone)
             publishDelegated(session, connection = null, ready = false)
             return
         }

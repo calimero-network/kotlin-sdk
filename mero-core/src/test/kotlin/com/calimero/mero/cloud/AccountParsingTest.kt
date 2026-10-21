@@ -10,6 +10,7 @@ import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -68,6 +69,14 @@ class AccountParsingTest {
         assertEquals("https://b", CloudClient.chooseRelay(listOf(dark, stale)).relayUrl)
         assertNull(CloudClient.chooseRelay(listOf(dark)).relayUrl)
         assertNull(CloudClient.chooseRelay(emptyList()).relayUrl)
+    }
+
+    @Test
+    fun `chooseRelay says none only when the cloud lists no relay at all`() {
+        // A new account is a member of nothing. Relays assigned without an address are not that.
+        assertTrue(CloudClient.chooseRelay(emptyList()).none)
+        assertFalse(CloudClient.chooseRelay(listOf(CloudAccountRelay("p3", null, true, null, false))).none)
+        assertFalse(CloudClient.chooseRelay(listOf(CloudAccountRelay("p1", "https://a", true, null, false))).none)
     }
 
     @Test
