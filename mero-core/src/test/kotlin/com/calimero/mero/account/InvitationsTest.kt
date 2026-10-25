@@ -131,9 +131,9 @@ class InvitationsTest {
         assertEquals("0.0.41", picked?.appVersion)
     }
 
-    // A node refuses any other value: core's `SIGNED_NAMESPACE_OP_SCHEMA_VERSION` is 26 since
-    // calimero-network/core#4605 (rc.90), and a join signed at 25 is answered `schema version
-    // mismatch: expected 26, got 25`. mero-js signs at 26 since its #290.
+    // A node refuses any other value: core's `SIGNED_NAMESPACE_OP_SCHEMA_VERSION` is 27 since
+    // core 0.11.0 (calimero-network/core#4625), and a join signed at 26 is refused with a schema
+    // version mismatch. mero-js signs at 27 since its #292.
     @Test
     fun `a member join is signed at the namespace op schema version core accepts`() {
         val signed =
@@ -146,7 +146,7 @@ class InvitationsTest {
                 nonce = 1uL,
                 joinedAt = now,
             )
-        assertEquals(26, NamespaceOp.SCHEMA_VERSION)
-        assertTrue(signed.startsWith("1a$group"))
+        assertEquals(27, NamespaceOp.SCHEMA_VERSION)
+        assertTrue(signed.startsWith("1b$group"))
     }
 }
