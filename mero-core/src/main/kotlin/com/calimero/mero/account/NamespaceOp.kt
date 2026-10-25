@@ -11,14 +11,17 @@ import com.calimero.mero.crypto.concat
 /**
  * The signed namespace op a joiner's own device signs to claim an invitation.
  *
- * Port of mero-js `src/namespace-op/namespace-op.ts` (schema 26) and the invitation
+ * Port of mero-js `src/namespace-op/namespace-op.ts` (schema 27) and the invitation
  * borsh encoding of `src/invitation/invitation.ts`. The invitation is re-encoded from the
  * exact JSON core sent (see [SignedGroupOpenInvitation]), because it sits inside the
  * signed op: a byte out of place fails as "invalid invitation signature".
  */
 object NamespaceOp {
-    /** core's `SIGNED_NAMESPACE_OP_SCHEMA_VERSION` (26 since core rc.90, calimero-network/core#4605). */
-    const val SCHEMA_VERSION = 26
+    /**
+     * core's `SIGNED_NAMESPACE_OP_SCHEMA_VERSION`: 27 since core 0.11.0 (calimero-network/core#4625),
+     * with no layout change from 26 (rc.90, calimero-network/core#4605).
+     */
+    const val SCHEMA_VERSION = 27
     private val SIGN_DOMAIN = "calimero.namespace.v1".encodeToByteArray()
 
     private const val NAMESPACE_OP_ROOT = 0

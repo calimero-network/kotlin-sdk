@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+### Core 0.11.0: namespace ops signed at schema 27 (mero-core)
+
+- `NamespaceOp.SCHEMA_VERSION` is 27, core 0.11.0's `SIGNED_NAMESPACE_OP_SCHEMA_VERSION`
+  (calimero-network/core#4625; no layout change from 26). A 0.11.0 node refuses a join signed at
+  26, so an account join (`joinAsAccount`) failed against it; Mero Chat's Android live tests on
+  calimero-network/apps#622 hit this. mero-js made the same change in its #292.
+- CI and the merobox scenarios are pinned to core `0.11.0` (`ci/core-version`).
+
 ### release workflow
 
 - A tag without the Maven Central secrets (`MAVEN_CENTRAL_USERNAME`, `SIGNING_KEY`) now skips the

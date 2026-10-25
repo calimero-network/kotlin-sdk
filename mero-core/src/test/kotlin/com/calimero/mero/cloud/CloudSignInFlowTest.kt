@@ -310,7 +310,7 @@ class CloudSignInFlowTest {
             // The invitation goes back exactly as core sent it.
             assertEquals(invitation(node.cloud.relayAccount).raw, admit["invitation"])
             val op = admit["signedOp"]!!.jsonPrimitive.content
-            assertEquals("1a", op.substring(0, 2)) // schema 26
+            assertEquals("1b", op.substring(0, 2)) // schema 27
             assertEquals(ns, op.substring(2, 66))
             assertEquals("00000000", op.substring(66, 74)) // no parents
             assertEquals(account.deviceKeys.load()!!.signPublicKey, op.substring(74, 138))
