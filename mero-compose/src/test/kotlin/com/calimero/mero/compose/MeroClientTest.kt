@@ -2,6 +2,7 @@ package com.calimero.mero.compose
 
 import com.calimero.mero.account.CloudAccount
 import com.calimero.mero.account.DeviceCert
+import com.calimero.mero.account.Enrolment
 import com.calimero.mero.account.MemorySecureStore
 import com.calimero.mero.crypto.SeedSigner
 import com.calimero.mero.relay.DcapRelayKeyVerifier
@@ -144,6 +145,19 @@ class MeroClientTest {
             assertFalse(state.isAuthenticated)
             assertTrue(state.cancelled)
             assertNull(state.error)
+        }
+
+    /** SEC-01: a wallet answer for this device's keys that this app never asked for signs nobody in. */
+    @Test
+    fun `an unsolicited enrolment link is refused`() =
+        runBlocking {
+            val keys = client.account.deviceKeys.loadOrCreate()
+            opened = Enrolment.deviceEnrolmentUrl(keys.signPublicKey, keys.kemPublicKey, callback, "attacker-chosen")
+            assertTrue(client.handleEnrolmentCallback(walletAnswer()))
+            val state = client.state.value
+            assertFalse(state.isAuthenticated)
+            assertNotNull(state.error)
+            assertFalse(client.account.isSignedIn)
         }
 
     @Test

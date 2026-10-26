@@ -89,9 +89,14 @@ class CloudAccount(
      * mero-js always does. A loopback relay (a dev rig) is never sealed.
      */
     internal val sealRelays: Boolean = true,
+    /** The clock a pending enrolment expires by, in epoch milliseconds (injectable for tests). */
+    internal val clock: () -> Long = System::currentTimeMillis,
 ) {
     private val json = Json { ignoreUnknownKeys = true }
     private val loginMutex = Mutex()
+
+    /** Guards the check-and-spend of the pending enrolment `state`. */
+    private val pendingLock = Any()
 
     /** Guards read-modify-writes of the relay map and group-namespace records ([RelayMap]). */
     internal val relayMapLock = Any()
@@ -118,14 +123,28 @@ class CloudAccount(
     /**
      * Start enrolment: returns the wallet URL to open. [callbackUrl] is where the wallet
      * sends the person back — any absolute URL this app receives (an https App Link or an
-     * app scheme such as `mero-sample://enrol`). The `state` sent is persisted so the
-     * check in [completeEnrolment] survives process death while the wallet is open.
+     * app scheme such as `mero-sample://enrol`). The `state` sent is persisted (for
+     * [ENROLMENT_STATE_LIFETIME_MS], replacing any earlier one) so the check in
+     * [completeEnrolment] survives process death while the wallet is open.
      */
     fun beginEnrolment(callbackUrl: String): String {
         val keys = deviceKeys.loadOrCreate()
         val state = Enrolment.newState()
-        store.put(KEY_PENDING_STATE, state)
-        return Enrolment.deviceEnrolmentUrl(keys.signPublicKey, keys.kemPublicKey, callbackUrl, state, walletUrl)
+        val url = Enrolment.deviceEnrolmentUrl(keys.signPublicKey, keys.kemPublicKey, callbackUrl, state, walletUrl)
+        store.put(KEY_PENDING_STATE, "$state:${clock() + ENROLMENT_STATE_LIFETIME_MS}")
+        return url
+    }
+
+    /** The pending enrolment's `state`, or null when there is none or it expired (then it is dropped). */
+    private fun pendingState(): String? {
+        val raw = store.get(KEY_PENDING_STATE) ?: return null
+        val state = raw.substringBeforeLast(':', "")
+        val expiresAt = raw.substringAfterLast(':', "").toLongOrNull()
+        if (state.isEmpty() || expiresAt == null || expiresAt <= clock()) {
+            store.remove(KEY_PENDING_STATE)
+            return null
+        }
+        return state
     }
 
     /** True if [url] looks like an enrolment answer (credential or error in its fragment). */
@@ -139,10 +158,20 @@ class CloudAccount(
      * against this device's keys and the pending `state`, finds the account's relay and
      * persists the session.
      *
+     * The answer must be to the enrolment this app began ([beginEnrolment]), unexpired and
+     * not yet answered: one nobody asked for is refused. When this device is signed in to a
+     * different account it throws [AccountSwitchException] unless [allowAccountSwitch] (ask
+     * the person first); the pending state is kept, so the same callback can be completed
+     * again once they confirm.
+     *
      * @return the session, or null when [url] carries no enrolment.
      * @throws EnrolmentException when the person declined, or the answer did not verify.
      */
-    suspend fun completeEnrolment(url: String): DelegatedSession? {
+    @Suppress("ThrowsCount")
+    suspend fun completeEnrolment(
+        url: String,
+        allowAccountSwitch: Boolean = false,
+    ): DelegatedSession? {
         val callback =
             try {
                 Enrolment.readEnrolmentCallback(url) ?: return null
@@ -151,10 +180,18 @@ class CloudAccount(
                 throw e
             }
         val keys = deviceKeys.load() ?: throw EnrolmentException("this device has no keys to match the credential against")
-        val expected = store.get(KEY_PENDING_STATE)
         val enrolled =
-            Enrolment.completeDeviceEnrolment(callback, keys.signPublicKey, keys.kemPublicKey, expectState = expected)
-        store.remove(KEY_PENDING_STATE)
+            synchronized(pendingLock) {
+                val enrolled =
+                    Enrolment.completeDeviceEnrolment(callback, keys.signPublicKey, keys.kemPublicKey, expectState = pendingState())
+                val current = session()?.account
+                if (!allowAccountSwitch && current != null && current != enrolled.account) {
+                    throw AccountSwitchException(current, enrolled.account)
+                }
+                // Spent here, so the same answer cannot be completed twice.
+                store.remove(KEY_PENDING_STATE)
+                enrolled
+            }
         val base = DelegatedSession(enrolled.account, enrolled.device, enrolled.credential)
         saveSession(base)
         // Finding the relay is best-effort: a cloud blip must not undo a verified sign-in.
@@ -559,11 +596,14 @@ class CloudAccount(
 
     internal fun requireSession(): DelegatedSession = session() ?: error("not signed in with a cloud account")
 
-    internal companion object {
-        const val KEY_SESSION = "calimero.delegated.connection"
-        const val KEY_PENDING_STATE = "calimero.enrol.state"
-        const val KEY_NODE_KEY_PREFIX = "calimero.delegated.relay-node-key."
-        const val ROLE_RELAY_TEE = "RelayTee"
+    companion object {
+        /** How long a begun enrolment stays answerable: 10 minutes (as SSO logins). */
+        const val ENROLMENT_STATE_LIFETIME_MS = 10 * 60 * 1000L
+
+        internal const val KEY_SESSION = "calimero.delegated.connection"
+        internal const val KEY_PENDING_STATE = "calimero.enrol.state"
+        internal const val KEY_NODE_KEY_PREFIX = "calimero.delegated.relay-node-key."
+        internal const val ROLE_RELAY_TEE = "RelayTee"
     }
 }
 

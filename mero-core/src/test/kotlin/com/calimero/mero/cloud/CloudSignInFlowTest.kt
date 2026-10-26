@@ -1,6 +1,8 @@
 package com.calimero.mero.cloud
 
+import com.calimero.mero.account.AccountSwitchException
 import com.calimero.mero.account.CloudAccount
+import com.calimero.mero.account.DelegatedSession
 import com.calimero.mero.account.DeviceCert
 import com.calimero.mero.account.Enrolment
 import com.calimero.mero.account.EnrolmentException
@@ -47,6 +49,7 @@ class CloudSignInFlowTest {
     private lateinit var base: String
     private lateinit var store: MemorySecureStore
     private lateinit var account: CloudAccount
+    private var now = 1_700_000_000_000L
 
     private val callback = "mero-sample://enrol"
     private val root = SeedSigner("5c".repeat(32))
@@ -57,7 +60,20 @@ class CloudSignInFlowTest {
         server = node.start()
         base = server.url("/").toString().trimEnd('/')
         store = MemorySecureStore()
-        account = CloudAccount(store, cloudBaseUrl = base, walletUrl = "https://wallet.example/account-enroll")
+        account = relaunched()
+    }
+
+    /** A fresh [CloudAccount] over the same store, as after process death. */
+    private fun relaunched() =
+        CloudAccount(store, cloudBaseUrl = base, walletUrl = "https://wallet.example/account-enroll", clock = { now })
+
+    private suspend fun assertStateRefused(answer: String) {
+        try {
+            account.completeEnrolment(answer)
+            throw AssertionError("expected EnrolmentException")
+        } catch (e: EnrolmentException) {
+            assertTrue(e.message!!.contains("state"))
+        }
     }
 
     @After
@@ -269,14 +285,113 @@ class CloudSignInFlowTest {
         val acc = DeviceCert.accountForRootPublicKey(root.publicKey)
         val device = DeviceCert.mintDeviceId(acc, ByteArray(16) { 1 })
         val credential = DeviceCert.sign(root, device, SeedSigner("6d".repeat(32)).publicKey, keys.kemPublicKey)
-        val cb = Enrolment.readEnrolmentCallback("$callback#credential=$credential&account=$acc&device=$device")!!
+        val cb = Enrolment.readEnrolmentCallback("$callback#credential=$credential&account=$acc&device=$device&state=s1")!!
         try {
-            Enrolment.completeDeviceEnrolment(cb, keys.signPublicKey, keys.kemPublicKey)
+            Enrolment.completeDeviceEnrolment(cb, keys.signPublicKey, keys.kemPublicKey, expectState = "s1")
             throw AssertionError("expected EnrolmentException")
         } catch (e: EnrolmentException) {
             assertTrue(e.message!!.contains("certifies device key"))
         }
     }
+
+    @Test
+    fun `refuses an answer when no state is pending, however valid its certificate`() {
+        val keys = account.deviceKeys.loadOrCreate()
+        val acc = DeviceCert.accountForRootPublicKey(root.publicKey)
+        val device = DeviceCert.mintDeviceId(acc, ByteArray(16) { 7 })
+        val credential = DeviceCert.sign(root, device, keys.signPublicKey, keys.kemPublicKey)
+        for (fragment in listOf("&state=s1", "")) {
+            val cb = Enrolment.readEnrolmentCallback("$callback#credential=$credential&account=$acc&device=$device$fragment")!!
+            try {
+                Enrolment.completeDeviceEnrolment(cb, keys.signPublicKey, keys.kemPublicKey, expectState = null)
+                throw AssertionError("expected EnrolmentException")
+            } catch (e: EnrolmentException) {
+                assertTrue(e.message!!.contains("state"))
+            }
+        }
+    }
+
+    /**
+     * SEC-01: a credential minted for this device's (public) keys by someone else's passkey,
+     * sent as a link, must not sign the app in to their account.
+     */
+    @Test
+    fun `refuses an unsolicited answer and stores nothing`() =
+        runBlocking {
+            val keys = account.deviceKeys.loadOrCreate()
+            val forged =
+                Enrolment.deviceEnrolmentUrl(
+                    keys.signPublicKey,
+                    keys.kemPublicKey,
+                    callback,
+                    "attacker-chosen",
+                    "https://wallet.example/account-enroll",
+                )
+            assertStateRefused(walletApproves(forged))
+            assertFalse(account.isSignedIn)
+            assertTrue(node.cloud.recorded("/relays").isEmpty())
+        }
+
+    @Test
+    fun `an answered state cannot be answered again`() =
+        runBlocking {
+            node.cloud.accountHasRelay = false
+            val answer = walletApproves(account.beginEnrolment(callback))
+            account.completeEnrolment(answer)!!
+            assertTrue(account.isSignedIn)
+            assertStateRefused(answer)
+        }
+
+    @Test
+    fun `an expired state is refused`() =
+        runBlocking {
+            val answer = walletApproves(account.beginEnrolment(callback))
+            now += CloudAccount.ENROLMENT_STATE_LIFETIME_MS + 1
+            assertStateRefused(answer)
+            assertFalse(account.isSignedIn)
+        }
+
+    @Test
+    fun `the pending state survives a relaunch`() =
+        runBlocking {
+            node.cloud.accountHasRelay = false
+            val answer = walletApproves(account.beginEnrolment(callback))
+            val session = relaunched().completeEnrolment(answer)!!
+            assertEquals(DeviceCert.accountForRootPublicKey(root.publicKey), session.account)
+            assertNull("spent", store.get("calimero.enrol.state"))
+        }
+
+    @Test
+    fun `switching account needs confirmation`() =
+        runBlocking {
+            node.cloud.accountHasRelay = false
+            val other = DelegatedSession("ab".repeat(32), "cd".repeat(32), "00")
+            account.saveSession(other)
+            val answer = walletApproves(account.beginEnrolment(callback))
+            val incoming = DeviceCert.accountForRootPublicKey(root.publicKey)
+            try {
+                account.completeEnrolment(answer)
+                throw AssertionError("expected AccountSwitchException")
+            } catch (e: AccountSwitchException) {
+                assertEquals("ab".repeat(32), e.currentAccount)
+                assertEquals(incoming, e.incomingAccount)
+            }
+            assertEquals("nothing replaced", other, account.session())
+
+            // Confirmed: the same answer completes, since the refusal did not spend its state.
+            val session = account.completeEnrolment(answer, allowAccountSwitch = true)!!
+            assertEquals(incoming, session.account)
+            assertEquals(incoming, account.session()!!.account)
+        }
+
+    @Test
+    fun `re-enrolling the same account needs no confirmation`() =
+        runBlocking {
+            node.cloud.accountHasRelay = false
+            account.completeEnrolment(walletApproves(account.beginEnrolment(callback)))!!
+            account.completeEnrolment(walletApproves(account.beginEnrolment(callback)))!!
+            assertEquals(DeviceCert.accountForRootPublicKey(root.publicKey), account.session()!!.account)
+        }
 
     @Test
     fun `signed in without a relay is still signed in`() =
