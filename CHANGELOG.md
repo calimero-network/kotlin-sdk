@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+### Request proofs refuse a window a node would refuse (mero-core)
+
+- A request-proof window is capped at `MAX_REQUEST_PROOF_TTL_SECONDS` (300), core's
+  `MAX_REQUEST_LIFETIME_SECS`. `createProofSigner` (`ttlSeconds`), `signRequestProof` and
+  `createProofAuthorizer` (`validForSeconds`) throw `IllegalArgumentException` for anything
+  outside 1..300, instead of minting a proof every node refuses. The window is what bounds replay:
+  a two-link proof names no node (SEC-14).
+
 ### Core 0.11.0: namespace ops signed at schema 27 (mero-core)
 
 - `NamespaceOp.SCHEMA_VERSION` is 27, core 0.11.0's `SIGNED_NAMESPACE_OP_SCHEMA_VERSION`

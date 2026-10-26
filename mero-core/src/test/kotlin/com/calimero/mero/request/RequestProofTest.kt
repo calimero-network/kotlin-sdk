@@ -2,6 +2,7 @@ package com.calimero.mero.request
 
 import com.calimero.mero.crypto.Hex
 import com.calimero.mero.crypto.SeedSigner
+import com.calimero.mero.crypto.u64le
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotEquals
@@ -132,6 +133,54 @@ class RequestProofTest {
             val explicit = createProofSigner(ProofSignerOptions(CREDENTIAL, "65".repeat(32), ttlSeconds = 120, now = { 1_700_000_000L }))
             assertEquals(explicit(ProofRequest("GET", "/x")), implicit(ProofRequest("GET", "/x")))
         }
+
+    // ---- request window cap (core's MAX_REQUEST_LIFETIME_SECS) -------------------------------
+
+    @Test
+    fun `the request window cap is core's`() {
+        assertEquals(300L, MAX_REQUEST_PROOF_TTL_SECONDS)
+    }
+
+    @Test
+    fun `a proof signer refuses a window a node would refuse`() {
+        for (ttl in listOf(0L, -1L, 301L, 86_400L, Long.MAX_VALUE)) {
+            val error =
+                assertThrows(IllegalArgumentException::class.java) {
+                    createProofSigner(ProofSignerOptions(CREDENTIAL, "65".repeat(32), ttlSeconds = ttl))
+                }
+            assertTrue(error.message!!, error.message!!.contains("ttlSeconds"))
+        }
+    }
+
+    @Test
+    fun `a proof signer accepts the full window`() =
+        runBlocking {
+            val sign = createProofSigner(ProofSignerOptions(CREDENTIAL, "65".repeat(32), ttlSeconds = 300, now = { 1_700_000_000L }))
+            val proof = sign(ProofRequest("GET", "/x"))!!
+            // expires_at is the u64 just before the 64-byte signature.
+            assertEquals(Hex.encode(u64le(1_700_000_300L)), proof.dropLast(128).takeLast(16))
+        }
+
+    @Test
+    fun `signRequestProof refuses a window a node would refuse`() {
+        for (validFor in listOf(0L, -1L, 301L, Long.MAX_VALUE)) {
+            val error =
+                assertThrows(IllegalArgumentException::class.java) {
+                    signRequestProof(RequestProofInput("GET", "/x", "ab", deviceSecret = signerSecret, validForSeconds = validFor, now = issuedAt))
+                }
+            assertTrue(error.message!!, error.message!!.contains("validForSeconds"))
+        }
+    }
+
+    @Test
+    fun `an authorizer refuses a window a node would refuse up front`() {
+        val error =
+            assertThrows(IllegalArgumentException::class.java) {
+                createProofAuthorizer(ProofCredential(CREDENTIAL, deviceSecret = signerSecret, validForSeconds = 301))
+            }
+        assertTrue(error.message!!, error.message!!.contains("validForSeconds"))
+        createProofAuthorizer(ProofCredential(CREDENTIAL, deviceSecret = signerSecret, validForSeconds = 300))
+    }
 
     // ---- createProofAuthorizer / signedPath ------------------------------------------------
 
