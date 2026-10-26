@@ -50,7 +50,7 @@ class MemoryNonceSource(
  */
 class PersistedNonceSource(
     private val store: SecureStore,
-    private val key: String,
+    internal val key: String,
 ) : NonceSource {
     private val mutex = Mutex()
 

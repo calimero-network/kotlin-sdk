@@ -340,6 +340,15 @@ class InvitationCapture(
         return true
     }
 
+    /**
+     * Forget the auto-join attempt ledger, which names the invitations this device tried.
+     * [com.calimero.mero.compose.MeroClient.signOut] does, so the next account starts with none;
+     * a pending invitation stays until acked.
+     */
+    fun clearAttempts() {
+        synchronized(lock) { runCatching { store.remove(attemptsKey) } }
+    }
+
     private fun forgetAttempts(token: String) {
         val attempts = readAttempts()
         if (attempts.remove(token) != null) writeAttempts(attempts)

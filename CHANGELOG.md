@@ -47,6 +47,22 @@
   `incomingAccount`) rather than replacing a session for another account; pass
   `allowAccountSwitch = true` once the person confirms. `EnrolmentException` is now `open`.
 
+### Sign-out forgets the account; encrypted stores survive a restore (mero-core, mero-compose)
+
+- **`CloudAccount.signOut` forgets the account's relay map, subgroup namespaces and its relays'
+  pinned keys** (`forgetAccount`); `signOut(forgetDevice = true)` also drops the device keys and
+  every warrant, join and governance nonce spent under them (new `SecureStore.removeAll(prefix)`,
+  a no-op by default for stores that cannot list their keys). `MeroClient.logout(forgetDevice)`
+  passes it through, and a sign-out clears the invitation attempt ledger
+  (`InvitationCapture.clearAttempts()`).
+- **An `EncryptedSharedPreferences` file whose keyset no longer decrypts is reset instead of
+  crashing the app** (`EncryptedPrefsTokenStore`, `EncryptedPrefsSecureStore`). This happens after
+  a backup restore or device transfer, because the Keystore master key never travels; the person
+  signs in again. The README shows the `dataExtractionRules` that keep the `mero_*` files out of
+  backups.
+- Bouncy Castle (`bcprov-jdk18on`, used for the on-device DCAP X.509/CRL checks) is 1.86, up from
+  1.78.1.
+
 ### Core 0.11.0: namespace ops signed at schema 27 (mero-core)
 
 - `NamespaceOp.SCHEMA_VERSION` is 27, core 0.11.0's `SIGNED_NAMESPACE_OP_SCHEMA_VERSION`

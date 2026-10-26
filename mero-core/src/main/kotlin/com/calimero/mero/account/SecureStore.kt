@@ -3,7 +3,7 @@ package com.calimero.mero.account
 import android.content.Context
 import android.content.SharedPreferences
 import androidx.security.crypto.EncryptedSharedPreferences
-import androidx.security.crypto.MasterKey
+import com.calimero.mero.storage.EncryptedPrefs
 import java.util.concurrent.ConcurrentHashMap
 
 /**
@@ -23,6 +23,14 @@ interface SecureStore {
     )
 
     fun remove(key: String)
+
+    /**
+     * Remove every key starting with [prefix] — what [CloudAccount.signOut] with `forgetDevice`
+     * uses for sequences it cannot name one by one (governance nonces, per group). A store that
+     * cannot list its keys keeps them (the default); the ones [CloudAccount.signOut] can name
+     * are removed regardless.
+     */
+    fun removeAll(prefix: String) {}
 }
 
 /** In-memory [SecureStore], for tests and for an app that wants nothing on disk. */
@@ -41,6 +49,10 @@ class MemorySecureStore : SecureStore {
     override fun remove(key: String) {
         map.remove(key)
     }
+
+    override fun removeAll(prefix: String) {
+        map.keys.removeIf { it.startsWith(prefix) }
+    }
 }
 
 /**
@@ -50,6 +62,10 @@ class MemorySecureStore : SecureStore {
  *
  * Writes are `commit()`ed, not `apply()`ed: a nonce that is handed out must be on disk
  * before the warrant carrying it leaves, or a crash replays it.
+ *
+ * A file whose keyset no longer decrypts (restored from a backup onto a device without its
+ * Keystore master key) is reset rather than crashing the app ([EncryptedPrefs]): the device
+ * keys and session are gone and the person signs in again.
  */
 class EncryptedPrefsSecureStore(
     context: Context,
@@ -57,22 +73,10 @@ class EncryptedPrefsSecureStore(
 ) : SecureStore {
     private val appContext = context.applicationContext
 
-    private val prefs: SharedPreferences by lazy {
-        val masterKey =
-            MasterKey
-                .Builder(appContext)
-                .setKeyScheme(MasterKey.KeyScheme.AES256_GCM)
-                .build()
-        EncryptedSharedPreferences.create(
-            appContext,
-            fileName,
-            masterKey,
-            EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
-            EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM,
-        )
-    }
+    private val prefs: SharedPreferences by lazy { EncryptedPrefs.open(appContext, fileName) }
 
-    override fun get(key: String): String? = prefs.getString(key, null)
+    // A value that does not decrypt reads as absent, as an unreadable one does elsewhere.
+    override fun get(key: String): String? = runCatching { prefs.getString(key, null) }.getOrNull()
 
     override fun put(
         key: String,
@@ -83,6 +87,14 @@ class EncryptedPrefsSecureStore(
 
     override fun remove(key: String) {
         prefs.edit().remove(key).commit()
+    }
+
+    override fun removeAll(prefix: String) {
+        val keys = prefs.all.keys.filter { it.startsWith(prefix) }
+        if (keys.isEmpty()) return
+        val edit = prefs.edit()
+        keys.forEach(edit::remove)
+        edit.commit()
     }
 
     private companion object {

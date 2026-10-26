@@ -87,7 +87,7 @@ val HA_REFUSAL_MESSAGES: Map<String, String> =
             "the relay this namespace was founded on has not reported its address to the cloud yet; try enabling hosting again shortly",
     )
 
-private const val GOVERNANCE_NONCE_PREFIX = "calimero.governance-nonce."
+internal const val GOVERNANCE_NONCE_PREFIX = "calimero.governance-nonce."
 private val governanceNonceLock = Mutex()
 
 /**

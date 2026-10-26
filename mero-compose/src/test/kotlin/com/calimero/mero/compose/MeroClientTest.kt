@@ -4,6 +4,7 @@ import com.calimero.mero.account.CloudAccount
 import com.calimero.mero.account.DeviceCert
 import com.calimero.mero.account.Enrolment
 import com.calimero.mero.account.MemorySecureStore
+import com.calimero.mero.account.persistedNonces
 import com.calimero.mero.crypto.SeedSigner
 import com.calimero.mero.relay.DcapRelayKeyVerifier
 import com.calimero.mero.storage.MemoryTokenStore
@@ -197,6 +198,28 @@ class MeroClientTest {
             assertFalse(again.state.value.isAuthenticated)
             assertNull(again.relay)
             assertFalse(client.account.isSignedIn)
+        }
+
+    @Test
+    fun `logout keeps the device unless told to forget it`() =
+        runBlocking {
+            client.signInWithCloud(android.content.ContextWrapper(null), callback)
+            client.handleEnrolmentCallback(walletAnswer())
+            val device = client.account.deviceKeys.load()
+            assertNotNull(device)
+            val relay = client.state.value.relayUrl!!
+            client.account.persistedNonces(relay).next()
+            client.logout()
+            assertEquals("a plain logout keeps the device key", device, client.account.deviceKeys.load())
+            assertEquals(2uL, client.account.persistedNonces(relay).next())
+
+            client.signInWithCloud(android.content.ContextWrapper(null), callback)
+            client.handleEnrolmentCallback(walletAnswer())
+            assertTrue(client.state.value.isAuthenticated)
+            client.logout(forgetDevice = true)
+            assertFalse(client.state.value.isAuthenticated)
+            assertNull("forgetDevice drops the key certified to the old account", client.account.deviceKeys.load())
+            assertEquals("and the nonces spent under it", 1uL, client.account.persistedNonces(relay).next())
         }
 
     // ---- Development node login ----------------------------------------------------------

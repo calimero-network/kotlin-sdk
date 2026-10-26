@@ -2,7 +2,6 @@ package com.calimero.mero.storage
 
 import android.content.Context
 import androidx.security.crypto.EncryptedSharedPreferences
-import androidx.security.crypto.MasterKey
 import com.calimero.mero.TokenData
 import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.encodeToString
@@ -16,6 +15,10 @@ import kotlinx.serialization.json.Json
  * Port of mero-js `LocalStorageTokenStore`, hardened for mobile. The stored JSON uses the same
  * snake_case shape as mero-js so a bundle is portable across SDKs on the same device.
  *
+ * A file whose keyset no longer decrypts (restored from a backup onto a device without its
+ * Keystore master key) is reset rather than crashing the app ([EncryptedPrefs]): the tokens are
+ * gone and the person signs in again.
+ *
  * @param fileName SharedPreferences file name; use distinct names to isolate multiple nodes.
  */
 class EncryptedPrefsTokenStore(
@@ -28,23 +31,10 @@ class EncryptedPrefsTokenStore(
             encodeDefaults = true
         }
 
-    private val prefs by lazy {
-        val masterKey =
-            MasterKey
-                .Builder(context.applicationContext)
-                .setKeyScheme(MasterKey.KeyScheme.AES256_GCM)
-                .build()
-        EncryptedSharedPreferences.create(
-            context.applicationContext,
-            fileName,
-            masterKey,
-            EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
-            EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM,
-        )
-    }
+    private val prefs by lazy { EncryptedPrefs.open(context, fileName) }
 
     override fun getTokens(): TokenData? {
-        val raw = prefs.getString(KEY_TOKENS, null) ?: return null
+        val raw = runCatching { prefs.getString(KEY_TOKENS, null) }.getOrNull() ?: return null
         return try {
             json.decodeFromString<TokenData>(raw)
         } catch (_: Exception) {

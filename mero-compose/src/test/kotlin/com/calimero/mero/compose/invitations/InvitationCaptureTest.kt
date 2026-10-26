@@ -119,6 +119,15 @@ class InvitationCaptureTest {
     }
 
     @Test
+    fun `clearing the attempt ledger, as a logout does, lets an exhausted invitation auto-join again`() {
+        repeat(MAX_AUTO_JOIN_ATTEMPTS) { openWith("SPENT") }
+        assertFalse(openWith("SPENT")[0].autoJoin)
+        InvitationCapture(store).clearAttempts()
+        assertNull(store.get("calimero:invitation-attempts"))
+        assertTrue(openWith("SPENT")[0].autoJoin)
+    }
+
+    @Test
     fun `a store that throws still lets the invitation through this session`() {
         val broken =
             object : KeyValueStore {

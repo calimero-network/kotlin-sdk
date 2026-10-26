@@ -566,7 +566,7 @@ class CloudAccount(
             val resolved = if (nodeUrl != null) null else Join.resolveRelayFromInvitation(cloud(session, cloudBaseUrl), namespaceId, invitation)
             val relayUrl = nodeUrl?.trimBase() ?: checkNotNull(resolved).relayUrl
             val admitUrl = resolved?.admitUrl ?: Join.admitUrlOn(relayUrl, namespaceId)
-            val nonce = PersistedNonceSource(store, "calimero.delegated.joinnonce.${session.account}").next()
+            val nonce = PersistedNonceSource(store, joinNonceKey(session.account)).next()
             val published =
                 Join.joinWithNode(
                     PlainJsonHttp(httpClient), admitUrl, namespaceId, invitation, session.account, session.credential,
@@ -585,13 +585,46 @@ class CloudAccount(
     // ---- Sign out ------------------------------------------------------------------------
 
     /**
-     * Forget the session (and any pinned relay keys stay pinned). With [forgetDevice] the
-     * device keys go too, so the next sign-in certifies a fresh key.
+     * Forget the account: its session, the pending enrolment, its relay map, its subgroups'
+     * namespaces and the pinned keys of every relay it used ([forgetAccount]) — so the next
+     * person on the device inherits none of it. A pin is learned again from the relay's
+     * attestation on the next login.
+     *
+     * The device keys stay unless [forgetDevice], and so do the warrant and governance nonces:
+     * they were spent under those keys, and a node refuses a nonce it has seen from a device, so
+     * they go only with the keys. Pass [forgetDevice] on a shared or handed-over device, so the
+     * next account signs in with a fresh key rather than one certified to this one.
      */
     fun signOut(forgetDevice: Boolean = false) {
+        val session = session()
+        val relays = session?.let(::knownRelays).orEmpty()
         store.remove(KEY_SESSION)
         store.remove(KEY_PENDING_STATE)
-        if (forgetDevice) deviceKeys.clear()
+        if (session != null) forgetAccount(session.account, relays)
+        if (forgetDevice) {
+            deviceKeys.clear()
+            relays.forEach { runCatching { store.remove(PersistedNonceSource.forRelay(store, it).key) } }
+            session?.let { runCatching { store.remove(joinNonceKey(it.account)) } }
+            NONCE_PREFIXES.forEach { runCatching { store.removeAll(it) } }
+        }
+    }
+
+    /**
+     * Forget what is kept about [account]: its relay map, its subgroups' namespaces, and the
+     * pinned keys of every relay it used (those in its map and [relays]).
+     */
+    fun forgetAccount(
+        account: String,
+        relays: Collection<String> = emptyList(),
+    ) {
+        synchronized(relayMapLock) {
+            val map = readRelayMap(account)
+            val used = (relays + map.namespaces.values + map.contexts.values).map { it.trimBase() }.toSet()
+            runCatching { store.remove(RELAY_MAP_PREFIX + account) }
+            runCatching { store.remove(GROUP_NAMESPACE_PREFIX + account) }
+            learnedGroupNamespaces.remove(account)
+            used.forEach { runCatching { store.remove(KEY_NODE_KEY_PREFIX + it) } }
+        }
     }
 
     internal fun requireSession(): DelegatedSession = session() ?: error("not signed in with a cloud account")
@@ -603,7 +636,13 @@ class CloudAccount(
         internal const val KEY_SESSION = "calimero.delegated.connection"
         internal const val KEY_PENDING_STATE = "calimero.enrol.state"
         internal const val KEY_NODE_KEY_PREFIX = "calimero.delegated.relay-node-key."
+        internal const val JOIN_NONCE_PREFIX = "calimero.delegated.joinnonce."
         internal const val ROLE_RELAY_TEE = "RelayTee"
+
+        /** Every nonce sequence this device spends, cleared with its keys. */
+        internal val NONCE_PREFIXES = listOf("calimero.nonce.", JOIN_NONCE_PREFIX, GOVERNANCE_NONCE_PREFIX)
+
+        internal fun joinNonceKey(account: String) = JOIN_NONCE_PREFIX + account
     }
 }
 
