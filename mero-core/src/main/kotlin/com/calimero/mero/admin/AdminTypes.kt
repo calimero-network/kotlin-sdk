@@ -94,6 +94,13 @@ data class InstallApplicationResponseData(
     val applicationId: String,
 )
 
+/** What [AdminApi.installLatestFromRegistry] installed: the application and the version it picked. */
+@Serializable
+data class RegistryInstall(
+    val applicationId: String,
+    val version: String,
+)
+
 @Serializable
 data class UninstallApplicationResponseData(
     val applicationId: String,

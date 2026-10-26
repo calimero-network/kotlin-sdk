@@ -261,6 +261,26 @@ private val pkgOps =
             listOf(OpField.line("packageName", "Package"), OpField.line("version", "Version")),
         ) { m, i -> Fmt.json(m.admin.installFromRegistry(i.v("packageName"), i.v("version"))) },
         SDKOperation(
+            "pkg.resolveVersion", "Packages & Registry", "resolveRegistryVersion", "Newest registry version a runtime installs (off-node)",
+            listOf(
+                OpField.line("registryUrl", "Registry URL"),
+                OpField.line("packageName", "Package name"),
+                OpField.line("runtimeVersion", "Node runtime (optional)"),
+            ),
+        ) { m, i ->
+            Fmt.json(m.admin.resolveRegistryVersion(i.v("registryUrl"), i.v("packageName"), i.opt("runtimeVersion")))
+        },
+        SDKOperation(
+            "pkg.installLatest", "Packages & Registry", "installLatestFromRegistry", "Install the newest version this node can run",
+            listOf(
+                OpField.line("registryUrl", "Registry URL"),
+                OpField.line("packageName", "Package name"),
+                OpField.line("runtimeVersion", "Node runtime (optional)"),
+            ),
+        ) { m, i ->
+            Fmt.json(m.admin.installLatestFromRegistry(i.v("registryUrl"), i.v("packageName"), i.opt("runtimeVersion")))
+        },
+        SDKOperation(
             "pkg.semver", "Packages & Registry", "compareSemver", "Compare two versions",
             listOf(OpField.line("a", "Version A"), OpField.line("b", "Version B")),
         ) { _, i -> "compareSemver(${i.v("a")}, ${i.v("b")}) = ${compareSemver(i.v("a"), i.v("b"))}" },
