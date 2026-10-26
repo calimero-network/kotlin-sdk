@@ -1,12 +1,14 @@
 package com.calimero.mero.admin
 
 import com.calimero.mero.Capabilities
+import com.calimero.mero.account.ApplicationIds
 import com.calimero.mero.account.DeviceCert
 import com.calimero.mero.account.DeviceScopeInput
 import com.calimero.mero.account.signDeviceScope
 import com.calimero.mero.auth.ApiEnvelope
 import com.calimero.mero.crypto.DeviceSigner
 import com.calimero.mero.http.HttpClient
+import com.calimero.mero.http.HttpException
 import com.calimero.mero.http.MeroStateException
 import com.calimero.mero.http.deleteJson
 import com.calimero.mero.http.getJson
@@ -24,11 +26,13 @@ import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.encodeToString
+import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.decodeFromJsonElement
 import kotlinx.serialization.json.put
 import java.net.HttpURLConnection
@@ -239,6 +243,78 @@ class AdminApi(
         val body = fetchExternal(url, "registry versions fetch failed for $packageName")
         val bundles = http.json.decodeFromString<List<RegistryBundleManifest>>(body)
         return bundles.map { it.appVersion }.sortedWith { x, y -> -compareSemver(x, y) }
+    }
+
+    /**
+     * The newest version of [packageName] the registry publishes that a node on
+     * [runtimeVersion] can install: not yanked, and its bundle's `minRuntimeVersion` no newer
+     * than the runtime. `null` when there is none.
+     *
+     * Without a runtime this is the newest non-yanked version, whatever it needs. With one, it
+     * walks the package's version list (`GET {registry}/api/v2/packages/{package}`) newest
+     * first and reads each bundle (`GET {registry}/api/v2/bundles/{package}/{version}`) until
+     * one fits, because the bundle listing names only the latest version.
+     */
+    suspend fun resolveRegistryVersion(
+        registryUrl: String,
+        packageName: String,
+        runtimeVersion: String? = null,
+    ): String? {
+        val base = origin(registryUrl)
+        val pkg = encodeComponent(packageName)
+        val bundles =
+            ApplicationIds.parseBundles(
+                fetchExternal("$base/api/v2/bundles?package=$pkg", "registry versions fetch failed for $packageName"),
+            )
+        ApplicationIds.selectLatestBundle(bundles, runtimeVersion)?.let { return it.appVersion }
+        if (runtimeVersion.isNullOrEmpty()) return null
+
+        val pkgBody = fetchExternal("$base/api/v2/packages/$pkg", "registry package fetch failed for $packageName")
+        val listing = http.json.parseToJsonElement(pkgBody) as? JsonObject ?: return null
+        val strings = { key: String -> (listing[key] as? JsonArray)?.mapNotNull { (it as? JsonPrimitive)?.contentOrNull }.orEmpty() }
+        return ApplicationIds.newestCompatible(
+            versions = strings("versions"),
+            yanked = strings("yankedVersions"),
+            skipping = bundles.mapNotNull { it.appVersion },
+            runtimeVersion = runtimeVersion,
+        ) { version ->
+            val body =
+                fetchExternal(
+                    "$base/api/v2/bundles/$pkg/${encodeComponent(version)}",
+                    "registry bundle fetch failed for $packageName@$version",
+                )
+            ApplicationIds.parseBundle(body) ?: throw MeroStateException("the registry's $packageName@$version bundle does not decode")
+        }
+    }
+
+    /**
+     * Install the newest version of [packageName] this node can run.
+     *
+     * Pass the node's [runtimeVersion] when it is known. When it is not, the newest version is
+     * tried first; a node too old for it refuses naming its own runtime ("… but current runtime
+     * is 0.11.0"), and the install is retried once with the newest version that runtime
+     * accepts. A registry publishing a release ahead of the node no longer breaks the install.
+     */
+    suspend fun installLatestFromRegistry(
+        registryUrl: String,
+        packageName: String,
+        runtimeVersion: String? = null,
+    ): RegistryInstall {
+        var runtime = runtimeVersion
+        while (true) {
+            val version =
+                resolveRegistryVersion(registryUrl, packageName, runtime)
+                    ?: throw MeroStateException(
+                        "the registry lists no version of $packageName" + (runtime?.let { " that runtime $it can install" } ?: ""),
+                    )
+            try {
+                return RegistryInstall(installFromRegistry(packageName, version).applicationId, version)
+            } catch (e: HttpException) {
+                val learned = ApplicationIds.runtimeVersionRefusedBy(e)
+                if (runtime != null || learned == null) throw e
+                runtime = learned
+            }
+        }
     }
 
     override suspend fun installDevApplication(request: InstallDevApplicationRequest): InstallApplicationResponseData =

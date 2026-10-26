@@ -269,14 +269,11 @@ class ChatService(
         val m = mero
         if (!isNode || m == null) return
         run("Installing $PACKAGE_NAME") {
-            val versions = m.admin.getRegistryVersions(REGISTRY_URL, PACKAGE_NAME)
-            val version = versions.firstOrNull()
-            if (version == null) {
-                say("No registry versions found for $PACKAGE_NAME", error = true)
-                return@run
-            }
-            appId = m.admin.installFromRegistry(PACKAGE_NAME, version).applicationId
-            say("Installed $PACKAGE_NAME@$version")
+            // The newest version this node's runtime installs, not merely the newest published:
+            // the registry can be a release ahead of the node.
+            val installed = m.admin.installLatestFromRegistry(REGISTRY_URL, PACKAGE_NAME)
+            appId = installed.applicationId
+            say("Installed $PACKAGE_NAME@${installed.version}")
             loadSpaces()
         }
     }
