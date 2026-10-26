@@ -1,5 +1,6 @@
 package com.calimero.mero.relay
 
+import com.calimero.mero.DevOnlyMeroApi
 import com.calimero.mero.TokenData
 import com.calimero.mero.crypto.BorshWriter
 import com.calimero.mero.crypto.DeviceSigner
@@ -144,8 +145,10 @@ class RelayKeyRefusedException(
  * **It does not verify the quote's signature or measurements.** A relay that lies about its key
  * over a valid TLS connection is not caught here; prefer [DcapRelayKeyVerifier].
  *
- * A MOCK quote (dev rigs) is accepted only from a loopback relay unless [allowMock].
+ * A MOCK quote (dev rigs) is refused unless [allowMock], from a loopback relay too: another app on
+ * the device can listen on `127.0.0.1`. Development and tests only ([DevOnlyMeroApi]).
  */
+@DevOnlyMeroApi
 class TlsRelayKeyVerifier(
     private val allowMock: Boolean = false,
 ) : RelayKeyVerifier {
@@ -163,7 +166,7 @@ class TlsRelayKeyVerifier(
                 throw RelayKeyRefusedException("the relay's quote is not base64: ${e.message}")
             }
         val (reportData, mock) = RelayAttest.reportDataOf(quote)
-        if (mock && !(allowMock || isLoopbackRelay(relayUrl))) {
+        if (mock && !allowMock) {
             throw RelayKeyRefusedException("the relay answered with a MOCK quote, which proves nothing about the hardware")
         }
         if (!reportData.copyOfRange(0, 32).contentEquals(nonce)) {
@@ -194,8 +197,10 @@ internal fun isLoopbackRelay(url: String): Boolean {
  * cannot use the session. Port of the Swift SDK's `PinnedRelayKeyVerifier`.
  *
  * To skip the attestation round trip altogether for one account, pin the key with
- * [com.calimero.mero.account.CloudAccount.pinRelayNodeKey] instead.
+ * [com.calimero.mero.account.CloudAccount.pinRelayNodeKey] instead. Development and tests only
+ * ([DevOnlyMeroApi]): it ignores the relay's attestation.
  */
+@DevOnlyMeroApi
 class PinnedRelayKeyVerifier(
     nodeKey: String,
 ) : RelayKeyVerifier {

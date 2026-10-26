@@ -30,7 +30,7 @@ See [`ROADMAP-TASKS/task-2-android-sdk.md`] in the planning repo for the full de
 ### The sample app
 
 A light, Calimero-styled Compose app. Sign-in is **Continue with Calimero** only; the wallet
-redirects back to `mero-sample://enrol` (override with the `callbackUrl` intent extra). After that:
+redirects back to `mero-sample://enrol` (override with the `callbackUrl` intent extra in a debug build). After that:
 
 - **Chat** — a native chat client over the account's relay: messages are read with
   `RelayClient.call` (query) and sent as warrants (`execute`), channels are created with a creation
@@ -42,6 +42,13 @@ redirects back to `mero-sample://enrol` (override with the `callbackUrl` intent 
 
 Mock mode (`--ez mock true`) runs the whole flow against an in-app `FakeNode` and a mock wallet that
 certifies the device with a fixed root, which is what the instrumented `LoginFlowTest` drives.
+
+The launch extras (`mock`, `callbackUrl`, `contextId`, `chatUser`, `invite`, `nodeUrl`) are test
+hooks and are read only in debug builds: the launcher activity is exported, so in a release build
+any app could set them. The mock backend and `mero-testkit` are debug-only too. Release builds
+block cleartext and opt out of backup; the debug build allows http only to `localhost`,
+`127.0.0.1` and `10.0.2.2` (`src/debug/res/xml/network_security_config.xml`). Do the same in an
+app built from this sample.
 
 A **Diagnostics** screen (the `>_` button) shows every request/auth event the session recorded,
 copyable — so a failed connection is debuggable without Android Studio attached.
@@ -120,6 +127,41 @@ client.mero?.events(listOf(contextId))                      // live events over 
 
 Without Compose, `CloudAccount` runs the same flow: `beginEnrolment(callbackUrl)` →
 `completeEnrolment(url)` → `connect()`.
+
+### What stays on the device, and backups
+
+`signOut()` (or `logout()`) retires the relay session and forgets the account: its tokens, session,
+relay map, subgroup namespaces and the pinned keys of its relays, plus the invitation attempt
+ledger. The device keys stay, along with the warrant nonces spent under them, so signing back in
+takes one approval. `signOut(forgetDevice = true)` drops those too. Use it on a shared or handed-over
+device, so the next account does not sign in with a key already certified to this one.
+
+Keys, session, nonces and tokens are in `EncryptedSharedPreferences` files (`mero_account`,
+`mero_tokens`, `mero_relay_tokens`, `mero_auth_state`, `mero_cloud_link`). The Keystore key that
+encrypts them never leaves the device, so a copy restored from a backup or a device transfer cannot
+be read. The SDK detects this, deletes the file and starts over (the person signs in again). To
+avoid that, exclude the files from backups. For Android 12+, add
+`android:dataExtractionRules="@xml/data_extraction_rules"` to `<application>`:
+
+```xml
+<!-- res/xml/data_extraction_rules.xml -->
+<data-extraction-rules>
+    <cloud-backup>
+        <exclude domain="sharedpref" path="mero_account.xml" />
+        <exclude domain="sharedpref" path="mero_tokens.xml" />
+        <exclude domain="sharedpref" path="mero_relay_tokens.xml" />
+        <exclude domain="sharedpref" path="mero_auth_state.xml" />
+        <exclude domain="sharedpref" path="mero_cloud_link.xml" />
+    </cloud-backup>
+    <device-transfer>
+        <!-- the same five <exclude> lines -->
+    </device-transfer>
+</data-extraction-rules>
+```
+
+For Android 11 and below, put the same `<exclude>` lines in a `<full-backup-content>` file and
+reference it with `android:fullBackupContent`. If you pass your own `fileName` to a store, exclude
+that file too.
 
 ## Quick start (core, self-hosted node)
 

@@ -19,18 +19,22 @@ import androidx.lifecycle.lifecycleScope
 import com.calimero.mero.sample.app.SampleViewModel
 import com.calimero.mero.sample.explorer.ExplorerApp
 import com.calimero.mero.sample.explorer.ExplorerOptions
-import com.calimero.mero.sample.explorer.MockWalletCard
-import com.calimero.mero.sample.mock.MockWallet
+import com.calimero.mero.sample.mock.MockBackend
 import com.calimero.mero.sample.ui.Cal
 import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 
 /**
- * Entry point. Two run modes, selected by intent extras:
- *  - `mock = true`: an in-app FakeNode plays the cloud manager and the relay, and the wallet is
- *    [MockWallet]. Drives the CI instrumented `LoginFlowTest`.
+ * Entry point. Two run modes:
+ *  - `mock = true` (debug builds only): [MockBackend], an in-app FakeNode playing the cloud manager
+ *    and the relay plus a mock wallet. Drives the CI instrumented `LoginFlowTest`.
  *  - default: the hosted Calimero wallet, cloud manager and relay.
+ *
+ * The launch extras (`mock`, `callbackUrl`, `contextId`, `chatUser`, `invite`, `nodeUrl`) are
+ * test and development hooks, read only in debug builds: this activity is the exported launcher,
+ * so in a release build any app on the device could set them — for example `invite`, which
+ * joins a space with no confirmation.
  *
  * Sign-in is Calimero Cloud, or "Manually enter node URL" for a node you run (a local `merod`).
  * The wallet redirects back to [callbackUrl]
@@ -42,34 +46,26 @@ class MainActivity : ComponentActivity() {
     private val vm: SampleViewModel by viewModels()
     private var pendingCallback: String? = null
 
-    /** Where the wallet sends the person back. Overridable with the `callbackUrl` extra (e.g. an App Link). */
+    /** Where the wallet sends the person back. Overridable with the `callbackUrl` extra (e.g. an App Link) in debug builds. */
     private val callbackUrl: String
-        get() = intent?.getStringExtra(EXTRA_CALLBACK_URL) ?: DEFAULT_CALLBACK_URL
+        get() = testExtra(EXTRA_CALLBACK_URL) ?: DEFAULT_CALLBACK_URL
+
+    /** A launch extra, honoured only in debug builds (see the class doc). */
+    private fun testExtra(name: String): String? = if (BuildConfig.DEBUG) intent?.getStringExtra(name) else null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         enableEdgeToEdge()
         super.onCreate(savedInstanceState)
-        val mock = intent?.getBooleanExtra(EXTRA_MOCK, false) ?: false
+        val mock = MockBackend.AVAILABLE && BuildConfig.DEBUG && intent?.getBooleanExtra(EXTRA_MOCK, false) == true
         vm.start(mock)
         val options =
             ExplorerOptions(
                 callbackUrl = callbackUrl,
-                initialContextId = intent?.getStringExtra(EXTRA_CONTEXT) ?: if (mock) MOCK_CONTEXT else "",
-                chatDisplayName = intent?.getStringExtra(EXTRA_CHAT_USER),
-                autoJoinInvite = intent?.getStringExtra(EXTRA_INVITE),
-                nodeUrl = intent?.getStringExtra(EXTRA_NODE_URL),
-                mockWallet =
-                    if (mock) {
-                        {
-                            MockWalletCard(
-                                pendingUrl = MockWallet.pendingUrl,
-                                onApprove = { deliverCallback(MockWallet.approve()) },
-                                onDecline = { deliverCallback(MockWallet.decline()) },
-                            )
-                        }
-                    } else {
-                        null
-                    },
+                initialContextId = testExtra(EXTRA_CONTEXT) ?: if (mock) MOCK_CONTEXT else "",
+                chatDisplayName = testExtra(EXTRA_CHAT_USER),
+                autoJoinInvite = testExtra(EXTRA_INVITE),
+                nodeUrl = testExtra(EXTRA_NODE_URL),
+                mockWallet = if (mock) MockBackend.walletCard(::deliverCallback) else null,
             )
         consumeCallbackIntent(intent)
 
@@ -111,7 +107,7 @@ class MainActivity : ComponentActivity() {
         if (data.startsWith(callbackUrl) || data.startsWith(DEFAULT_CALLBACK_URL)) {
             val client = vm.client
             if (client != null) {
-                MockWallet.pendingUrl = null
+                MockBackend.clearPending()
                 lifecycleScope.launch { client.handleEnrolmentCallback(data) }
             } else {
                 pendingCallback = data

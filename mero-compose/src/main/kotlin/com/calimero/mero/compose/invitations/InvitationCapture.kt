@@ -186,18 +186,24 @@ internal class PendingIntentStore(
         runCatching { store.put(STORAGE_KEY, json.encodeToString(serializer, list)) }
     }
 
-    /** Capture [raw]; idempotent by content nonce. */
+    /** Capture [raw]; idempotent by content nonce. Past [MAX_PENDING] the oldest are dropped. */
     fun capture(raw: String): StoredIntent {
         val nonce = hashNonce(raw)
         val list = all()
         list.firstOrNull { it.nonce == nonce }?.let { return it }
-        return StoredIntent(nonce, raw, now()).also { write(list + it) }
+        return StoredIntent(nonce, raw, now()).also { write((list + it).takeLast(MAX_PENDING)) }
     }
 
     fun ack(nonce: String) = write(all().filter { it.nonce != nonce })
 
     companion object {
         const val STORAGE_KEY = "calimero.platform.pendingIntents"
+
+        /**
+         * The most intents kept. Every distinct link adds one until it is acked, so without a
+         * bound a stream of links grows the store forever.
+         */
+        const val MAX_PENDING = 20
     }
 }
 
@@ -332,6 +338,15 @@ class InvitationCapture(
         attempts[token] = spent + 1
         writeAttempts(attempts)
         return true
+    }
+
+    /**
+     * Forget the auto-join attempt ledger, which names the invitations this device tried.
+     * [com.calimero.mero.compose.MeroClient.signOut] does, so the next account starts with none;
+     * a pending invitation stays until acked.
+     */
+    fun clearAttempts() {
+        synchronized(lock) { runCatching { store.remove(attemptsKey) } }
     }
 
     private fun forgetAttempts(token: String) {

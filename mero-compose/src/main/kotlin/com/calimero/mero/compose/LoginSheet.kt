@@ -382,7 +382,17 @@ private fun NodeLoginPanel(
                 Field(branding.usernameLabel, username, { username = it }, branding.usernamePlaceholder, theme, "nodeUserInput")
                 Field(branding.passwordLabel, password, { password = it }, branding.passwordPlaceholder, theme, "nodePasswordInput", secure = true)
             }
-            error?.let { Text(it, color = theme.error, fontSize = 13.sp, modifier = Modifier.fillMaxWidth()) }
+            val insecure = remember(selected, customUrl) { login.isInsecure }
+            when {
+                error != null -> Text(error.orEmpty(), color = theme.error, fontSize = 13.sp, modifier = Modifier.fillMaxWidth())
+                insecure ->
+                    Text(
+                        MeroClient.INSECURE_NODE_URL,
+                        color = theme.error,
+                        fontSize = 13.sp,
+                        modifier = Modifier.fillMaxWidth().testTag("nodeInsecureWarning"),
+                    )
+            }
         }
         PrimaryButton(
             text = branding.nodeButton,

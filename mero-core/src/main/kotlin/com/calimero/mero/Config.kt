@@ -1,5 +1,6 @@
 package com.calimero.mero
 
+import com.calimero.mero.http.OkHttpTransport
 import com.calimero.mero.request.ProofSigner
 import com.calimero.mero.storage.TokenStore
 import kotlinx.serialization.SerialName
@@ -52,6 +53,11 @@ data class MeroConfig(
      * Null: a fresh client.
      */
     val httpClient: OkHttpClient? = null,
+    /**
+     * The largest response body the node may send, in bytes; a larger one fails with
+     * [com.calimero.mero.http.NetworkException]. Blob downloads are not limited.
+     */
+    val maxResponseBytes: Long = OkHttpTransport.DEFAULT_MAX_RESPONSE_BYTES,
 )
 
 /**

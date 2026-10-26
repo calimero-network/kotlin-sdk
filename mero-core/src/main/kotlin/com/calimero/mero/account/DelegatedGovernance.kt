@@ -87,7 +87,7 @@ val HA_REFUSAL_MESSAGES: Map<String, String> =
             "the relay this namespace was founded on has not reported its address to the cloud yet; try enabling hosting again shortly",
     )
 
-private const val GOVERNANCE_NONCE_PREFIX = "calimero.governance-nonce."
+internal const val GOVERNANCE_NONCE_PREFIX = "calimero.governance-nonce."
 private val governanceNonceLock = Mutex()
 
 /**
@@ -394,7 +394,7 @@ suspend fun latestPublishedVersion(
     httpClient: OkHttpClient = PlainJsonHttp.defaultClient(),
 ): String {
     val url = "${registryUrl.trimBase()}/api/v2/bundles?package=${URLEncoder.encode(packageName, "UTF-8")}"
-    val res = PlainJsonHttp(httpClient).execute("GET", url)
+    val res = PlainJsonHttp(httpClient, role = "registry").execute("GET", url)
     if (!res.isSuccessful) throw MeroStateException("the registry has no $packageName (HTTP ${res.status})")
     val bundles = ApplicationIds.parseBundles(res.body)
     return ApplicationIds.selectLatestBundle(bundles)?.appVersion ?: throw MeroStateException("the registry lists no version of $packageName")

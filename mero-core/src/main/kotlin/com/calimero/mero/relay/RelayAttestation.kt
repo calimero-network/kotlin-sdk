@@ -197,7 +197,8 @@ const val MIN_RELAY_RELEASE: String = "2.3.99"
  *   trusted only for its Sigstore signature;
  * - its report data must be our nonce and the binding of the key the relay named.
  *
- * A mock quote is accepted only from a loopback relay (a dev rig), or with [allowMock]. When a
+ * A mock quote (a dev rig's) is refused unless [allowMock], from a loopback relay too: another app
+ * on the device can listen on `127.0.0.1`. When a
  * step that only moves bytes fails, [verify] throws [RelayKeyTransportException] (try again);
  * any other failure is the verification saying no ([RelayKeyRefusedException] or
  * [com.calimero.mero.tee.TeeTrustException]), which retrying cannot change.
@@ -210,7 +211,7 @@ class DcapRelayKeyVerifier(
     val minReleaseVersion: String = MIN_RELAY_RELEASE,
     val profile: String = PRODUCTION_PROFILE,
     val releaseMirror: String = DEFAULT_RELEASE_MIRROR,
-    /** Accept mock quotes from any relay. DEV/TEST ONLY; a loopback relay's are always accepted. */
+    /** Accept mock quotes, from any relay. DEV/TEST ONLY: a mock quote carries no signature. */
     val allowMock: Boolean = false,
     private val dcapVerify: DcapVerify = Dcap,
     /** Carries `/tee/info` and the release fetch. */
@@ -255,16 +256,14 @@ class DcapRelayKeyVerifier(
         relayUrl: String,
         nonce: ByteArray,
         attestation: RelayAttestation,
-    ): String {
-        val local = isLoopbackRelay(relayUrl)
-        return checkAttestation(
+    ): String =
+        checkAttestation(
             nonce = nonce,
             attestation = attestation,
-            allowMock = allowMock || local,
+            allowMock = allowMock,
             verify = quoteVerifier(relayUrl),
             verifyQuote = null,
         ).nodeKey
-    }
 
     private suspend fun <T> transport(
         step: String,

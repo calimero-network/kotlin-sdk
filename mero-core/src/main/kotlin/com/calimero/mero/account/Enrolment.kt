@@ -2,6 +2,7 @@ package com.calimero.mero.account
 
 import com.calimero.mero.crypto.Hex
 import com.calimero.mero.crypto.randomBytes
+import com.calimero.mero.http.TransportSecurity
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import java.net.URLDecoder
 
@@ -51,6 +52,7 @@ object Enrolment {
         require(Hex.isHex32(signPublicKey)) { "signPublicKey must be 64 lowercase hex characters" }
         require(Hex.isHex32(kemPublicKey)) { "kemPublicKey must be 64 lowercase hex characters" }
         assertCallback(callbackUrl)
+        TransportSecurity.checkServiceUrl(walletUrl, "wallet")
         val builder =
             walletUrl
                 .toHttpUrl()
@@ -90,7 +92,8 @@ object Enrolment {
 
     /**
      * Verify what came back, refusing loudly rather than returning a half-checked
-     * credential. Checks, in order: the `state` (when [expectState] is given), the
+     * credential. Checks, in order: the `state` — [expectState] is the one this app sent, and
+     * with none there is nothing to answer, so the callback is refused — the
      * certificate itself ([DeviceCert.verify]), that it certifies **this** device's
      * signing and delivery keys, and that the account and device the wallet reported are
      * the ones the certificate names.
@@ -102,9 +105,11 @@ object Enrolment {
         callback: EnrolmentCallback,
         signPublicKey: String,
         kemPublicKey: String? = null,
-        expectState: String? = null,
+        expectState: String?,
     ): EnrolledDevice {
-        if (expectState != null && expectState != callback.state) {
+        // Unsolicited answers are refused: a credential the app never asked for would sign it
+        // in to whoever minted it (login CSRF).
+        if (expectState.isNullOrEmpty() || expectState != callback.state) {
             throw EnrolmentException("this enrolment answers a request this app did not make — the state it carries is not the one sent")
         }
         val certificate =
@@ -180,7 +185,7 @@ data class EnrolledDevice(
 )
 
 /** The wallet declined or refused, or what came back did not verify. */
-class EnrolmentException(
+open class EnrolmentException(
     message: String,
     /** The wallet's `error` value, when it sent one. */
     val reason: String? = null,
@@ -188,6 +193,19 @@ class EnrolmentException(
     val cancelled: Boolean = false,
     cause: Throwable? = null,
 ) : Exception(message, cause)
+
+/**
+ * A verified enrolment names [incomingAccount], but this device is signed in to
+ * [currentAccount]. Nothing was stored: sign out first, or confirm the switch
+ * ([CloudAccount.completeEnrolment] with `allowAccountSwitch = true`).
+ */
+class AccountSwitchException(
+    val currentAccount: String,
+    val incomingAccount: String,
+) : EnrolmentException(
+        "This sign-in is for account $incomingAccount, but this device is signed in to $currentAccount. " +
+            "Sign out first to switch accounts.",
+    )
 
 /** mero-js-named alias for [Enrolment.deviceEnrolmentUrl]. */
 fun deviceEnrolmentUrl(

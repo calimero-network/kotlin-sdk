@@ -152,6 +152,7 @@ class Mero(
             json = json,
             // Terminal auth (revoked family) → drop the bundle so the app forces a re-login.
             onAuthRevoked = { store.clear() },
+            maxResponseBytes = config.maxResponseBytes,
         )
 
     /** Typed `/auth/…` + key-management client. */
@@ -340,9 +341,10 @@ class Mero(
             url: String,
             allowUnsolicited: Boolean = false,
             pending: PendingAuthStates = PendingAuthStates.shared,
+            allowCustomScheme: Boolean = false,
         ): AuthCallbackResult? =
             com.calimero.mero.auth
-                .parseAuthCallback(url, allowUnsolicited, pending)
+                .parseAuthCallback(url, allowUnsolicited, pending, allowCustomScheme)
 
         /** Build the node's SSO login URL, recording the login in [pending]. */
         @JvmStatic

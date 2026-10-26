@@ -139,14 +139,16 @@ A step that only moves bytes can fail: reading `/tee/info` or fetching the relea
 is a `RelayKeyTransportException`, so the attempt is `Unavailable` and worth repeating. Any other
 failure is the verification saying no.
 
-A **mock** quote (`MOCK_TDX_QUOTE_V1`) is accepted only from a loopback relay (a dev rig: localhost,
-127.0.0.1, ::1 or the emulator's 10.0.2.2), or with `DcapRelayKeyVerifier(allowMock = true)`.
+A **mock** quote (`MOCK_TDX_QUOTE_V1`) is refused unless `DcapRelayKeyVerifier(allowMock = true)`,
+from a loopback relay too: another app on the device can listen on 127.0.0.1. Set it for a dev rig
+only.
 `attestRelayNodeKey(relayUrl, verify = …)` runs the same checks without a `CloudAccount`.
 
 <Aside>
 `PinnedRelayKeyVerifier(nodeKey)` answers with a key known out of band, and
-`TlsRelayKeyVerifier` (the default before this release) checks only the binding over TLS. Pass
-either as `CloudAccount(relayKeyVerifier = …)`.
+`TlsRelayKeyVerifier` (the default before this release) checks only the binding over TLS. Both are
+for dev rigs and tests (`@OptIn(DevOnlyMeroApi::class)`). Pass either as
+`CloudAccount(relayKeyVerifier = …)`.
 </Aside>
 
 Once the relay's key is trusted, the requests themselves can be sealed to the TD:

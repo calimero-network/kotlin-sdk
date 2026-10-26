@@ -157,6 +157,27 @@ typealias RequestToAuthorize = ProofRequest
  */
 typealias ProofSigner = suspend (ProofRequest) -> String?
 
+/**
+ * The longest window a request signature may carry, seconds: core's `MAX_REQUEST_LIFETIME_SECS`
+ * (`crates/account/src/caller.rs`). A node refuses a longer one before checking any signature,
+ * so asking for it is refused here, before a proof that could only fail is ever minted.
+ *
+ * The window is also the whole of what bounds replay: a two-link proof names no node, so within
+ * it the identical request is valid at any node that serves the account. Keep it short.
+ */
+const val MAX_REQUEST_PROOF_TTL_SECONDS = 300L
+
+/** [seconds], when it is a window a node accepts (1 through [MAX_REQUEST_PROOF_TTL_SECONDS]). */
+internal fun checkedRequestProofTtl(
+    seconds: Long,
+    label: String,
+): Long {
+    require(seconds in 1..MAX_REQUEST_PROOF_TTL_SECONDS) {
+        "$label must be between 1 and $MAX_REQUEST_PROOF_TTL_SECONDS seconds, got $seconds"
+    }
+    return seconds
+}
+
 /** The keys a [createProofSigner] mints each request's proof with — mero-js `ProofSignerOptions`. */
 class ProofSignerOptions(
     /** `DeviceCert.sign(...)`, hex. */
@@ -165,7 +186,10 @@ class ProofSignerOptions(
     val signerSecret: String,
     /** A `LoginStatement`, hex — the three-link chain. `null` for the two-link chain. */
     val session: String? = null,
-    /** How long each signature stays valid, seconds (default 120). It bounds replay. */
+    /**
+     * How long each signature stays valid, seconds (default 120). It bounds replay. At most
+     * [MAX_REQUEST_PROOF_TTL_SECONDS]; [createProofSigner] refuses more.
+     */
     val ttlSeconds: Long = DEFAULT_TTL_SECONDS,
     /** Unix seconds. Injectable so a test does not depend on the wall clock. */
     val now: () -> Long = { System.currentTimeMillis() / 1000 },
@@ -184,6 +208,7 @@ class ProofSignerOptions(
  * of the call.
  */
 fun createProofSigner(options: ProofSignerOptions): ProofSigner {
+    val ttl = checkedRequestProofTtl(options.ttlSeconds, "ttlSeconds")
     val signer = resolveSigner(options.signerSecret, null, "signerSecret")
     return { request ->
         val issuedAt = options.now()
@@ -198,7 +223,7 @@ fun createProofSigner(options: ProofSignerOptions): ProofSigner {
                             path = request.path,
                             body = request.body ?: ByteArray(0),
                             issuedAt = issuedAt,
-                            expiresAt = issuedAt + options.ttlSeconds,
+                            expiresAt = issuedAt + ttl,
                             signer = signer,
                         ),
                     ),

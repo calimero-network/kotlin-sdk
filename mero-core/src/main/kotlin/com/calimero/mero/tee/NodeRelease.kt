@@ -1,6 +1,7 @@
 package com.calimero.mero.tee
 
 import com.calimero.mero.http.PlainJsonHttp
+import com.calimero.mero.http.TransportSecurity
 import com.calimero.mero.http.trimBase
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonElement
@@ -136,7 +137,7 @@ suspend fun fetchNodeRelease(
     url: String,
     httpClient: OkHttpClient = PlainJsonHttp.defaultClient(),
 ): SignedNodeRelease {
-    val response = PlainJsonHttp(httpClient).execute("GET", url)
+    val response = PlainJsonHttp(httpClient, role = null).execute("GET", url)
     if (!response.isSuccessful) refuse("Fetching the node release from $url failed: HTTP ${response.status}")
     val data =
         try {
@@ -191,7 +192,7 @@ internal suspend fun readNodeReleaseVersion(
     httpClient: OkHttpClient,
 ): String? {
     val url = infoUrl(baseUrl)
-    val response = PlainJsonHttp(httpClient).execute("GET", url)
+    val response = PlainJsonHttp(httpClient, role = null).execute("GET", url)
     val body = runCatching { releaseJson.parseToJsonElement(response.body) as? JsonObject }.getOrNull()
     if (response.status == 403 && (body?.get("error") as? JsonObject).string("code") == "sealed_required") return null
     if (!response.isSuccessful) refuse("Fetching $url failed: HTTP ${response.status}")
@@ -200,11 +201,17 @@ internal suspend fun readNodeReleaseVersion(
     return nodeReleaseVersionFromImage(osImage)
 }
 
-/** Where the cloud at [cloudUrl] (e.g. `https://cloud.calimero.network`) mirrors node release [version]. */
+/**
+ * Where the cloud at [cloudUrl] (e.g. `https://cloud.calimero.network`) mirrors node release
+ * [version]. Plain http is refused for anything but loopback ([TransportSecurity]).
+ */
 fun cloudNodeReleaseUrl(
     cloudUrl: String,
     version: String,
-): String = "${cloudUrl.trimBase()}/api/tee/node-releases/${releaseVersion(version, "version")}"
+): String {
+    TransportSecurity.checkServiceUrl(cloudUrl.trimBase(), "release mirror")
+    return "${cloudUrl.trimBase()}/api/tee/node-releases/${releaseVersion(version, "version")}"
+}
 
 /**
  * The allowlists that trust one [profile] of a signed node [release], from an untrusted

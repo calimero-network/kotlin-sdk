@@ -20,6 +20,88 @@ approval for the app's publisher (bundle signer).
 - mero-compose: `MeroReads.outboundApprovals` / `rememberOutboundApprovals`, and the
   `SetOutboundApproval` mutation / `rememberSetOutboundApproval`. The sample app's SDK Explorer lists both calls.
 
+### Request proofs refuse a window a node would refuse (mero-core)
+
+- A request-proof window is capped at `MAX_REQUEST_PROOF_TTL_SECONDS` (300), core's
+  `MAX_REQUEST_LIFETIME_SECS`. `createProofSigner` (`ttlSeconds`), `signRequestProof` and
+  `createProofAuthorizer` (`validForSeconds`) throw `IllegalArgumentException` for anything
+  outside 1..300, instead of minting a proof every node refuses. The window is what bounds replay:
+  a two-link proof names no node (SEC-14).
+
+### CI supply chain
+
+- Every workflow action is pinned by commit SHA (release in a trailing comment), and Dependabot
+  keeps the pins current (SEC-13).
+- The Gradle wrapper checks its distribution against `distributionSha256Sum`, and every
+  dependency and plugin is checked against `gradle/verification-metadata.xml`. TESTING.md says
+  how to regenerate it after a version bump.
+- `ci.yml` runs with a read-only token.
+- The release is three jobs: GitHub Packages (`packages: write`), Maven Central (the signing key
+  and Central token only, no third-party action, `maven-central` environment) and the GitHub
+  Release (`contents: write`). Behaviour is unchanged, including skipping Central without its
+  secrets.
+
+### Fixed — ids are one path segment, SEC-02 (mero-core)
+
+- **Every id `AdminApi` puts in a path is percent-encoded** (`contextId`, `namespaceId`, `groupId`,
+  `applicationId`, `blobId`, identities, device ids, alias and package names). A `/`, `?` or `#` in
+  one can no longer reach another route: `joinNamespace("abc/leave?x=")` posts to
+  `/admin-api/namespaces/abc%2Fleave%3Fx%3D/join`, which the node refuses. An empty, `.` or `..` id
+  throws `IllegalArgumentException` before anything is sent (OkHttp would resolve a dot segment
+  away). Real ids (hex or base58) are sent unchanged.
+- **`redeemInvitation` refuses an invite whose `namespaceId` is not 64 lowercase hex** with
+  `Failed(namespaceId = null, reason = INVALID, retryable = false)`, and sends nothing. The id comes
+  from the invite, so a crafted one could otherwise retarget the user's authenticated join.
+
+### Enrolment callbacks need a pending state (SEC-01, mero-core)
+
+- **An enrolment callback is refused unless it answers the enrolment this app began.**
+  `Enrolment.completeDeviceEnrolment` throws `EnrolmentException` when `expectState` is null (the
+  parameter no longer defaults), so a credential someone else minted for this device's (public)
+  keys and sent as a link can no longer sign the app in to their account (login CSRF).
+- `CloudAccount`'s pending state is single-use and expires after 10 minutes
+  (`CloudAccount.ENROLMENT_STATE_LIFETIME_MS`).
+- `CloudAccount.completeEnrolment` throws the new `AccountSwitchException` (`currentAccount`,
+  `incomingAccount`) rather than replacing a session for another account; pass
+  `allowAccountSwitch = true` once the person confirms. `EnrolmentException` is now `open`.
+
+### Sign-out forgets the account; encrypted stores survive a restore (mero-core, mero-compose)
+
+- **`CloudAccount.signOut` forgets the account's relay map, subgroup namespaces and its relays'
+  pinned keys** (`forgetAccount`); `signOut(forgetDevice = true)` also drops the device keys and
+  every warrant, join and governance nonce spent under them (new `SecureStore.removeAll(prefix)`,
+  a no-op by default for stores that cannot list their keys). `MeroClient.logout(forgetDevice)`
+  passes it through, and a sign-out clears the invitation attempt ledger
+  (`InvitationCapture.clearAttempts()`).
+- **An `EncryptedSharedPreferences` file whose keyset no longer decrypts is reset instead of
+  crashing the app** (`EncryptedPrefsTokenStore`, `EncryptedPrefsSecureStore`). This happens after
+  a backup restore or device transfer, because the Keystore master key never travels; the person
+  signs in again. The README shows the `dataExtractionRules` that keep the `mero_*` files out of
+  backups.
+- Bouncy Castle (`bcprov-jdk18on`, used for the on-device DCAP X.509/CRL checks) is 1.86, up from
+  1.78.1.
+
+### Transport and trust hardening: SEC-03, SEC-06, SEC-15 (mero-core, mero-compose)
+
+- **Plain http only to local hosts (SEC-06).** A node is reached over `http://` / `ws://` only when
+  its host is loopback, link-local, a private LAN address (RFC 1918, `fc00::/7`) or a `.local`
+  name; anything else throws `InsecureTransportException` before a password, token or proof is
+  attached. The Cloud manager, relays, the registry, the wallet and the release mirror must be
+  `https` (loopback and the emulator's `10.0.2.2` excepted). A client sealed with
+  `SealedTransport` is end-to-end encrypted and not checked. `TransportSecurity.allowInsecureHttp
+  = true` lifts the rules for a development rig. `MeroClient.login` and `connectToNode` refuse such
+  a node with `MeroClient.INSECURE_NODE_URL`, and `NodeLoginState.isInsecure` lets the login sheet
+  warn while one is typed.
+- **SSO callbacks must be https unless you opt in (SEC-03).** `parseAuthCallback` refuses a
+  callback on a custom scheme or plain http unless `allowCustomScheme = true`: any app can declare
+  the scheme and receive the tokens. `MeroClient` follows `MeroAppConfig.allowCustomSchemeCallbacks`
+  (false by default; `connectToNode` says `CUSTOM_SCHEME_CALLBACK` up front). `SsoLauncher` and
+  `WalletLauncher` pin the Custom Tab to the browser (`Intent.setPackage`).
+- **Mock quotes are refused from loopback relays too (SEC-15).** `DcapRelayKeyVerifier` and
+  `TlsRelayKeyVerifier` accept a mock quote only with `allowMock = true`: another app on the device
+  can listen on `127.0.0.1`. `TlsRelayKeyVerifier` and `PinnedRelayKeyVerifier` need
+  `@OptIn(DevOnlyMeroApi::class)`.
+
 ### Core 0.11.0: namespace ops signed at schema 27 (mero-core)
 
 - `NamespaceOp.SCHEMA_VERSION` is 27, core 0.11.0's `SIGNED_NAMESPACE_OP_SCHEMA_VERSION`

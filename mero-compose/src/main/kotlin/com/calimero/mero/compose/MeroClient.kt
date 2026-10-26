@@ -32,8 +32,10 @@ import com.calimero.mero.auth.PendingAuthStates
 import com.calimero.mero.auth.buildAuthLoginUrl
 import com.calimero.mero.auth.parseAuthCallback
 import com.calimero.mero.cloud.CloudClient
+import com.calimero.mero.compose.invitations.InvitationCapture
 import com.calimero.mero.http.ClassifiedError
 import com.calimero.mero.http.ErrorKind
+import com.calimero.mero.http.TransportSecurity
 import com.calimero.mero.http.classifyError
 import com.calimero.mero.presence.RelayPresenceClient
 import com.calimero.mero.relay.ApplicationTarget
@@ -384,8 +386,10 @@ class MeroClient(
 
     /**
      * Connect to a node: open its login page so the person signs in there (mero-react
-     * `connectToNode`). The page redirects to [callbackUrl] — an app scheme or App Link this app
-     * receives — which the app hands to [handleDeepLink].
+     * `connectToNode`). The page redirects to [callbackUrl] — a verified `https` App Link this app
+     * receives (an app scheme only with [MeroAppConfig.allowCustomSchemeCallbacks]) — which the
+     * app hands to [handleDeepLink]. A node over plain http that is not local is refused
+     * ([INSECURE_NODE_URL]).
      */
     fun connectToNode(
         context: Context,
@@ -394,6 +398,15 @@ class MeroClient(
     ) {
         if (nodeUrl.trim().toHttpUrlOrNull() == null) {
             _state.update { it.copy(error = INVALID_NODE_URL, errorReason = MeroErrorReason.INVALID_INPUT, errorStatus = null) }
+            return
+        }
+        if (!mayCarryCredentials(nodeUrl.trim())) {
+            _state.update { it.copy(error = INSECURE_NODE_URL, errorReason = MeroErrorReason.INVALID_INPUT, errorStatus = null) }
+            return
+        }
+        if (!config.allowCustomSchemeCallbacks && !callbackUrl.trim().startsWith("https://", ignoreCase = true)) {
+            // The redirect would be refused anyway ([handleAuthCallback]); say why before the login page opens.
+            _state.update { it.copy(error = CUSTOM_SCHEME_CALLBACK, errorReason = MeroErrorReason.INVALID_INPUT, errorStatus = null) }
             return
         }
         _state.update { it.copy(isLoading = true, error = null, errorReason = null, errorStatus = null, cancelled = false) }
@@ -411,10 +424,11 @@ class MeroClient(
      * The callback's `node_url` is checked first ([resolveTrustedNodeUrl]): an untrusted one
      * stores nothing and restores any existing session instead, so a tampered link cannot log a
      * person out. A trusted callback's tokens are written only when [resolveTokenAdoption] says
-     * so, and the session is then validated with `/auth/validate`.
+     * so, and the session is then validated with `/auth/validate`. The callback must be an `https`
+     * App Link unless [MeroAppConfig.allowCustomSchemeCallbacks]: any app can claim a custom scheme.
      */
     suspend fun handleAuthCallback(url: String): Boolean {
-        val callback = parseAuthCallback(url, pending = pendingAuth) ?: return false
+        val callback = parseAuthCallback(url, pending = pendingAuth, allowCustomScheme = config.allowCustomSchemeCallbacks) ?: return false
         if (account.isSignedIn) {
             _state.update { it.copy(error = "Signed in with a cloud account: sign out before connecting to a node.") }
             return true
@@ -506,6 +520,7 @@ class MeroClient(
             when {
                 base.toHttpUrlOrNull() == null -> INVALID_NODE_URL
                 username.isEmpty() || password.isEmpty() -> "Username and password are required."
+                !mayCarryCredentials(base) -> INSECURE_NODE_URL
                 else -> null
             }
         if (invalid != null) {
@@ -564,8 +579,13 @@ class MeroClient(
 
     /**
      * Sign out: retire the relay session on the relay (best-effort `POST /auth/logout`) or the
-     * node's tokens, drop every token, the persisted account session and everything in
-     * [storage] — mero-react `logout`, which clears it all.
+     * node's tokens, drop every token, the persisted account session with its relay map and
+     * pinned relay keys ([CloudAccount.signOut]), everything in [storage] and the invitation
+     * attempt ledger — mero-react `logout`, which clears it all.
+     *
+     * The device key stays, so signing back in is one approval, unless [forgetDevice] — pass it
+     * on a shared or handed-over device, so the next account is not handed a key already
+     * certified to this one.
      */
     suspend fun signOut(forgetDevice: Boolean = false) {
         monitor?.cancel()
@@ -581,12 +601,13 @@ class MeroClient(
         account.signOut(forgetDevice)
         adoptedSession = null
         storage.clearAll()
+        InvitationCapture.shared.clearAttempts()
         _session.value = MeroSession()
         _state.value = MeroAuthState()
     }
 
     /** Alias of [signOut], for parity with mero-react's `logout`. */
-    suspend fun logout() = signOut()
+    suspend fun logout(forgetDevice: Boolean = false) = signOut(forgetDevice)
 
     // ---- Wiring ---------------------------------------------------------------------------
 
@@ -824,6 +845,20 @@ class MeroClient(
          * (231, [Capabilities.Presets.COLLABORATOR]).
          */
         const val DEFAULT_SPACE_CAPABILITIES: Long = Capabilities.Presets.COLLABORATOR
+
+        /**
+         * What [MeroAuthState.error] says for a node URL that is plain http to a host that is not
+         * local ([TransportSecurity]). (Swift `MeroClient.insecureNodeURLMessage`.)
+         */
+        const val INSECURE_NODE_URL =
+            "This node is not on https or a local network, so its password and tokens would cross the network in the clear. Use an https URL."
+
+        /** What [MeroAuthState.error] says when a node login's callback is a custom scheme the config does not allow. */
+        const val CUSTOM_SCHEME_CALLBACK =
+            "This app's login callback is not an https App Link, so another app could receive the tokens. Use an App Link."
+
+        /** https, a local address, or [TransportSecurity.allowInsecureHttp]. */
+        internal fun mayCarryCredentials(url: String): Boolean = TransportSecurity.allowInsecureHttp || TransportSecurity.isSecureOrLocal(url)
 
         /** What [MeroAuthState.error] says for a node URL that does not parse. */
         const val INVALID_NODE_URL = "Enter a valid node URL (e.g. http://10.0.2.2:2428)."

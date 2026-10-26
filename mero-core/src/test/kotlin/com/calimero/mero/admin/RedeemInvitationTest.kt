@@ -113,6 +113,20 @@ class RedeemInvitationTest {
             assertEquals("node-unreachable", outcome.reason.wire)
         }
 
+    // SEC-02: the id comes from the invite, so a crafted one must not reach a path.
+    @Test
+    fun `refuses an invite whose namespace id is not one`() =
+        runBlocking {
+            for (bad in listOf("abc/leave?x=", "../contexts/x", "$ns/leave?x=", "AB".repeat(32), "")) {
+                val redeemer = Redeemer()
+                val outcome = redeemInvitation(bad, invitation, redeemer, teamName = "Team")
+                assertEquals(bad, RedeemOutcome.Failed::class, outcome::class)
+                outcome as RedeemOutcome.Failed
+                assertEquals(bad, null to (InviteFailureReason.INVALID to false), outcome.namespaceId to (outcome.reason to outcome.retryable))
+                assertEquals(bad, 0, redeemer.joins)
+            }
+        }
+
     @Test
     fun `AdminApi redeemInvitation joins and settles by the namespace listing`() =
         runBlocking {

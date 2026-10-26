@@ -212,7 +212,7 @@ fun createAttestedSealedFetch(
     httpClient: OkHttpClient = PlainJsonHttp.defaultClient(),
 ): SealedTransport {
     val attestUrl = "${baseUrl.trimBase()}/admin-api/tee/attest"
-    val http = PlainJsonHttp(httpClient)
+    val http = PlainJsonHttp(httpClient, role = null)
     return SealedTransport(baseUrl, httpClient) {
         fetchAttestedTransportKey(verify, applicationId, applicationHash) { request ->
             val body =

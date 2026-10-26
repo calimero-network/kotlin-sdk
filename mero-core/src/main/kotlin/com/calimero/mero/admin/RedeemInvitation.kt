@@ -1,5 +1,6 @@
 package com.calimero.mero.admin
 
+import com.calimero.mero.crypto.Hex
 import com.calimero.mero.http.ErrorKind
 import com.calimero.mero.http.classifyError
 import com.calimero.mero.http.messageOf
@@ -114,6 +115,11 @@ suspend fun redeemInvitation(
     redeemer: InviteRedeemer,
     teamName: String? = null,
 ): RedeemOutcome {
+    // The id comes from the invite, so it is untrusted: refuse anything but a namespace id
+    // (64 lowercase hex, as core spells it) before it is put in a path. (SEC-02)
+    if (!Hex.isHex32(namespaceId)) {
+        return RedeemOutcome.Failed(null, "This invitation does not name a valid namespace.", InviteFailureReason.INVALID, false)
+    }
     var joinError: Throwable? = null
     try {
         redeemer.join(namespaceId, invitation)

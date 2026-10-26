@@ -2,6 +2,7 @@ package com.calimero.mero.account
 
 import com.calimero.mero.admin.SignedGroupOpenInvitation
 import com.calimero.mero.crypto.SeedSigner
+import com.calimero.mero.relay.DcapRelayKeyVerifier
 import com.calimero.mero.testkit.FakeNode
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.JsonObject
@@ -24,7 +25,7 @@ internal class DelegatedRig(
     val server: MockWebServer = node.start()
     val base: String = server.url("/").toString().trimEnd('/')
     val store = MemorySecureStore()
-    val account = CloudAccount(store, cloudBaseUrl = base, walletUrl = "https://wallet.example/account-enroll")
+    val account = CloudAccount(store, relayKeyVerifier = DcapRelayKeyVerifier(allowMock = true), cloudBaseUrl = base, walletUrl = "https://wallet.example/account-enroll")
     private val others = mutableListOf<MockWebServer>()
     val session: DelegatedSession
 

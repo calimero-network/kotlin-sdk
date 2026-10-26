@@ -3,13 +3,15 @@ package com.calimero.mero.sample.app
 import android.content.Context
 import android.util.Log
 import androidx.compose.runtime.mutableStateListOf
+import com.calimero.mero.sample.BuildConfig
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
 /**
  * The Diagnostics log: what the session did (sign-in, node login, chat steps), newest last.
- * Shown by the Diagnostics screen, copyable, and mirrored to logcat under `MeroSample`.
+ * Shown by the Diagnostics screen, copyable, and mirrored to logcat under `MeroSample` in debug
+ * builds only (it names spaces, contexts and accounts).
  */
 object SampleLog {
     enum class Level(
@@ -40,7 +42,7 @@ object SampleLog {
         val line = Line(next++, System.currentTimeMillis(), level, text)
         lines.add(line)
         if (lines.size > MAX_LINES) lines.removeRange(0, lines.size - MAX_LINES)
-        runCatching { Log.i("MeroSample", "${level.tag} $text") }
+        if (BuildConfig.DEBUG) runCatching { Log.i("MeroSample", "${level.tag} $text") }
     }
 
     fun clear() = lines.clear()

@@ -3,11 +3,15 @@
 
     <uses-permission android:name="android.permission.INTERNET" />
 
+    <!--
+      No backup: the app's preferences hold the node URL, context ids and captured invitations.
+      No cleartext: release builds speak https only. The debug manifest (src/debug) allows http
+      to the loopback dev node and the emulator's host alias, nothing else.
+    -->
     <application
-        android:allowBackup="true"
+        android:allowBackup="false"
         android:label="Mero Sample"
         android:supportsRtl="true"
-        android:usesCleartextTraffic="true"
         android:theme="@style/Theme.MeroSample">
 
         <activity

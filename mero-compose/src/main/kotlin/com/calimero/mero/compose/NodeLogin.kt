@@ -5,6 +5,7 @@ import com.calimero.mero.discovery.DEFAULT_LOCAL_NODE_PORTS
 import com.calimero.mero.discovery.LOCALHOST
 import com.calimero.mero.discovery.discoverLocalNodes
 import com.calimero.mero.discovery.nodeEndpoint
+import com.calimero.mero.http.TransportSecurity
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -168,8 +169,27 @@ class NodeLoginState(
         _customUrl.value = value
     }
 
-    /** The node to log in to, or null (with [error] set when a typed URL did not answer). */
+    /**
+     * Whether the chosen node would be reached over plain http across the network: not https, and
+     * not a local address ([TransportSecurity]). A password or token would then travel in the
+     * clear, so [connect] refuses it; show a warning while it is true. (Swift
+     * `NodeLoginModel.isInsecure`.)
+     */
+    val isInsecure: Boolean
+        get() {
+            if (TransportSecurity.allowInsecureHttp) return false
+            _selected.value?.let { return !TransportSecurity.isSecureOrLocal(it) }
+            val typed = _customUrl.value
+            if (!isValidNodeUrl(typed)) return false
+            return !TransportSecurity.isSecureOrLocal(normalizeNodeUrl(typed))
+        }
+
+    /** The node to log in to, or null (with [error] set when a typed URL did not answer, or [isInsecure]). */
     suspend fun connect(): String? {
+        if (isInsecure) {
+            _error.value = MeroClient.INSECURE_NODE_URL
+            return null
+        }
         val chosen = _selected.value
         if (chosen != null) return chosen.trimEnd('/')
         val typed = _customUrl.value

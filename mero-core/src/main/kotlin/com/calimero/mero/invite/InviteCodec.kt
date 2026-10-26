@@ -32,6 +32,20 @@ import java.util.zip.Inflater
  * testable without a device.
  */
 object InviteCodec {
+    /**
+     * The longest token [decode] looks at, in UTF-8 bytes. A real invitation is ~540
+     * characters and the largest legacy form (base64url of the JSON) under 4 KB; base58
+     * decoding is quadratic in the token length, so a pasted megabyte must be refused before
+     * it is decoded.
+     */
+    const val MAX_TOKEN_LENGTH = 8 * 1024
+
+    /**
+     * The most bytes [decode] inflates a token into. A real invitation's JSON is ~2 KB;
+     * DEFLATE expands up to ~1000x, so an 8 KB token could otherwise ask for megabytes.
+     */
+    const val MAX_INFLATED_BYTES = 64 * 1024
+
     private const val ALPHABET = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz"
     private val INDEX: Map<Char, Int> = ALPHABET.withIndex().associate { (i, c) -> c to i }
 
@@ -105,12 +119,19 @@ object InviteCodec {
         }
     }
 
-    /** Raw INFLATE. Returns null when [data] is not a valid raw DEFLATE stream. */
-    internal fun inflate(data: ByteArray): ByteArray? {
+    /**
+     * Raw INFLATE. Returns null when [data] is not a valid raw DEFLATE stream, or when it
+     * expands past [limit] bytes — checked chunk by chunk, so a hostile token never gets
+     * more than [limit] bytes allocated for it.
+     */
+    internal fun inflate(
+        data: ByteArray,
+        limit: Int = MAX_INFLATED_BYTES,
+    ): ByteArray? {
         val inflater = Inflater(true)
         try {
             inflater.setInput(data)
-            val out = ByteArrayOutputStream(data.size * 4)
+            val out = ByteArrayOutputStream(minOf(data.size * 4, limit))
             val buffer = ByteArray(4096)
             while (!inflater.finished()) {
                 val n =
@@ -123,6 +144,7 @@ object InviteCodec {
                 // stream is truncated rather than finished; bail instead of
                 // spinning forever.
                 if (n == 0 && (inflater.needsInput() || inflater.needsDictionary())) return null
+                if (out.size() + n > limit) return null
                 out.write(buffer, 0, n)
             }
             return out.toByteArray()
@@ -148,11 +170,13 @@ object InviteCodec {
      * without that, a short base58 string decodes to arbitrary bytes and the
      * caller gets mojibake instead of a clear failure.
      *
-     * Returns null when nothing decodes, so a malformed invitation fails loudly.
+     * Returns null when nothing decodes, so a malformed invitation fails loudly. A token
+     * longer than [MAX_TOKEN_LENGTH], or one that inflates past [MAX_INFLATED_BYTES], is
+     * refused the same way.
      */
     fun decode(token: String): String? {
         val trimmed = token.trim()
-        if (trimmed.isEmpty()) return null
+        if (trimmed.isEmpty() || utf8Length(trimmed) > MAX_TOKEN_LENGTH) return null
         return firstDecodable(trimmed)
     }
 
@@ -207,4 +231,29 @@ object InviteCodec {
         }
         return out.toByteArray()
     }
+}
+
+/**
+ * UTF-8 byte length, without encoding a possibly huge string just to measure it. Stops counting
+ * once past [InviteCodec.MAX_TOKEN_LENGTH].
+ */
+private fun utf8Length(s: String): Int {
+    var bytes = 0
+    var i = 0
+    while (i < s.length) {
+        val c = s[i]
+        bytes +=
+            when {
+                c.code < 0x80 -> 1
+                c.code < 0x800 -> 2
+                Character.isHighSurrogate(c) && i + 1 < s.length && Character.isLowSurrogate(s[i + 1]) -> {
+                    i++
+                    4
+                }
+                else -> 3
+            }
+        if (bytes > InviteCodec.MAX_TOKEN_LENGTH) return bytes
+        i++
+    }
+    return bytes
 }

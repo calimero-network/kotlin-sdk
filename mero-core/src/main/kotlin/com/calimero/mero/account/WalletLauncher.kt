@@ -4,6 +4,7 @@ import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import androidx.browser.customtabs.CustomTabsIntent
+import com.calimero.mero.auth.SsoLauncher
 
 /**
  * Opens the Calimero wallet's enrolment page in a Chrome Custom Tab: the system browser,
@@ -26,6 +27,8 @@ object WalletLauncher {
                 .setShareState(CustomTabsIntent.SHARE_STATE_OFF)
                 .build()
         if (context !is android.app.Activity) intent.intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        // The browser itself, not whichever app also handles https links.
+        SsoLauncher.browserPackage(context)?.let { intent.intent.setPackage(it) }
         intent.launchUrl(context, Uri.parse(walletUrl))
     }
 }
