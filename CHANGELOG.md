@@ -23,6 +23,18 @@
   Release (`contents: write`). Behaviour is unchanged, including skipping Central without its
   secrets.
 
+### Fixed — ids are one path segment, SEC-02 (mero-core)
+
+- **Every id `AdminApi` puts in a path is percent-encoded** (`contextId`, `namespaceId`, `groupId`,
+  `applicationId`, `blobId`, identities, device ids, alias and package names). A `/`, `?` or `#` in
+  one can no longer reach another route: `joinNamespace("abc/leave?x=")` posts to
+  `/admin-api/namespaces/abc%2Fleave%3Fx%3D/join`, which the node refuses. An empty, `.` or `..` id
+  throws `IllegalArgumentException` before anything is sent (OkHttp would resolve a dot segment
+  away). Real ids (hex or base58) are sent unchanged.
+- **`redeemInvitation` refuses an invite whose `namespaceId` is not 64 lowercase hex** with
+  `Failed(namespaceId = null, reason = INVALID, retryable = false)`, and sends nothing. The id comes
+  from the invite, so a crafted one could otherwise retarget the user's authenticated join.
+
 ### Core 0.11.0: namespace ops signed at schema 27 (mero-core)
 
 - `NamespaceOp.SCHEMA_VERSION` is 27, core 0.11.0's `SIGNED_NAMESPACE_OP_SCHEMA_VERSION`

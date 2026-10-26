@@ -324,7 +324,7 @@ class AdminApi(
             ).data ?: error("installDevApplication")
 
     override suspend fun uninstallApplication(appId: String): UninstallApplicationResponseData =
-        http.deleteJson<ApiEnvelope<UninstallApplicationResponseData>>("/admin-api/applications/$appId").data
+        http.deleteJson<ApiEnvelope<UninstallApplicationResponseData>>("/admin-api/applications/${pathSegment(appId)}").data
             ?: error("uninstallApplication")
 
     override suspend fun listApplications(): ListApplicationsResponseData =
@@ -332,12 +332,12 @@ class AdminApi(
             ?: error("listApplications")
 
     override suspend fun getApplication(appId: String): GetApplicationResponseData =
-        http.getJson<ApiEnvelope<GetApplicationResponseData>>("/admin-api/applications/$appId").data
+        http.getJson<ApiEnvelope<GetApplicationResponseData>>("/admin-api/applications/${pathSegment(appId)}").data
             ?: error("getApplication")
 
     /** Installed-blob inventory for an application — one entry per locally installed version. */
     override suspend fun listApplicationVersions(applicationId: String): List<ApplicationVersionEntry> =
-        http.getJson<ApiEnvelope<List<ApplicationVersionEntry>>>("/admin-api/applications/$applicationId/versions").data
+        http.getJson<ApiEnvelope<List<ApplicationVersionEntry>>>("/admin-api/applications/${pathSegment(applicationId)}/versions").data
             ?: emptyList()
 
     // ---- Package Management ------------------------------------------------
@@ -357,14 +357,14 @@ class AdminApi(
      */
     override suspend fun listPackageVersions(packageName: String): ListVersionsResponseData {
         // Core returns this flat ({ versions: [...] }), not under `data`; tolerate both.
-        val res = http.execute("GET", "/admin-api/packages/${encodeComponent(packageName)}/versions").ensureSuccessful()
+        val res = http.execute("GET", "/admin-api/packages/${pathSegment(packageName)}/versions").ensureSuccessful()
         val wire = http.json.decodeFromString<ListVersionsWire>(res.body)
         return wire.data ?: ListVersionsResponseData(versions = wire.versions ?: emptyList())
     }
 
     /** Newest **installed** version of a package. Both fields are `null` if none is. */
     override suspend fun getLatestPackageVersion(packageName: String): GetLatestVersionResponseData =
-        http.getJson("/admin-api/packages/${encodeComponent(packageName)}/latest")
+        http.getJson("/admin-api/packages/${pathSegment(packageName)}/latest")
 
     // ---- Context Management ------------------------------------------------
 
@@ -382,7 +382,7 @@ class AdminApi(
         request: DeleteContextRequest?,
     ): DeleteContextResponseData {
         val body = request?.let { http.json.encodeToString(it) }
-        val res = http.execute("DELETE", "/admin-api/contexts/$contextId", body).ensureSuccessful()
+        val res = http.execute("DELETE", "/admin-api/contexts/${pathSegment(contextId)}", body).ensureSuccessful()
         return http.json.decodeFromString<ApiEnvelope<DeleteContextResponseData>>(res.body).data
             ?: error("deleteContext")
     }
@@ -391,10 +391,10 @@ class AdminApi(
         http.getJson<ApiEnvelope<GetContextsResponseData>>("/admin-api/contexts").data ?: error("getContexts")
 
     override suspend fun getContext(contextId: String): Context =
-        http.getJson<ApiEnvelope<Context>>("/admin-api/contexts/$contextId").data ?: error("getContext")
+        http.getJson<ApiEnvelope<Context>>("/admin-api/contexts/${pathSegment(contextId)}").data ?: error("getContext")
 
     override suspend fun getContextsForApplication(applicationId: String): GetContextsResponseData =
-        http.getJson<ApiEnvelope<GetContextsResponseData>>("/admin-api/contexts/for-application/$applicationId").data
+        http.getJson<ApiEnvelope<GetContextsResponseData>>("/admin-api/contexts/for-application/${pathSegment(applicationId)}").data
             ?: error("getContextsForApplication")
 
     // ---- Context Identity --------------------------------------------------
@@ -406,13 +406,13 @@ class AdminApi(
             ).data ?: error("generateContextIdentity")
 
     override suspend fun getContextIdentities(contextId: String): GetContextIdentitiesResponseData =
-        http.getJson<ApiEnvelope<GetContextIdentitiesResponseData>>("/admin-api/contexts/$contextId/identities").data
+        http.getJson<ApiEnvelope<GetContextIdentitiesResponseData>>("/admin-api/contexts/${pathSegment(contextId)}/identities").data
             ?: error("getContextIdentities")
 
     override suspend fun getContextIdentitiesOwned(contextId: String): GetContextIdentitiesResponseData =
         http
             .getJson<ApiEnvelope<GetContextIdentitiesResponseData>>(
-                "/admin-api/contexts/$contextId/identities-owned",
+                "/admin-api/contexts/${pathSegment(contextId)}/identities-owned",
             ).data ?: error("getContextIdentitiesOwned")
 
     // ---- Context join (group membership) -----------------------------------
@@ -420,17 +420,17 @@ class AdminApi(
     override suspend fun joinContext(contextId: String): JoinContextResponseData =
         http
             .postJson<JsonObject, ApiEnvelope<JoinContextResponseData>>(
-                "/admin-api/contexts/$contextId/join", JsonObject(emptyMap()),
+                "/admin-api/contexts/${pathSegment(contextId)}/join", JsonObject(emptyMap()),
             ).data ?: error("joinContext")
 
     // ---- Context group / storage / sync ------------------------------------
 
     /** Value is `string | null`; returns the optional directly (does NOT throw on null). */
     override suspend fun getContextGroup(contextId: String): ContextGroupResponseData =
-        http.getJson<ApiEnvelope<String>>("/admin-api/contexts/$contextId/group").data
+        http.getJson<ApiEnvelope<String>>("/admin-api/contexts/${pathSegment(contextId)}/group").data
 
     override suspend fun getContextStorage(contextId: String): ContextStorageResponseData =
-        http.getJson<ApiEnvelope<ContextStorageResponseData>>("/admin-api/contexts/$contextId/storage").data
+        http.getJson<ApiEnvelope<ContextStorageResponseData>>("/admin-api/contexts/${pathSegment(contextId)}/storage").data
             ?: error("getContextStorage")
 
     /**
@@ -451,7 +451,7 @@ class AdminApi(
      * had worked for every release before rc.30.
      */
     override suspend fun syncContext(contextId: String?) {
-        val path = if (contextId == null) "/admin-api/contexts/sync" else "/admin-api/contexts/sync/$contextId"
+        val path = if (contextId == null) "/admin-api/contexts/sync" else "/admin-api/contexts/sync/${pathSegment(contextId)}"
         http.execute("POST", path, "{}").ensureSuccessful()
     }
 
@@ -467,7 +467,7 @@ class AdminApi(
         // directly. An empty 2xx body means accepted; synthesize a typed result.
         val res =
             http
-                .execute("POST", "/admin-api/contexts/$contextId/resync", http.json.encodeToString(request))
+                .execute("POST", "/admin-api/contexts/${pathSegment(contextId)}/resync", http.json.encodeToString(request))
                 .ensureSuccessful()
         return runCatching { http.json.decodeFromString<ResyncContextResponseData>(res.body) }.getOrNull()
             ?: ResyncContextResponseData(contextId = contextId, resyncStarted = true)
@@ -478,7 +478,7 @@ class AdminApi(
         request: UpdateContextApplicationRequest,
     ) {
         http
-            .execute("POST", "/admin-api/contexts/$contextId/application", http.json.encodeToString(request))
+            .execute("POST", "/admin-api/contexts/${pathSegment(contextId)}/application", http.json.encodeToString(request))
             .ensureSuccessful()
     }
 
@@ -486,7 +486,7 @@ class AdminApi(
         // Core returns this flat as { contexts: [...] }; tolerate a bare array and { data } too.
         val res =
             http
-                .execute("GET", "/admin-api/contexts/with-executors/for-application/$applicationId")
+                .execute("GET", "/admin-api/contexts/with-executors/for-application/${pathSegment(applicationId)}")
                 .ensureSuccessful()
         runCatching { http.json.decodeFromString<List<ContextWithExecutors>>(res.body) }.getOrNull()?.let { return it }
         val wrap = runCatching { http.json.decodeFromString<ContextsWithExecutorsWrap>(res.body) }.getOrNull()
@@ -513,7 +513,7 @@ class AdminApi(
 
     override suspend fun deleteBlob(blobId: String): DeleteBlobResponseData {
         // Core's `BlobDeleteResponse` is flat, snake_case (`{ blob_id, deleted }`).
-        val wire = http.deleteJson<DeleteBlobWire>("/admin-api/blobs/$blobId")
+        val wire = http.deleteJson<DeleteBlobWire>("/admin-api/blobs/${pathSegment(blobId)}")
         return DeleteBlobResponseData(blobId = wire.blobId, deleted = wire.deleted)
     }
 
@@ -578,25 +578,25 @@ class AdminApi(
     override suspend fun lookupContextAlias(name: String): LookupAliasResponseData =
         http
             .postJson<JsonObject, ApiEnvelope<LookupAliasResponseData>>(
-                "/admin-api/alias/lookup/context/${encodeComponent(name)}", JsonObject(emptyMap()),
+                "/admin-api/alias/lookup/context/${pathSegment(name)}", JsonObject(emptyMap()),
             ).data ?: error("lookupContextAlias")
 
     override suspend fun lookupApplicationAlias(name: String): LookupAliasResponseData =
         http
             .postJson<JsonObject, ApiEnvelope<LookupAliasResponseData>>(
-                "/admin-api/alias/lookup/application/${encodeComponent(name)}", JsonObject(emptyMap()),
+                "/admin-api/alias/lookup/application/${pathSegment(name)}", JsonObject(emptyMap()),
             ).data ?: error("lookupApplicationAlias")
 
     override suspend fun deleteContextAlias(name: String): DeleteAliasResponseData =
         http
             .postJson<JsonObject, ApiEnvelope<DeleteAliasResponseData>>(
-                "/admin-api/alias/delete/context/${encodeComponent(name)}", JsonObject(emptyMap()),
+                "/admin-api/alias/delete/context/${pathSegment(name)}", JsonObject(emptyMap()),
             ).data ?: Empty()
 
     override suspend fun deleteApplicationAlias(name: String): DeleteAliasResponseData =
         http
             .postJson<JsonObject, ApiEnvelope<DeleteAliasResponseData>>(
-                "/admin-api/alias/delete/application/${encodeComponent(name)}", JsonObject(emptyMap()),
+                "/admin-api/alias/delete/application/${pathSegment(name)}", JsonObject(emptyMap()),
             ).data ?: Empty()
 
     /**
@@ -626,13 +626,13 @@ class AdminApi(
     override suspend fun lookupDeviceAlias(name: String): LookupAliasResponseData =
         http
             .postJson<JsonObject, ApiEnvelope<LookupAliasResponseData>>(
-                "/admin-api/alias/lookup/device/${encodeComponent(name)}", JsonObject(emptyMap()),
+                "/admin-api/alias/lookup/device/${pathSegment(name)}", JsonObject(emptyMap()),
             ).data ?: LookupAliasResponseData()
 
     override suspend fun deleteDeviceAlias(name: String): DeleteAliasResponseData =
         http
             .postJson<JsonObject, ApiEnvelope<DeleteAliasResponseData>>(
-                "/admin-api/alias/delete/device/${encodeComponent(name)}", JsonObject(emptyMap()),
+                "/admin-api/alias/delete/device/${pathSegment(name)}", JsonObject(emptyMap()),
             ).data ?: Empty()
 
     private suspend fun listAliases(scope: String): ListAliasesResponseData {
@@ -651,12 +651,12 @@ class AdminApi(
         http.getJson<ApiEnvelope<ListNamespacesResponseData>>("/admin-api/namespaces").data ?: emptyList()
 
     override suspend fun getNamespace(namespaceId: String): Namespace =
-        http.getJson<ApiEnvelope<Namespace>>("/admin-api/namespaces/$namespaceId").data ?: error("getNamespace")
+        http.getJson<ApiEnvelope<Namespace>>("/admin-api/namespaces/${pathSegment(namespaceId)}").data ?: error("getNamespace")
 
     override suspend fun listNamespacesForApplication(applicationId: String): ListNamespacesResponseData =
         http
             .getJson<ApiEnvelope<ListNamespacesResponseData>>(
-                "/admin-api/namespaces/for-application/$applicationId",
+                "/admin-api/namespaces/for-application/${pathSegment(applicationId)}",
             ).data ?: emptyList()
 
     override suspend fun createNamespace(request: CreateNamespaceRequest): CreateNamespaceResponseData =
@@ -671,7 +671,7 @@ class AdminApi(
     ): DeleteNamespaceResponseData {
         // Core requires `Content-Type: application/json` even with an empty body.
         val body = request?.let { http.json.encodeToString(it) } ?: "{}"
-        val res = http.execute("DELETE", "/admin-api/namespaces/$namespaceId", body).ensureSuccessful()
+        val res = http.execute("DELETE", "/admin-api/namespaces/${pathSegment(namespaceId)}", body).ensureSuccessful()
         return http.json.decodeFromString<ApiEnvelope<DeleteNamespaceResponseData>>(res.body).data
             ?: error("deleteNamespace")
     }
@@ -681,7 +681,7 @@ class AdminApi(
         request: CreateNamespaceInvitationRequest?,
     ): CreateNamespaceInvitationResult {
         val body = request?.let { http.json.encodeToString(it) } ?: "{}"
-        val res = http.execute("POST", "/admin-api/namespaces/$namespaceId/invite", body).ensureSuccessful()
+        val res = http.execute("POST", "/admin-api/namespaces/${pathSegment(namespaceId)}/invite", body).ensureSuccessful()
         val data =
             http.json.decodeFromString<ApiEnvelope<JsonElement>>(res.body).data
                 ?: error("createNamespaceInvitation")
@@ -701,7 +701,7 @@ class AdminApi(
         // client's configured timeouts apply here.
         val res =
             http
-                .execute("POST", "/admin-api/namespaces/$namespaceId/join", http.json.encodeToString(request))
+                .execute("POST", "/admin-api/namespaces/${pathSegment(namespaceId)}/join", http.json.encodeToString(request))
                 .ensureSuccessful()
         return http.json.decodeFromString<ApiEnvelope<JoinNamespaceResponseData>>(res.body).data
             ?: error("joinNamespace")
@@ -741,19 +741,19 @@ class AdminApi(
                 if (it.visibility == null) it.copy(visibility = CreateGroupInNamespaceRequest.VISIBILITY_OPEN) else it
             }
         val body = http.json.encodeToString(explicit)
-        val res = http.execute("POST", "/admin-api/namespaces/$namespaceId/groups", body).ensureSuccessful()
+        val res = http.execute("POST", "/admin-api/namespaces/${pathSegment(namespaceId)}/groups", body).ensureSuccessful()
         return http.json.decodeFromString<ApiEnvelope<CreateGroupInNamespaceResponseData>>(res.body).data
             ?: error("createGroupInNamespace")
     }
 
     override suspend fun listNamespaceGroups(namespaceId: String): List<SubgroupEntry> =
-        http.getJson<ApiEnvelope<List<SubgroupEntry>>>("/admin-api/namespaces/$namespaceId/groups").data
+        http.getJson<ApiEnvelope<List<SubgroupEntry>>>("/admin-api/namespaces/${pathSegment(namespaceId)}/groups").data
             ?: emptyList()
 
     // ---- Group Management --------------------------------------------------
 
     override suspend fun getGroupInfo(groupId: String): GroupInfoResponseData =
-        http.getJson<ApiEnvelope<GroupInfoResponseData>>("/admin-api/groups/$groupId").data ?: error("getGroupInfo")
+        http.getJson<ApiEnvelope<GroupInfoResponseData>>("/admin-api/groups/${pathSegment(groupId)}").data ?: error("getGroupInfo")
 
     /** Thin wrapper over [getGroupInfo]: returns the group's `defaultCapabilities` bitmask. */
     override suspend fun getDefaultCapabilities(groupId: String): Int =
@@ -769,14 +769,14 @@ class AdminApi(
     ): DeleteGroupResponseData {
         // Core requires `Content-Type: application/json` even with an empty body.
         val body = request?.let { http.json.encodeToString(it) } ?: "{}"
-        val res = http.execute("DELETE", "/admin-api/groups/$groupId", body).ensureSuccessful()
+        val res = http.execute("DELETE", "/admin-api/groups/${pathSegment(groupId)}", body).ensureSuccessful()
         return http.json.decodeFromString<ApiEnvelope<DeleteGroupResponseData>>(res.body).data ?: error("deleteGroup")
     }
 
     override suspend fun listGroupMembers(groupId: String): ListGroupMembersResponseData {
         // Response is un-enveloped ({ members, selfIdentity }). Validate the non-optional
         // `members` field so a contract-violating response surfaces as a clear error.
-        val res = http.execute("GET", "/admin-api/groups/$groupId/members").ensureSuccessful()
+        val res = http.execute("GET", "/admin-api/groups/${pathSegment(groupId)}/members").ensureSuccessful()
         val lenient = http.json.decodeFromString<ListGroupMembersLenient>(res.body)
         val members =
             lenient.members ?: run {
@@ -787,14 +787,14 @@ class AdminApi(
     }
 
     override suspend fun listGroupContexts(groupId: String): ListGroupContextsResponseData =
-        http.getJson<ApiEnvelope<ListGroupContextsResponseData>>("/admin-api/groups/$groupId/contexts").data
+        http.getJson<ApiEnvelope<ListGroupContextsResponseData>>("/admin-api/groups/${pathSegment(groupId)}/contexts").data
             ?: emptyList()
 
     override suspend fun addGroupMembers(
         groupId: String,
         request: AddGroupMembersRequest,
     ) {
-        http.execute("POST", "/admin-api/groups/$groupId/members", http.json.encodeToString(request)).ensureSuccessful()
+        http.execute("POST", "/admin-api/groups/${pathSegment(groupId)}/members", http.json.encodeToString(request)).ensureSuccessful()
     }
 
     override suspend fun removeGroupMembers(
@@ -802,7 +802,7 @@ class AdminApi(
         request: RemoveGroupMembersRequest,
     ) {
         http
-            .execute("POST", "/admin-api/groups/$groupId/members/remove", http.json.encodeToString(request))
+            .execute("POST", "/admin-api/groups/${pathSegment(groupId)}/members/remove", http.json.encodeToString(request))
             .ensureSuccessful()
     }
 
@@ -812,7 +812,7 @@ class AdminApi(
         request: UpdateMemberRoleRequest,
     ) {
         http
-            .execute("PUT", "/admin-api/groups/$groupId/members/$identity/role", http.json.encodeToString(request))
+            .execute("PUT", "/admin-api/groups/${pathSegment(groupId)}/members/${pathSegment(identity)}/role", http.json.encodeToString(request))
             .ensureSuccessful()
     }
 
@@ -822,7 +822,7 @@ class AdminApi(
     ): MemberCapabilities =
         http
             .getJson<ApiEnvelope<MemberCapabilities>>(
-                "/admin-api/groups/$groupId/members/$identity/capabilities",
+                "/admin-api/groups/${pathSegment(groupId)}/members/${pathSegment(identity)}/capabilities",
             ).data ?: error("getMemberCapabilities")
 
     override suspend fun setMemberCapabilities(
@@ -832,7 +832,7 @@ class AdminApi(
     ) {
         http
             .execute(
-                "PUT", "/admin-api/groups/$groupId/members/$identity/capabilities", http.json.encodeToString(request),
+                "PUT", "/admin-api/groups/${pathSegment(groupId)}/members/${pathSegment(identity)}/capabilities", http.json.encodeToString(request),
             ).ensureSuccessful()
     }
 
@@ -842,7 +842,7 @@ class AdminApi(
     ) {
         http
             .execute(
-                "PUT", "/admin-api/groups/$groupId/settings/default-capabilities", http.json.encodeToString(request),
+                "PUT", "/admin-api/groups/${pathSegment(groupId)}/settings/default-capabilities", http.json.encodeToString(request),
             ).ensureSuccessful()
     }
 
@@ -852,7 +852,7 @@ class AdminApi(
     ) {
         http
             .execute(
-                "PUT", "/admin-api/groups/$groupId/settings/subgroup-visibility", http.json.encodeToString(request),
+                "PUT", "/admin-api/groups/${pathSegment(groupId)}/settings/subgroup-visibility", http.json.encodeToString(request),
             ).ensureSuccessful()
     }
 
@@ -862,7 +862,7 @@ class AdminApi(
     ) {
         http
             .execute(
-                "PUT", "/admin-api/groups/$groupId/settings/tee-admission-policy", http.json.encodeToString(request),
+                "PUT", "/admin-api/groups/${pathSegment(groupId)}/settings/tee-admission-policy", http.json.encodeToString(request),
             ).ensureSuccessful()
     }
 
@@ -886,7 +886,7 @@ class AdminApi(
 
     override suspend fun getTeeAdmissionPolicy(groupId: String): GetTeeAdmissionPolicyResponseData {
         // `data` is optional so a flat (un-enveloped) response cleanly falls back.
-        val res = http.execute("GET", "/admin-api/groups/$groupId/settings/tee-admission-policy").ensureSuccessful()
+        val res = http.execute("GET", "/admin-api/groups/${pathSegment(groupId)}/settings/tee-admission-policy").ensureSuccessful()
         runCatching { http.json.decodeFromString<TeeAdmissionEnv>(res.body).data }.getOrNull()?.let { return it }
         return http.json.decodeFromString(res.body)
     }
@@ -897,11 +897,11 @@ class AdminApi(
         groupId: String,
         request: SetGroupMetadataRequest,
     ) {
-        http.execute("PUT", "/admin-api/groups/$groupId/metadata", http.json.encodeToString(request)).ensureSuccessful()
+        http.execute("PUT", "/admin-api/groups/${pathSegment(groupId)}/metadata", http.json.encodeToString(request)).ensureSuccessful()
     }
 
     override suspend fun getGroupMetadata(groupId: String): MetadataRecord? =
-        getMetadataRecord("/admin-api/groups/$groupId/metadata")
+        getMetadataRecord("/admin-api/groups/${pathSegment(groupId)}/metadata")
 
     override suspend fun setMemberMetadata(
         groupId: String,
@@ -910,7 +910,7 @@ class AdminApi(
     ) {
         http
             .execute(
-                "PUT", "/admin-api/groups/$groupId/members/$identity/metadata", http.json.encodeToString(request),
+                "PUT", "/admin-api/groups/${pathSegment(groupId)}/members/${pathSegment(identity)}/metadata", http.json.encodeToString(request),
             ).ensureSuccessful()
     }
 
@@ -918,7 +918,7 @@ class AdminApi(
         groupId: String,
         identity: String,
     ): MetadataRecord? =
-        getMetadataRecord("/admin-api/groups/$groupId/members/$identity/metadata")
+        getMetadataRecord("/admin-api/groups/${pathSegment(groupId)}/members/${pathSegment(identity)}/metadata")
 
     override suspend fun setContextMetadata(
         groupId: String,
@@ -927,7 +927,7 @@ class AdminApi(
     ) {
         http
             .execute(
-                "PUT", "/admin-api/groups/$groupId/contexts/$contextId/metadata", http.json.encodeToString(request),
+                "PUT", "/admin-api/groups/${pathSegment(groupId)}/contexts/${pathSegment(contextId)}/metadata", http.json.encodeToString(request),
             ).ensureSuccessful()
     }
 
@@ -935,14 +935,14 @@ class AdminApi(
         groupId: String,
         contextId: String,
     ): MetadataRecord? =
-        getMetadataRecord("/admin-api/groups/$groupId/contexts/$contextId/metadata")
+        getMetadataRecord("/admin-api/groups/${pathSegment(groupId)}/contexts/${pathSegment(contextId)}/metadata")
 
     override suspend fun syncGroup(
         groupId: String,
         request: SyncGroupRequest?,
     ): SyncGroupResponseData {
         val body = request?.let { http.json.encodeToString(it) } ?: "{}"
-        val res = http.execute("POST", "/admin-api/groups/$groupId/sync", body).ensureSuccessful()
+        val res = http.execute("POST", "/admin-api/groups/${pathSegment(groupId)}/sync", body).ensureSuccessful()
         return http.json.decodeFromString<ApiEnvelope<SyncGroupResponseData>>(res.body).data ?: error("syncGroup")
     }
 
@@ -967,25 +967,25 @@ class AdminApi(
     ): UpgradeGroupResponseData =
         http
             .postJson<UpgradeGroupRequest, ApiEnvelope<UpgradeGroupResponseData>>(
-                "/admin-api/groups/$groupId/upgrade", request,
+                "/admin-api/groups/${pathSegment(groupId)}/upgrade", request,
             ).data ?: error("upgradeGroup")
 
     /** Value is `GroupUpgradeStatus | null`; returns the optional directly. */
     override suspend fun getGroupUpgradeStatus(groupId: String): GroupUpgradeStatusResponseData =
-        http.getJson<ApiEnvelope<GroupUpgradeStatus>>("/admin-api/groups/$groupId/upgrade/status").data
+        http.getJson<ApiEnvelope<GroupUpgradeStatus>>("/admin-api/groups/${pathSegment(groupId)}/upgrade/status").data
 
     /**
      * The operator-facing "have all peers migrated?" rollup for a namespace. The handler
      * serializes the payload directly, so there is no `{ data }` envelope to unwrap here.
      */
     override suspend fun getMigrationStatus(namespaceId: String): MigrationStatus =
-        http.getJson("/admin-api/groups/${encodeComponent(namespaceId)}/migration-status")
+        http.getJson("/admin-api/groups/${pathSegment(namespaceId)}/migration-status")
 
     /** Per-group cascade-migration snapshots for a namespace. */
     override suspend fun getCascadeStatus(namespaceId: String): List<CascadeStatusEntry> =
         http
             .getJson<ApiEnvelope<List<CascadeStatusEntry>>>(
-                "/admin-api/groups/${encodeComponent(namespaceId)}/cascade-status",
+                "/admin-api/groups/${pathSegment(namespaceId)}/cascade-status",
             ).data ?: emptyList()
 
     override suspend fun retryGroupUpgrade(
@@ -993,7 +993,7 @@ class AdminApi(
         request: RetryGroupUpgradeRequest?,
     ): RetryGroupUpgradeResponseData {
         val body = request?.let { http.json.encodeToString(it) } ?: "{}"
-        val res = http.execute("POST", "/admin-api/groups/$groupId/upgrade/retry", body).ensureSuccessful()
+        val res = http.execute("POST", "/admin-api/groups/${pathSegment(groupId)}/upgrade/retry", body).ensureSuccessful()
         return http.json.decodeFromString<ApiEnvelope<RetryGroupUpgradeResponseData>>(res.body).data
             ?: error("retryGroupUpgrade")
     }
@@ -1006,14 +1006,14 @@ class AdminApi(
         // Core returns this flat ({ reparented }); tolerate the { data } envelope too.
         val res =
             http
-                .execute("POST", "/admin-api/groups/$childGroupId/reparent", http.json.encodeToString(request))
+                .execute("POST", "/admin-api/groups/${pathSegment(childGroupId)}/reparent", http.json.encodeToString(request))
                 .ensureSuccessful()
         val env = http.json.decodeFromString<ReparentEnv>(res.body)
         return env.data ?: ReparentGroupResponseData(reparented = env.reparented ?: false)
     }
 
     override suspend fun listSubgroups(groupId: String): List<SubgroupEntry> {
-        val res = http.execute("GET", "/admin-api/groups/$groupId/subgroups").ensureSuccessful()
+        val res = http.execute("GET", "/admin-api/groups/${pathSegment(groupId)}/subgroups").ensureSuccessful()
         val wire = http.json.decodeFromString<SubgroupsWire>(res.body)
         return wire.subgroups ?: wire.data ?: emptyList()
     }
@@ -1024,7 +1024,7 @@ class AdminApi(
         request: DetachContextFromGroupRequest?,
     ) {
         val body = request?.let { http.json.encodeToString(it) } ?: "{}"
-        http.execute("POST", "/admin-api/groups/$groupId/contexts/$contextId/remove", body).ensureSuccessful()
+        http.execute("POST", "/admin-api/groups/${pathSegment(groupId)}/contexts/${pathSegment(contextId)}/remove", body).ensureSuccessful()
     }
 
     // ---- Group Invitation & Join -------------------------------------------
@@ -1034,7 +1034,7 @@ class AdminApi(
         request: CreateGroupInvitationRequest?,
     ): CreateGroupInvitationResult {
         val body = request?.let { http.json.encodeToString(it) } ?: "{}"
-        val res = http.execute("POST", "/admin-api/groups/$groupId/invite", body).ensureSuccessful()
+        val res = http.execute("POST", "/admin-api/groups/${pathSegment(groupId)}/invite", body).ensureSuccessful()
         val data = http.json.decodeFromString<ApiEnvelope<JsonElement>>(res.body).data ?: error("createGroupInvitation")
         val isRecursive = (data as? JsonObject)?.containsKey("invitations") == true
         return if (isRecursive) {
@@ -1051,7 +1051,7 @@ class AdminApi(
     override suspend fun joinSubgroupInheritance(groupId: String): JoinSubgroupInheritanceResponseData =
         http
             .postJson<JsonObject, ApiEnvelope<JoinSubgroupInheritanceResponseData>>(
-                "/admin-api/groups/$groupId/join-via-inheritance", JsonObject(emptyMap()),
+                "/admin-api/groups/${pathSegment(groupId)}/join-via-inheritance", JsonObject(emptyMap()),
             ).data ?: error("joinSubgroupInheritance")
 
     // ---- TEE ---------------------------------------------------------------
@@ -1114,7 +1114,7 @@ class AdminApi(
         request: Map<String, JsonElement>?,
     ) {
         http
-            .execute("POST", "/admin-api/groups/$groupId/leave", http.json.encodeToString(request ?: emptyMap()))
+            .execute("POST", "/admin-api/groups/${pathSegment(groupId)}/leave", http.json.encodeToString(request ?: emptyMap()))
             .ensureSuccessful()
     }
 
@@ -1124,7 +1124,7 @@ class AdminApi(
         request: Map<String, JsonElement>?,
     ) {
         http
-            .execute("POST", "/admin-api/contexts/$contextId/leave", http.json.encodeToString(request ?: emptyMap()))
+            .execute("POST", "/admin-api/contexts/${pathSegment(contextId)}/leave", http.json.encodeToString(request ?: emptyMap()))
             .ensureSuccessful()
     }
 
@@ -1135,7 +1135,7 @@ class AdminApi(
     ) {
         http
             .execute(
-                "POST", "/admin-api/namespaces/$namespaceId/leave", http.json.encodeToString(request ?: emptyMap()),
+                "POST", "/admin-api/namespaces/${pathSegment(namespaceId)}/leave", http.json.encodeToString(request ?: emptyMap()),
             ).ensureSuccessful()
     }
 
@@ -1144,7 +1144,7 @@ class AdminApi(
         groupId: String,
         request: Map<String, JsonElement>?,
     ): JsonElement =
-        rawJson("POST", "/admin-api/groups/$groupId/issue-ownership-proof", http.json.encodeToString(request ?: emptyMap()))
+        rawJson("POST", "/admin-api/groups/${pathSegment(groupId)}/issue-ownership-proof", http.json.encodeToString(request ?: emptyMap()))
 
     /** Typed [issueOwnershipProof]. The response is flat on the wire; an enveloped one is tolerated. */
     override suspend fun issueOwnershipProof(
@@ -1154,7 +1154,7 @@ class AdminApi(
         decodeFlatOrEnveloped(
             http
                 .execute(
-                    "POST", "/admin-api/groups/$groupId/issue-ownership-proof", http.json.encodeToString(request),
+                    "POST", "/admin-api/groups/${pathSegment(groupId)}/issue-ownership-proof", http.json.encodeToString(request),
                 ).ensureSuccessful()
                 .body,
         )
@@ -1172,7 +1172,7 @@ class AdminApi(
             http
                 .execute(
                     "POST",
-                    "/admin-api/groups/$groupId/issue-namespace-ownership-proof",
+                    "/admin-api/groups/${pathSegment(groupId)}/issue-namespace-ownership-proof",
                     http.json.encodeToString(request),
                 ).ensureSuccessful()
                 .body,
@@ -1185,7 +1185,7 @@ class AdminApi(
     ): JsonElement =
         rawJson(
             "POST",
-            "/admin-api/groups/$groupId/issue-namespace-ownership-proof",
+            "/admin-api/groups/${pathSegment(groupId)}/issue-namespace-ownership-proof",
             http.json.encodeToString(request ?: emptyMap()),
         )
 
@@ -1197,7 +1197,7 @@ class AdminApi(
     ) {
         http
             .execute(
-                "PUT", "/admin-api/groups/$groupId/members/$identity/auto-follow", http.json.encodeToString(request),
+                "PUT", "/admin-api/groups/${pathSegment(groupId)}/members/${pathSegment(identity)}/auto-follow", http.json.encodeToString(request),
             ).ensureSuccessful()
     }
 
@@ -1206,7 +1206,7 @@ class AdminApi(
         namespaceId: String,
         request: Map<String, JsonElement>?,
     ): JsonElement =
-        rawJson("POST", "/admin-api/groups/$namespaceId/migration/abort", http.json.encodeToString(request ?: emptyMap()))
+        rawJson("POST", "/admin-api/groups/${pathSegment(namespaceId)}/migration/abort", http.json.encodeToString(request ?: emptyMap()))
 
     // ---- Private helpers ---------------------------------------------------
 
@@ -1215,9 +1215,9 @@ class AdminApi(
         contextId: String?,
     ): String =
         if (contextId == null) {
-            "/admin-api/blobs/$blobId"
+            "/admin-api/blobs/${pathSegment(blobId)}"
         } else {
-            "/admin-api/blobs/$blobId?context_id=${encodeComponent(contextId)}"
+            "/admin-api/blobs/${pathSegment(blobId)}?context_id=${encodeComponent(contextId)}"
         }
 
     /** Decode a payload core may send flat or under `{ data }`. */
@@ -1297,7 +1297,7 @@ class AdminApi(
         serviceName: String?,
     ): JsonElement? {
         val query = serviceName?.let { "?service_name=" + encodeComponent(it) }.orEmpty()
-        val res = http.execute("GET", "/admin-api/applications/$applicationId/abi$query")
+        val res = http.execute("GET", "/admin-api/applications/${pathSegment(applicationId)}/abi$query")
         if (res.status == 404) return null
         return http.json.decodeFromString<ApiEnvelope<JsonElement>>(res.ensureSuccessful().body).data
     }
@@ -1315,7 +1315,7 @@ class AdminApi(
     ): PerformIntentResponseData =
         http
             .postJson<PerformIntentRequest, ApiEnvelope<PerformIntentResponseData>>(
-                "/admin-api/contexts/$contextId/intents", request,
+                "/admin-api/contexts/${pathSegment(contextId)}/intents", request,
             ).data ?: error("performIntent")
 
     // ---- Account: devices, applications, pairing (rc.27 / rc.28) -----------
@@ -1350,7 +1350,7 @@ class AdminApi(
                 offset?.let { add("offset=$it") }
                 limit?.let { add("limit=$it") }
             }
-        val base = "/admin-api/groups/$groupId/member-devices"
+        val base = "/admin-api/groups/${pathSegment(groupId)}/member-devices"
         return http.getJson(if (query.isEmpty()) base else base + "?" + query.joinToString("&"))
     }
 
@@ -1389,7 +1389,7 @@ class AdminApi(
     ): RelinkDeviceResponseData =
         http
             .postJson<RelinkDeviceRequest, ApiEnvelope<RelinkDeviceResponseData>>(
-                "/admin-api/account/devices/$deviceId/relink", request,
+                "/admin-api/account/devices/${pathSegment(deviceId)}/relink", request,
             ).data ?: error("relinkDevice")
 
     /**
@@ -1410,7 +1410,7 @@ class AdminApi(
     ): RescopeDeviceResponseData =
         http
             .putJson<RescopeDeviceRequest, ApiEnvelope<RescopeDeviceResponseData>>(
-                "/admin-api/account/devices/$deviceId/scope", request,
+                "/admin-api/account/devices/${pathSegment(deviceId)}/scope", request,
             ).data ?: error("rescopeDevice")
 
     /**
@@ -1428,7 +1428,7 @@ class AdminApi(
     ): LabelDeviceResponseData =
         http
             .putJson<LabelDeviceRequest, ApiEnvelope<LabelDeviceResponseData>>(
-                "/admin-api/account/devices/$deviceId/label", request,
+                "/admin-api/account/devices/${pathSegment(deviceId)}/label", request,
             ).data ?: error("labelDevice")
 
     /** Revoke a device from ONE namespace, rotating that namespace's group key. */
@@ -1438,7 +1438,7 @@ class AdminApi(
     ): RevokeDeviceResponseData =
         http
             .postJson<RevokeDeviceRequest, ApiEnvelope<RevokeDeviceResponseData>>(
-                "/admin-api/namespaces/$namespaceId/account/revoke", request,
+                "/admin-api/namespaces/${pathSegment(namespaceId)}/account/revoke", request,
             ).data ?: error("revokeAccountDevice")
 
     /**
@@ -1448,7 +1448,7 @@ class AdminApi(
      * serializes the payload directly — no `{ data }` envelope.
      */
     override suspend fun listNamespaceRevokedDevices(namespaceId: String): NamespaceRevokedDevices =
-        http.getJson("/admin-api/namespaces/${encodeComponent(namespaceId)}/revoked-devices")
+        http.getJson("/admin-api/namespaces/${pathSegment(namespaceId)}/revoked-devices")
 
     // ---- Direct admission (rc.29) ------------------------------------------
 
@@ -1465,7 +1465,7 @@ class AdminApi(
     ): AdmitJoinResponseData =
         http
             .postJson<AdmitJoinRequest, ApiEnvelope<AdmitJoinResponseData>>(
-                "/admin-api/namespaces/$namespaceId/admit", request,
+                "/admin-api/namespaces/${pathSegment(namespaceId)}/admit", request,
             ).data ?: error("admitJoin")
 
     // ---- Reads as the account and delegated execution (rc.83) --------------
@@ -1486,7 +1486,7 @@ class AdminApi(
     ): QueryContextResponseData =
         http
             .postJson<QueryContextRequest, ApiEnvelope<QueryContextResponseData>>(
-                "/admin-api/contexts/$contextId/query", request,
+                "/admin-api/contexts/${pathSegment(contextId)}/query", request,
             ).data ?: QueryContextResponseData()
 
     /**
@@ -1496,7 +1496,7 @@ class AdminApi(
      * group names no release yet.
      */
     override suspend fun getIntentRelay(contextId: String): IntentRelayInfo =
-        http.getJson<ApiEnvelope<IntentRelayInfo>>("/admin-api/contexts/$contextId/intents").data
+        http.getJson<ApiEnvelope<IntentRelayInfo>>("/admin-api/contexts/${pathSegment(contextId)}/intents").data
             ?: error("getIntentRelay")
 
     /**
@@ -1509,7 +1509,7 @@ class AdminApi(
     ): CreateContextIntentResponseData =
         http
             .postJson<CreateContextIntentRequest, ApiEnvelope<CreateContextIntentResponseData>>(
-                "/admin-api/groups/$groupId/context-intents", request,
+                "/admin-api/groups/${pathSegment(groupId)}/context-intents", request,
             ).data ?: error("createContextIntent")
 
     /** Discovery for [createContextIntent]. [author] (an account id) adds `authorMayCreate`. */
@@ -1518,7 +1518,7 @@ class AdminApi(
         author: String?,
     ): ContextIntentRelayInfo {
         val query = author?.let { "?author=" + encodeComponent(it) }.orEmpty()
-        return http.getJson<ApiEnvelope<ContextIntentRelayInfo>>("/admin-api/groups/$groupId/context-intents$query").data
+        return http.getJson<ApiEnvelope<ContextIntentRelayInfo>>("/admin-api/groups/${pathSegment(groupId)}/context-intents$query").data
             ?: error("getContextIntentRelay")
     }
 
@@ -1529,12 +1529,12 @@ class AdminApi(
     ): GovernanceIntentResponseData =
         http
             .postJson<GovernanceIntentRequest, ApiEnvelope<GovernanceIntentResponseData>>(
-                "/admin-api/groups/$groupId/governance-intents", request,
+                "/admin-api/groups/${pathSegment(groupId)}/governance-intents", request,
             ).data ?: error("governanceIntent")
 
     /** Discovery for [governanceIntent]. */
     override suspend fun getGovernanceIntentRelay(groupId: String): GovernanceIntentRelayInfo =
-        http.getJson<ApiEnvelope<GovernanceIntentRelayInfo>>("/admin-api/groups/$groupId/governance-intents").data
+        http.getJson<ApiEnvelope<GovernanceIntentRelayInfo>>("/admin-api/groups/${pathSegment(groupId)}/governance-intents").data
             ?: error("getGovernanceIntentRelay")
 
     /**
@@ -1554,7 +1554,7 @@ class AdminApi(
                 put("signature", request.signature)
                 put("authorProof", request.authorProof)
             }
-        send("POST", "/admin-api/contexts/$contextId/presence-intents", http.json.encodeToString(JsonObject.serializer(), body))
+        send("POST", "/admin-api/contexts/${pathSegment(contextId)}/presence-intents", http.json.encodeToString(JsonObject.serializer(), body))
     }
 
     // ---- Account root, device links, sealing (rc.83) ------------------------
@@ -1581,7 +1581,7 @@ class AdminApi(
     ): LinkAccountDeviceResponseData =
         http
             .postJson<LinkAccountDeviceRequest, ApiEnvelope<LinkAccountDeviceResponseData>>(
-                "/admin-api/namespaces/$namespaceId/account/link-device", request,
+                "/admin-api/namespaces/${pathSegment(namespaceId)}/account/link-device", request,
             ).data ?: error("linkAccountDevice")
 
     /**
@@ -1613,7 +1613,7 @@ class AdminApi(
     ): SealedEnvelope =
         http
             .postJson<SealToAccountRequest, ApiEnvelope<SealedEnvelope>>(
-                "/admin-api/groups/$groupId/accounts/$account/seal", request,
+                "/admin-api/groups/${pathSegment(groupId)}/accounts/${pathSegment(account)}/seal", request,
             ).data ?: error("sealToAccount")
 
     // ---- Root-guarded owner ops (rc.83) -------------------------------------
@@ -1622,13 +1622,13 @@ class AdminApi(
     override suspend fun transferOwnership(
         groupId: String,
         request: TransferOwnershipRequest,
-    ) = send("POST", "/admin-api/groups/$groupId/transfer-ownership", http.json.encodeToString(request))
+    ) = send("POST", "/admin-api/groups/${pathSegment(groupId)}/transfer-ownership", http.json.encodeToString(request))
 
     /** Repoint the namespace's admin pin. Owner-only, root-guarded. */
     override suspend fun changeNamespaceAdmin(
         namespaceId: String,
         request: ChangeNamespaceAdminRequest,
-    ) = send("POST", "/admin-api/namespaces/$namespaceId/admin", http.json.encodeToString(request))
+    ) = send("POST", "/admin-api/namespaces/${pathSegment(namespaceId)}/admin", http.json.encodeToString(request))
 
     /**
      * Delete a group through the owner-only path: it must hold no contexts, and
@@ -1637,13 +1637,13 @@ class AdminApi(
     override suspend fun ownerDeleteGroup(
         groupId: String,
         request: OwnerDeleteGroupRequest,
-    ) = send("POST", "/admin-api/groups/$groupId/owner-delete", http.json.encodeToString(request))
+    ) = send("POST", "/admin-api/groups/${pathSegment(groupId)}/owner-delete", http.json.encodeToString(request))
 
     /** Which admitted TEEs may author as the TEE authority. [groupId] must be a namespace root. */
     override suspend fun setTeeAuthoringPolicy(
         groupId: String,
         request: SetTeeAuthoringPolicyRequest,
-    ) = send("PUT", "/admin-api/groups/$groupId/settings/tee-authoring-policy", http.json.encodeToString(request))
+    ) = send("PUT", "/admin-api/groups/${pathSegment(groupId)}/settings/tee-authoring-policy", http.json.encodeToString(request))
 
     /**
      * Turn TEE authorship off (the same op as an empty [setTeeAuthoringPolicy]).
@@ -1654,7 +1654,7 @@ class AdminApi(
         request: DisableTeeAuthoringPolicyRequest,
     ) {
         val body = request.rootProof?.let { http.json.encodeToString(request) }
-        send("DELETE", "/admin-api/groups/$groupId/settings/tee-authoring-policy", body)
+        send("DELETE", "/admin-api/groups/${pathSegment(groupId)}/settings/tee-authoring-policy", body)
     }
 
     // ---- Root-guarded owner ops, signed here by the account root -------------
@@ -1763,6 +1763,18 @@ class AdminApi(
 
         /** RFC-3986 unreserved set: ALPHA / DIGIT / `-` / `.` / `_` / `~`. */
         private const val UNRESERVED = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~"
+
+        /**
+         * [value] as exactly one path segment. Every id an admin path carries goes through here: a
+         * `/`, `?` or `#` in it is encoded, so an id read from an invite cannot reach another route,
+         * and an empty or dot segment, which a URL parser would resolve away, is refused. (SEC-02)
+         *
+         * @throws IllegalArgumentException for an empty, `.` or `..` value.
+         */
+        fun pathSegment(value: String): String {
+            require(value.isNotEmpty() && value != "." && value != "..") { "Not a path segment: \"$value\"" }
+            return encodeComponent(value)
+        }
 
         /** Percent-encode a string for use as a query value or a path segment. */
         fun encodeComponent(value: String): String =

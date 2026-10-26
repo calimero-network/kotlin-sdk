@@ -26,6 +26,7 @@ EXCLUDED=(
   execute            # raw HttpClient escape hatch behind rpc/admin
   executeRaw         # ditto, untyped variant
   encodeComponent    # internal: percent-encoding helper
+  pathSegment        # internal: one id as one path segment (SEC-02)
   compareSemverComponent  # internal: helper behind compareSemver
   origin             # internal: base-URL accessor
   fetchExternal      # internal: cross-node fetch helper
