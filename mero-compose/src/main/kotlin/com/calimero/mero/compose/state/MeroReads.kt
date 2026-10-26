@@ -10,6 +10,7 @@ import com.calimero.mero.admin.GroupUpgradeStatus
 import com.calimero.mero.admin.MetadataRecord
 import com.calimero.mero.admin.Namespace
 import com.calimero.mero.admin.NodeIdentity
+import com.calimero.mero.admin.OutboundApproval
 import com.calimero.mero.admin.SubgroupEntry
 import com.calimero.mero.compose.MeroSession
 import com.calimero.mero.http.HttpException
@@ -123,6 +124,10 @@ class MeroReads(
     fun namespaces(): AsyncResource<List<Namespace>> = adminResource(emptyList()) { it.listNamespaces() }
 
     fun namespace(namespaceId: String?): AsyncResource<Namespace?> = adminResource(null, namespaceId != null) { it.getNamespace(namespaceId!!) }
+
+    /** What [namespaceId] approves for outbound requests, one entry per publisher. */
+    fun outboundApprovals(namespaceId: String?): AsyncResource<List<OutboundApproval>> =
+        adminResource(emptyList(), namespaceId != null) { it.listOutboundApprovals(namespaceId!!) }
 
     /**
      * Who this node is: `accountId` is what member-addressing takes, `publicKey` the signing key

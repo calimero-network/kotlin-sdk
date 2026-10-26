@@ -57,6 +57,8 @@ import com.calimero.mero.admin.SetDefaultCapabilitiesRequest
 import com.calimero.mero.admin.SetGroupMetadataRequest
 import com.calimero.mero.admin.SetMemberCapabilitiesRequest
 import com.calimero.mero.admin.SetMemberMetadataRequest
+import com.calimero.mero.admin.SetOutboundApprovalRequest
+import com.calimero.mero.admin.SetOutboundApprovalResponseData
 import com.calimero.mero.admin.SetSubgroupVisibilityRequest
 import com.calimero.mero.admin.SetTeeAdmissionPolicyRequest
 import com.calimero.mero.admin.SignedGroupOpenInvitation
@@ -288,7 +290,8 @@ class CloudAccountAdminDeps(
  * visibility, leave and detach (group ops), `createContext` (a creation warrant), context
  * identities and `joinContext` (the account is its own identity), `createNamespaceInvitation`
  * (signed by this device, naming the namespace's relays as admitters), `joinNamespace` /
- * `redeemInvitation` ([AccountAdminDeps.join]) and the no-op syncs. Upgrades, installs, aliases,
+ * `redeemInvitation` ([AccountAdminDeps.join]) and the no-op syncs. Upgrades, outbound approvals
+ * (`setOutboundApproval`, and `createNamespace` with `approveOutbound`), installs, aliases,
  * context identities and deletes of a node's own copy, TEE policy, blob deletion and account
  * devices are refused by name. Everything else is a read, answered by the relay.
  */
@@ -414,6 +417,9 @@ private class AccountAdmin(
     override suspend fun createNamespace(request: CreateNamespaceRequest): CreateNamespaceResponseData {
         relay("createNamespace")
         val pkg = app.packageName ?: throw NotForAccountException("createNamespace without a packageName")
+        // Founding through a relay carries no outbound approval; dropping the ask silently would
+        // leave the app's requests refused with nothing to say why.
+        if (request.approveOutbound != null) throw NotForAccountException("createNamespace with approveOutbound")
         val version = app.packageVersion ?: deps.latestVersion(app.registryUrl, pkg)
         val founded = deps.found(s, FOUNDED_DEFAULT_CAPABILITIES, ApplicationTarget(request.applicationId, pkg, version))
         request.name?.takeIf { it.isNotEmpty() }?.let {
@@ -755,6 +761,11 @@ private class AccountAdmin(
         groupId: String,
         request: UpgradeGroupRequest,
     ): UpgradeGroupResponseData = refuse("upgradeGroup")
+
+    override suspend fun setOutboundApproval(
+        namespaceId: String,
+        request: SetOutboundApprovalRequest,
+    ): SetOutboundApprovalResponseData = refuse("setOutboundApproval")
 
     override suspend fun retryGroupUpgrade(
         groupId: String,

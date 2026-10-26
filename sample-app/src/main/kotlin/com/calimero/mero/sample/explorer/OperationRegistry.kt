@@ -51,6 +51,7 @@ import com.calimero.mero.admin.SetDefaultCapabilitiesRequest
 import com.calimero.mero.admin.SetGroupMetadataRequest
 import com.calimero.mero.admin.SetMemberCapabilitiesRequest
 import com.calimero.mero.admin.SetMemberMetadataRequest
+import com.calimero.mero.admin.SetOutboundApprovalRequest
 import com.calimero.mero.admin.SetSubgroupVisibilityRequest
 import com.calimero.mero.admin.SetTeeAdmissionPolicyRequest
 import com.calimero.mero.admin.SetTeeAuthoringPolicyRequest
@@ -435,6 +436,14 @@ private val nsOps =
             val req = i.opt("body")?.let { Fmt.decode<DeleteNamespaceRequest>(it) }
             Fmt.json(m.admin.deleteNamespace(i.v("namespaceId"), req))
         },
+        SDKOperation(
+            "ns.outboundList", "Namespaces", "listOutboundApprovals", "Outbound approvals, per publisher",
+            listOf(OpField.line("namespaceId", "Namespace ID")),
+        ) { m, i -> Fmt.json(m.admin.listOutboundApprovals(i.v("namespaceId"))) },
+        SDKOperation(
+            "ns.outboundSet", "Namespaces", "setOutboundApproval", "Set a publisher's outbound approval",
+            listOf(OpField.line("namespaceId", "Namespace ID"), OpField.json("body", "SetOutboundApprovalRequest")),
+        ) { m, i -> Fmt.json(m.admin.setOutboundApproval(i.v("namespaceId"), Fmt.decode<SetOutboundApprovalRequest>(i.v("body")))) },
         SDKOperation(
             "ns.invite", "Namespaces", "createNamespaceInvitation", "Invite to a namespace",
             listOf(OpField.line("namespaceId", "Namespace ID"), OpField.json("body", "Body (optional)", "")),

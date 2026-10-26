@@ -15,6 +15,7 @@ import com.calimero.mero.admin.GroupUpgradeStatus
 import com.calimero.mero.admin.MetadataRecord
 import com.calimero.mero.admin.Namespace
 import com.calimero.mero.admin.NodeIdentity
+import com.calimero.mero.admin.OutboundApproval
 import com.calimero.mero.admin.SubgroupEntry
 import com.calimero.mero.compose.MeroSession
 import com.calimero.mero.compose.useMero
@@ -109,6 +110,10 @@ fun rememberNamespaces(): AsyncResource<List<Namespace>> = rememberMeroResource 
 
 @Composable
 fun rememberNamespace(namespaceId: String?): AsyncResource<Namespace?> = rememberMeroResource(namespaceId) { namespace(namespaceId) }
+
+@Composable
+fun rememberOutboundApprovals(namespaceId: String?): AsyncResource<List<OutboundApproval>> =
+    rememberMeroResource(namespaceId) { outboundApprovals(namespaceId) }
 
 @Composable
 fun rememberNodeIdentity(): AsyncResource<NodeIdentity?> = rememberMeroResource { nodeIdentity() }
@@ -267,6 +272,8 @@ fun rememberMyAuthoredMigration(contextId: String?): MyAuthoredMigrationState =
 @Composable fun rememberCreateNamespace(): CreateNamespace = rememberMeroMutation { CreateNamespace(it) }
 
 @Composable fun rememberDeleteNamespace(): DeleteNamespace = rememberMeroMutation { DeleteNamespace(it) }
+
+@Composable fun rememberSetOutboundApproval(): SetOutboundApproval = rememberMeroMutation { SetOutboundApproval(it) }
 
 @Composable fun rememberCreateNamespaceInvitation(): CreateNamespaceInvitation = rememberMeroMutation { CreateNamespaceInvitation(it) }
 

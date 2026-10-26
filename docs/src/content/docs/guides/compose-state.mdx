@@ -51,7 +51,7 @@ fun Members(groupId: String) {
 `applicationContexts`, `contextGroup`, `groupInfo`, `groupMembers` (keyed by
 **account**), `groupContexts`, `subgroups`, `defaultCapabilities`,
 `subgroupVisibility`, `groupUpgradeStatus`, `groupMetadata`, `memberMetadata`,
-`namespaces`, `namespace`, `nodeIdentity`, `namespacesForApplication`,
+`namespaces`, `namespace`, `outboundApprovals`, `nodeIdentity`, `namespacesForApplication`,
 `namespaceGroups` and `blobInfo` (`isBlobNotFound(error)` tells "no holder" from a
 failure). On an account, `contexts` and `namespacesForApplication` list the account's
 own across every relay it uses and filter them, since the per-application listings are
@@ -70,7 +70,7 @@ key), `RemoveGroupMembers`, `UpdateMemberRole`, `SetDefaultCapabilities`,
 `SetSubgroupVisibility`, `SetTeeAdmissionPolicy`, `ReparentGroup`,
 `DetachContextFromGroup`, `JoinSubgroupInheritance`, `GroupInvitations`, `JoinGroup`,
 `SetGroupMetadata`, `SetMemberMetadata`, `SetContextMetadata`, `CreateNamespace`,
-`DeleteNamespace`, `CreateNamespaceInvitation`, `JoinNamespace`,
+`DeleteNamespace`, `SetOutboundApproval`, `CreateNamespaceInvitation`, `JoinNamespace`,
 `CreateGroupInNamespace`, `RedeemInvitation` (keeps its `RedeemOutcome`),
 `UpgradeGroup`, `RetryGroupUpgrade`, `InstallFromRegistry` and `UploadBlob` — each
 with a `remember…()` composable.

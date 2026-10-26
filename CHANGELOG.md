@@ -2,6 +2,24 @@
 
 ## Unreleased
 
+### Outbound approval (mero-core, mero-compose)
+
+Mirrors calimero-network/core#4690: an app's outbound HTTPS request needs the namespace's
+approval for the app's publisher (bundle signer).
+
+- `OutboundSelection`: `Manifest` (the string `"manifest"`) or `Prefixes(list)` (a bare JSON array),
+  hand-serialized to exactly those two forms.
+- `CreateNamespaceRequest.approveOutbound` and `UpgradeGroupRequest.approveOutbound`, omitted when
+  `null`; `CreateNamespaceResponseData.outboundApproval` and `UpgradeGroupResponseData.outboundApproval`
+  (`OutboundApproval(signer, prefixes, reviewed)`), present only when an approval was asked for.
+- `AdminSurface.listOutboundApprovals(namespaceId)` (`GET /admin-api/namespaces/{id}/outbound-approvals`)
+  and `setOutboundApproval(namespaceId, SetOutboundApprovalRequest(applicationId, approve))` (`PUT`, sets
+  the list exactly; an empty list revokes), returning `SetOutboundApprovalResponseData` with `published`.
+- An account admin refuses `setOutboundApproval` and a `createNamespace` with `approveOutbound`
+  (`NotForAccountException`) rather than founding without the approval.
+- mero-compose: `MeroReads.outboundApprovals` / `rememberOutboundApprovals`, and the
+  `SetOutboundApproval` mutation / `rememberSetOutboundApproval`. The sample app's SDK Explorer lists both calls.
+
 ### Core 0.11.0: namespace ops signed at schema 27 (mero-core)
 
 - `NamespaceOp.SCHEMA_VERSION` is 27, core 0.11.0's `SIGNED_NAMESPACE_OP_SCHEMA_VERSION`

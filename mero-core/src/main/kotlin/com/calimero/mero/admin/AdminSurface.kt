@@ -204,6 +204,20 @@ interface AdminSurface {
         request: DeleteNamespaceRequest? = null,
     ): DeleteNamespaceResponseData
 
+    /** What [namespaceId] approves for outbound requests, one entry per publisher. */
+    suspend fun listOutboundApprovals(
+        namespaceId: String,
+    ): List<OutboundApproval>
+
+    /**
+     * Set what [namespaceId] approves for the publisher of [SetOutboundApprovalRequest.applicationId]
+     * to exactly [SetOutboundApprovalRequest.approve]; an empty list revokes everything.
+     */
+    suspend fun setOutboundApproval(
+        namespaceId: String,
+        request: SetOutboundApprovalRequest,
+    ): SetOutboundApprovalResponseData
+
     suspend fun createNamespaceInvitation(
         namespaceId: String,
         request: CreateNamespaceInvitationRequest? = null,

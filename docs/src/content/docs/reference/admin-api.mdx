@@ -142,6 +142,8 @@ The list routes answer a **map** — `{"data": {"<alias>": "<value>"}}`, and
 | `listNamespacesForApplication(applicationId): ListNamespacesResponseData` | `GET /namespaces/for-application/{applicationId}` |
 | `createNamespace(request): CreateNamespaceResponseData` | `POST /namespaces` |
 | `deleteNamespace(namespaceId, request? = null): DeleteNamespaceResponseData` | `DELETE /namespaces/{namespaceId}` |
+| `listOutboundApprovals(namespaceId): List<OutboundApproval>` | `GET /namespaces/{namespaceId}/outbound-approvals` |
+| `setOutboundApproval(namespaceId, request): SetOutboundApprovalResponseData` | `PUT /namespaces/{namespaceId}/outbound-approvals` (sets the publisher's list exactly; an empty list revokes) |
 | `createNamespaceInvitation(namespaceId, request? = null): CreateNamespaceInvitationResult` | `POST /namespaces/{namespaceId}/invite` |
 | `joinNamespace(namespaceId, request): JoinNamespaceResponseData` | `POST /namespaces/{namespaceId}/join` |
 | `redeemInvitation(namespaceId, invitation, groupName? = null, teamName? = null): RedeemOutcome` | `joinNamespace`, then `listNamespaces` to settle a failed request (`Joined` / `AlreadyMember` / `Failed(reason, retryable)`) |
@@ -159,6 +161,27 @@ filling `CreateGroupInNamespaceRequest.VISIBILITY_OPEN` when yours is `null` —
 the same call creates the same subgroup on any node. Pass `VISIBILITY_RESTRICTED`
 for a membership boundary.
 :::
+
+### Outbound approval (calimero-network/core#4690)
+
+An app's outbound HTTPS request needs the namespace's approval for the app's
+publisher (the bundle signer). Approve in the call that installs or upgrades the app,
+or set the list directly:
+
+```kotlin
+// Every prefix the app's manifest declares, approved with the namespace.
+mero.admin.createNamespace(CreateNamespaceRequest(appId, approveOutbound = OutboundSelection.Manifest))
+// An upgrade's approval is added to what the namespace already approves.
+mero.admin.upgradeGroup(groupId, UpgradeGroupRequest(newAppId, approveOutbound = OutboundSelection.Prefixes(listOf("https://api.stripe.com/v1/"))))
+// Set it exactly; an empty list revokes everything.
+mero.admin.setOutboundApproval(namespaceId, SetOutboundApprovalRequest(appId, OutboundSelection.Prefixes(emptyList())))
+mero.admin.listOutboundApprovals(namespaceId) // one OutboundApproval(signer, prefixes, reviewed) per publisher
+```
+
+`OutboundSelection` is the string `"manifest"` or a JSON array of prefixes on the wire.
+`approveOutbound` is left out of the body when `null`, and the responses carry
+`outboundApproval` only when one was asked for. An account admin refuses
+`setOutboundApproval` and a `createNamespace` that sets `approveOutbound`.
 
 ## Group management
 
