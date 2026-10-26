@@ -230,4 +230,14 @@ class InvitationCaptureTest {
         assertEquals("e40c292c", hashNonce("a"))
         assertEquals(ParsedIntent("com.calimero.curb", "join", mapOf("invitation" to "T")), parseIntent("calimero://com.calimero.curb/join?invitation=T"))
     }
+
+    @Test
+    fun `the pending intent store keeps the newest twenty and drops the oldest`() {
+        val store = PendingIntentStore(MemoryKeyValueStore())
+        repeat(25) { store.capture("calimero://app/join?invitation=t$it") }
+        val kept = store.all().map { it.raw }
+        assertEquals(PendingIntentStore.MAX_PENDING, kept.size)
+        assertEquals("the five oldest are gone", "calimero://app/join?invitation=t5", kept.first())
+        assertEquals("calimero://app/join?invitation=t24", kept.last())
+    }
 }
