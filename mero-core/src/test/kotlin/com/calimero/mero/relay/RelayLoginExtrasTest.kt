@@ -1,5 +1,8 @@
+@file:OptIn(DevOnlyMeroApi::class)
+
 package com.calimero.mero.relay
 
+import com.calimero.mero.DevOnlyMeroApi
 import com.calimero.mero.testkit.FakeNode
 import kotlinx.coroutines.runBlocking
 import okhttp3.mockwebserver.MockResponse
@@ -34,8 +37,9 @@ class RelayLoginExtrasTest {
             node.cloud.nodeKey = "ab".repeat(32)
             val pinned = "CD".repeat(32)
             assertEquals("cd".repeat(32), RelayLogin(PinnedRelayKeyVerifier(pinned)).attestNodeKey(base))
-            // The default verifier would have taken the relay's word for it.
-            assertEquals("ab".repeat(32), RelayLogin(TlsRelayKeyVerifier()).attestNodeKey(base))
+            // The TLS-only verifier takes the relay's word for it (a dev rig's mock, when allowed).
+            assertEquals("ab".repeat(32), RelayLogin(TlsRelayKeyVerifier(allowMock = true)).attestNodeKey(base))
+            assertTrue("a loopback mock is refused by default", runCatching { RelayLogin(TlsRelayKeyVerifier()).attestNodeKey(base) }.isFailure)
         }
 
     @Test

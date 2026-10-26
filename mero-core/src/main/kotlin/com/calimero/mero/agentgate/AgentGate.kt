@@ -164,7 +164,7 @@ private suspend fun postJson(
     url: String,
     body: JsonObject,
 ): JsonObject? {
-    val response = PlainJsonHttp(httpClient).execute("POST", url, body.toString())
+    val response = PlainJsonHttp(httpClient, role = null).execute("POST", url, body.toString())
     val parsed = runCatching { response.body.takeIf { it.isNotEmpty() }?.let { gateJson.parseToJsonElement(it) as? JsonObject } }.getOrNull()
     if (!response.isSuccessful) {
         val error = (parsed?.get("error") as? JsonPrimitive)?.takeIf { it.isString }?.content

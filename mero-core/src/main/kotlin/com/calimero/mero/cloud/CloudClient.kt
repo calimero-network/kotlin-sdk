@@ -91,7 +91,7 @@ class CloudClient internal constructor(
         sessionToken: String? = null,
         onSession: ((CloudLoginSession?) -> Unit)? = null,
         sessionStore: CloudSessionStore? = null,
-    ) : this(baseUrl, routingCredential, PlainJsonHttp(httpClient), sessionToken, onSession, sessionStore)
+    ) : this(baseUrl, routingCredential, PlainJsonHttp(httpClient, role = "cloud"), sessionToken, onSession, sessionStore)
 
     /** The manager API base, without a trailing slash. */
     val baseUrl: String = baseUrl.trimBase()

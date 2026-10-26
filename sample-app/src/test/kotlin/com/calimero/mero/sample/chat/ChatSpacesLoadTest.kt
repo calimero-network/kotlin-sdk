@@ -5,6 +5,7 @@ import com.calimero.mero.account.DeviceCert
 import com.calimero.mero.account.MemorySecureStore
 import com.calimero.mero.compose.MeroClient
 import com.calimero.mero.crypto.SeedSigner
+import com.calimero.mero.relay.DcapRelayKeyVerifier
 import com.calimero.mero.storage.MemoryTokenStore
 import com.calimero.mero.testkit.FakeNode
 import kotlinx.coroutines.runBlocking
@@ -40,7 +41,7 @@ class ChatSpacesLoadTest {
         node = FakeNode()
         server = node.start()
         val base = server.url("/").toString().trimEnd('/')
-        val account = CloudAccount(MemorySecureStore(), cloudBaseUrl = base, walletUrl = "https://wallet.example/account-enroll")
+        val account = CloudAccount(MemorySecureStore(), relayKeyVerifier = DcapRelayKeyVerifier(allowMock = true), cloudBaseUrl = base, walletUrl = "https://wallet.example/account-enroll")
         client = MeroClient(account, MemoryTokenStore(), launchWallet = { _, _ -> })
     }
 

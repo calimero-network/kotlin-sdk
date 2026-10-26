@@ -12,7 +12,7 @@ class SsoTest {
     @Test
     fun `parses tokens and ids from the hash fragment`() {
         val url =
-            "myapp://auth-callback#access_token=aaa&refresh_token=bbb&application_id=app1" +
+            "https://app.example/auth-callback#access_token=aaa&refresh_token=bbb&application_id=app1" +
                 "&context_id=ctx1&context_identity=id1&node_url=https%3A%2F%2Fnode.example.com"
         val result = parseAuthCallback(url, allowUnsolicited = true)!!
         assertEquals("aaa", result.accessToken)

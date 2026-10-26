@@ -11,6 +11,7 @@ import com.calimero.mero.admin.SignedGroupOpenInvitation
 import com.calimero.mero.crypto.Hex
 import com.calimero.mero.crypto.SeedSigner
 import com.calimero.mero.crypto.readU64le
+import com.calimero.mero.relay.DcapRelayKeyVerifier
 import com.calimero.mero.relay.IntentRefusedException
 import com.calimero.mero.storage.MemoryTokenStore
 import com.calimero.mero.testkit.FakeNode
@@ -65,7 +66,13 @@ class CloudSignInFlowTest {
 
     /** A fresh [CloudAccount] over the same store, as after process death. */
     private fun relaunched() =
-        CloudAccount(store, cloudBaseUrl = base, walletUrl = "https://wallet.example/account-enroll", clock = { now })
+        CloudAccount(
+            store,
+            relayKeyVerifier = DcapRelayKeyVerifier(allowMock = true),
+            cloudBaseUrl = base,
+            walletUrl = "https://wallet.example/account-enroll",
+            clock = { now },
+        )
 
     private suspend fun assertStateRefused(answer: String) {
         try {

@@ -69,7 +69,7 @@ class RelayAttestationTest {
         allowMock: Boolean = false,
         verify: VerifyTransportQuote? = null,
         verifyQuote: (suspend (ByteArray) -> Unit)? = null,
-    ) = runBlocking { attestRelayNodeKey("http://r", allowMock, verify, verifyQuote, net.client) }
+    ) = runBlocking { attestRelayNodeKey("https://r", allowMock, verify, verifyQuote, net.client) }
 
     @Test
     fun `returns the key a mock quote binds, when mock is allowed`() {
@@ -186,15 +186,18 @@ class RelayAttestationTest {
     ) = RelayAttestation(base64(concat(mockHeader, nonce, attestKeyBinding(bound))), Hex.encode(key), JsonObject(emptyMap()))
 
     @Test
-    fun `takes a mock quote only from a loopback relay`() {
+    fun `refuses a mock quote even from a loopback relay unless allowed`() {
         val verifier = DcapRelayKeyVerifier()
         val nonce = ByteArray(32) { 5 }
-        assertEquals(Hex.encode(key), runBlocking { verifier.verify("http://127.0.0.1:2428", nonce, mockAttestation(nonce)) })
-        assertEquals(Hex.encode(key), runBlocking { verifier.verify("http://10.0.2.2:2428", nonce, mockAttestation(nonce)) })
+        // Another app on the device can listen on 127.0.0.1.
+        assertRefuses("MOCK") { runBlocking { verifier.verify("http://127.0.0.1:2428", nonce, mockAttestation(nonce)) } }
+        assertRefuses("MOCK") { runBlocking { verifier.verify("http://10.0.2.2:2428", nonce, mockAttestation(nonce)) } }
         assertRefuses("MOCK") { runBlocking { verifier.verify(relayUrl, nonce, mockAttestation(nonce)) } }
-        assertEquals(Hex.encode(key), runBlocking { DcapRelayKeyVerifier(allowMock = true).verify(relayUrl, nonce, mockAttestation(nonce)) })
+        val devRig = DcapRelayKeyVerifier(allowMock = true)
+        assertEquals(Hex.encode(key), runBlocking { devRig.verify("http://127.0.0.1:2428", nonce, mockAttestation(nonce)) })
+        assertEquals(Hex.encode(key), runBlocking { devRig.verify(relayUrl, nonce, mockAttestation(nonce)) })
         assertRefuses("does not bind the key") {
-            runBlocking { verifier.verify("http://localhost", nonce, mockAttestation(nonce, ByteArray(32))) }
+            runBlocking { devRig.verify("http://localhost", nonce, mockAttestation(nonce, ByteArray(32))) }
         }
     }
 

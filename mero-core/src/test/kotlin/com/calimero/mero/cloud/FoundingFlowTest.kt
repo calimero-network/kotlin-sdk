@@ -13,6 +13,7 @@ import com.calimero.mero.crypto.SeedSigner
 import com.calimero.mero.crypto.concat
 import com.calimero.mero.crypto.fromBase64
 import com.calimero.mero.relay.ApplicationTarget
+import com.calimero.mero.relay.DcapRelayKeyVerifier
 import com.calimero.mero.relay.GovernanceOps
 import com.calimero.mero.storage.MemoryTokenStore
 import com.calimero.mero.testkit.FakeNode
@@ -52,7 +53,7 @@ class FoundingFlowTest {
             node = FakeNode()
             server = node.start()
             base = server.url("/").toString().trimEnd('/')
-            account = CloudAccount(MemorySecureStore(), cloudBaseUrl = base, walletUrl = "https://wallet.example/account-enroll")
+            account = CloudAccount(MemorySecureStore(), relayKeyVerifier = DcapRelayKeyVerifier(allowMock = true), cloudBaseUrl = base, walletUrl = "https://wallet.example/account-enroll")
             session = account.completeEnrolment(walletApproves(account.beginEnrolment("mero-sample://enrol")))!!
         }
 

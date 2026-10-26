@@ -8,6 +8,7 @@ import com.calimero.mero.account.DeviceCert
 import com.calimero.mero.account.MemorySecureStore
 import com.calimero.mero.auth.PendingAuthStates
 import com.calimero.mero.crypto.SeedSigner
+import com.calimero.mero.relay.DcapRelayKeyVerifier
 import com.calimero.mero.storage.MemoryTokenStore
 import com.calimero.mero.testkit.FakeNode
 import kotlinx.coroutines.flow.first
@@ -39,7 +40,7 @@ class MeroClientSessionTest {
     private val pending = PendingAuthStates()
     private var opened: String? = null
     private val clients = mutableListOf<MeroClient>()
-    private val callback = "mero-sample://auth"
+    private val callback = "https://app.example/auth"
 
     @Before
     fun setUp() {
@@ -58,7 +59,7 @@ class MeroClientSessionTest {
         config: MeroAppConfig = MeroAppConfig(packageName = "com.example.app"),
         resolve: suspend (String, String) -> String = { _, _ -> error("no registry") },
     ): MeroClient {
-        val account = CloudAccount(MemorySecureStore(), cloudBaseUrl = base, walletUrl = "https://wallet.example/account-enroll")
+        val account = CloudAccount(MemorySecureStore(), relayKeyVerifier = DcapRelayKeyVerifier(allowMock = true), cloudBaseUrl = base, walletUrl = "https://wallet.example/account-enroll")
         return MeroClient(
             account,
             tokens,
@@ -103,6 +104,30 @@ class MeroClientSessionTest {
         assertEquals(base, storage.nodeUrl)
         assertTrue(c.state.value.isLoading)
     }
+
+    @Test
+    fun `connectToNode refuses plain http across the network`() {
+        val c = client()
+        c.connectToNode(android.content.ContextWrapper(null), "http://node.provider.test", callback)
+        assertEquals(MeroClient.INSECURE_NODE_URL, c.state.value.error)
+        assertNull("the login page is never opened", opened)
+    }
+
+    @Test
+    fun `a custom-scheme callback is used only when the app allows it`() =
+        runBlocking {
+            val refused = client()
+            refused.connectToNode(android.content.ContextWrapper(null), base, "myapp://auth")
+            assertEquals(MeroClient.CUSTOM_SCHEME_CALLBACK, refused.state.value.error)
+            assertNull("any app can claim myapp://", opened)
+
+            val allowed = client(config = MeroAppConfig(packageName = "com.example.app", allowCustomSchemeCallbacks = true))
+            allowed.connectToNode(android.content.ContextWrapper(null), base, "myapp://auth")
+            val answer = ssoAnswer()
+            assertFalse("the default config refuses it", refused.handleAuthCallback(answer))
+            assertTrue(allowed.handleAuthCallback(answer))
+            assertTrue(allowed.state.value.isAuthenticated)
+        }
 
     @Test
     fun `a trusted callback adopts its tokens, validates them and connects`() =

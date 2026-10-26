@@ -17,7 +17,11 @@ data class AuthCallbackResult(
 
 /** Options for [buildAuthLoginUrl]. Port of mero-js `AuthLoginOptions`. */
 data class AuthLoginOptions(
-    /** Deep-link the node redirects back to (custom scheme or App Link), e.g. `myapp://auth-callback`. */
+    /**
+     * Deep link the node redirects back to, with the session's tokens. Prefer a verified `https`
+     * App Link (`https://app.example/auth-callback`): [parseAuthCallback] refuses a custom scheme
+     * (`myapp://auth-callback`) unless told otherwise, as any app can claim one.
+     */
     val callbackUrl: String,
     val mode: String,
     val permissions: List<String>? = null,
@@ -30,8 +34,9 @@ data class AuthLoginOptions(
  * Parse an SSO callback URL. Tokens arrive in the URL **hash fragment**
  * (`#access_token=…&refresh_token=…&application_id=…&…`).
  *
- * Returns null if `access_token` is absent, **or if the callback does not answer a login this
- * app began** with [buildAuthLoginUrl]: the callback URL must carry an `auth_state` query
+ * Returns null if `access_token` is absent, if the callback is not an `https` URL (unless
+ * [allowCustomScheme]), **or if the callback does not answer a login this app began** with
+ * [buildAuthLoginUrl]: the callback URL must carry an `auth_state` query
  * parameter that [pending] recorded, unexpired and unused. The state is spent, so the same
  * callback is adopted once. This stops a crafted deep link from signing the person in to an
  * attacker's node with the attacker's tokens.
@@ -40,6 +45,11 @@ data class AuthLoginOptions(
  *   injects them itself (mero-js's Calimero Desktop case). Anyone who can open the app with a
  *   link can then choose the session, so leave it false on a phone.
  * @param pending where [buildAuthLoginUrl] recorded the login; [PendingAuthStates.shared] by default.
+ * @param allowCustomScheme accept a callback on a custom scheme (`myapp://…`) or plain `http`, not
+ *   only on an `https` App Link. Any installed app can declare the same custom scheme and receive
+ *   the redirect, tokens included; a verified App Link (`android:autoVerify`) cannot be claimed.
+ *   Leave it false in a release build. The lasting fix, an authorization code with PKCE in place
+ *   of tokens in the link, needs the node.
  *
  * Port of mero-js `parseAuthCallback`, kept dependency-free (no `android.net.Uri`) so it is
  * unit-testable on the JVM.
@@ -48,12 +58,14 @@ fun parseAuthCallback(
     url: String,
     allowUnsolicited: Boolean = false,
     pending: PendingAuthStates = PendingAuthStates.shared,
+    allowCustomScheme: Boolean = false,
 ): AuthCallbackResult? {
     return try {
         val hashIndex = url.indexOf('#')
         if (hashIndex == -1) return null
         val params = parseQuery(url.substring(hashIndex + 1))
         val accessToken = params["access_token"]?.takeIf { it.isNotEmpty() } ?: return null
+        if (!allowCustomScheme && !isHttpsUrl(url)) return null
         if (!allowUnsolicited && !pending.take(stateOf(url, hashIndex))) return null
         AuthCallbackResult(
             accessToken = accessToken,
@@ -67,6 +79,9 @@ fun parseAuthCallback(
         null
     }
 }
+
+/** Whether [url] is an `https` URL (an App Link), not a custom scheme any app can claim. */
+internal fun isHttpsUrl(url: String): Boolean = url.substringBefore(':', "").equals("https", ignoreCase = true)
 
 /** The `auth_state` in the callback's query (between `?` and `#`), or null. */
 private fun stateOf(

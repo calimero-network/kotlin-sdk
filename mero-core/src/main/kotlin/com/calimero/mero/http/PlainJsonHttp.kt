@@ -17,9 +17,15 @@ import java.util.concurrent.TimeUnit
  *
  * Non-2xx answers come back as an [HttpResponse]; only a transport failure throws
  * ([NetworkException]).
+ *
+ * [role] names the host for [TransportSecurity.checkServiceUrl]: plain http is refused to
+ * anything but loopback ([InsecureTransportException]). Null skips the check, for requests
+ * that are attested or sealed end to end (a TEE node's `/tee/attest` and `/tee/info`, the
+ * agent gate) or verified after the fact (a signed release).
  */
 internal class PlainJsonHttp(
     private val client: OkHttpClient = defaultClient(),
+    private val role: String? = "relay",
 ) {
     suspend fun execute(
         method: String,
@@ -28,6 +34,7 @@ internal class PlainJsonHttp(
         headers: Map<String, String> = emptyMap(),
     ): HttpResponse =
         withContext(Dispatchers.IO) {
+            role?.let { TransportSecurity.checkServiceUrl(url, it) }
             val builder = Request.Builder().url(url).header("Accept", "application/json")
             val requestBody = body?.toRequestBody(JSON)
             when (method.uppercase()) {

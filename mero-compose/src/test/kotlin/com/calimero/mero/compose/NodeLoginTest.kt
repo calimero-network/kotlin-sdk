@@ -73,6 +73,19 @@ class NodeLoginTest {
         }
 
     @Test
+    fun `a typed node across the network must be https`() =
+        runTest {
+            val login = NodeLoginState(backgroundScope, initialUrl = "http://node.example:2428", discover = { emptyList() }, probe = { true })
+            assertTrue("a password would cross the network in the clear", login.isInsecure)
+            assertNull(login.connect())
+            assertEquals(MeroClient.INSECURE_NODE_URL, login.error.value)
+            for (url in listOf("https://node.example", "node.example", "http://192.168.1.5:2428", "http://localhost:2428")) {
+                login.setCustomUrl(url)
+                assertFalse(url, login.isInsecure)
+            }
+        }
+
+    @Test
     fun `a failed scan falls back to the manual URL`() =
         runTest {
             val login = NodeLoginState(backgroundScope, discover = { error("offline") })
