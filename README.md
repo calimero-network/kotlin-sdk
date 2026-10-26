@@ -121,6 +121,41 @@ client.mero?.events(listOf(contextId))                      // live events over 
 Without Compose, `CloudAccount` runs the same flow: `beginEnrolment(callbackUrl)` →
 `completeEnrolment(url)` → `connect()`.
 
+### What stays on the device, and backups
+
+`signOut()` (or `logout()`) retires the relay session and forgets the account: its tokens, session,
+relay map, subgroup namespaces and the pinned keys of its relays, plus the invitation attempt
+ledger. The device keys stay, along with the warrant nonces spent under them, so signing back in
+takes one approval. `signOut(forgetDevice = true)` drops those too. Use it on a shared or handed-over
+device, so the next account does not sign in with a key already certified to this one.
+
+Keys, session, nonces and tokens are in `EncryptedSharedPreferences` files (`mero_account`,
+`mero_tokens`, `mero_relay_tokens`, `mero_auth_state`, `mero_cloud_link`). The Keystore key that
+encrypts them never leaves the device, so a copy restored from a backup or a device transfer cannot
+be read. The SDK detects this, deletes the file and starts over (the person signs in again). To
+avoid that, exclude the files from backups. For Android 12+, add
+`android:dataExtractionRules="@xml/data_extraction_rules"` to `<application>`:
+
+```xml
+<!-- res/xml/data_extraction_rules.xml -->
+<data-extraction-rules>
+    <cloud-backup>
+        <exclude domain="sharedpref" path="mero_account.xml" />
+        <exclude domain="sharedpref" path="mero_tokens.xml" />
+        <exclude domain="sharedpref" path="mero_relay_tokens.xml" />
+        <exclude domain="sharedpref" path="mero_auth_state.xml" />
+        <exclude domain="sharedpref" path="mero_cloud_link.xml" />
+    </cloud-backup>
+    <device-transfer>
+        <!-- the same five <exclude> lines -->
+    </device-transfer>
+</data-extraction-rules>
+```
+
+For Android 11 and below, put the same `<exclude>` lines in a `<full-backup-content>` file and
+reference it with `android:fullBackupContent`. If you pass your own `fileName` to a store, exclude
+that file too.
+
 ## Quick start (core, self-hosted node)
 
 For servers, tools and tests that talk to a node you run (the Compose kit has a development-only

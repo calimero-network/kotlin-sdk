@@ -32,6 +32,7 @@ import com.calimero.mero.auth.PendingAuthStates
 import com.calimero.mero.auth.buildAuthLoginUrl
 import com.calimero.mero.auth.parseAuthCallback
 import com.calimero.mero.cloud.CloudClient
+import com.calimero.mero.compose.invitations.InvitationCapture
 import com.calimero.mero.http.ClassifiedError
 import com.calimero.mero.http.ErrorKind
 import com.calimero.mero.http.classifyError
@@ -564,8 +565,13 @@ class MeroClient(
 
     /**
      * Sign out: retire the relay session on the relay (best-effort `POST /auth/logout`) or the
-     * node's tokens, drop every token, the persisted account session and everything in
-     * [storage] — mero-react `logout`, which clears it all.
+     * node's tokens, drop every token, the persisted account session with its relay map and
+     * pinned relay keys ([CloudAccount.signOut]), everything in [storage] and the invitation
+     * attempt ledger — mero-react `logout`, which clears it all.
+     *
+     * The device key stays, so signing back in is one approval, unless [forgetDevice] — pass it
+     * on a shared or handed-over device, so the next account is not handed a key already
+     * certified to this one.
      */
     suspend fun signOut(forgetDevice: Boolean = false) {
         monitor?.cancel()
@@ -581,12 +587,13 @@ class MeroClient(
         account.signOut(forgetDevice)
         adoptedSession = null
         storage.clearAll()
+        InvitationCapture.shared.clearAttempts()
         _session.value = MeroSession()
         _state.value = MeroAuthState()
     }
 
     /** Alias of [signOut], for parity with mero-react's `logout`. */
-    suspend fun logout() = signOut()
+    suspend fun logout(forgetDevice: Boolean = false) = signOut(forgetDevice)
 
     // ---- Wiring ---------------------------------------------------------------------------
 
