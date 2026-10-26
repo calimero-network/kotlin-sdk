@@ -35,6 +35,18 @@
   `Failed(namespaceId = null, reason = INVALID, retryable = false)`, and sends nothing. The id comes
   from the invite, so a crafted one could otherwise retarget the user's authenticated join.
 
+### Enrolment callbacks need a pending state (SEC-01, mero-core)
+
+- **An enrolment callback is refused unless it answers the enrolment this app began.**
+  `Enrolment.completeDeviceEnrolment` throws `EnrolmentException` when `expectState` is null (the
+  parameter no longer defaults), so a credential someone else minted for this device's (public)
+  keys and sent as a link can no longer sign the app in to their account (login CSRF).
+- `CloudAccount`'s pending state is single-use and expires after 10 minutes
+  (`CloudAccount.ENROLMENT_STATE_LIFETIME_MS`).
+- `CloudAccount.completeEnrolment` throws the new `AccountSwitchException` (`currentAccount`,
+  `incomingAccount`) rather than replacing a session for another account; pass
+  `allowAccountSwitch = true` once the person confirms. `EnrolmentException` is now `open`.
+
 ### Core 0.11.0: namespace ops signed at schema 27 (mero-core)
 
 - `NamespaceOp.SCHEMA_VERSION` is 27, core 0.11.0's `SIGNED_NAMESPACE_OP_SCHEMA_VERSION`
