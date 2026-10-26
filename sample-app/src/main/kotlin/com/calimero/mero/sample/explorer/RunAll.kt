@@ -134,7 +134,15 @@ object RunAllPlan {
     fun lifecycle(stamp: String): List<RunStep> {
         val alias = "run-all-$stamp"
         return listOf(
-            RunStep("pkg.regVersions", { mapOf("registryUrl" to REGISTRY, "packageName" to PACKAGE) }, mapOf("version" to "\$first")),
+            RunStep("pkg.regVersions", { mapOf("registryUrl" to REGISTRY, "packageName" to PACKAGE) }),
+            RunStep("pkg.resolveVersion", { mapOf("registryUrl" to REGISTRY, "packageName" to PACKAGE) }),
+            // The newest version this node's runtime installs: the newest published one can need
+            // a runtime the node is not on yet.
+            RunStep(
+                "pkg.installLatest",
+                { mapOf("registryUrl" to REGISTRY, "packageName" to PACKAGE) },
+                mapOf("version" to "version", "appId" to "applicationId"),
+            ),
             RunStep("pkg.semver", { mapOf("a" to "1.2.0", "b" to "1.10.0") }, expect = { output ->
                 // "compareSemver(a, b) = n": n < 0 when a sorts first.
                 val n =
@@ -452,12 +460,11 @@ class RunAllModel {
                         .apps
                         .any { it.packageName == spec.packageName }
                 }.getOrNull()
-            val version = mero.admin.getRegistryVersions(RunAllPlan.REGISTRY, spec.packageName).firstOrNull()
-            if (version == null) {
+            if (mero.admin.resolveRegistryVersion(RunAllPlan.REGISTRY, spec.packageName) == null) {
                 rows.forEach { results[it] = results[it].copy(status = Status.Skipped("${spec.packageName} is not on the registry")) }
                 return
             }
-            val app = mero.admin.installFromRegistry(spec.packageName, version)
+            val app = mero.admin.installLatestFromRegistry(RunAllPlan.REGISTRY, spec.packageName)
             val ns = mero.admin.createNamespace(CreateNamespaceRequest(applicationId = app.applicationId, name = "run-all-contract"))
             val group =
                 mero.admin.createGroupInNamespace(
