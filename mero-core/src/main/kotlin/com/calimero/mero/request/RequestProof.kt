@@ -23,8 +23,8 @@ import okhttp3.HttpUrl.Companion.toHttpUrl
 /** The header a signed request carries. Core reads it case-insensitively (`x-calimero-proof`). */
 const val REQUEST_PROOF_HEADER = "X-Calimero-Proof"
 
-/** [signRequestProof]'s default validity, seconds. */
-private const val DEFAULT_VALID_FOR = 300L
+/** [signRequestProof]'s default validity, seconds — also the most a node accepts. */
+private const val DEFAULT_VALID_FOR = MAX_REQUEST_PROOF_TTL_SECONDS
 
 /** One request to sign with a device cert — mero-js `RequestProofInput`. */
 @Suppress("LongParameterList")
@@ -41,7 +41,7 @@ class RequestProofInput(
     val deviceSecret: String? = null,
     /** A signer, for a key that is not held as hex. Used when both are given, as in mero-js. */
     val signer: DeviceSigner? = null,
-    /** Seconds the signature stays valid (default 300). */
+    /** Seconds the signature stays valid (default 300, which is also the most a node accepts; more is refused). */
     val validForSeconds: Long = DEFAULT_VALID_FOR,
     /** Override the clock, for tests. Unix seconds. */
     val now: Long? = null,
@@ -59,14 +59,14 @@ class RequestProofInput(
  * re-encoded.
  *
  * @throws IllegalArgumentException without a method, a path that does not start with `/`,
- *   malformed hex, or no key.
+ *   malformed hex, no key, or a `validForSeconds` outside 1..[MAX_REQUEST_PROOF_TTL_SECONDS].
  */
 fun signRequestProof(input: RequestProofInput): String {
     require(input.method.isNotEmpty()) { "signRequestProof needs the method the request will use" }
     require(input.path.startsWith("/")) { "signRequestProof needs a path, got \"${input.path}\"" }
     val bodyHash = requestBodyHash(input.body ?: ByteArray(0))
     val issuedAt = input.now ?: (System.currentTimeMillis() / 1000)
-    val expiresAt = issuedAt + input.validForSeconds
+    val expiresAt = issuedAt + checkedRequestProofTtl(input.validForSeconds, "validForSeconds")
     val signer =
         input.signer
             ?: input.deviceSecret?.let { signerFromSecret(it, "deviceSecret") }
@@ -86,7 +86,7 @@ class ProofCredential(
     val deviceSecret: String? = null,
     /** A signer, for a key that is not held as hex. */
     val signer: DeviceSigner? = null,
-    /** Seconds each signature stays valid; `null` for [signRequestProof]'s 300. */
+    /** Seconds each signature stays valid; `null` for [signRequestProof]'s 300, which is also the most allowed. */
     val validForSeconds: Long? = null,
 ) {
     override fun toString(): String = "ProofCredential(signer=${signer?.publicKey})"
@@ -101,6 +101,7 @@ typealias RequestAuthorizer = suspend (RequestToAuthorize) -> Map<String, String
 
 private fun ProofCredential.validated(): DeviceSigner {
     require(credential.isNotEmpty()) { "a proof authorizer needs the `credential` from signDeviceCert" }
+    validForSeconds?.let { checkedRequestProofTtl(it, "validForSeconds") }
     return signer
         ?: deviceSecret?.takeIf { it.isNotEmpty() }?.let { signerFromSecret(it, "deviceSecret") }
         ?: throw IllegalArgumentException("a proof authorizer needs either `deviceSecret` or `signer`")
