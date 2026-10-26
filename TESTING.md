@@ -50,6 +50,23 @@ emulator -list-avds
 
 Expected: builds `:mero-core`, `:mero-compose`, and `:sample-app` with no errors.
 
+### Dependency verification
+
+Every dependency and plugin is checked against `gradle/verification-metadata.xml`
+(SHA-256), and the wrapper's distribution against `distributionSha256Sum`. After
+changing a dependency or plugin version, regenerate the metadata with the tasks CI
+runs, then review the diff:
+
+```bash
+./gradlew --write-verification-metadata sha256 help ktlintCheck detekt \
+  testDebugUnitTest lint assembleDebug :sample-app:assembleDebugAndroidTest
+```
+
+AGP downloads `aapt2` for the host OS only, so after an AGP bump add the hash of
+the other platforms' `aapt2-<version>-{linux,osx,windows}.jar` by hand (from
+`dl.google.com/android/maven2/com/android/tools/build/aapt2/<version>/`); CI runs
+on Linux.
+
 ---
 
 ## 2. Lint + unit tests (the everyday run — no node, no emulator)
