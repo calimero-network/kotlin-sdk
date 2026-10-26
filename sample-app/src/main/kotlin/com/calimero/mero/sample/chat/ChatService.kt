@@ -583,7 +583,6 @@ class ChatService(
                     }
                 }
             val code = ChatInvite(space.id, space.name, signed).encoded()
-            SampleLog.log(SampleLog.Level.INFO, "invite code for ${space.name}: $code")
             say("Invite ready. Copy or share it.")
             code
         } catch (e: CancellationException) {

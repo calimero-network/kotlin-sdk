@@ -30,7 +30,7 @@ See [`ROADMAP-TASKS/task-2-android-sdk.md`] in the planning repo for the full de
 ### The sample app
 
 A light, Calimero-styled Compose app. Sign-in is **Continue with Calimero** only; the wallet
-redirects back to `mero-sample://enrol` (override with the `callbackUrl` intent extra). After that:
+redirects back to `mero-sample://enrol` (override with the `callbackUrl` intent extra in a debug build). After that:
 
 - **Chat** — a native chat client over the account's relay: messages are read with
   `RelayClient.call` (query) and sent as warrants (`execute`), channels are created with a creation
@@ -42,6 +42,13 @@ redirects back to `mero-sample://enrol` (override with the `callbackUrl` intent 
 
 Mock mode (`--ez mock true`) runs the whole flow against an in-app `FakeNode` and a mock wallet that
 certifies the device with a fixed root, which is what the instrumented `LoginFlowTest` drives.
+
+The launch extras (`mock`, `callbackUrl`, `contextId`, `chatUser`, `invite`, `nodeUrl`) are test
+hooks and are read only in debug builds: the launcher activity is exported, so in a release build
+any app could set them. The mock backend and `mero-testkit` are debug-only too. Release builds
+block cleartext and opt out of backup; the debug build allows http only to `localhost`,
+`127.0.0.1` and `10.0.2.2` (`src/debug/res/xml/network_security_config.xml`). Do the same in an
+app built from this sample.
 
 A **Diagnostics** screen (the `>_` button) shows every request/auth event the session recorded,
 copyable — so a failed connection is debuggable without Android Studio attached.
