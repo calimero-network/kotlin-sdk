@@ -127,17 +127,14 @@ class SseConnection(
 ) {
     private val base = baseUrl.trimEnd('/')
 
-    // A proof is signed for one path, so a client that may carry one never follows a redirect.
+    // Every stream is held to MAX_LINE_BYTES; a proof is signed for one path, so a client that
+    // may carry one never follows a redirect.
     private val client: OkHttpClient =
-        if (authorize == null) {
-            client
-        } else {
-            client
-                .newBuilder()
-                .followRedirects(false)
-                .followSslRedirects(false)
-                .build()
-        }
+        client
+            .newBuilder()
+            .addInterceptor(SseLineLimit(MAX_LINE_BYTES))
+            .apply { if (authorize != null) followRedirects(false).followSslRedirects(false) }
+            .build()
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val lock = Any()
     private val contextIds = LinkedHashSet<String>()
@@ -541,6 +538,14 @@ class SseConnection(
     companion object {
         /** How long a subscription POST may take before it counts as failed (mero-js `SUBSCRIPTION_TIMEOUT_MS`). */
         const val SUBSCRIPTION_TIMEOUT_MS = 10_000L
+
+        /**
+         * The longest line (and the largest event) the stream may send, in bytes. Past it the
+         * connection is dropped and reconnected, reported on [errors] as a
+         * [com.calimero.mero.http.NetworkException]. A node event is a single JSON line, far
+         * smaller than this.
+         */
+        const val MAX_LINE_BYTES = 1024L * 1024
 
         private const val METHOD_SUBSCRIBE = "subscribe"
         private const val METHOD_UNSUBSCRIBE = "unsubscribe"

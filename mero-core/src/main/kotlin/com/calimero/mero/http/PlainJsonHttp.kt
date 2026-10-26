@@ -48,7 +48,11 @@ internal class PlainJsonHttp(
                 HttpResponse(
                     status = resp.code,
                     headers = resp.headers.names().associateWith { resp.header(it).orEmpty() },
-                    body = resp.body?.string().orEmpty(),
+                    body =
+                        resp.body
+                            ?.boundedBytes(OkHttpTransport.DEFAULT_MAX_RESPONSE_BYTES)
+                            ?.toString(Charsets.UTF_8)
+                            .orEmpty(),
                     url = url,
                 )
             }

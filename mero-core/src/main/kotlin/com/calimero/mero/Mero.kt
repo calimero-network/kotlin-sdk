@@ -152,6 +152,7 @@ class Mero(
             json = json,
             // Terminal auth (revoked family) → drop the bundle so the app forces a re-login.
             onAuthRevoked = { store.clear() },
+            maxResponseBytes = config.maxResponseBytes,
         )
 
     /** Typed `/auth/…` + key-management client. */

@@ -2,6 +2,7 @@ package com.calimero.mero.sse
 
 import com.calimero.mero.http.AuthRevokedException
 import com.calimero.mero.http.HttpException
+import com.calimero.mero.http.NetworkException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.filterNotNull
@@ -196,6 +197,27 @@ class SseConnectionTest {
         sse.close()
         assertEquals("3 s doubling, back to 3 s after a stream opened", listOf(3_000L, 6_000L, 12_000L, 3_000L), delays.toList())
         assertEquals(3, errors.count { (it as? HttpException)?.status == 503 })
+    }
+
+    @Test
+    fun `a line over the limit drops the stream, is reported and reconnects`() {
+        val huge = "data: " + "x".repeat(SseConnection.MAX_LINE_BYTES.toInt()) + "\n\n"
+        // Both streams stay open: only the limit can end the first.
+        streamFor = { n -> stream(if (n == 1) huge else connect("s-$n")) }
+        val sse = connection()
+        sse.sleep = {}
+        val errors = CopyOnWriteArrayList<Throwable>()
+        runBlocking {
+            val collecting = launch(Dispatchers.Unconfined) { sse.errors.collect { errors += it } }
+            val seen = async(Dispatchers.Unconfined) { sse.connects.first() }
+            sse.connect()
+            assertEquals("s-2", withTimeout(5_000) { seen.await() })
+            collecting.cancel()
+        }
+        sse.close()
+        val dropped = errors.first()
+        assertTrue("$dropped", dropped is NetworkException && dropped.message.orEmpty().contains("SSE line exceeds"))
+        assertEquals(null, sse.failure.value)
     }
 
     @Test

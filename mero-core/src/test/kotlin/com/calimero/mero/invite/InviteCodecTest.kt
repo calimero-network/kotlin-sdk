@@ -73,6 +73,47 @@ class InviteCodecTest {
         assertNull(InviteCodec.decode("   "))
     }
 
+    // Limits
+
+    @Test
+    fun `rejects a token over the length cap before decoding it`() {
+        // Valid base58 all the way, so only the cap can refuse it.
+        assertNull(InviteCodec.decode("z".repeat(InviteCodec.MAX_TOKEN_LENGTH + 1)))
+        val padded = "{\"a\":\"" + "x".repeat(InviteCodec.MAX_TOKEN_LENGTH) + "\"}"
+        assertNull("raw JSON is held to the same cap", InviteCodec.decode(padded))
+    }
+
+    @Test
+    fun `a real invitation is well under the caps`() {
+        // A namespace invitation exactly as a live node returned it.
+        val json =
+            checkNotNull(this::class.java.classLoader?.getResourceAsStream("fixtures/invitation-rc32.json")) {
+                "fixtures/invitation-rc32.json missing"
+            }.bufferedReader().use { it.readText() }
+        val token = InviteCodec.encode(json)
+        assertTrue(token.toByteArray(Charsets.UTF_8).size < InviteCodec.MAX_TOKEN_LENGTH / 4)
+        assertTrue(json.toByteArray(Charsets.UTF_8).size < InviteCodec.MAX_INFLATED_BYTES / 8)
+        assertEquals(json, InviteCodec.decode(token))
+    }
+
+    @Test
+    fun `refuses a token that inflates past the cap`() {
+        // A few hundred bytes of DEFLATE that expand to 1 MB of JSON.
+        val bomb = "{\"a\":\"" + "a".repeat(1 shl 20) + "\"}"
+        val token = InviteCodec.encode(bomb)
+        assertTrue(token.toByteArray(Charsets.UTF_8).size <= InviteCodec.MAX_TOKEN_LENGTH)
+        assertNull(InviteCodec.decode(token))
+    }
+
+    @Test
+    fun `inflate stops at the limit and refuses a truncated stream`() {
+        val data = "b".repeat(10_000).toByteArray(Charsets.UTF_8)
+        val compressed = InviteCodec.deflate(data)
+        assertTrue(data.contentEquals(InviteCodec.inflate(compressed, limit = 10_000)))
+        assertNull(InviteCodec.inflate(compressed, limit = 9_999))
+        assertNull(InviteCodec.inflate(compressed.copyOf(compressed.size / 2)))
+    }
+
     @Test
     fun `base58 rejects characters outside the alphabet`() {
         // 0, O, I and l are deliberately absent from base58.

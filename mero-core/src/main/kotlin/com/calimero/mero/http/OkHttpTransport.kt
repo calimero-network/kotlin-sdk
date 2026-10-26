@@ -8,12 +8,18 @@ import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody
 import okhttp3.RequestBody.Companion.toRequestBody
+import okhttp3.ResponseBody
 import java.io.IOException
 
 /**
  * OkHttp-backed [HttpClient]. The wired [client] carries the [AuthInterceptor] (Bearer injection)
  * and the [TokenAuthenticator] (reactive 401→refresh); this class adds URL building, JSON media
  * types, and terminal `x-auth-error` detection.
+ *
+ * **Response size.** [execute] reads a body up to [maxResponseBytes] (default
+ * [DEFAULT_MAX_RESPONSE_BYTES]); a larger one fails with [NetworkException] and the connection
+ * is dropped, so a hostile node, relay or man-in-the-middle cannot make the app buffer an
+ * unbounded answer. [executeBytes] carries blobs and is not limited.
  *
  * Port of mero-js `WebHttpClient` (`web-client.ts`).
  */
@@ -23,6 +29,8 @@ class OkHttpTransport(
     override val json: Json,
     /** Invoked when the server reports the token family is gone (terminal). Must clear the store. */
     private val onAuthRevoked: (() -> Unit)? = null,
+    /** The largest body [execute] reads, in bytes. */
+    private val maxResponseBytes: Long = DEFAULT_MAX_RESPONSE_BYTES,
 ) : HttpClient {
     override suspend fun execute(
         method: String,
@@ -31,7 +39,7 @@ class OkHttpTransport(
         headers: Map<String, String>,
         contentType: String,
     ): HttpResponse {
-        val res = send(method, path, body?.toRequestBody(contentType.toMediaType()), headers)
+        val res = send(method, path, body?.toRequestBody(contentType.toMediaType()), headers, maxResponseBytes)
         return HttpResponse(res.status, res.headers, res.bodyText, res.url)
     }
 
@@ -41,14 +49,18 @@ class OkHttpTransport(
         body: ByteArray?,
         headers: Map<String, String>,
         contentType: String,
-    ): HttpBytesResponse = send(method, path, body?.toRequestBody(contentType.toMediaType()), headers)
+    ): HttpBytesResponse = send(method, path, body?.toRequestBody(contentType.toMediaType()), headers, limit = null)
 
-    /** One request, its response body read as raw bytes; [execute] decodes them as UTF-8. */
+    /**
+     * One request, its response body read as raw bytes; [execute] decodes them as UTF-8.
+     * [limit] is the most body bytes to accept, or null for no limit.
+     */
     private suspend fun send(
         method: String,
         path: String,
         requestBody: RequestBody?,
         headers: Map<String, String>,
+        limit: Long?,
     ): HttpBytesResponse =
         withContext(Dispatchers.IO) {
             val url = buildUrl(path)
@@ -75,7 +87,7 @@ class OkHttpTransport(
                 }
 
             response.use { resp ->
-                val bodyBytes = resp.body?.bytes() ?: ByteArray(0)
+                val bodyBytes = resp.body.readWithin(limit)
                 val responseHeaders = resp.headers.names().associateWith { resp.header(it) ?: "" }
                 val authError = resp.header("x-auth-error")
 
@@ -96,7 +108,34 @@ class OkHttpTransport(
         return if (path.startsWith("/")) "$base$path" else "$base/$path"
     }
 
-    private companion object {
-        val EMPTY_BODY: RequestBody = ByteArray(0).toRequestBody(null)
+    companion object {
+        /** The default cap on a response body: 16 MiB, far above any JSON answer a node gives. */
+        const val DEFAULT_MAX_RESPONSE_BYTES: Long = 16L * 1024 * 1024
+
+        private val EMPTY_BODY: RequestBody = ByteArray(0).toRequestBody(null)
     }
 }
+
+/**
+ * The body, read up to [limit] bytes: a `Content-Length` over it is refused before the body is
+ * read, and a body that grows past it is cut off there. Either way [NetworkException] is
+ * thrown; the caller closing the response drops the connection.
+ */
+internal fun ResponseBody.boundedBytes(limit: Long): ByteArray {
+    if (contentLength() > limit) throw responseTooLarge(limit)
+    val source = source()
+    // Buffers at most limit + 1 bytes; true means there is more than [limit].
+    if (source.request(limit + 1)) throw responseTooLarge(limit)
+    return source.readByteArray()
+}
+
+/** The body's bytes: all of them with no [limit], else [boundedBytes]. No body reads as empty. */
+private fun ResponseBody?.readWithin(limit: Long?): ByteArray =
+    when {
+        this == null -> ByteArray(0)
+        limit == null -> bytes()
+        else -> boundedBytes(limit)
+    }
+
+/** A response body over the transport's limit (SEC-08). */
+internal fun responseTooLarge(limit: Long): NetworkException = NetworkException("response body exceeds $limit bytes")
