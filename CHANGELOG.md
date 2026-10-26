@@ -10,6 +10,19 @@
   outside 1..300, instead of minting a proof every node refuses. The window is what bounds replay:
   a two-link proof names no node (SEC-14).
 
+### CI supply chain
+
+- Every workflow action is pinned by commit SHA (release in a trailing comment), and Dependabot
+  keeps the pins current (SEC-13).
+- The Gradle wrapper checks its distribution against `distributionSha256Sum`, and every
+  dependency and plugin is checked against `gradle/verification-metadata.xml`. TESTING.md says
+  how to regenerate it after a version bump.
+- `ci.yml` runs with a read-only token.
+- The release is three jobs: GitHub Packages (`packages: write`), Maven Central (the signing key
+  and Central token only, no third-party action, `maven-central` environment) and the GitHub
+  Release (`contents: write`). Behaviour is unchanged, including skipping Central without its
+  secrets.
+
 ### Core 0.11.0: namespace ops signed at schema 27 (mero-core)
 
 - `NamespaceOp.SCHEMA_VERSION` is 27, core 0.11.0's `SIGNED_NAMESPACE_OP_SCHEMA_VERSION`
