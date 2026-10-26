@@ -96,6 +96,11 @@ data class MeroCapabilities(
  * @property allowedNodeUrls origins an SSO callback may authenticate against besides the node the
  *   login was started with ([resolveTrustedNodeUrl]).
  * @property cloudBaseUrl the cloud an account asks which relay serves a namespace; the hosted one by default.
+ * @property allowCustomSchemeCallbacks let [MeroClient.connectToNode] and [MeroClient.handleAuthCallback]
+ *   use a node SSO callback on a custom scheme (`myapp://…`), not only a verified `https` App
+ *   Link. Any installed app can declare the same scheme and receive the redirect, with the
+ *   session's tokens in it, so leave it false in a release build. (Swift
+ *   `MeroProviderConfig.allowCustomSchemeCallbacks`.)
  */
 data class MeroAppConfig(
     val mode: AppMode = AppMode.MULTI_CONTEXT,
@@ -118,6 +123,7 @@ data class MeroAppConfig(
      * Null: a fresh client.
      */
     val httpClient: OkHttpClient? = null,
+    val allowCustomSchemeCallbacks: Boolean = false,
 ) {
     /** The app's registry identity, as the admins take it (mero-react `app`). */
     val app: AccountApp

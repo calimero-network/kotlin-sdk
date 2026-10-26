@@ -1,5 +1,6 @@
 package com.calimero.mero.http
 
+import com.calimero.mero.tee.SealedTransport
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
@@ -14,7 +15,8 @@ import java.io.IOException
 /**
  * OkHttp-backed [HttpClient]. The wired [client] carries the [AuthInterceptor] (Bearer injection)
  * and the [TokenAuthenticator] (reactive 401→refresh); this class adds URL building, JSON media
- * types, and terminal `x-auth-error` detection.
+ * types, and terminal `x-auth-error` detection. Plain http to a node that is not local is refused
+ * with [InsecureTransportException] before anything is sent ([TransportSecurity]).
  *
  * **Response size.** [execute] reads a body up to [maxResponseBytes] (default
  * [DEFAULT_MAX_RESPONSE_BYTES]); a larger one fails with [NetworkException] and the connection
@@ -64,6 +66,8 @@ class OkHttpTransport(
     ): HttpBytesResponse =
         withContext(Dispatchers.IO) {
             val url = buildUrl(path)
+            // Before the auth and proof interceptors run: nothing is attached to a refused request.
+            if (!sealed) TransportSecurity.checkNodeUrl(url)
 
             val builder = Request.Builder().url(url)
             when (method.uppercase()) {
@@ -101,6 +105,12 @@ class OkHttpTransport(
                 HttpBytesResponse(resp.code, responseHeaders, bodyBytes, url)
             }
         }
+
+    /**
+     * Whether [client] seals every request to an attested TEE ([SealedTransport]): end to end
+     * encrypted, so plain http to its node is not refused ([TransportSecurity]).
+     */
+    private val sealed: Boolean = client.interceptors.any { it is SealedTransport }
 
     private fun buildUrl(path: String): String {
         if (path.startsWith("http://") || path.startsWith("https://")) return path

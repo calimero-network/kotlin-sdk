@@ -87,7 +87,18 @@ class AuthCallbackStateTest {
         val login = beginLogin("myapp://auth-callback")
         val callback = URLDecoder.decode(login.substringAfter("callback-url=").substringBefore('&'), "UTF-8")
         assertTrue(callback, callback.matches(Regex("myapp://auth-callback\\?auth_state=[0-9a-f]{32}")))
-        assertNotNull(parseAuthCallback("$callback#$tokens", pending = pending))
+        assertNotNull(parseAuthCallback("$callback#$tokens", pending = pending, allowCustomScheme = true))
+    }
+
+    @Test
+    fun `refuses a custom-scheme callback unless the caller opts in`() {
+        val custom = URLDecoder.decode(beginLogin("myapp://auth-callback").substringAfter("callback-url=").substringBefore('&'), "UTF-8")
+        assertNull("any app can claim a custom scheme", parseAuthCallback("$custom#$tokens", pending = pending))
+        val insecure = beginLogin("http://app.example/cb").toHttpUrl().queryParameter("callback-url")!!
+        assertNull(parseAuthCallback("$insecure#$tokens", pending = pending))
+
+        val fromBrowser = URLDecoder.decode(beginLogin("myapp://auth-callback").substringAfter("callback-url=").substringBefore('&'), "UTF-8")
+        assertEquals("a", parseAuthCallback("$fromBrowser#$tokens", pending = pending, allowCustomScheme = true)?.accessToken)
     }
 
     @Test

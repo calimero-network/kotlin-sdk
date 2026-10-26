@@ -44,7 +44,7 @@ class MeroClientTest {
         node = FakeNode()
         server = node.start()
         val base = server.url("/").toString().trimEnd('/')
-        val account = CloudAccount(MemorySecureStore(), cloudBaseUrl = base, walletUrl = "https://wallet.example/account-enroll")
+        val account = CloudAccount(MemorySecureStore(), relayKeyVerifier = DcapRelayKeyVerifier(allowMock = true), cloudBaseUrl = base, walletUrl = "https://wallet.example/account-enroll")
         client = MeroClient(account, MemoryTokenStore(), launchWallet = { _, url -> opened = url })
     }
 
@@ -266,6 +266,15 @@ class MeroClientTest {
         }
 
     @Test
+    fun `login refuses plain http across the network`() =
+        runBlocking {
+            assertFalse(client.login("http://node.test", "admin", "secret"))
+            assertEquals(MeroClient.INSECURE_NODE_URL, client.state.value.error)
+            assertEquals(MeroErrorReason.INVALID_INPUT, client.state.value.errorReason)
+            assertEquals(0, node.tokenCalls)
+        }
+
+    @Test
     fun `login reports an unreachable node in words`() =
         runBlocking {
             val closed = java.net.ServerSocket(0).use { it.localPort }
@@ -336,7 +345,7 @@ class MeroClientTest {
 
             fun launch() =
                 MeroClient(
-                    CloudAccount(MemorySecureStore(), cloudBaseUrl = base, walletUrl = "https://wallet.example/account-enroll"),
+                    CloudAccount(MemorySecureStore(), relayKeyVerifier = DcapRelayKeyVerifier(allowMock = true), cloudBaseUrl = base, walletUrl = "https://wallet.example/account-enroll"),
                     tokens,
                     storage = storage,
                 )
@@ -382,7 +391,7 @@ class MeroClientTest {
             val base = server.url("/").toString().trimEnd('/')
             val c =
                 MeroClient(
-                    CloudAccount(MemorySecureStore(), cloudBaseUrl = base, walletUrl = "https://wallet.example/account-enroll"),
+                    CloudAccount(MemorySecureStore(), relayKeyVerifier = DcapRelayKeyVerifier(allowMock = true), cloudBaseUrl = base, walletUrl = "https://wallet.example/account-enroll"),
                     tokens,
                     storage = storage,
                 )
@@ -413,7 +422,7 @@ class MeroClientTest {
                                     .build(),
                             )
                         }.build()
-                val account = CloudAccount(MemorySecureStore(), cloudBaseUrl = server.url("/").toString().trimEnd('/'))
+                val account = CloudAccount(MemorySecureStore(), relayKeyVerifier = DcapRelayKeyVerifier(allowMock = true), cloudBaseUrl = server.url("/").toString().trimEnd('/'))
                 val c = MeroClient(account, MemoryTokenStore(), config = MeroAppConfig(httpClient = http))
                 assertFalse(c.login(seen.url("/").toString(), "admin", "secret"))
                 assertEquals("test", seen.takeRequest(2, java.util.concurrent.TimeUnit.SECONDS)!!.getHeader("X-App"))

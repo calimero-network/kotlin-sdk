@@ -63,6 +63,27 @@
 - Bouncy Castle (`bcprov-jdk18on`, used for the on-device DCAP X.509/CRL checks) is 1.86, up from
   1.78.1.
 
+### Transport and trust hardening: SEC-03, SEC-06, SEC-15 (mero-core, mero-compose)
+
+- **Plain http only to local hosts (SEC-06).** A node is reached over `http://` / `ws://` only when
+  its host is loopback, link-local, a private LAN address (RFC 1918, `fc00::/7`) or a `.local`
+  name; anything else throws `InsecureTransportException` before a password, token or proof is
+  attached. The Cloud manager, relays, the registry, the wallet and the release mirror must be
+  `https` (loopback and the emulator's `10.0.2.2` excepted). A client sealed with
+  `SealedTransport` is end-to-end encrypted and not checked. `TransportSecurity.allowInsecureHttp
+  = true` lifts the rules for a development rig. `MeroClient.login` and `connectToNode` refuse such
+  a node with `MeroClient.INSECURE_NODE_URL`, and `NodeLoginState.isInsecure` lets the login sheet
+  warn while one is typed.
+- **SSO callbacks must be https unless you opt in (SEC-03).** `parseAuthCallback` refuses a
+  callback on a custom scheme or plain http unless `allowCustomScheme = true`: any app can declare
+  the scheme and receive the tokens. `MeroClient` follows `MeroAppConfig.allowCustomSchemeCallbacks`
+  (false by default; `connectToNode` says `CUSTOM_SCHEME_CALLBACK` up front). `SsoLauncher` and
+  `WalletLauncher` pin the Custom Tab to the browser (`Intent.setPackage`).
+- **Mock quotes are refused from loopback relays too (SEC-15).** `DcapRelayKeyVerifier` and
+  `TlsRelayKeyVerifier` accept a mock quote only with `allowMock = true`: another app on the device
+  can listen on `127.0.0.1`. `TlsRelayKeyVerifier` and `PinnedRelayKeyVerifier` need
+  `@OptIn(DevOnlyMeroApi::class)`.
+
 ### Core 0.11.0: namespace ops signed at schema 27 (mero-core)
 
 - `NamespaceOp.SCHEMA_VERSION` is 27, core 0.11.0's `SIGNED_NAMESPACE_OP_SCHEMA_VERSION`

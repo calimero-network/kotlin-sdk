@@ -82,6 +82,7 @@ fun parseAuthCallback(
     url: String,
     allowUnsolicited: Boolean = false,
     pending: PendingAuthStates = PendingAuthStates.shared,
+    allowCustomScheme: Boolean = false, // a non-https callback is refused without it
 ): AuthCallbackResult?
 fun buildAuthLoginUrl(
     nodeUrl: String,
@@ -121,7 +122,7 @@ data class AuthLoginOptions(
 ```
 
 On Android, `SsoLauncher.launch(context, nodeUrl, options, pending)` opens the login URL in
-a Chrome Custom Tab. See [authentication](/get-started/authentication/#hosted-sso-deep-link).
+a Chrome Custom Tab, pinned to the browser. See [authentication](/get-started/authentication/#hosted-sso-deep-link).
 
 ## Configuration types
 

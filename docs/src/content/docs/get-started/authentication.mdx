@@ -135,11 +135,11 @@ image, and that the quote binds this request's nonce and the named key (see
 [TEE trust](/guides/tee-trust/)). Supply another verifier to
 `CloudAccount(relayKeyVerifier = …)`. Warranted writes do not depend on the node key.
 
-When the relay's operator gives you its node key out of band, pin it:
-`PinnedRelayKeyVerifier(nodeKey)` answers with that key whatever the relay
-attests to (a relay that does not hold it cannot use the session), and
-`account.pinRelayNodeKey(relayUrl, nodeKey)` pins it for one account so no
-attestation round trip happens at all.
+When the relay's operator gives you its node key out of band, pin it for one
+account with `account.pinRelayNodeKey(relayUrl, nodeKey)`, so no attestation
+round trip happens at all. `PinnedRelayKeyVerifier(nodeKey)` (that key whatever
+the relay attests to) and `TlsRelayKeyVerifier` (the binding alone, over TLS)
+are for dev rigs and tests: they need `@OptIn(DevOnlyMeroApi::class)`.
 
 Signing out (`MeroClient.signOut`, or `RelayConnection.logout()` on a connection
 you hold) retires the relay session's refresh token on the relay
@@ -265,14 +265,14 @@ import com.calimero.mero.TokenData
 SsoLauncher.launch(
     context,
     nodeUrl = "https://your-node.example",
-    options = AuthLoginOptions(callbackUrl = "myapp://auth-callback", mode = "login",
+    options = AuthLoginOptions(callbackUrl = "https://app.example/auth-callback", mode = "login",
                                permissions = listOf("admin")),
 )
 // ⚠️ A *scoped* permission list (anything other than "admin") must name
 // "context:subscribe" since core 0.11.0-rc.41, or /sse and /ws answer 403.
 // It is not implied by "context". See /guides/events/.
 
-// 2. In the deep-link Activity that receives myapp://auth-callback:
+// 2. In the Activity that receives the App Link https://app.example/auth-callback:
 //    null unless the link answers the login launched in step 1 (single use, 10 minutes).
 val callback = Mero.parseAuthCallback(intent.dataString ?: "")
 if (callback != null) {
@@ -305,6 +305,19 @@ if (callback != null) {
 (`access_token`, `refresh_token`, `application_id`, `context_id`,
 `context_identity`, `node_url`) and returns `null` if no access token is present
 **or if the callback does not answer a login this app began**.
+
+### Use a verified App Link, not a custom scheme
+
+The callback carries the session's access and refresh tokens. Any installed app
+can declare the same custom scheme (`myapp://`) and receive the redirect, so
+`parseAuthCallback` refuses a callback that is not `https` unless you pass
+`allowCustomScheme = true`. Use a verified App Link (`android:autoVerify="true"`
+with a `/.well-known/assetlinks.json` on your domain), which no other app can
+claim. `MeroClient` follows `MeroAppConfig.allowCustomSchemeCallbacks` (false
+by default). `SsoLauncher` and `WalletLauncher` pin the Custom Tab to the
+browser, so another app that handles `https` links cannot show the login page.
+The lasting fix, an authorization code with PKCE in place of tokens in the
+link, needs the node.
 
 ### Only callbacks this app asked for
 

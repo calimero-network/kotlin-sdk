@@ -183,7 +183,7 @@ object ApplicationIds {
         packageName: String,
         registryUrl: String = DEFAULT_REGISTRY_URL,
         httpClient: OkHttpClient = PlainJsonHttp.defaultClient(),
-    ): ResolvedApplication = resolveFromRegistry(packageName, registryUrl, PlainJsonHttp(httpClient))
+    ): ResolvedApplication = resolveFromRegistry(packageName, registryUrl, PlainJsonHttp(httpClient, role = "registry"))
 
     @Suppress("ThrowsCount")
     internal suspend fun resolveFromRegistry(

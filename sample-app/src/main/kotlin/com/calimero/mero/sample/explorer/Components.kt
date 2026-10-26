@@ -52,6 +52,7 @@ import com.calimero.mero.account.CloudAccount
 import com.calimero.mero.account.MemorySecureStore
 import com.calimero.mero.compose.LoginMode
 import com.calimero.mero.compose.LoginView
+import com.calimero.mero.compose.MeroAppConfig
 import com.calimero.mero.compose.MeroClient
 import com.calimero.mero.compose.MeroTheme
 import com.calimero.mero.compose.NodeSignInMethod
@@ -123,7 +124,8 @@ private enum class ThemeChoice(
 fun LoginComponentPreview(onBack: () -> Unit) {
     val client =
         remember {
-            MeroClient(CloudAccount(MemorySecureStore()), MemoryTokenStore())
+            // `mero-sample://` callbacks: a dev app's choice; a release app uses an https App Link.
+            MeroClient(CloudAccount(MemorySecureStore()), MemoryTokenStore(), config = MeroAppConfig(allowCustomSchemeCallbacks = true))
         }
     var mode by remember { mutableStateOf(LoginMode.CLOUD_AND_NODE) }
     var method by remember { mutableStateOf(NodeSignInMethod.PASSWORD) }

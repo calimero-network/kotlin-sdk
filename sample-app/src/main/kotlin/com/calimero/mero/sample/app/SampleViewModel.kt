@@ -8,6 +8,7 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.calimero.mero.account.CloudAccount
 import com.calimero.mero.account.MemorySecureStore
+import com.calimero.mero.compose.MeroAppConfig
 import com.calimero.mero.compose.MeroClient
 import com.calimero.mero.relay.DcapRelayKeyVerifier
 import com.calimero.mero.sample.mock.MockWallet
@@ -45,7 +46,9 @@ class SampleViewModel(
         started = true
         this.mock = mock
         if (!mock) {
-            val c = MeroClient.create(getApplication())
+            // The sample's callback is the `mero-sample://` scheme. A release app uses a verified
+            // https App Link and leaves allowCustomSchemeCallbacks off: any app can claim a scheme.
+            val c = MeroClient.create(getApplication(), config = MeroAppConfig(allowCustomSchemeCallbacks = true))
             client = c
             viewModelScope.launch { runCatching { c.restore() } }
             return

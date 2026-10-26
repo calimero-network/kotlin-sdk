@@ -2,6 +2,7 @@ package com.calimero.mero.account
 
 import com.calimero.mero.crypto.Hex
 import com.calimero.mero.crypto.randomBytes
+import com.calimero.mero.http.TransportSecurity
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import java.net.URLDecoder
 
@@ -51,6 +52,7 @@ object Enrolment {
         require(Hex.isHex32(signPublicKey)) { "signPublicKey must be 64 lowercase hex characters" }
         require(Hex.isHex32(kemPublicKey)) { "kemPublicKey must be 64 lowercase hex characters" }
         assertCallback(callbackUrl)
+        TransportSecurity.checkServiceUrl(walletUrl, "wallet")
         val builder =
             walletUrl
                 .toHttpUrl()
