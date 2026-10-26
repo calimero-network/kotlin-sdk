@@ -38,6 +38,8 @@ import com.calimero.mero.admin.SetContextMetadataRequest
 import com.calimero.mero.admin.SetDefaultCapabilitiesRequest
 import com.calimero.mero.admin.SetGroupMetadataRequest
 import com.calimero.mero.admin.SetMemberMetadataRequest
+import com.calimero.mero.admin.SetOutboundApprovalRequest
+import com.calimero.mero.admin.SetOutboundApprovalResponseData
 import com.calimero.mero.admin.SetSubgroupVisibilityRequest
 import com.calimero.mero.admin.SetTeeAdmissionPolicyRequest
 import com.calimero.mero.admin.SignedGroupOpenInvitation
@@ -281,6 +283,20 @@ class DeleteNamespace(
     sessions: StateFlow<MeroSession>,
 ) : AdminMutation(sessions) {
     suspend fun deleteNamespace(namespaceId: String): DeleteNamespaceResponseData? = withAdmin { it.deleteNamespace(namespaceId) }
+}
+
+/**
+ * Set what a namespace approves for an app publisher's outbound requests, exactly: an empty
+ * [com.calimero.mero.admin.OutboundSelection.Prefixes] revokes everything. Approving at creation
+ * or upgrade is `approveOutbound` on [CreateNamespace] / [UpgradeGroup]. An account is refused.
+ */
+class SetOutboundApproval(
+    sessions: StateFlow<MeroSession>,
+) : AdminMutation(sessions) {
+    suspend fun setOutboundApproval(
+        namespaceId: String,
+        request: SetOutboundApprovalRequest,
+    ): SetOutboundApprovalResponseData? = withAdmin { it.setOutboundApproval(namespaceId, request) }
 }
 
 /** On an account the invitation is signed by this device. mero-react `useCreateNamespaceInvitation`. */

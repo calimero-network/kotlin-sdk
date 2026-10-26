@@ -15,7 +15,7 @@ See [`ROADMAP-TASKS/task-2-android-sdk.md`] in the planning repo for the full de
 > a node with credentials, drive the whole
 > ~140-method Admin API (contexts, groups, namespaces, invitations, registry install, root/client
 > keys and permissions), call contracts over JSON-RPC, and subscribe to live node events over SSE.
-> The sample app is an **SDK Explorer** over all 194 catalogued methods plus a native Calimero chat
+> The sample app is an **SDK Explorer** over all 198 catalogued methods plus a native Calimero chat
 > client — feature-for-feature with the Swift SDK's sample. See [Roadmap](#roadmap).
 
 ## Modules

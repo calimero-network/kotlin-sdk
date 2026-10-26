@@ -15,9 +15,11 @@ import com.calimero.mero.admin.JoinNamespaceRequest
 import com.calimero.mero.admin.ListGroupMembersResponseData
 import com.calimero.mero.admin.ListNamespacesResponseData
 import com.calimero.mero.admin.Namespace
+import com.calimero.mero.admin.OutboundSelection
 import com.calimero.mero.admin.RedeemOutcome
 import com.calimero.mero.admin.ReparentGroupRequest
 import com.calimero.mero.admin.SetMetadataRequest
+import com.calimero.mero.admin.SetOutboundApprovalRequest
 import com.calimero.mero.admin.SetSubgroupVisibilityRequest
 import com.calimero.mero.admin.SignedGroupOpenInvitation
 import com.calimero.mero.admin.UpdateMemberRoleRequest
@@ -273,6 +275,20 @@ class AccountAdminTest {
             assertEquals("group", deps.ops.single().first)
             val noPackage = rig(app = AccountApp()).first
             assertTrue(runCatching { noPackage.createNamespace(CreateNamespaceRequest("88".repeat(32))) }.exceptionOrNull() is NotForAccountException)
+        }
+
+    @Test
+    fun `refuses outbound approval writes by name, before founding anything`() =
+        runBlocking {
+            val (admin, deps) = rig()
+            val approving = CreateNamespaceRequest("88".repeat(32), approveOutbound = OutboundSelection.Manifest)
+            val refused = runCatching { admin.createNamespace(approving) }.exceptionOrNull() as NotForAccountException
+            assertEquals("createNamespace with approveOutbound", refused.method)
+            assertNull(deps.foundWith)
+            val set = SetOutboundApprovalRequest("88".repeat(32), OutboundSelection.Prefixes(emptyList()))
+            assertTrue(runCatching { admin.setOutboundApproval(ns, set) }.exceptionOrNull() is NotForAccountException)
+            assertTrue(runCatching { rig(read = null).first.setOutboundApproval(ns, set) }.exceptionOrNull() is NoRelayException)
+            assertTrue(deps.ops.isEmpty())
         }
 
     @Test

@@ -691,6 +691,13 @@ data class CreateNamespaceRequest(
     val name: String? = null,
     /** Hex 32-byte blob id; pins the namespace to a specific installed version. */
     val appKey: String? = null,
+    /**
+     * Approve outbound requests for the app's publisher in the new namespace, in the same call:
+     * [OutboundSelection.Manifest] approves every URL prefix the app's manifest declares,
+     * [OutboundSelection.Prefixes] approves those. Absent (the default, and omitted from the
+     * body) approves none, and the app's outbound requests are refused until an admin approves.
+     */
+    val approveOutbound: OutboundSelection? = null,
 )
 
 @Serializable
@@ -699,6 +706,11 @@ data class CreateNamespaceResponseData(
     /** What the new id was derived from (core rc.83). `null` from an older node. */
     val founding: NamespaceFounding? = null,
     /**
+     * What the namespace approves for the app's publisher, when the request set
+     * [CreateNamespaceRequest.approveOutbound]. `null` otherwise.
+     */
+    val outboundApproval: OutboundApproval? = null,
+    /**
      * Set only by an account's admin ([com.calimero.mero.account.createAccountAdmin]): whether
      * the cloud agreed to host the namespace founded through the relay. `null` from a node.
      */
@@ -706,6 +718,102 @@ data class CreateNamespaceResponseData(
     /** Why [haEnabled] is `false`, in words a person can act on. Account admin only. */
     val haError: String? = null,
 )
+
+// ---- Outbound approvals ----------------------------------------------------
+
+/**
+ * Which outbound URL prefixes a namespace approves for an app's publisher (core's
+ * `OutboundSelection`): the bare string `"manifest"`, or a JSON array of prefixes.
+ *
+ * An app's outbound HTTPS request needs the namespace's approval for the app's publisher (the
+ * bundle signer) as well as the operator's allow-list and the manifest's declaration. Approve
+ * when creating a namespace ([CreateNamespaceRequest.approveOutbound]), upgrading a group
+ * ([UpgradeGroupRequest.approveOutbound]), or set the list directly
+ * ([AdminSurface.setOutboundApproval]).
+ */
+@Serializable(with = OutboundSelectionSerializer::class)
+sealed class OutboundSelection {
+    /** Every prefix the app's manifest declares, read by the node. On the wire: `"manifest"`. */
+    data object Manifest : OutboundSelection()
+
+    /**
+     * Exactly these URL prefixes. On the wire: `["https://…", …]`. An empty list approves
+     * nothing — on [AdminSurface.setOutboundApproval], it revokes everything.
+     */
+    data class Prefixes(
+        val prefixes: List<String>,
+    ) : OutboundSelection()
+}
+
+/**
+ * Hand-written because core's serde is hand-written too: a string for [OutboundSelection.Manifest]
+ * and a bare array for [OutboundSelection.Prefixes], with no tag. kotlinx's polymorphism would
+ * add a `type` discriminator, and the routes are `deny_unknown_fields`.
+ */
+internal object OutboundSelectionSerializer : KSerializer<OutboundSelection> {
+    private const val MANIFEST = "manifest"
+
+    override val descriptor: SerialDescriptor = JsonElement.serializer().descriptor
+
+    override fun deserialize(decoder: Decoder): OutboundSelection {
+        val element = JsonElement.serializer().deserialize(decoder)
+        if (element is JsonArray) return OutboundSelection.Prefixes(element.map { it.jsonPrimitive.content })
+        val word = (element as? JsonPrimitive)?.takeIf { it.isString }?.content
+        require(word == MANIFEST) { "expected \"$MANIFEST\" or a list of URL prefixes, got $element" }
+        return OutboundSelection.Manifest
+    }
+
+    override fun serialize(
+        encoder: Encoder,
+        value: OutboundSelection,
+    ) {
+        val element: JsonElement =
+            when (value) {
+                is OutboundSelection.Manifest -> JsonPrimitive(MANIFEST)
+                is OutboundSelection.Prefixes -> JsonArray(value.prefixes.map { JsonPrimitive(it) })
+            }
+        JsonElement.serializer().serialize(encoder, element)
+    }
+}
+
+/**
+ * What a namespace approves for one publisher: the URL prefixes its apps may send outbound
+ * requests under, and the prefixes an approver was shown.
+ */
+@Serializable
+data class OutboundApproval(
+    /** The publisher's signer id (`did:key`). */
+    val signer: String,
+    val prefixes: List<String> = emptyList(),
+    /** Every prefix an approver was shown, approved or not. */
+    val reviewed: List<String> = emptyList(),
+)
+
+/**
+ * `PUT /admin-api/namespaces/{namespaceId}/outbound-approvals`: set what the namespace approves
+ * for [applicationId]'s publisher to exactly [approve]. `deny_unknown_fields` on core's side, so
+ * the body is these two keys and nothing else.
+ */
+@Serializable
+data class SetOutboundApprovalRequest(
+    /** An application installed on the node; its publisher is what the approval is keyed by. */
+    val applicationId: String,
+    val approve: OutboundSelection,
+)
+
+/** core flattens the approval into the result, beside [namespaceId] and [published]. */
+@Serializable
+data class SetOutboundApprovalResponseData(
+    val namespaceId: String,
+    val signer: String,
+    val prefixes: List<String> = emptyList(),
+    val reviewed: List<String> = emptyList(),
+    /** `false` when nothing changed, so no op was published. */
+    val published: Boolean,
+) {
+    /** The approval this call left in place. */
+    val approval: OutboundApproval get() = OutboundApproval(signer, prefixes, reviewed)
+}
 
 /**
  * Empty body. `requester` used to sit here; core has never had such a
@@ -1303,6 +1411,13 @@ data class UpgradeGroupRequest(
      * Server default: false.
      */
     val cascade: Boolean? = null,
+    /**
+     * Approve outbound requests for the target's publisher in the group's namespace before
+     * upgrading, as on [CreateNamespaceRequest.approveOutbound]. Added to what the namespace
+     * already approves: a prefix the target declares that nobody approved waits, and its
+     * requests answer `AwaitingApproval`. Omitted from the body when `null`.
+     */
+    val approveOutbound: OutboundSelection? = null,
 )
 
 @Serializable
@@ -1312,6 +1427,11 @@ data class UpgradeGroupResponseData(
     val total: Int? = null,
     val completed: Int? = null,
     val failed: Int? = null,
+    /**
+     * What the namespace approves for the target's publisher, when the request set
+     * [UpgradeGroupRequest.approveOutbound]. `null` otherwise.
+     */
+    val outboundApproval: OutboundApproval? = null,
 )
 
 /** `GroupUpgradeStatusResponseData` is `GroupUpgradeStatus | null`. */

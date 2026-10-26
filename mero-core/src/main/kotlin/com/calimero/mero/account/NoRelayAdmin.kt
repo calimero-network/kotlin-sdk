@@ -93,6 +93,7 @@ import com.calimero.mero.admin.MigrationStatus
 import com.calimero.mero.admin.Namespace
 import com.calimero.mero.admin.NamespaceRevokedDevices
 import com.calimero.mero.admin.NodeIdentity
+import com.calimero.mero.admin.OutboundApproval
 import com.calimero.mero.admin.OwnerDeleteGroupRequest
 import com.calimero.mero.admin.PairCompleteRequest
 import com.calimero.mero.admin.PairCompleteResponseData
@@ -125,6 +126,8 @@ import com.calimero.mero.admin.SetDefaultCapabilitiesRequest
 import com.calimero.mero.admin.SetGroupMetadataRequest
 import com.calimero.mero.admin.SetMemberCapabilitiesRequest
 import com.calimero.mero.admin.SetMemberMetadataRequest
+import com.calimero.mero.admin.SetOutboundApprovalRequest
+import com.calimero.mero.admin.SetOutboundApprovalResponseData
 import com.calimero.mero.admin.SetSubgroupVisibilityRequest
 import com.calimero.mero.admin.SetTeeAdmissionPolicyRequest
 import com.calimero.mero.admin.SetTeeAuthoringPolicyRequest
@@ -343,6 +346,15 @@ internal object NoRelayAdmin : AdminSurface {
         namespaceId: String,
         request: DeleteNamespaceRequest?,
     ): DeleteNamespaceResponseData = throw NoRelayException("deleteNamespace")
+
+    override suspend fun listOutboundApprovals(
+        namespaceId: String,
+    ): List<OutboundApproval> = throw NoRelayException("listOutboundApprovals")
+
+    override suspend fun setOutboundApproval(
+        namespaceId: String,
+        request: SetOutboundApprovalRequest,
+    ): SetOutboundApprovalResponseData = throw NoRelayException("setOutboundApproval")
 
     override suspend fun createNamespaceInvitation(
         namespaceId: String,

@@ -676,6 +676,32 @@ class AdminApi(
             ?: error("deleteNamespace")
     }
 
+    /**
+     * `GET /admin-api/namespaces/{namespaceId}/outbound-approvals`: what the namespace approves
+     * for outbound requests, one entry per publisher (bundle signer).
+     */
+    override suspend fun listOutboundApprovals(namespaceId: String): List<OutboundApproval> =
+        http
+            .getJson<ApiEnvelope<List<OutboundApproval>>>(
+                "/admin-api/namespaces/${pathSegment(namespaceId)}/outbound-approvals",
+            ).data ?: emptyList()
+
+    /**
+     * `PUT /admin-api/namespaces/{namespaceId}/outbound-approvals`, body `{applicationId, approve}`
+     * and nothing else. Sets the publisher's list exactly — `PUT`, not `POST`, because it replaces
+     * rather than adds — and `OutboundSelection.Prefixes(emptyList())` revokes everything. It takes
+     * effect at the app's next run; [SetOutboundApprovalResponseData.published] is `false` when
+     * nothing changed.
+     */
+    override suspend fun setOutboundApproval(
+        namespaceId: String,
+        request: SetOutboundApprovalRequest,
+    ): SetOutboundApprovalResponseData =
+        http
+            .putJson<SetOutboundApprovalRequest, ApiEnvelope<SetOutboundApprovalResponseData>>(
+                "/admin-api/namespaces/${pathSegment(namespaceId)}/outbound-approvals", request,
+            ).data ?: error("setOutboundApproval")
+
     override suspend fun createNamespaceInvitation(
         namespaceId: String,
         request: CreateNamespaceInvitationRequest?,
