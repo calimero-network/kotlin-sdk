@@ -35,6 +35,8 @@ android {
 
     buildFeatures {
         compose = true
+        // BuildConfig.DEBUG gates the launch-extra test hooks and the logcat mirror.
+        buildConfig = true
     }
 
     testOptions {
@@ -49,8 +51,9 @@ dependencies {
     implementation(project(":mero-core"))
     implementation(project(":mero-compose"))
     // Reused for the in-app mock backend (run-app.sh --mock / instrumented UI tests): a FakeNode on
-    // a local MockWebServer, so the app runs the full login→home flow with no live node.
-    implementation(project(":mero-testkit"))
+    // a local MockWebServer, so the app runs the full login→home flow with no live node. Debug
+    // only (src/debug/…/MockBackend.kt): a release build carries no mock.
+    debugImplementation(project(":mero-testkit"))
 
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.activity.compose)
@@ -71,6 +74,7 @@ dependencies {
     debugImplementation(libs.compose.ui.test.manifest)
 
     // JVM unit tests of the chat logic against the in-process FakeNode (no emulator).
+    testImplementation(project(":mero-testkit"))
     testImplementation(libs.junit)
     testImplementation(libs.kotlinx.coroutines.test)
 

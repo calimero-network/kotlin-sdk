@@ -108,7 +108,7 @@ import java.util.Locale
  * The Chat tab: spaces, then a space's channels, then a channel's messages. [onInChannel] says
  * when a channel is open, so the app can hide its bottom bar there.
  *
- * [autoJoinInvite] is the e2e hook (the `invite` launch extra): when set, the screen installs
+ * [autoJoinInvite] is the e2e hook (the `invite` launch extra, debug builds only): when set, the screen installs
  * mero-chat if needed and redeems that invite on open.
  */
 @Composable
