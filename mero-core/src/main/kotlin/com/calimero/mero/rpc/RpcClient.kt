@@ -1,6 +1,7 @@
 package com.calimero.mero.rpc
 
 import com.calimero.mero.http.HttpClient
+import com.calimero.mero.http.HttpException
 import com.calimero.mero.http.MeroException
 import kotlinx.serialization.DeserializationStrategy
 import kotlinx.serialization.Serializable
@@ -29,7 +30,58 @@ open class RpcException(
     message: String,
     val type: String? = null,
     val data: JsonElement? = null,
-) : MeroException(message)
+) : MeroException(message) {
+    /** Whether the method itself failed ([FUNCTION_CALL_ERROR_TYPE]). */
+    val isFunctionCallError: Boolean get() = type == FUNCTION_CALL_ERROR_TYPE
+
+    /**
+     * Why the call failed, in the node's or the contract's words: the [data] core puts beside
+     * [type] (for a `FunctionCallError`, the contract's own error or panic message), else [message].
+     *
+     * Core sends a method error as `{"type":"FunctionCallError","data":"<reason>"}` with no
+     * `message`, so the reason lives in [data]. A nested `{"type", "data"}` or a `{"message"}`
+     * object is unwrapped to its text.
+     */
+    val reason: String get() = textOf(data) ?: message.orEmpty()
+
+    companion object {
+        /**
+         * The `type` core gives a method that failed: the contract returned an error, panicked,
+         * or the call was refused before it ran.
+         */
+        const val FUNCTION_CALL_ERROR_TYPE = "FunctionCallError"
+
+        /** The readable text in a `data` payload, or `null` when there is none. */
+        internal fun textOf(data: JsonElement?): String? =
+            when (data) {
+                is JsonPrimitive -> data.contentOrNull?.takeIf { data.isString && it.isNotEmpty() }
+                is JsonObject ->
+                    listOf("message", "error", "reason", "detail").firstNotNullOfOrNull { textOf(data[it]) }
+                        ?: taggedText(data)
+                else -> null
+            }
+
+        /** `{"type": "...", "data": ...}`, core's tagged-enum shape, nested: `"<type>: <text>"`. */
+        private fun taggedText(obj: JsonObject): String? {
+            val inner = textOf(obj["data"])
+            val type = (obj["type"] as? JsonPrimitive)?.takeIf { it.isString }?.content ?: return inner
+            return inner?.let { "$type: $it" } ?: type
+        }
+    }
+}
+
+/**
+ * Why a contract call failed, in the contract's words: [RpcException.reason] for a JSON-RPC
+ * error, or the reason an HTTP refusal (`/query`, `/intents`) carries in
+ * [HttpException.errorData] or [HttpException.errorMessage]. `null` for other errors.
+ */
+val MeroException.callFailureReason: String?
+    get() =
+        when (this) {
+            is RpcException -> reason
+            is HttpException -> RpcException.textOf(errorData) ?: errorMessage
+            else -> null
+        }
 
 /**
  * The call wrote state, and this node's role in the context is read-only
@@ -152,7 +204,8 @@ class RpcClient(
      * One JSON-RPC 2.0 call to `/jsonrpc` — `{jsonrpc, id, method, params}` — returning
      * `result` (or `null` when the node sent none). An `error` becomes [RpcException]
      * (or [ReadOnlyWriteRefusedException]), keeping core's `type` and `data`; a body with no
-     * `code`/`message` (core's `{type, data}`) takes its `type` as the message.
+     * `code`/`message` (core's `{type, data}`) reads `"<type>: <reason in data>"`, or the bare
+     * `type` when `data` has no text.
      */
     internal suspend fun call(
         rpcMethod: String,
@@ -174,7 +227,12 @@ class RpcClient(
 
         parsed.error?.let { err ->
             val code = err.code ?: -1
-            val message = err.message ?: err.type ?: "RPC error"
+            // The reason is in `data` (a string, or a nested object); without it the message
+            // would be the bare type, e.g. "FunctionCallError".
+            val message =
+                err.message
+                    ?: err.type?.let { type -> RpcException.textOf(err.data)?.let { "$type: $it" } ?: type }
+                    ?: "RPC error"
             if (err.type == ReadOnlyWriteRefusedException.TYPE) {
                 val contextId =
                     (err.data as? JsonObject)

@@ -15,10 +15,12 @@ import com.calimero.mero.admin.SetSubgroupVisibilityRequest
 import com.calimero.mero.admin.SignedGroupOpenInvitation
 import com.calimero.mero.compose.MeroAuthState
 import com.calimero.mero.compose.MeroClient
+import com.calimero.mero.http.MeroException
 import com.calimero.mero.invite.InviteCodec
 import com.calimero.mero.invite.InviteLink
 import com.calimero.mero.relay.ApplicationTarget
 import com.calimero.mero.relay.CreateContextInput
+import com.calimero.mero.rpc.callFailureReason
 import com.calimero.mero.sample.app.SampleLog
 import com.calimero.mero.sse.ContextEvent
 import kotlinx.coroutines.CancellationException
@@ -761,7 +763,9 @@ class ChatService(
         }
     }
 
-    private fun short(error: Exception): String = error.message ?: error.toString()
+    private fun short(error: Exception): String =
+        // A contract's refusal ("message too long", a panic) in its own words.
+        (error as? MeroException)?.callFailureReason ?: error.message ?: error.toString()
 
     companion object {
         /** mero-chat (`apps/mero-chat`), as the app registry publishes it. Invite links name it too. */
