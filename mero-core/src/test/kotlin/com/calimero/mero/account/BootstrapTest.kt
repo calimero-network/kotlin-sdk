@@ -88,6 +88,66 @@ class BootstrapTest {
             }
         }
 
+    /** The schema byte of a sent join: the first byte of `signedOp`. */
+    private fun schemaByte(body: String) = Regex(""""signedOp":"([0-9a-f]{2})""").find(body)?.groupValues?.get(1)
+
+    private fun refusingNode(vararg responses: MockResponse): MockWebServer =
+        MockWebServer().apply {
+            responses.forEach(::enqueue)
+            start()
+        }
+
+    @Test
+    fun `signs again at the version an older node names`() =
+        runBlocking {
+            val node =
+                refusingNode(
+                    MockResponse().setResponseCode(400).setBody(
+                        """{"error":"signed_op signature does not verify: schema version mismatch: expected 26, got 27"}""",
+                    ),
+                    MockResponse().setBody("""{"data":{"published":true}}"""),
+                )
+            try {
+                val outcome = account.bootstrapFromInvitation(ns, invitation(), nodeUrl = node.url("/").toString())
+                assertTrue((outcome as BootstrapResult.Success).published)
+                val sent = List(2) { schemaByte(node.takeRequest().body.readUtf8()) }
+                assertEquals("27 first, then the 26 the node asked for", listOf("1b", "1a"), sent)
+            } finally {
+                node.shutdown()
+            }
+        }
+
+    @Test
+    fun `signs again only once and only at a version it knows`() =
+        runBlocking {
+            val mismatch = """{"error":"schema version mismatch: expected 26, got 27"}"""
+            val twice = refusingNode(MockResponse().setResponseCode(400).setBody(mismatch), MockResponse().setResponseCode(400).setBody(mismatch))
+            try {
+                val outcome = account.bootstrapFromInvitation(ns, invitation(), nodeUrl = twice.url("/").toString()) as BootstrapResult.Failure
+                assertEquals(400, outcome.status)
+                assertEquals(2, twice.requestCount)
+            } finally {
+                twice.shutdown()
+            }
+            val unknown = refusingNode(MockResponse().setResponseCode(400).setBody("""{"error":"schema version mismatch: expected 30, got 27"}"""))
+            try {
+                assertTrue(account.bootstrapFromInvitation(ns, invitation(), nodeUrl = unknown.url("/").toString()) is BootstrapResult.Failure)
+                assertEquals("no guessing at 30", 1, unknown.requestCount)
+            } finally {
+                unknown.shutdown()
+            }
+        }
+
+    @Test
+    fun `reads the expected version from a refusal`() {
+        assertEquals(
+            26,
+            NamespaceOp.expectedSchemaVersion("signed_op signature does not verify: schema version mismatch: expected 26, got 27"),
+        )
+        assertNull(NamespaceOp.expectedSchemaVersion("schema version mismatch: expected 25, got 27"))
+        assertNull(NamespaceOp.expectedSchemaVersion("invitation expired"))
+    }
+
     @Test
     fun `an unreachable admitter is the admit step, distinct from a refusal`() =
         runBlocking {
