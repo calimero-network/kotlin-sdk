@@ -1,6 +1,9 @@
 package com.calimero.mero
 
+import com.calimero.mero.auth.LoginFailureReason
+import com.calimero.mero.http.HttpException
 import com.calimero.mero.http.MeroStateException
+import com.calimero.mero.http.NetworkException
 import com.calimero.mero.storage.MemoryTokenStore
 import kotlinx.coroutines.runBlocking
 import okhttp3.mockwebserver.MockResponse
@@ -13,12 +16,14 @@ import org.junit.Assert.assertTrue
 import org.junit.Assert.fail
 import org.junit.Before
 import org.junit.Test
+import java.net.SocketTimeoutException
 
 /**
  * Port of the parts of the Swift `HttpAndAuthTests` not already covered by [MeroAuthTest]
  * (authenticate body/refresh/terminal-revoke) and [RefreshCoordinatorTest] (single-flight refresh).
  *
- * Fills the remaining gaps: no-credentials, logout, and `auth.validateToken` valid/invalid.
+ * Fills the remaining gaps: no-credentials, logout, `auth.validateToken` valid/invalid, and
+ * telling a lockout or a missing login from a wrong password ([LoginFailureReason]).
  */
 class HttpAndAuthTest {
     private lateinit var server: MockWebServer
@@ -110,4 +115,68 @@ class HttpAndAuthTest {
             assertFalse(result.valid)
             assertEquals(401, result.status)
         }
+
+    /**
+     * A lockout is not a wrong password: core answers `429` with `Retry-After` once too many
+     * logins failed, and the caller has to be able to say "try again in 30 s" rather than
+     * "check your password".
+     */
+    @Test
+    fun `a lockout stays a 429 with its Retry-After`() =
+        runBlocking {
+            server.enqueue(
+                MockResponse()
+                    .setResponseCode(429)
+                    .setHeader("Content-Type", "application/json")
+                    .setHeader("Retry-After", "30")
+                    .setBody("""{"error":"Too many failed login attempts; please try again later"}"""),
+            )
+            try {
+                mero.authenticate(Credentials("bob", "pw"))
+                fail("expected a throw")
+            } catch (e: HttpException) {
+                assertEquals(429, e.status)
+                assertEquals(LoginFailureReason.RateLimited(retryAfterSeconds = 30.0), LoginFailureReason.of(e))
+            }
+            Unit
+        }
+
+    @Test
+    fun `no login at the URL is not found`() =
+        runBlocking {
+            server.enqueue(MockResponse().setResponseCode(404))
+            try {
+                mero.authenticate(Credentials("bob", "pw"))
+                fail("expected a throw")
+            } catch (e: HttpException) {
+                assertEquals(LoginFailureReason.NotFound, LoginFailureReason.of(e))
+            }
+            Unit
+        }
+
+    @Test
+    fun `login failure reasons`() {
+        fun http(
+            status: Int,
+            headers: Map<String, String> = emptyMap(),
+        ) = HttpException(status, "", headers, "https://node.test/auth/token")
+        assertEquals(LoginFailureReason.InvalidCredentials, LoginFailureReason.of(MeroStateException("No credentials provided")))
+        assertEquals(LoginFailureReason.InvalidCredentials, LoginFailureReason.of(http(401)))
+        assertEquals(LoginFailureReason.RateLimited(null), LoginFailureReason.of(http(429)))
+        assertEquals(LoginFailureReason.RateLimited(null), LoginFailureReason.of(http(429, mapOf("retry-after" to "nonsense"))))
+        assertEquals(LoginFailureReason.NotFound, LoginFailureReason.of(http(404)))
+        assertEquals(LoginFailureReason.ServerError(502), LoginFailureReason.of(http(502)))
+        assertEquals(LoginFailureReason.Unreachable, LoginFailureReason.of(NetworkException("offline")))
+        assertEquals(LoginFailureReason.Unreachable, LoginFailureReason.of(SocketTimeoutException("timed out")))
+        assertEquals(LoginFailureReason.Other, LoginFailureReason.of(IllegalStateException("undecodable")))
+    }
+
+    @Test
+    fun `Retry-After reads seconds and an HTTP date`() {
+        assertEquals(30.0, LoginFailureReason.retryAfter(" 30 ")!!, 0.0)
+        assertNull(LoginFailureReason.retryAfter("-5"))
+        val now = 784_111_777_000L // Sun, 06 Nov 1994 08:49:37 GMT
+        assertEquals(60.0, LoginFailureReason.retryAfter("Sun, 06 Nov 1994 08:50:37 GMT", nowMs = now)!!, 0.0)
+        assertEquals(0.0, LoginFailureReason.retryAfter("Sun, 06 Nov 1994 08:48:37 GMT", nowMs = now)!!, 0.0)
+    }
 }

@@ -5,6 +5,7 @@ import com.calimero.mero.account.DeviceCert
 import com.calimero.mero.account.Enrolment
 import com.calimero.mero.account.MemorySecureStore
 import com.calimero.mero.account.persistedNonces
+import com.calimero.mero.auth.LoginFailureReason
 import com.calimero.mero.crypto.SeedSigner
 import com.calimero.mero.http.classifyError
 import com.calimero.mero.relay.DcapRelayKeyVerifier
@@ -300,6 +301,7 @@ class MeroClientTest {
     private fun refusingNode(
         status: Int,
         body: String,
+        headers: Map<String, String> = emptyMap(),
     ): MockWebServer =
         MockWebServer().apply {
             dispatcher =
@@ -309,13 +311,89 @@ class MeroClientTest {
                             .MockResponse()
                             .setResponseCode(status)
                             .setHeader("Content-Type", "application/json")
+                            .apply { headers.forEach { (name, value) -> setHeader(name, value) } }
                             .setBody(body)
                 }
             start()
         }
 
+    /** Log in against a node that answers [status] (and [headers]), then shut it down. */
+    private suspend fun loginAgainst(
+        status: Int,
+        headers: Map<String, String> = emptyMap(),
+    ): Boolean {
+        val refusing = refusingNode(status, "", headers)
+        return try {
+            client.login(refusing.url("/").toString(), "dev", "pw")
+        } finally {
+            refusing.shutdown()
+        }
+    }
+
     @Test
-    fun `login tells bad credentials from a lockout by reason, keeping the message`() =
+    fun `a wrong password is invalid credentials`() =
+        runBlocking {
+            assertFalse(loginAgainst(401))
+            assertEquals(LoginFailureReason.InvalidCredentials, client.state.value.loginFailure)
+            assertEquals("Login failed — check the username and password.", client.state.value.error)
+        }
+
+    @Test
+    fun `a lockout is told apart from a wrong password`() =
+        runBlocking {
+            assertFalse(loginAgainst(429, mapOf("Retry-After" to "42")))
+            val state = client.state.value
+            assertFalse(state.isAuthenticated)
+            assertEquals(LoginFailureReason.RateLimited(retryAfterSeconds = 42.0), state.loginFailure)
+            assertEquals(MeroErrorReason.RATE_LIMITED, state.errorReason)
+            assertEquals("Too many failed attempts. Try again in 42 seconds.", state.error)
+        }
+
+    @Test
+    fun `a missing node is not found`() =
+        runBlocking {
+            assertFalse(loginAgainst(404))
+            val state = client.state.value
+            assertEquals(LoginFailureReason.NotFound, state.loginFailure)
+            assertEquals(MeroErrorReason.NOT_FOUND, state.errorReason)
+            assertEquals("No sign-in found at that address — check the node URL.", state.error)
+        }
+
+    @Test
+    fun `a successful login clears the last failure`() =
+        runBlocking {
+            assertFalse(loginAgainst(401))
+            assertNotNull(client.state.value.loginFailure)
+            assertTrue(client.login(server.url("/").toString(), "admin", "secret"))
+            assertTrue(client.state.value.isAuthenticated)
+            assertNull(client.state.value.loginFailure)
+            assertNull(client.state.value.error)
+        }
+
+    @Test
+    fun `clearError clears the failure`() =
+        runBlocking {
+            assertFalse(loginAgainst(401))
+            client.clearError()
+            assertNull(client.state.value.loginFailure)
+            assertNull(client.state.value.error)
+        }
+
+    @Test
+    fun `the unreachable message names no vendor`() =
+        runBlocking {
+            val closed = java.net.ServerSocket(0).use { it.localPort }
+            assertFalse(client.login("http://127.0.0.1:$closed", "admin", "secret"))
+            assertEquals(LoginFailureReason.Unreachable, client.state.value.loginFailure)
+            assertFalse(
+                client.state.value.error!!,
+                client.state.value.error!!
+                    .contains("Calimero"),
+            )
+        }
+
+    @Test
+    fun `login tells bad credentials from a lockout by reason`() =
         runBlocking {
             val bad = refusingNode(401, """{"error":"Invalid username or password"}""")
             val locked = refusingNode(429, """{"error":"Too many failed login attempts"}""")
@@ -330,7 +408,7 @@ class MeroClientTest {
                 state = client.state.value
                 assertEquals(MeroErrorReason.RATE_LIMITED, state.errorReason)
                 assertEquals(429, state.errorStatus)
-                assertTrue(state.error!!, state.error!!.contains("Too many failed login attempts"))
+                assertEquals("Too many failed attempts. Try again later.", state.error)
             } finally {
                 bad.shutdown()
                 locked.shutdown()

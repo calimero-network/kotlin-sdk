@@ -189,6 +189,29 @@ namespace or relay to use yet) is `UNAVAILABLE`, and `CloudLinkDeclinedException
 `FORBIDDEN`. An `AccountHaRefusedException` reports its advice as the message (see
 [CloudClient](/reference/cloud/#errors)). Anything else is `UNKNOWN`.
 
+## Classifying a login failure
+
+`Mero.authenticate(credentials)` throws the node's `HttpException` as is: a `4xx`
+about the credentials, a `429` (logins locked out after failed attempts), a `404`
+(no login at that URL) and a `5xx` each keep their status.
+`LoginFailureReason.of(error)` names the case:
+
+```kotlin
+try {
+    mero.authenticate(Credentials(user, password))
+} catch (e: Exception) {
+    when (val reason = LoginFailureReason.of(e)) {
+        LoginFailureReason.InvalidCredentials -> show("Wrong username or password.")
+        is LoginFailureReason.RateLimited -> show("Locked out. Try again in ${(reason.retryAfterSeconds ?: 60.0).toInt()} s.") // Retry-After
+        LoginFailureReason.Unreachable -> show("Can't reach the node.")
+        LoginFailureReason.NotFound -> show("No node login at that address.")
+        is LoginFailureReason.ServerError, LoginFailureReason.Other -> show("Something went wrong.")
+    }
+}
+```
+
+`MeroClient` publishes the same as `MeroAuthState.loginFailure`, next to `error`.
+
 ## How 401s are handled
 
 The SDK handles `401 token_expired` **internally**: it refreshes the token and
