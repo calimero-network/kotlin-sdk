@@ -98,14 +98,21 @@ A plain (non-composable) class: mero-react's `MeroProvider` state and actions.
 `MeroAuthState` carries `isAuthenticated`, `isLoading`, `account`, `device`,
 `relayUrl`, `sessionReady`, `relayNote`, `cancelled`, `error`, `nodeUrl`,
 `username`, `isOnline`, `applicationId`, `contextId`, `contextIdentity`,
-`errorReason` and `errorStatus`, plus `signedInWithoutRelay`, `isNodeSession`,
-`isDevNodeSession` and `isDelegated`.
+`errorReason`, `errorStatus` and `loginFailure`, plus `signedInWithoutRelay`,
+`isNodeSession`, `isDevNodeSession` and `isDelegated`.
 
 `errorReason` says what kind of failure `error` describes, so an app branches on it
 instead of matching words: `INVALID_INPUT`, `INVALID_CREDENTIALS` (401/403/400),
-`RATE_LIMITED` (429, too many failed attempts), `UNREACHABLE`, `NODE_ERROR` (5xx),
-`PERMISSIONS_REFUSED` or `UNKNOWN`. `login` and `connectToNode` set it; it is null
-for an error it does not classify. `errorStatus` is the HTTP status, when there was one.
+`RATE_LIMITED` (429, too many failed attempts), `NOT_FOUND` (404, no login at that
+URL), `UNREACHABLE`, `NODE_ERROR` (5xx), `PERMISSIONS_REFUSED` or `UNKNOWN`. `login`
+and `connectToNode` set it; it is null for an error it does not classify.
+`errorStatus` is the HTTP status, when there was one.
+
+A failed `login` also sets `loginFailure`, a typed `LoginFailureReason`:
+`InvalidCredentials`, `RateLimited(retryAfterSeconds)` (the node's lockout, with its
+`Retry-After`), `Unreachable`, `NotFound`, `ServerError(status)` or `Other`. A lockout
+reads "Too many failed attempts. Try again in N seconds." The built-in messages name
+no vendor.
 
 ```kotlin
 class MeroClient(

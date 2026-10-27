@@ -28,6 +28,7 @@ import com.calimero.mero.admin.Namespace
 import com.calimero.mero.admin.SignedGroupOpenInvitation
 import com.calimero.mero.auth.AuthLoginOptions
 import com.calimero.mero.auth.GenerateClientKeyRequest
+import com.calimero.mero.auth.LoginFailureReason
 import com.calimero.mero.auth.PendingAuthStates
 import com.calimero.mero.auth.buildAuthLoginUrl
 import com.calimero.mero.auth.parseAuthCallback
@@ -35,6 +36,7 @@ import com.calimero.mero.cloud.CloudClient
 import com.calimero.mero.compose.invitations.InvitationCapture
 import com.calimero.mero.http.ClassifiedError
 import com.calimero.mero.http.ErrorKind
+import com.calimero.mero.http.HttpException
 import com.calimero.mero.http.TransportSecurity
 import com.calimero.mero.http.classifyError
 import com.calimero.mero.presence.RelayPresenceClient
@@ -56,6 +58,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
+import kotlin.math.ceil
 
 /**
  * Observable session state — what mero-react's `MeroProvider` exposes.
@@ -117,6 +120,13 @@ data class MeroAuthState(
     val errorReason: MeroErrorReason? = null,
     /** The HTTP status behind [error], when the node answered one; `0` when no response arrived. */
     val errorStatus: Int? = null,
+    /**
+     * Why the last [MeroClient.login] failed, typed, next to [error]: a wrong password, a lockout
+     * (with the node's `Retry-After`), no node at the URL… Null after a success, a
+     * [MeroClient.clearError] or a [MeroClient.signOut], and when the password was accepted but
+     * the key was refused ([MeroErrorReason.PERMISSIONS_REFUSED]).
+     */
+    val loginFailure: LoginFailureReason? = null,
 ) {
     /** Signed in, but no relay to write through yet. */
     val signedInWithoutRelay: Boolean get() = isAuthenticated && relayUrl == null && nodeUrl == null
@@ -139,8 +149,14 @@ enum class MeroErrorReason {
     /** The node refused the username and password (`401`, `403` or `400`). */
     INVALID_CREDENTIALS,
 
-    /** The node asked the client to slow down (`429`): too many failed login attempts. */
+    /**
+     * The node asked the client to slow down (`429`): too many failed login attempts. How long to
+     * wait is in [MeroAuthState.loginFailure].
+     */
     RATE_LIMITED,
+
+    /** Something answered, but has no login there (`404`): usually a wrong node URL. */
+    NOT_FOUND,
 
     /** No response: the node is not running, the URL is wrong, the network is down, or a timeout. */
     UNREACHABLE,
@@ -258,7 +274,7 @@ class MeroClient(
         context: Context,
         callbackUrl: String,
     ) {
-        _state.update { it.copy(isLoading = true, error = null, errorReason = null, errorStatus = null, cancelled = false) }
+        _state.update { it.copy(isLoading = true, error = null, errorReason = null, errorStatus = null, loginFailure = null, cancelled = false) }
         try {
             launchWallet(context, account.beginEnrolment(callbackUrl))
         } catch (e: Exception) {
@@ -271,7 +287,7 @@ class MeroClient(
 
     /** Forget the last sign-in error (the sign-in screen does this when switching between Cloud and a node). */
     fun clearError() {
-        _state.update { it.copy(error = null, errorReason = null, errorStatus = null, cancelled = false) }
+        _state.update { it.copy(error = null, errorReason = null, errorStatus = null, loginFailure = null, cancelled = false) }
     }
 
     /** Stop showing a spinner if the person closed the wallet (or login page) without an answer. */
@@ -286,7 +302,7 @@ class MeroClient(
      */
     suspend fun handleEnrolmentCallback(url: String): Boolean {
         if (!account.isEnrolmentCallback(url)) return false
-        _state.update { it.copy(isLoading = true, error = null, errorReason = null, errorStatus = null, cancelled = false) }
+        _state.update { it.copy(isLoading = true, error = null, errorReason = null, errorStatus = null, loginFailure = null, cancelled = false) }
         try {
             account.completeEnrolment(url) ?: run {
                 _state.update { it.copy(isLoading = false) }
@@ -404,19 +420,19 @@ class MeroClient(
         callbackUrl: String,
     ) {
         if (nodeUrl.trim().toHttpUrlOrNull() == null) {
-            _state.update { it.copy(error = INVALID_NODE_URL, errorReason = MeroErrorReason.INVALID_INPUT, errorStatus = null) }
+            _state.update { it.copy(error = INVALID_NODE_URL, errorReason = MeroErrorReason.INVALID_INPUT, errorStatus = null, loginFailure = null) }
             return
         }
         if (!mayCarryCredentials(nodeUrl.trim())) {
-            _state.update { it.copy(error = INSECURE_NODE_URL, errorReason = MeroErrorReason.INVALID_INPUT, errorStatus = null) }
+            _state.update { it.copy(error = INSECURE_NODE_URL, errorReason = MeroErrorReason.INVALID_INPUT, errorStatus = null, loginFailure = null) }
             return
         }
         if (!config.allowCustomSchemeCallbacks && !callbackUrl.trim().startsWith("https://", ignoreCase = true)) {
             // The redirect would be refused anyway ([handleAuthCallback]); say why before the login page opens.
-            _state.update { it.copy(error = CUSTOM_SCHEME_CALLBACK, errorReason = MeroErrorReason.INVALID_INPUT, errorStatus = null) }
+            _state.update { it.copy(error = CUSTOM_SCHEME_CALLBACK, errorReason = MeroErrorReason.INVALID_INPUT, errorStatus = null, loginFailure = null) }
             return
         }
-        _state.update { it.copy(isLoading = true, error = null, errorReason = null, errorStatus = null, cancelled = false) }
+        _state.update { it.copy(isLoading = true, error = null, errorReason = null, errorStatus = null, loginFailure = null, cancelled = false) }
         try {
             launchLogin(context, nodeLoginUrl(nodeUrl, callbackUrl))
         } catch (e: Exception) {
@@ -449,7 +465,7 @@ class MeroClient(
             return true
         }
         val nodeUrl = trust.url?.trimEnd('/') ?: return true.also { _state.update { it.copy(isLoading = false) } }
-        _state.update { it.copy(isLoading = true, error = null, errorReason = null, errorStatus = null) }
+        _state.update { it.copy(isLoading = true, error = null, errorReason = null, errorStatus = null, loginFailure = null) }
         val instance = newNode(nodeUrl)
         val decision = resolveTokenAdoption(callback.accessToken, callback.refreshToken, nodeUrl, instance.getTokenData(), tokenNode)
         decision.tokens?.let {
@@ -531,10 +547,10 @@ class MeroClient(
                 else -> null
             }
         if (invalid != null) {
-            _state.update { it.copy(isLoading = false, error = invalid, errorReason = MeroErrorReason.INVALID_INPUT, errorStatus = null) }
+            _state.update { it.copy(isLoading = false, error = invalid, errorReason = MeroErrorReason.INVALID_INPUT, errorStatus = null, loginFailure = null) }
             return false
         }
-        _state.update { it.copy(isLoading = true, error = null, errorReason = null, errorStatus = null, cancelled = false) }
+        _state.update { it.copy(isLoading = true, error = null, errorReason = null, errorStatus = null, loginFailure = null, cancelled = false) }
         val client = newNode(base)
         var minting = false
         return try {
@@ -564,6 +580,7 @@ class MeroClient(
                     error = friendlyMessage(e, devLoginMessage(e, c, base, minting)),
                     errorReason = if (minting) MeroErrorReason.PERMISSIONS_REFUSED else reasonFor(c.kind),
                     errorStatus = c.status,
+                    loginFailure = if (minting) null else LoginFailureReason.of(e),
                 )
             false
         }
@@ -840,6 +857,7 @@ class MeroClient(
         when (kind) {
             ErrorKind.UNAUTHORIZED, ErrorKind.FORBIDDEN, ErrorKind.INVALID -> MeroErrorReason.INVALID_CREDENTIALS
             ErrorKind.RATE_LIMITED -> MeroErrorReason.RATE_LIMITED
+            ErrorKind.NOT_FOUND -> MeroErrorReason.NOT_FOUND
             ErrorKind.UNREACHABLE -> MeroErrorReason.UNREACHABLE
             ErrorKind.SERVER, ErrorKind.UNAVAILABLE -> MeroErrorReason.NODE_ERROR
             else -> MeroErrorReason.UNKNOWN
@@ -885,8 +903,23 @@ class MeroClient(
             return when (c.kind) {
                 ErrorKind.UNAUTHORIZED, ErrorKind.FORBIDDEN, ErrorKind.INVALID -> "Login failed — check the username and password."
                 ErrorKind.UNREACHABLE -> nodeUrl?.let { "Can't reach the node at $it: ${c.message}" } ?: c.message
+                ErrorKind.RATE_LIMITED -> lockoutMessage(LoginFailureReason.of(error))
+                ErrorKind.NOT_FOUND ->
+                    if ((error as? HttpException)?.url?.contains("/auth/") == true) {
+                        "No sign-in found at that address — check the node URL."
+                    } else {
+                        c.message
+                    }
                 else -> c.message
             }
+        }
+
+        /** A lockout, with the node's `Retry-After` when it sent one. */
+        private fun lockoutMessage(reason: LoginFailureReason): String {
+            val retryAfter = (reason as? LoginFailureReason.RateLimited)?.retryAfterSeconds
+            if (retryAfter == null || retryAfter <= 0) return "Too many failed attempts. Try again later."
+            val seconds = ceil(retryAfter).toInt()
+            return "Too many failed attempts. Try again in $seconds second${if (seconds == 1) "" else "s"}."
         }
 
         /** What [MeroAuthState.error] says for a node URL that does not parse. */
