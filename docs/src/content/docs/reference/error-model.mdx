@@ -40,7 +40,13 @@ class AuthRevokedException(
 // JSON-RPC error returned by a WASM contract (from mero.rpc).
 open class RpcException(
     val code: Int, message: String, val type: String? = null, val data: JsonElement? = null,
-) : MeroException(message)
+) : MeroException(message) {
+    val isFunctionCallError: Boolean  // type == "FunctionCallError"
+    val reason: String                // the reason in `data`, else `message`
+}
+
+// RpcException.reason, or an HTTP refusal's errorData / errorMessage; null otherwise.
+val MeroException.callFailureReason: String?
 
 // core rc.83: this node's role in the context is read-only (ReadOnly, ReadOnlyTee,
 // RelayTee), so the write was discarded — nothing committed, signed or published.
@@ -82,6 +88,23 @@ JSON-RPC itself gained `ReadOnlyWriteRefused`, thrown as
 through a node holding a writing role, or through a relay under a warrant. A
 scoped token also needs `context:execute` for the call since rc.83, or the
 refusal is a `FunctionCallError` naming it.
+
+A contract that returns an error or panics answers
+`{"type":"FunctionCallError","data":"<reason>"}` with no `message`. The reason
+is in `data`; read it with `reason` (`message` is `"FunctionCallError: <reason>"`).
+A nested `{type, data}` or `{message}` object is unwrapped to its text.
+`callFailureReason` reads the same from an `RpcException` and from a
+`queryContext` or `performIntent` refusal:
+
+```kotlin
+import com.calimero.mero.rpc.callFailureReason
+
+try {
+    mero.rpc.executeRaw(contextId = ctx, method = "transfer", argsJson = args)
+} catch (e: MeroException) {
+    show(e.callFailureReason ?: e.message)  // "insufficient balance"
+}
+```
 
 ## Handling pattern
 
