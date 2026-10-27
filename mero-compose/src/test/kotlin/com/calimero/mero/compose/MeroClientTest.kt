@@ -6,6 +6,7 @@ import com.calimero.mero.account.Enrolment
 import com.calimero.mero.account.MemorySecureStore
 import com.calimero.mero.account.persistedNonces
 import com.calimero.mero.crypto.SeedSigner
+import com.calimero.mero.http.classifyError
 import com.calimero.mero.relay.DcapRelayKeyVerifier
 import com.calimero.mero.storage.MemoryTokenStore
 import com.calimero.mero.testkit.FakeNode
@@ -333,6 +334,32 @@ class MeroClientTest {
             } finally {
                 bad.shutdown()
                 locked.shutdown()
+            }
+        }
+
+    @Test
+    fun `the built-in words for an error are public`() {
+        val offline = java.io.IOException("offline")
+        assertTrue(MeroClient.defaultMessage(offline, "https://node.test").startsWith("Can't reach the node at https://node.test: "))
+    }
+
+    @Test
+    fun `errorMessages can replace the built-in words`() =
+        runBlocking {
+            val locked = refusingNode(429, """{"error":"Too many failed login attempts"}""")
+            val bad = refusingNode(401, """{"error":"Invalid username or password"}""")
+            try {
+                client.errorMessages = { error ->
+                    if (classifyError(error).status == 429) "Locked. Wait a moment." else null
+                }
+                assertFalse(client.login(locked.url("/").toString(), "admin", "wrong"))
+                assertEquals("Locked. Wait a moment.", client.state.value.error)
+
+                assertFalse(client.login(bad.url("/").toString(), "admin", "wrong"))
+                assertEquals("null keeps the built-in message", "Login failed — check the username and password.", client.state.value.error)
+            } finally {
+                locked.shutdown()
+                bad.shutdown()
             }
         }
 

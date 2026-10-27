@@ -196,6 +196,13 @@ class MeroClient(
     private val _state = MutableStateFlow(stateFor())
     val state: StateFlow<MeroAuthState> = _state.asStateFlow()
 
+    /**
+     * The words [MeroAuthState.error] shows for a failure, in place of the built-in ones
+     * ([defaultMessage]). Return null to keep the built-in message for that error. Set it to
+     * rebrand or localise.
+     */
+    var errorMessages: ((Throwable) -> String?)? = null
+
     private val _connection = MutableStateFlow<RelayConnection?>(null)
 
     /** The live relay connection, or null when signed out or no relay serves the account. */
@@ -255,7 +262,7 @@ class MeroClient(
         try {
             launchWallet(context, account.beginEnrolment(callbackUrl))
         } catch (e: Exception) {
-            _state.update { it.copy(isLoading = false, error = e.message ?: "Could not open the wallet") }
+            _state.update { it.copy(isLoading = false, error = friendlyMessage(e, e.message ?: "Could not open the wallet")) }
         }
     }
 
@@ -290,11 +297,11 @@ class MeroClient(
             _state.update {
                 stateFor().copy(
                     cancelled = e.cancelled,
-                    error = if (e.cancelled) null else e.message ?: "Sign-in failed",
+                    error = if (e.cancelled) null else friendlyMessage(e, e.message ?: "Sign-in failed"),
                 )
             }
         } catch (e: Exception) {
-            _state.update { stateFor().copy(error = e.message ?: "Sign-in failed") }
+            _state.update { stateFor().copy(error = friendlyMessage(e, e.message ?: "Sign-in failed")) }
         }
         return true
     }
@@ -413,7 +420,7 @@ class MeroClient(
         try {
             launchLogin(context, nodeLoginUrl(nodeUrl, callbackUrl))
         } catch (e: Exception) {
-            _state.update { it.copy(isLoading = false, error = e.message ?: "Could not open the node's login page") }
+            _state.update { it.copy(isLoading = false, error = friendlyMessage(e, e.message ?: "Could not open the node's login page")) }
         }
     }
 
@@ -554,7 +561,7 @@ class MeroClient(
             val c = classifyError(e)
             _state.value =
                 MeroAuthState(
-                    error = devLoginMessage(c, base, minting),
+                    error = friendlyMessage(e, devLoginMessage(e, c, base, minting)),
                     errorReason = if (minting) MeroErrorReason.PERMISSIONS_REFUSED else reasonFor(c.kind),
                     errorStatus = c.status,
                 )
@@ -811,17 +818,22 @@ class MeroClient(
         return "Writes go through the relay, but reads and live updates are off: $why."
     }
 
+    /** [errorMessages]' words for [error], else [default]. */
+    private fun friendlyMessage(
+        error: Throwable,
+        default: String,
+    ): String = errorMessages?.invoke(error) ?: default
+
     private fun devLoginMessage(
+        error: Throwable,
         c: ClassifiedError,
         nodeUrl: String,
         minting: Boolean,
     ): String =
-        when {
-            minting && c.kind != ErrorKind.UNREACHABLE -> "The node did not grant the requested permissions: ${c.message}"
-            c.kind == ErrorKind.UNAUTHORIZED || c.kind == ErrorKind.FORBIDDEN || c.kind == ErrorKind.INVALID ->
-                "Login failed — check the username and password."
-            c.kind == ErrorKind.UNREACHABLE -> "Can't reach the node at $nodeUrl: ${c.message}"
-            else -> c.message
+        if (minting && c.kind != ErrorKind.UNREACHABLE) {
+            "The node did not grant the requested permissions: ${c.message}"
+        } else {
+            defaultMessage(error, nodeUrl)
         }
 
     private fun reasonFor(kind: ErrorKind): MeroErrorReason =
@@ -859,6 +871,23 @@ class MeroClient(
 
         /** https, a local address, or [TransportSecurity.allowInsecureHttp]. */
         internal fun mayCarryCredentials(url: String): Boolean = TransportSecurity.allowInsecureHttp || TransportSecurity.isSecureOrLocal(url)
+
+        /**
+         * The built-in words for [error], as [MeroAuthState.error] shows them after a failed [login]
+         * unless [errorMessages] says otherwise. [nodeUrl], when given, is named in an unreachable
+         * node's message. (Swift `MeroClient.defaultMessage(for:)`.)
+         */
+        fun defaultMessage(
+            error: Throwable,
+            nodeUrl: String? = null,
+        ): String {
+            val c = classifyError(error)
+            return when (c.kind) {
+                ErrorKind.UNAUTHORIZED, ErrorKind.FORBIDDEN, ErrorKind.INVALID -> "Login failed — check the username and password."
+                ErrorKind.UNREACHABLE -> nodeUrl?.let { "Can't reach the node at $it: ${c.message}" } ?: c.message
+                else -> c.message
+            }
+        }
 
         /** What [MeroAuthState.error] says for a node URL that does not parse. */
         const val INVALID_NODE_URL = "Enter a valid node URL (e.g. http://10.0.2.2:2428)."
