@@ -1,7 +1,10 @@
 package com.calimero.mero.compose
 
 import androidx.compose.runtime.Immutable
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.dp
 
 /** Which ways to sign in [LoginView] offers. (== the Swift SDK's `LoginMode`.) */
 enum class LoginMode {
@@ -64,8 +67,15 @@ data class LoginBranding(
     val cloudButton: String = "Continue with Calimero Cloud",
     /** The mark in the tile at the top; the Calimero logo when null. */
     val logo: ImageVector? = null,
-    /** Under the Cloud button ([AccountSignInPanel]): what pressing it does. */
-    val cloudHint: String = "Opens the Calimero wallet to approve this device",
+    /** The logo tile's side. */
+    val logoTileSize: Dp = 76.dp,
+    val logoTileCornerRadius: Dp = 22.dp,
+    /** The tile's fill; the theme's `primary` when null. */
+    val logoTileBackground: Color? = null,
+    /** The elevation of the tile's coloured shadow; `0.dp` for none. */
+    val logoTileShadow: Dp = 8.dp,
+    /** Under the Cloud button ([AccountSignInPanel]): what pressing it does; null hides it. */
+    val cloudHint: String? = "Opens the Calimero wallet to approve this device",
     /** Shown when the person declined in the wallet. */
     val cloudCancelled: String = "Sign-in was cancelled in the wallet.",
     /** Shown when the client enrols at a wallet other than the hosted one; given that wallet's URL. */
