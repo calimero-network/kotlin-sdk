@@ -2,16 +2,19 @@ package com.calimero.mero.account
 
 import com.calimero.mero.admin.AddGroupMembersRequest
 import com.calimero.mero.admin.AdminSurface
+import com.calimero.mero.admin.BlobInfo
 import com.calimero.mero.admin.ContextGroupResponseData
 import com.calimero.mero.admin.CreateContextRequest
 import com.calimero.mero.admin.CreateGroupInNamespaceRequest
 import com.calimero.mero.admin.CreateNamespaceInvitationResult
 import com.calimero.mero.admin.CreateNamespaceRequest
+import com.calimero.mero.admin.GetBlobInfoResponseData
 import com.calimero.mero.admin.GetContextsResponseData
 import com.calimero.mero.admin.GroupInfo
 import com.calimero.mero.admin.GroupMember
 import com.calimero.mero.admin.GroupMemberInput
 import com.calimero.mero.admin.JoinNamespaceRequest
+import com.calimero.mero.admin.ListBlobsResponseData
 import com.calimero.mero.admin.ListGroupMembersResponseData
 import com.calimero.mero.admin.ListNamespacesResponseData
 import com.calimero.mero.admin.Namespace
@@ -23,6 +26,8 @@ import com.calimero.mero.admin.SetOutboundApprovalRequest
 import com.calimero.mero.admin.SetSubgroupVisibilityRequest
 import com.calimero.mero.admin.SignedGroupOpenInvitation
 import com.calimero.mero.admin.UpdateMemberRoleRequest
+import com.calimero.mero.admin.UploadBlobRequest
+import com.calimero.mero.admin.UploadBlobResponseData
 import com.calimero.mero.crypto.Hex
 import com.calimero.mero.http.HttpException
 import com.calimero.mero.relay.ApplicationTarget
@@ -151,6 +156,31 @@ class AccountAdminTest {
             listOf(namespace(ns, "88".repeat(32)), namespace("12".repeat(32), "77".repeat(32)))
 
         override suspend fun getContexts() = GetContextsResponseData(emptyList())
+
+        val blobCalls = mutableListOf<String>()
+
+        override suspend fun uploadBlob(request: UploadBlobRequest): UploadBlobResponseData {
+            blobCalls += "upload ${request.contextId} ${request.data.size}"
+            return BlobInfo("ab".repeat(32), request.data.size.toLong())
+        }
+
+        override suspend fun getBlob(
+            blobId: String,
+            contextId: String?,
+        ): ByteArray {
+            blobCalls += "get $blobId $contextId"
+            return byteArrayOf(9, 8, 7)
+        }
+
+        override suspend fun getBlobInfo(
+            blobId: String,
+            contextId: String?,
+        ): GetBlobInfoResponseData {
+            blobCalls += "info $blobId $contextId"
+            return GetBlobInfoResponseData(blobId, 42, mimeType = "image/png")
+        }
+
+        override suspend fun listBlobs() = ListBlobsResponseData(listOf(BlobInfo("ab".repeat(32), 5)))
     }
 
     private fun namespace(
@@ -372,5 +402,44 @@ class AccountAdminTest {
                 }.exceptionOrNull() is NoRelayException,
             )
             assertTrue(deps.ops.isEmpty())
+        }
+
+    @Test
+    fun `an account's blobs go to its relay, through the context`() =
+        runBlocking {
+            val read = Read()
+            val (admin, _) = rig(read = read)
+            val blob = "ab".repeat(32)
+            assertEquals(blob, admin.uploadBlob(UploadBlobRequest(byteArrayOf(1, 2, 3), contextId = ctx)).blobId)
+            assertTrue(admin.getBlob(blob, ctx).contentEquals(byteArrayOf(9, 8, 7)))
+            assertEquals("image/png", admin.getBlobInfo(blob, ctx).mimeType)
+            assertEquals(listOf(blob), admin.listBlobs().blobs.map { it.blobId })
+            assertEquals(listOf("upload $ctx 3", "get $blob $ctx", "info $blob $ctx"), read.blobCalls)
+        }
+
+    @Test
+    fun `every blob call names a context and sends nothing without one`() =
+        runBlocking {
+            val read = Read()
+            val (admin, _) = rig(read = read)
+            val blob = "ab".repeat(32)
+            for (call in listOf<suspend () -> Unit>(
+                { admin.uploadBlob(UploadBlobRequest(byteArrayOf(1))) },
+                { admin.getBlob(blob, null) },
+                { admin.getBlobInfo(blob, "") },
+            )) {
+                val e = runCatching { call() }.exceptionOrNull()
+                assertTrue("$e", e is IllegalArgumentException && e.message!!.contains("contextId"))
+            }
+            assertTrue(read.blobCalls.isEmpty())
+        }
+
+    @Test
+    fun `with no relay an upload says so and the blob list is empty`() =
+        runBlocking {
+            val (admin, _) = rig(read = null)
+            val e = runCatching { admin.uploadBlob(UploadBlobRequest(byteArrayOf(1), contextId = ctx)) }.exceptionOrNull() as NoRelayException
+            assertEquals("uploadBlob", e.method)
+            assertTrue(admin.listBlobs().blobs.isEmpty())
         }
 }

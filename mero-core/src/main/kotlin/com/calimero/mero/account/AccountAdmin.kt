@@ -28,6 +28,7 @@ import com.calimero.mero.admin.DeleteNamespaceRequest
 import com.calimero.mero.admin.DeleteNamespaceResponseData
 import com.calimero.mero.admin.DetachContextFromGroupRequest
 import com.calimero.mero.admin.GenerateContextIdentityResponseData
+import com.calimero.mero.admin.GetBlobInfoResponseData
 import com.calimero.mero.admin.GetContextIdentitiesResponseData
 import com.calimero.mero.admin.GetTeeAdmissionPolicyResponseData
 import com.calimero.mero.admin.GroupMember
@@ -41,6 +42,7 @@ import com.calimero.mero.admin.JoinNamespaceRequest
 import com.calimero.mero.admin.JoinNamespaceResponseData
 import com.calimero.mero.admin.JoinSubgroupInheritanceResponseData
 import com.calimero.mero.admin.ListAliasesResponseData
+import com.calimero.mero.admin.ListBlobsResponseData
 import com.calimero.mero.admin.ListNamespacesResponseData
 import com.calimero.mero.admin.LookupAliasResponseData
 import com.calimero.mero.admin.NodeIdentity
@@ -68,6 +70,8 @@ import com.calimero.mero.admin.UninstallApplicationResponseData
 import com.calimero.mero.admin.UpdateMemberRoleRequest
 import com.calimero.mero.admin.UpgradeGroupRequest
 import com.calimero.mero.admin.UpgradeGroupResponseData
+import com.calimero.mero.admin.UploadBlobRequest
+import com.calimero.mero.admin.UploadBlobResponseData
 import com.calimero.mero.admin.adminRedeemer
 import com.calimero.mero.admin.redeemInvitation
 import com.calimero.mero.crypto.DeviceSigner
@@ -692,6 +696,46 @@ private class AccountAdmin(
     override suspend fun deleteBlob(
         blobId: String,
     ): DeleteBlobResponseData = refuse("deleteBlob")
+
+    // An account session holds `blob:add-own` and `blob:get-own` on its relay: it may store
+    // a blob into, and read one out of, a context it is a member of, and the relay checks that
+    // membership (and, for a read, that it holds the blob against that context) on every call.
+    // So each of these names the context; without one the relay could only refuse.
+
+    /**
+     * Store [UploadBlobRequest.data] on the relay, against [UploadBlobRequest.contextId]
+     * (required: an account uploads into a context it is a member of). The relay announces it
+     * to the context, so the other members' nodes can fetch it.
+     */
+    override suspend fun uploadBlob(
+        request: UploadBlobRequest,
+    ): UploadBlobResponseData = withContext("uploadBlob", request.contextId).uploadBlob(request)
+
+    /** A blob's bytes, read through [contextId] (required): the relay serves it from its own store or a peer of that context. */
+    override suspend fun getBlob(
+        blobId: String,
+        contextId: String?,
+    ): ByteArray = withContext("getBlob", contextId).getBlob(blobId, contextId)
+
+    /** A blob's metadata, read through [contextId] (required). */
+    override suspend fun getBlobInfo(
+        blobId: String,
+        contextId: String?,
+    ): GetBlobInfoResponseData = withContext("getBlobInfo", contextId).getBlobInfo(blobId, contextId)
+
+    /** The blobs the relay scopes to this account (those of its contexts); empty with no relay. */
+    override suspend fun listBlobs(): ListBlobsResponseData = read?.listBlobs() ?: ListBlobsResponseData(emptyList())
+
+    private fun withContext(
+        method: String,
+        contextId: String?,
+    ): AdminSurface {
+        val relay = relay(method)
+        require(!contextId.isNullOrEmpty()) {
+            "$method needs a contextId: an account reaches blobs only through a context it is a member of"
+        }
+        return relay
+    }
 
     override suspend fun createContextAlias(
         request: CreateContextAliasRequest,

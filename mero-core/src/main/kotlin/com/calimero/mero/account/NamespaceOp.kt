@@ -22,6 +22,14 @@ object NamespaceOp {
      * with no layout change from 26 (rc.90, calimero-network/core#4605).
      */
     const val SCHEMA_VERSION = 27
+
+    /**
+     * The versions a join can be signed at. 26 (core 0.11.0-rc.90) and 27 (core 0.11.0 on)
+     * sign the same layout, so a join refused by a node that names the other one is signed
+     * again at that version: relays in the cloud do not all move to a new core release at once.
+     */
+    val ACCEPTED_SCHEMA_VERSIONS: IntRange = 26..27
+    private val SCHEMA_MISMATCH = Regex("""schema version mismatch: expected (\d+)""")
     private val SIGN_DOMAIN = "calimero.namespace.v1".encodeToByteArray()
 
     private const val NAMESPACE_OP_ROOT = 0
@@ -70,6 +78,7 @@ object NamespaceOp {
         nonce: ULong,
         parentOpHashes: List<String> = emptyList(),
         joinedAt: Long = System.currentTimeMillis() / 1000,
+        schemaVersion: Int = SCHEMA_VERSION,
     ): String {
         val credentialBytes = Hex.decodeUnsized(credential, "credential")
         val expires = invitation.invitation.expirationTimestamp != 0L
@@ -84,7 +93,7 @@ object NamespaceOp {
         val op = concat(byteArrayOf(NAMESPACE_OP_ROOT.toByte()), rootOp)
         val signable =
             BorshWriter()
-                .u8(SCHEMA_VERSION)
+                .u8(schemaVersion)
                 .raw(Hex.decode(namespaceId, "namespaceId", 32))
                 .u32(parentOpHashes.size)
                 .also { w -> parentOpHashes.forEachIndexed { i, p -> w.raw(Hex.decode(p, "parentOpHashes[$i]", 32)) } }
@@ -96,6 +105,18 @@ object NamespaceOp {
         // Trailing 0x00: no endorsement. The admitting node adds its own.
         return Hex.encode(concat(signable, signature, byteArrayOf(0)))
     }
+
+    /**
+     * The schema version a node names when it refuses an op signed at another one
+     * (`schema version mismatch: expected 26, got 27`), if it is one this SDK can sign at.
+     */
+    fun expectedSchemaVersion(refusal: String): Int? =
+        SCHEMA_MISMATCH
+            .find(refusal)
+            ?.groupValues
+            ?.get(1)
+            ?.toIntOrNull()
+            ?.takeIf { it in ACCEPTED_SCHEMA_VERSIONS }
 
     private fun bytes32(
         value: List<Int>,

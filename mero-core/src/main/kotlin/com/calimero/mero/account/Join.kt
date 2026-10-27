@@ -120,34 +120,49 @@ object Join {
         signer: DeviceSigner,
         nonce: ULong,
     ): Boolean {
-        val signedOp =
-            try {
-                NamespaceOp.signMemberJoinOp(namespaceId, account, invitation, credential, signer, nonce)
-            } catch (e: IllegalArgumentException) {
-                throw JoinException(JoinStep.SIGN, "The join op could not be signed, so nothing was sent: ${e.message}", cause = e)
+        var schemaVersion = NamespaceOp.SCHEMA_VERSION
+        while (true) {
+            val signedOp =
+                try {
+                    NamespaceOp.signMemberJoinOp(namespaceId, account, invitation, credential, signer, nonce, schemaVersion = schemaVersion)
+                } catch (e: IllegalArgumentException) {
+                    throw JoinException(JoinStep.SIGN, "The join op could not be signed, so nothing was sent: ${e.message}", cause = e)
+                }
+            val body =
+                buildJsonObject {
+                    put("invitation", invitation.raw)
+                    put("signedOp", signedOp)
+                }
+            val res =
+                try {
+                    http.execute("POST", admitUrl, body.toString())
+                } catch (e: NetworkException) {
+                    throw JoinException(
+                        JoinStep.ADMIT,
+                        "The admitter at $admitUrl could not be reached: ${e.message}. The invitation is untouched — this is the " +
+                            "node being unreachable, not a refusal.",
+                        cause = e,
+                    )
+                }
+            if (!res.isSuccessful) {
+                // A node on the neighbouring core release names the version it
+                // verifies: sign once more at that one, never twice.
+                val expected = NamespaceOp.expectedSchemaVersion(res.body)
+                if (schemaVersion == NamespaceOp.SCHEMA_VERSION && expected != null && expected != schemaVersion) {
+                    schemaVersion = expected
+                    continue
+                }
+                throw JoinException(JoinStep.ADMIT, explainAdmitFailure(res.status, res.body), res.status)
             }
-        val body =
-            buildJsonObject {
-                put("invitation", invitation.raw)
-                put("signedOp", signedOp)
-            }
-        val res =
-            try {
-                http.execute("POST", admitUrl, body.toString())
-            } catch (e: NetworkException) {
-                throw JoinException(
-                    JoinStep.ADMIT,
-                    "The admitter at $admitUrl could not be reached: ${e.message}. The invitation is untouched — this is the " +
-                        "node being unreachable, not a refusal.",
-                    cause = e,
-                )
-            }
-        if (!res.isSuccessful) throw JoinException(JoinStep.ADMIT, explainAdmitFailure(res.status, res.body), res.status)
-        return runCatching {
-            val data = Json.parseToJsonElement(res.body).jsonObject["data"] as? JsonObject
+            return parsePublished(res.body)
+        }
+    }
+
+    private fun parsePublished(body: String): Boolean =
+        runCatching {
+            val data = Json.parseToJsonElement(body).jsonObject["data"] as? JsonObject
             (data?.get("published") as? JsonPrimitive)?.booleanOrNull == true
         }.getOrDefault(false)
-    }
 
     /** Lowercase, `0x` stripped; null when empty. */
     fun normaliseAccount(account: String?): String? {
