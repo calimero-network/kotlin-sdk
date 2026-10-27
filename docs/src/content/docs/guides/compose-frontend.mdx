@@ -97,9 +97,9 @@ override fun onNewIntent(intent: Intent) {
 A plain (non-composable) class: mero-react's `MeroProvider` state and actions.
 `MeroAuthState` carries `isAuthenticated`, `isLoading`, `account`, `device`,
 `relayUrl`, `sessionReady`, `relayNote`, `cancelled`, `error`, `nodeUrl`,
-`username`, `isOnline`, `applicationId`, `contextId`, `contextIdentity`,
-`errorReason`, `errorStatus` and `loginFailure`, plus `signedInWithoutRelay`,
-`isNodeSession`, `isDevNodeSession` and `isDelegated`.
+`username`, `isOnline`, `isOfflineSession`, `applicationId`, `contextId`,
+`contextIdentity`, `errorReason`, `errorStatus` and `loginFailure`, plus
+`signedInWithoutRelay`, `isNodeSession`, `isDevNodeSession` and `isDelegated`.
 
 `errorReason` says what kind of failure `error` describes, so an app branches on it
 instead of matching words: `INVALID_INPUT`, `INVALID_CREDENTIALS` (401/403/400),
@@ -137,6 +137,8 @@ class MeroClient(
     fun connectToNode(context: Context, nodeUrl: String, callbackUrl: String)
     suspend fun handleDeepLink(url: String): Boolean      // enrolment or SSO callback
     suspend fun restore(): Boolean                        // Cloud session, else the stored node session
+    suspend fun restoreNodeSession(): Boolean             // the stored node, if it accepts the stored token
+    suspend fun resumeNodeSession(): NodeSessionRestore   // the same, keeping the session when the node is unreachable
     suspend fun connectWithAccount(session: DelegatedSession)
     fun selectContext(contextId: String?, contextIdentity: String? = null)
     suspend fun logout()                                  // clears tokens, session and storage
@@ -189,7 +191,14 @@ application, context and identity the callback named are kept in `MeroAppStorage
 (SharedPreferences, mero-react's keys). `isOnline` follows the node's event stream: a
 connect is online, a failure offline; a revoked family or a `403` naming an auth error
 (a token minted without `context:subscribe`) logs out; a `401` is first recovered
-through `/auth/validate`. A development `login` is not monitored.
+through `/auth/validate`. A development `login` is monitored the same way.
+
+For an app that works offline, restore the node with `resumeNodeSession()`. It answers
+`RESTORED`, `REJECTED`, `NO_SESSION`, or `OFFLINE` when the node gave no verdict (no
+network, a timeout, a `5xx`: `ValidationResult.isUnreachable`). On `OFFLINE` the client is
+signed in on the held tokens with `isOnline == false` and `isOfflineSession == true`; both
+clear when the node's event stream connects, and a node that then rejects the tokens logs
+out. Ask for sign-in only on `REJECTED` or `NO_SESSION`.
 
 `login` is for development against your own `merod` (from the emulator,
 `http://10.0.2.2:2428`). Do not ship it.

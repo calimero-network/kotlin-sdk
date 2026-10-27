@@ -31,6 +31,7 @@ import com.calimero.mero.auth.AuthLoginOptions
 import com.calimero.mero.auth.GenerateClientKeyRequest
 import com.calimero.mero.auth.LoginFailureReason
 import com.calimero.mero.auth.PendingAuthStates
+import com.calimero.mero.auth.ValidationResult
 import com.calimero.mero.auth.buildAuthLoginUrl
 import com.calimero.mero.auth.parseAuthCallback
 import com.calimero.mero.cloud.CloudClient
@@ -106,6 +107,13 @@ data class MeroAuthState(
      * reconnects; always true for a Cloud session, whose stream reconnects by itself.
      */
     val isOnline: Boolean = true,
+    /**
+     * Signed in on tokens the node has not confirmed this launch: [MeroClient.resumeNodeSession]
+     * found it unreachable and kept the stored session. [isAuthenticated] is true and calls go out
+     * with the held tokens; this clears once the node's event stream connects, and a node that
+     * rejects the tokens logs out.
+     */
+    val isOfflineSession: Boolean = false,
     /** The application this session is for: the SSO callback's, or derived for an account. */
     val applicationId: String? = null,
     /** The context an SSO login named, or the one the app chose ([MeroClient.selectContext]). */
@@ -489,23 +497,45 @@ class MeroClient(
 
     /**
      * Bring back the node session [MeroAppStorage.nodeUrl] names, if its tokens still validate:
-     * an SSO session, or a password session [login] persisted.
+     * an SSO session, or a password session [login] persisted. A node that cannot be reached reads
+     * as false here, like a rejected token; [resumeNodeSession] tells the two apart.
      */
-    suspend fun restoreNodeSession(): Boolean {
+    suspend fun restoreNodeSession(): Boolean = resumeNode(keepOffline = false) == NodeSessionRestore.RESTORED
+
+    /**
+     * Reconnect the node in [storage], keeping the session when the node cannot be reached — for an
+     * app that works offline.
+     *
+     * - [NodeSessionRestore.RESTORED]: the node accepted the stored token.
+     * - [NodeSessionRestore.OFFLINE]: the node gave no verdict (no network, timeout, `5xx`). The
+     *   held tokens are adopted: [MeroAuthState.isAuthenticated] is true, [MeroAuthState.isOnline]
+     *   and [MeroAuthState.isOfflineSession] say the node has not been reached, and the event
+     *   stream keeps trying. A node that later rejects the tokens logs out, as for any session.
+     * - [NodeSessionRestore.REJECTED]: the node refused the token; sign in again.
+     * - [NodeSessionRestore.NO_SESSION]: no stored node, or no token for it.
+     */
+    suspend fun resumeNodeSession(): NodeSessionRestore = resumeNode(keepOffline = true)
+
+    private suspend fun resumeNode(keepOffline: Boolean): NodeSessionRestore {
         val saved = storage.nodeUrl
         if (saved == null) {
             _state.value = stateFor()
-            return false
+            return NodeSessionRestore.NO_SESSION
         }
         _state.update { it.copy(isLoading = true) }
         val instance = newNode(saved)
-        if (checkAuth(instance)) {
-            // A password session [login] persisted comes back as one (not health-monitored).
-            installNode(instance, saved, username = storage.username)
-            return true
+        val check = verifyAuth(instance)
+        if (check == AuthCheck.VALID || (check == AuthCheck.UNREACHABLE && keepOffline)) {
+            // A password session [login] persisted comes back as one.
+            installNode(instance, saved, username = storage.username, offline = check == AuthCheck.UNREACHABLE)
+            return if (check == AuthCheck.VALID) NodeSessionRestore.RESTORED else NodeSessionRestore.OFFLINE
         }
         _state.value = stateFor()
-        return false
+        return when (check) {
+            AuthCheck.REJECTED -> NodeSessionRestore.REJECTED
+            AuthCheck.UNREACHABLE -> NodeSessionRestore.OFFLINE
+            else -> NodeSessionRestore.NO_SESSION
+        }
     }
 
     /**
@@ -522,7 +552,8 @@ class MeroClient(
      *
      * The tokens go to this client's [TokenStore], bound to [nodeUrl], and the node URL and
      * username to [storage], so [restore] brings the session back on the next launch while its
-     * tokens still validate. [signOut] forgets both.
+     * tokens still validate ([resumeNodeSession] also while the node is unreachable). [signOut]
+     * forgets both. As for an SSO login, the node's event stream drives [MeroAuthState.isOnline].
      *
      * A password login on its own yields the node's **admin** token. Pass [permissions] to sign
      * in with a narrower key instead: the admin token is used once, to mint a client key with
@@ -676,30 +707,41 @@ class MeroClient(
      * stored token underneath (the transport renewed an expired access token on the way) is judged
      * again on the token actually held; this never calls `/auth/refresh` itself.
      */
-    internal suspend fun checkAuth(instance: Mero): Boolean {
-        val token = instance.getTokenData()?.accessToken ?: return false
-        if (validates(instance, token)) return true
+    internal suspend fun checkAuth(instance: Mero): Boolean = verifyAuth(instance) == AuthCheck.VALID
+
+    /** [checkAuth], telling a node that refused the token from one that could not be asked. */
+    internal suspend fun verifyAuth(instance: Mero): AuthCheck {
+        val token = instance.getTokenData()?.accessToken?.takeIf { it.isNotEmpty() } ?: return AuthCheck.NO_TOKEN
+        val first = validate(instance, token)
+        if (first.valid) return AuthCheck.VALID
+        if (first.isUnreachable) return AuthCheck.UNREACHABLE
         val rotated = instance.getTokenData()?.accessToken
-        if (rotated == null || rotated == token) return false
-        return validates(instance, rotated)
+        if (rotated == null || rotated == token) return AuthCheck.REJECTED
+        val second = validate(instance, rotated)
+        return when {
+            second.valid -> AuthCheck.VALID
+            second.isUnreachable -> AuthCheck.UNREACHABLE
+            else -> AuthCheck.REJECTED
+        }
     }
 
-    private suspend fun validates(
+    private suspend fun validate(
         instance: Mero,
         token: String,
-    ): Boolean =
+    ): ValidationResult =
         try {
-            instance.auth.validateToken(token).valid
+            instance.auth.validateToken(token)
         } catch (e: CancellationException) {
             throw e
         } catch (_: Exception) {
-            false
+            ValidationResult(valid = false, status = 0, headers = emptyMap())
         }
 
     private fun installNode(
         instance: Mero,
         nodeUrl: String,
         username: String?,
+        offline: Boolean = false,
     ) {
         monitor?.cancel()
         node.value = instance
@@ -708,6 +750,8 @@ class MeroClient(
                 isAuthenticated = true,
                 nodeUrl = nodeUrl,
                 username = username,
+                isOnline = !offline,
+                isOfflineSession = offline,
                 applicationId = storage.applicationId,
                 contextId = storage.contextId,
                 contextIdentity = storage.contextIdentity,
@@ -723,14 +767,17 @@ class MeroClient(
                 isDelegated = false,
                 can = MeroCapabilities.NODE,
             )
-        // A development username/password session is not health-monitored (Swift parity).
-        if (username != null) return
         monitor =
             OnlineMonitor(
                 events = events,
                 delegated = false,
-                setOnline = { online -> _state.update { if (it.isNodeSession) it.copy(isOnline = online) else it } },
-                recover = { node.value?.let { checkAuth(it) } ?: false },
+                setOnline = { online ->
+                    _state.update {
+                        if (it.isNodeSession) it.copy(isOnline = online, isOfflineSession = it.isOfflineSession && !online) else it
+                    }
+                },
+                // A node that gives no verdict keeps the session; the stream retries.
+                recover = { node.value?.let { verifyAuth(it) }.let { it == AuthCheck.VALID || it == AuthCheck.UNREACHABLE } },
                 logout = { scope.launch { signOut() } },
             ).start(scope)
     }
@@ -1009,4 +1056,29 @@ private class AccountDelegatedOps(
                 ),
                 request.members,
             ).contextId
+}
+
+/** What [MeroClient.resumeNodeSession] found. */
+enum class NodeSessionRestore {
+    /** The node accepted the stored token; the session is live. */
+    RESTORED,
+
+    /** The node could not be asked; the session runs on the held tokens until it can ([MeroAuthState.isOfflineSession]). */
+    OFFLINE,
+
+    /** The node refused the stored token: sign in again. */
+    REJECTED,
+
+    /** Nothing to restore: no stored node, or no token for it. */
+    NO_SESSION,
+}
+
+/** What [MeroClient.verifyAuth] found: [MeroClient.checkAuth] with "no verdict" told apart from a refusal. */
+internal enum class AuthCheck {
+    VALID,
+    REJECTED,
+
+    /** The node gave no verdict (unreachable, or `5xx`). */
+    UNREACHABLE,
+    NO_TOKEN,
 }
