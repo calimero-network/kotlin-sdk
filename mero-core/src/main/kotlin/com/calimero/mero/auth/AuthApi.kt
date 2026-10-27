@@ -1,6 +1,7 @@
 package com.calimero.mero.auth
 
 import com.calimero.mero.http.HttpClient
+import com.calimero.mero.http.NetworkException
 import com.calimero.mero.http.deleteJson
 import com.calimero.mero.http.getJson
 import com.calimero.mero.http.postJson
@@ -64,15 +65,22 @@ class AuthApi(
     /**
      * Validate a specific access token via `HEAD /auth/validate`. Returns the raw status/headers so
      * callers can inspect `x-auth-error`. Never throws on a 401 — an invalid token is a normal result.
+     * A node that answers `5xx`, or no answer at all, is [ValidationResult.isUnreachable].
      */
     suspend fun validateToken(token: String): ValidationResult {
         val res =
-            http.execute(
-                method = "HEAD",
-                path = "/auth/validate",
-                headers = mapOf("Authorization" to "Bearer $token"),
-            )
-        return ValidationResult(valid = res.status == 200, status = res.status, headers = res.headers)
+            try {
+                http.execute(
+                    method = "HEAD",
+                    path = "/auth/validate",
+                    headers = mapOf("Authorization" to "Bearer $token"),
+                )
+            } catch (_: NetworkException) {
+                // Kept as 401 for callers that read `status`; `isUnreachable` says the node never
+                // judged the token.
+                return ValidationResult(valid = false, status = 401, headers = emptyMap(), isUnreachable = true)
+            }
+        return ValidationResult(valid = res.status == 200, status = res.status, headers = res.headers, isUnreachable = res.status >= 500)
     }
 
     // ---- Token management ------------------------------------------------------------------
