@@ -57,6 +57,22 @@ class LoginOptionsTest {
         assertEquals("Opens Acme ID", rebranded.cloudHint)
         assertEquals("Use Acme instead", rebranded.useCloudLink)
         assertEquals("Wallet: x", rebranded.customWalletNote("x"))
+        assertNull("null hides the hint", b.copy(cloudHint = null).cloudHint)
+    }
+
+    @Test
+    fun `the logo tile has the Swift SDK's defaults and can be replaced`() {
+        val b = LoginBranding()
+        assertEquals(76.dp, b.logoTileSize)
+        assertEquals(22.dp, b.logoTileCornerRadius)
+        assertNull("the theme's primary", b.logoTileBackground)
+        assertEquals(8.dp, b.logoTileShadow)
+
+        val custom = b.copy(logoTileSize = 64.dp, logoTileCornerRadius = 32.dp, logoTileBackground = Color.White, logoTileShadow = 0.dp)
+        assertEquals(64.dp, custom.logoTileSize)
+        assertEquals(32.dp, custom.logoTileCornerRadius)
+        assertEquals(Color.White, custom.logoTileBackground)
+        assertEquals(0.dp, custom.logoTileShadow)
     }
 
     @Test

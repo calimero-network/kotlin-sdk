@@ -45,6 +45,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -169,12 +170,19 @@ private fun Hero(
     theme: MeroTheme,
 ) {
     Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(18.dp)) {
+        val tileFill = branding.logoTileBackground ?: theme.primary
+        val tileShape = RoundedCornerShape(branding.logoTileCornerRadius)
         Box(
             Modifier
-                .size(76.dp)
-                .clip(RoundedCornerShape(22.dp))
-                .background(theme.primary)
-                .border(1.dp, Color(0x0F000000), RoundedCornerShape(22.dp)),
+                .size(branding.logoTileSize)
+                .shadow(
+                    branding.logoTileShadow,
+                    tileShape,
+                    ambientColor = tileFill.copy(alpha = 0.35f),
+                    spotColor = tileFill.copy(alpha = 0.35f),
+                ).clip(tileShape)
+                .background(tileFill)
+                .border(1.dp, Color(0x0F000000), tileShape),
             contentAlignment = Alignment.Center,
         ) {
             val logo = branding.logo
@@ -304,10 +312,12 @@ fun AccountSignInPanel(
             theme = theme,
             tag = "cloudSignInButton",
         ) { client.signInWithCloud(context, callbackUrl) }
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Icon(Icons.Outlined.Lock, contentDescription = null, tint = theme.textTertiary, modifier = Modifier.size(14.dp))
-            Spacer(Modifier.width(6.dp))
-            Text(branding.cloudHint, color = theme.textTertiary, fontSize = 12.sp)
+        branding.cloudHint?.let { hint ->
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.Outlined.Lock, contentDescription = null, tint = theme.textTertiary, modifier = Modifier.size(14.dp))
+                Spacer(Modifier.width(6.dp))
+                Text(hint, color = theme.textTertiary, fontSize = 12.sp)
+            }
         }
         if (state.cancelled) {
             Text(
