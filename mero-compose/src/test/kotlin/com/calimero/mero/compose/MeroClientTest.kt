@@ -368,6 +368,99 @@ class MeroClientTest {
             assertFalse(launch().restore())
         }
 
+    /** [node], plus `GET /admin-api/applications` with two packages; counts the reads. */
+    private var applicationReads = 0
+
+    private fun nodeWithApplications(): MockWebServer {
+        val inner = node.dispatcher()
+        return MockWebServer().apply {
+            dispatcher =
+                object : okhttp3.mockwebserver.Dispatcher() {
+                    override fun dispatch(request: okhttp3.mockwebserver.RecordedRequest): okhttp3.mockwebserver.MockResponse {
+                        if (request.path?.substringBefore('?') != "/admin-api/applications") return inner.dispatch(request)
+                        if (request.getHeader("Authorization") != "Bearer ${node.accessToken}") {
+                            return okhttp3.mockwebserver.MockResponse().setResponseCode(401)
+                        }
+                        applicationReads++
+                        val apps =
+                            listOf(
+                                Triple("notes-1", "com.example.notes", "1.9.0"),
+                                Triple("notes-2", "com.example.notes", "1.10.0"),
+                                Triple("chat-1", "com.example.chat", "0.1.0"),
+                            ).joinToString(",") { (id, pkg, version) ->
+                                """{"id":"$id","blob":{"bytecode":"b-$id","compiled":"c-$id"},"size":1,"source":"local",""" +
+                                    """"metadata":[],"signer_id":"s","package":"$pkg","version":"$version"}"""
+                            }
+                        return okhttp3.mockwebserver
+                            .MockResponse()
+                            .setResponseCode(200)
+                            .setHeader("Content-Type", "application/json")
+                            .setBody("""{"data":{"apps":[$apps]}}""")
+                    }
+                }
+            start()
+        }
+    }
+
+    private fun devClient(
+        base: String,
+        config: MeroAppConfig = MeroAppConfig(),
+        storage: MeroAppStorage = MeroAppStorage(MemoryKeyValueStore()),
+    ) = MeroClient(
+        CloudAccount(MemorySecureStore(), relayKeyVerifier = DcapRelayKeyVerifier(allowMock = true), cloudBaseUrl = base, walletUrl = "https://wallet.example/account-enroll"),
+        MemoryTokenStore(),
+        config = config,
+        storage = storage,
+    )
+
+    @Test
+    fun `login looks the application up by package`() =
+        runBlocking {
+            val apps = nodeWithApplications()
+            try {
+                val base = apps.url("/").toString().trimEnd('/')
+                val storage = MeroAppStorage(MemoryKeyValueStore())
+                val c = devClient(base, storage = storage)
+                assertTrue(c.login(base, "admin", "secret", packageName = "com.example.notes"))
+                assertEquals("the latest installed version of the package", "notes-2", c.state.value.applicationId)
+                assertEquals("notes-2", storage.applicationId)
+                c.signOut()
+            } finally {
+                apps.shutdown()
+            }
+        }
+
+    @Test
+    fun `login takes the package from the config`() =
+        runBlocking {
+            val apps = nodeWithApplications()
+            try {
+                val base = apps.url("/").toString().trimEnd('/')
+                val c = devClient(base, config = MeroAppConfig(packageName = "com.example.chat"))
+                assertTrue(c.login(base, "admin", "secret"))
+                assertEquals("chat-1", c.state.value.applicationId)
+                c.signOut()
+            } finally {
+                apps.shutdown()
+            }
+        }
+
+    @Test
+    fun `login without a package leaves the application alone`() =
+        runBlocking {
+            val apps = nodeWithApplications()
+            try {
+                val base = apps.url("/").toString().trimEnd('/')
+                val c = devClient(base)
+                assertTrue(c.login(base, "admin", "secret"))
+                assertNull(c.state.value.applicationId)
+                assertEquals("nothing to look up", 0, applicationReads)
+                c.signOut()
+            } finally {
+                apps.shutdown()
+            }
+        }
+
     @Test
     fun `login with permissions signs in with a client key instead of the admin token`() =
         runBlocking {

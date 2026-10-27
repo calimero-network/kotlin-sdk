@@ -26,6 +26,7 @@ import com.calimero.mero.admin.AdminSurface
 import com.calimero.mero.admin.ContextWithGroup
 import com.calimero.mero.admin.Namespace
 import com.calimero.mero.admin.SignedGroupOpenInvitation
+import com.calimero.mero.admin.compareSemver
 import com.calimero.mero.auth.AuthLoginOptions
 import com.calimero.mero.auth.GenerateClientKeyRequest
 import com.calimero.mero.auth.PendingAuthStates
@@ -506,6 +507,10 @@ class MeroClient(
      * [permissionsFor] gives the grants an [AppMode] asks for. Core refuses `keys:*` on a client
      * key, and checks each grant against the admin's own ([MeroErrorReason.PERMISSIONS_REFUSED]).
      *
+     * [packageName] is the application to look up on the node (`listApplications`, by package)
+     * for [MeroAuthState.applicationId]; [MeroAppConfig.packageName] when null. With neither, or
+     * no installed application of that package, the application id is left as it was.
+     *
      * @return true when signed in; on failure the reason is in [MeroAuthState.error], and what
      *   kind of failure it was in [MeroAuthState.errorReason].
      */
@@ -514,6 +519,7 @@ class MeroClient(
         username: String,
         password: String,
         permissions: List<String>? = null,
+        packageName: String? = null,
     ): Boolean {
         val base = nodeUrl.trim().trimEnd('/')
         val invalid =
@@ -541,6 +547,7 @@ class MeroClient(
             storage.tokenNodeUrl = base
             storage.username = username
             installNode(client, base, username)
+            (packageName ?: config.packageName)?.takeIf { it.isNotEmpty() }?.let { resolveNodeApplication(it, client) }
             true
         } catch (e: CancellationException) {
             _state.update { it.copy(isLoading = false) }
@@ -560,6 +567,31 @@ class MeroClient(
                 )
             false
         }
+    }
+
+    /**
+     * The installed application of [pkg], for [MeroAuthState.applicationId]: the one already
+     * remembered if it is still installed, else the latest version.
+     */
+    private suspend fun resolveNodeApplication(
+        pkg: String,
+        client: Mero,
+    ) {
+        val apps =
+            try {
+                client.admin.listApplications().apps
+            } catch (e: CancellationException) {
+                throw e
+            } catch (_: Exception) {
+                return
+            }
+        if (node.value !== client) return
+        val matching = apps.filter { it.packageName == pkg }
+        val current = _state.value.applicationId
+        if (current != null && matching.any { it.id == current }) return
+        val latest = matching.maxWithOrNull { a, b -> compareSemver(a.version, b.version) } ?: return
+        storage.applicationId = latest.id
+        _state.update { it.copy(applicationId = latest.id) }
     }
 
     /**
