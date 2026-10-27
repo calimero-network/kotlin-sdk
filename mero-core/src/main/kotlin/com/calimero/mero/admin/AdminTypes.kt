@@ -1101,6 +1101,10 @@ data class GroupInfo(
     val contextCount: Int,
     val activeUpgrade: GroupUpgradeStatus? = null,
     val defaultCapabilities: Int,
+    /**
+     * How the group takes members: `"open"` inherits the parent's, `"restricted"`
+     * admits directly. Not whether the group is private; see [effectiveVisibility].
+     */
     val subgroupVisibility: String,
     /** The group's generic metadata record. `null` if never set. */
     val metadata: MetadataRecord? = null,
@@ -1117,6 +1121,14 @@ data class GroupInfo(
      * and re-sign. `null` from an older node.
      */
     val ownerOpCounter: Long? = null,
+    /**
+     * Who outside the group can reach it: `"restricted"` when this group or any
+     * group above it, short of the namespace root, is Restricted; `"open"` only on
+     * an Open chain to the namespace. Draw privacy (a lock) from this, not from
+     * [subgroupVisibility]: an Open folder inside a private one is `"open"` there
+     * and `"restricted"` here. `null` from a node that predates the field.
+     */
+    val effectiveVisibility: String? = null,
 )
 
 typealias GroupInfoResponseData = GroupInfo

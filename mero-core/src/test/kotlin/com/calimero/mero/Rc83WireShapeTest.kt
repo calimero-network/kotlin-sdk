@@ -447,6 +447,51 @@ class Rc83WireShapeTest {
         assertNull(older.ownerOpCounter)
     }
 
+    /**
+     * Core's `groups/group_info.res.json` wire fixture verbatim, as of core#4640
+     * (no tagged release carries it yet). Move it into a `fixtures/rc*` file with
+     * the next core bump.
+     */
+    private val groupInfoWithEffectiveVisibility =
+        """
+        {
+          "data": {
+            "appKey": "${"b".repeat(64)}",
+            "contextCount": 2,
+            "defaultCapabilities": 0,
+            "effectiveVisibility": "restricted",
+            "groupId": "${"a".repeat(64)}",
+            "groupStateHash": "${"c".repeat(64)}",
+            "memberCount": 3,
+            "namespaceId": "${"d".repeat(64)}",
+            "ownerOpCounter": 4,
+            "subgroupVisibility": "restricted",
+            "targetApplicationId": "${"e".repeat(64)}"
+          }
+        }
+        """.trimIndent()
+
+    /**
+     * An Open folder inside a private one reads `"open"` in `subgroupVisibility`;
+     * `effectiveVisibility` is what says it is private.
+     */
+    @Test
+    fun `group info carries effectiveVisibility`() =
+        runBlocking {
+            server.enqueue(MockResponse().setBody(groupInfoWithEffectiveVisibility))
+            val info = mero.admin.getGroupInfo("g-1")
+            assertEquals("restricted", info.effectiveVisibility)
+        }
+
+    @Test
+    fun `group info from a node before effectiveVisibility has none`() =
+        runBlocking {
+            server.enqueue(MockResponse().setBody(fixture("groups_group_info.res")))
+            val info = mero.admin.getGroupInfo("g-1")
+            assertNull(info.effectiveVisibility)
+            assertEquals("restricted", info.subgroupVisibility)
+        }
+
     @Test
     fun `namespaces carry founding and heldOps`() {
         val ns = json.decodeFromString(ApiEnvelope.serializer(Namespace.serializer()), fixture("namespaces_get.res")).data!!
