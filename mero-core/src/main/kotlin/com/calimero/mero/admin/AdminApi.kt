@@ -785,7 +785,11 @@ class AdminApi(
     override suspend fun getDefaultCapabilities(groupId: String): Int =
         getGroupInfo(groupId).defaultCapabilities
 
-    /** Thin wrapper over [getGroupInfo]: returns the group's `subgroupVisibility`. */
+    /**
+     * Thin wrapper over [getGroupInfo]: returns the group's `subgroupVisibility`,
+     * which says how it takes members. Whether it is private is
+     * [GroupInfo.effectiveVisibility].
+     */
     override suspend fun getSubgroupVisibility(groupId: String): String =
         getGroupInfo(groupId).subgroupVisibility
 

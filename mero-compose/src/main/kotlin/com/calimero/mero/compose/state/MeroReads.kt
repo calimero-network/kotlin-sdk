@@ -103,6 +103,10 @@ class MeroReads(
 
     fun defaultCapabilities(groupId: String?): AsyncResource<Int?> = adminResource(null, groupId != null) { it.getDefaultCapabilities(groupId!!) }
 
+    /**
+     * mero-react `useSubgroupVisibility`. How the group takes members, not whether
+     * it is private: draw a lock from [groupInfo]'s `effectiveVisibility`.
+     */
     fun subgroupVisibility(groupId: String?): AsyncResource<String?> = adminResource(null, groupId != null) { it.getSubgroupVisibility(groupId!!) }
 
     /** The group's in-flight upgrade, or null — mero-react `useGroupUpgradeStatus`. */
