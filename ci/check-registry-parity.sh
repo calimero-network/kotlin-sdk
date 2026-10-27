@@ -36,6 +36,8 @@ EXCLUDED=(
   subscribe          # SSE subscription plumbing
   blobPath           # internal: blob path + context_id query builder
   send               # internal: status-only request helper
+  textOf             # internal: unwraps an RPC error's data into its text (RpcException.reason)
+  taggedText         # internal: the {type, data} case behind textOf
 )
 
 methods() {
