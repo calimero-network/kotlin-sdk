@@ -3,6 +3,8 @@ package com.calimero.mero.testkit
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonNull
+import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
@@ -13,8 +15,10 @@ import okhttp3.mockwebserver.Dispatcher
 import okhttp3.mockwebserver.MockResponse
 import okhttp3.mockwebserver.MockWebServer
 import okhttp3.mockwebserver.RecordedRequest
+import okhttp3.mockwebserver.SocketPolicy
 import okio.Buffer
 import java.security.MessageDigest
+import java.util.concurrent.TimeUnit
 
 /**
  * A stateful, in-memory fake Calimero node backed by OkHttp [MockWebServer] — the Android analog of
@@ -29,6 +33,12 @@ import java.security.MessageDigest
  * // …exercise mero…
  * server.shutdown()
  * ```
+ *
+ * Beyond auth and JSON-RPC it keeps the state an app's own tests usually need, in core's wire
+ * shapes: scoped client keys (`POST /admin/client-key`), contexts, installed applications, blobs
+ * (raw bytes) and group / member / context metadata. Seed it with [addApplication], [addContext]
+ * and [putBlob]. And [goOffline] fails every request at the transport, as a phone with no network
+ * does.
  *
  * Thread-safe: the dispatcher is invoked on MockWebServer's worker threads.
  */
@@ -61,6 +71,37 @@ class FakeNode {
         private set
     var clientKeyCalls = 0
         private set
+
+    /**
+     * Per-protected-call response delays in milliseconds, consumed in arrival order (missing
+     * entries mean no delay).
+     *
+     * The auth check still happens when the request arrives, so a call that presented a now-stale
+     * token is judged 401 at t=0 and *delivered* later — the shape needed to land a 401 after a
+     * concurrent refresh has already rotated the bundle.
+     */
+    private var protectedDelaysMs: List<Long> = emptyList()
+
+    // Admin state (contexts, applications, metadata, client keys).
+    private var counter = 0
+    private val contextRecords = linkedMapOf<String, JsonObject>()
+    private val applicationRecords = linkedMapOf<String, JsonObject>()
+    private val metadataRecords = mutableMapOf<String, JsonObject>()
+    private val clientKeyRecords = mutableListOf<MintedClientKey>()
+    private var offlinePolicy: SocketPolicy? = null
+
+    /**
+     * A client key minted through `POST /admin/client-key`: what was asked for, and the tokens
+     * handed back (which the node then accepts).
+     */
+    data class MintedClientKey(
+        val contextId: String?,
+        val contextIdentity: String?,
+        val applicationId: String?,
+        val permissions: List<String>,
+        val accessToken: String,
+        val refreshToken: String,
+    )
 
     /** Canned contract output for `/jsonrpc`, keyed by method. */
     var rpcOutputs: MutableMap<String, JsonElement> = mutableMapOf("get" to JsonPrimitive(42))
@@ -116,11 +157,75 @@ class FakeNode {
     /** Simulate the whole family being revoked — protected calls return `401 token_reuse`. */
     fun revokeFamily() = synchronized(lock) { familyRevoked = true }
 
+    /** Delay the Nth protected response by `delaysMs[N]` milliseconds. */
+    fun delayProtectedResponses(delaysMs: List<Long>) = synchronized(lock) { protectedDelaysMs = delaysMs }
+
+    /**
+     * Fail every request at the transport with [policy] instead of answering it — by default the
+     * connection drops with no HTTP response at all, as a phone with no network sees. Through the
+     * SDK it surfaces as a `NetworkException`.
+     */
+    fun goOffline(policy: SocketPolicy = SocketPolicy.DISCONNECT_AFTER_REQUEST) = synchronized(lock) { offlinePolicy = policy }
+
+    /** Undo [goOffline]. The node's state is as it was. */
+    fun goOnline() = synchronized(lock) { offlinePolicy = null }
+
+    // ---- Seeding and inspection ------------------------------------------------------------
+
+    /** Install an application, as `GET /admin-api/applications` lists it. */
+    fun addApplication(
+        id: String,
+        packageName: String = "com.example.app",
+        version: String = "1.0.0",
+        signerId: String = "signer",
+    ) {
+        val record =
+            buildJsonObject {
+                put("id", id)
+                put(
+                    "blob",
+                    buildJsonObject {
+                        put("bytecode", "bytecode-$id")
+                        put("compiled", "compiled-$id")
+                    },
+                )
+                put("size", 0)
+                put("source", "fake://$packageName/$version")
+                put("metadata", JsonArray(emptyList()))
+                put("signer_id", signerId)
+                put("package", packageName)
+                put("version", version)
+            }
+        synchronized(lock) { applicationRecords[id] = record }
+    }
+
+    /** Add a context the node already holds. */
+    fun addContext(
+        id: String,
+        applicationId: String,
+        groupId: String? = null,
+    ) = synchronized(lock) { insertContext(id, applicationId, groupId) }
+
+    /** Store [bytes] as a blob and return its id, as an upload would. */
+    fun putBlob(bytes: ByteArray): String = storeBlob(bytes)
+
+    /** The bytes of blob [id], exactly as stored, or `null`. */
+    fun blob(id: String): ByteArray? = blobs[id]
+
+    /** The ids of the contexts the node holds, oldest first. */
+    val contextIds: List<String>
+        get() = synchronized(lock) { contextRecords.keys.toList() }
+
+    /** Every client key minted so far, oldest first. */
+    val clientKeys: List<MintedClientKey>
+        get() = synchronized(lock) { clientKeyRecords.toList() }
+
     // ---- Routing ---------------------------------------------------------------------------
 
     private fun handle(request: RecordedRequest): MockResponse {
         val method = request.method ?: "GET"
         val path = (request.path ?: "").substringBefore('?')
+        synchronized(lock) { offlinePolicy }?.let { return MockResponse().setSocketPolicy(it) }
         return when (method to path) {
             "POST" to "/auth/token" -> {
                 val body = request.body.readUtf8()
@@ -155,13 +260,15 @@ class FakeNode {
             "GET" to "/admin-api/contexts" ->
                 guarded(request) {
                     cloud.recordRequest(method, path, request)
-                    ok(buildJsonObject { put("data", buildJsonObject { put("contexts", JsonArray(cloud.listedContexts.toList())) }) })
+                    val contexts = cloud.listedContexts.toList() + synchronized(lock) { contextRecords.values.toList() }
+                    ok(buildJsonObject { put("data", buildJsonObject { put("contexts", JsonArray(contexts)) }) })
                 }
             "POST" to "/jsonrpc" -> guarded(request) { jsonrpc(request) }
             "PUT" to "/admin-api/blobs" -> guarded(request) { uploadBlob(request) }
             "GET" to "/admin-api/blobs" -> guarded(request) { listBlobs() }
             else ->
-                blobRoute(method, path, request)
+                adminRoute(method, path, request)
+                    ?: blobRoute(method, path, request)
                     ?: cloud.handle(method, path, request) { guarded(request) { it() } }
                     ?: MockResponse().setResponseCode(404)
         }
@@ -189,7 +296,8 @@ class FakeNode {
 
     /**
      * `POST /admin/client-key`: mint a client key's token pair, which becomes the live session
-     * (this fake keeps one). Like core, a `keys:*` grant is refused with a `400`.
+     * (this fake keeps one) and is recorded in [clientKeys]. Like core, a `keys:*` grant is
+     * refused with a `400`.
      */
     private fun mintClientKey(request: RecordedRequest): MockResponse {
         val body = request.body.readUtf8()
@@ -209,8 +317,21 @@ class FakeNode {
                 .setHeader("Content-Type", "application/json")
                 .setBody(buildJsonObject { put("error", "Permission cannot be granted to a client key: $refused") }.toString())
         }
-        synchronized(lock) { clientKeyCalls++ }
-        return issueTokens()
+        val asked = runCatching { json.parseToJsonElement(body).jsonObject }.getOrNull() ?: JsonObject(emptyMap())
+        return synchronized(lock) {
+            clientKeyCalls++
+            val response = issueTokens()
+            clientKeyRecords +=
+                MintedClientKey(
+                    contextId = asked.string("context_id"),
+                    contextIdentity = asked.string("context_identity"),
+                    applicationId = asked.string("application_id"),
+                    permissions = (asked["permissions"] as? JsonArray)?.map { it.jsonPrimitive.content } ?: emptyList(),
+                    accessToken = accessToken,
+                    refreshToken = refreshToken,
+                )
+            response
+        }
     }
 
     private fun refresh(request: RecordedRequest): MockResponse {
@@ -263,14 +384,147 @@ class FakeNode {
         )
     }
 
+    // ---- Contexts, applications and metadata -----------------------------------------------
+
+    /** The context, application and metadata routes, or `null` for any other. */
+    private fun adminRoute(
+        method: String,
+        path: String,
+        request: RecordedRequest,
+    ): MockResponse? {
+        val forApp = "/admin-api/contexts/for-application/"
+        val metadata = path.startsWith("/admin-api/groups/") && path.endsWith("/metadata")
+        val contextId = lastSegment(path, "/admin-api/contexts/")
+        val applicationId = lastSegment(path, "/admin-api/applications/")
+        return when {
+            method == "POST" && path == "/admin-api/contexts" -> guarded(request) { createContext(request) }
+            method == "GET" && path == "/admin-api/applications" -> guarded(request) { listApplications() }
+            method == "GET" && path.startsWith(forApp) -> guarded(request) { listContexts(path.removePrefix(forApp)) }
+            metadata && method == "PUT" -> guarded(request) { setMetadata(request, path) }
+            metadata && method == "GET" -> guarded(request) { getMetadata(path) }
+            contextId != null && method == "GET" -> guarded(request) { getContext(contextId) }
+            contextId != null && method == "DELETE" -> guarded(request) { deleteContext(contextId) }
+            applicationId != null && method == "GET" -> guarded(request) { getApplication(applicationId) }
+            else -> null
+        }
+    }
+
+    /** The one segment after [prefix], or `null` when there is none or more. */
+    private fun lastSegment(
+        path: String,
+        prefix: String,
+    ): String? = path.removePrefix(prefix).takeIf { path.startsWith(prefix) && it.isNotEmpty() && '/' !in it }
+
+    // ---- Contexts --------------------------------------------------------------------------
+
+    /** Caller holds [lock]. */
+    private fun insertContext(
+        id: String,
+        applicationId: String,
+        groupId: String?,
+    ) {
+        contextRecords[id] =
+            buildJsonObject {
+                put("id", id)
+                put("applicationId", applicationId)
+                put("contextStateHash", "hash-$id")
+                put("dagHeads", JsonArray(emptyList()))
+                if (groupId != null) put("groupId", groupId)
+            }
+    }
+
+    private fun listContexts(app: String): MockResponse {
+        val contexts = synchronized(lock) { contextRecords.values.filter { it.string("applicationId") == app } }
+        return ok(buildJsonObject { put("data", buildJsonObject { put("contexts", JsonArray(contexts)) }) })
+    }
+
+    private fun createContext(request: RecordedRequest): MockResponse {
+        val body = runCatching { json.parseToJsonElement(request.body.readUtf8()).jsonObject }.getOrNull() ?: JsonObject(emptyMap())
+        val app = body.string("applicationId")
+        if (app.isNullOrEmpty()) return refusal(400, "applicationId is required")
+        val groupId = body.string("groupId")
+        val (id, member) =
+            synchronized(lock) {
+                counter++
+                insertContext("context-$counter", app, groupId)
+                "context-$counter" to "member-$counter"
+            }
+        return ok(
+            buildJsonObject {
+                put(
+                    "data",
+                    buildJsonObject {
+                        put("contextId", id)
+                        put("memberPublicKey", member)
+                        if (groupId != null) put("groupId", groupId)
+                    },
+                )
+            },
+        )
+    }
+
+    private fun getContext(id: String): MockResponse {
+        val record = synchronized(lock) { contextRecords[id] } ?: return refusal(404, "context not found")
+        return ok(buildJsonObject { put("data", JsonObject(record - "groupId")) })
+    }
+
+    private fun deleteContext(id: String): MockResponse {
+        val existed = synchronized(lock) { contextRecords.remove(id) != null }
+        return ok(buildJsonObject { put("data", buildJsonObject { put("isDeleted", existed) }) })
+    }
+
+    // ---- Applications ----------------------------------------------------------------------
+
+    private fun listApplications(): MockResponse {
+        val apps = synchronized(lock) { applicationRecords.values.toList() }
+        return ok(buildJsonObject { put("data", buildJsonObject { put("apps", JsonArray(apps)) }) })
+    }
+
+    private fun getApplication(id: String): MockResponse {
+        val app = synchronized(lock) { applicationRecords[id] }
+        return ok(buildJsonObject { put("data", buildJsonObject { put("application", app ?: JsonNull) }) })
+    }
+
+    // ---- Metadata (group, member, context) -------------------------------------------------
+
+    /** `PUT …/metadata` replaces the record's `data`; an omitted `name` keeps the current one. */
+    private fun setMetadata(
+        request: RecordedRequest,
+        key: String,
+    ): MockResponse {
+        val body = runCatching { json.parseToJsonElement(request.body.readUtf8()).jsonObject }.getOrNull() ?: JsonObject(emptyMap())
+        synchronized(lock) {
+            val name = body.string("name") ?: metadataRecords[key]?.string("name")
+            metadataRecords[key] =
+                buildJsonObject {
+                    if (name != null) put("name", name)
+                    put("data", body["data"] as? JsonObject ?: JsonObject(emptyMap()))
+                    put("updatedAt", System.currentTimeMillis())
+                    put("updatedBy", "fake-node")
+                }
+        }
+        return MockResponse().setResponseCode(200)
+    }
+
+    /** `{ data: record }`, or `{ data: null }` before anything was set. */
+    private fun getMetadata(key: String): MockResponse {
+        val record = synchronized(lock) { metadataRecords[key] }
+        return ok(buildJsonObject { put("data", record ?: JsonNull) })
+    }
+
     // ---- Blobs -----------------------------------------------------------------------------
 
     /** `PUT /admin-api/blobs`: the raw request body is the blob, read as bytes (never as text). */
     private fun uploadBlob(request: RecordedRequest): MockResponse {
         val bytes = request.body.readByteArray()
+        val id = storeBlob(bytes)
+        return ok(buildJsonObject { put("data", blobInfo(id, bytes)) })
+    }
+
+    private fun storeBlob(bytes: ByteArray): String {
         val id = MessageDigest.getInstance("SHA-256").digest(bytes).joinToString("") { "%02x".format(it) }
         blobs[id] = bytes
-        return ok(buildJsonObject { put("data", blobInfo(id, bytes)) })
+        return id
     }
 
     private fun listBlobs(): MockResponse =
@@ -326,9 +580,14 @@ class FakeNode {
         request: RecordedRequest,
         handler: () -> MockResponse,
     ): MockResponse {
-        synchronized(lock) { protectedCalls++ }
+        val delayMs =
+            synchronized(lock) {
+                protectedCalls++
+                protectedDelaysMs.getOrNull(protectedCalls - 1) ?: 0
+            }
         val reason = authError(request)
-        return if (reason != null) unauthorized(reason) else handler()
+        val response = if (reason != null) unauthorized(reason) else handler()
+        return if (delayMs > 0) response.setHeadersDelay(delayMs, TimeUnit.MILLISECONDS) else response
     }
 
     /**
@@ -355,6 +614,17 @@ class FakeNode {
             .setResponseCode(200)
             .setHeader("Content-Type", "application/json")
             .setBody(json.encodeToString(JsonElement.serializer(), body))
+
+    private fun refusal(
+        status: Int,
+        message: String,
+    ): MockResponse =
+        MockResponse()
+            .setResponseCode(status)
+            .setHeader("Content-Type", "application/json")
+            .setBody(buildJsonObject { put("error", message) }.toString())
+
+    private fun JsonObject.string(key: String): String? = (get(key) as? JsonPrimitive)?.takeIf { it.isString }?.content
 
     private fun unauthorized(reason: String): MockResponse =
         MockResponse().setResponseCode(401).setHeader("x-auth-error", reason)
