@@ -19,6 +19,7 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
+import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import okhttp3.HttpUrl.Companion.toHttpUrl
@@ -149,6 +150,28 @@ class MeroAppSessionTest {
             s.signOut()
             assertFalse(s.isSignedIn)
             assertNull(s.backend.value)
+        }
+
+    @Test
+    fun `u64s round-trip exactly through the relay, by query and by warrant`() =
+        runBlocking {
+            val sent = """{ "max": 18446744073709551615, "at": 1761650000123456789 }"""
+            val exact = """{"max":18446744073709551615,"at":1761650000123456789}"""
+            node.cloud.outputs["stamps"] = Json.parseToJsonElement(exact)
+            node.cloud.outputs["stamp"] = Json.parseToJsonElement(exact)
+            node.cloud.writeMethods += "stamp"
+            val s = session()
+            signIn(s)
+            val bound = s.contract.bound(mine)
+
+            assertEquals(exact, bound.query("stamps", sent))
+            assertEquals(exact, bound.execute("stamp", sent))
+
+            val bodies =
+                node.cloud.requests
+                    .filter { it.path.startsWith("/admin-api/contexts/$mine/") && it.method == "POST" }
+                    .map { it.body }
+            assertEquals("the query and the warrant both carry the exact args", 2, bodies.count { it.contains("\"argsJson\":$exact") })
         }
 
     @Test

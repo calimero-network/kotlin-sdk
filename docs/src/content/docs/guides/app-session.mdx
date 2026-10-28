@@ -126,7 +126,10 @@ val board = BoardClient(session.contract.bound(contextId))
 
 <Aside>
 Blank `argsJson` is read as `{}`; anything that is not JSON is refused with
-`IllegalArgumentException` before a request is made.
+`IllegalArgumentException` before a request is made. Numbers keep their
+literal text from end to end (a `JsonPrimitive` holds it as written, and the
+warrant and the request body both carry it), so a `u64` beyond 2^53 (a
+nanosecond timestamp, `u64::MAX`) arrives and comes back digit for digit.
 </Aside>
 
 ## Testing view models

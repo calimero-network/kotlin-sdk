@@ -1,12 +1,16 @@
 package com.calimero.mero.app
 
 import com.calimero.mero.account.NoRelayException
+import com.calimero.mero.relay.Warrants
 import com.calimero.mero.testkit.RecordedContractCall
 import com.calimero.mero.testkit.RecordingContextContract
 import kotlinx.coroutines.runBlocking
+import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -53,6 +57,25 @@ class ContextContractTest {
                 ),
                 contract.calls,
             )
+        }
+
+    @Test
+    fun `u64s round-trip exactly through the bound adapter`() =
+        runBlocking {
+            val sent = """{ "max": 18446744073709551615, "at": 1761650000123456789 }"""
+            val exact = """{"max":18446744073709551615,"at":1761650000123456789}"""
+            val contract = RecordingContextContract { call -> call.args }
+
+            assertEquals(exact, contract.bound(context).query("echo", sent))
+            assertEquals(exact, contract.bound(context).execute("echo", sent))
+            val args =
+                contract.calls
+                    .first()
+                    .args.jsonObject
+            assertEquals("18446744073709551615", args["max"]!!.jsonPrimitive.content)
+            assertEquals("1761650000123456789", args["at"]!!.jsonPrimitive.content)
+            // What a warrant's intentHash commits to, and what the request body carries.
+            assertEquals(exact, Warrants.canonicalJson(Json.parseToJsonElement(sent)))
         }
 
     @Test
