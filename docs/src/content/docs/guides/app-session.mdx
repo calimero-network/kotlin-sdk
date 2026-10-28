@@ -1,0 +1,148 @@
+---
+title: Mobile App Session
+description: MeroAppSession — sign-in, relay, namespaces and contract calls for a Calimero Android app, delegated end to end, with an in-memory fake for view-model tests.
+sidebar:
+  order: 8
+---
+
+import { Aside } from '@astrojs/starlight/components';
+
+A Calimero app on a phone holds no node. The person signs in with their
+Calimero account (the wallet certifies this device's key), the Cloud manager
+names the relay that serves the account, and everything goes through that
+relay: reads are its account-scoped query, writes are warrants the device key
+signs, namespaces and subgroups are governance ops it posts. `MeroAppSession`
+is that whole session, the same for every app; only the contract's methods are
+the app's own. It is the Kotlin twin of the Swift SDK's `MeroAppSession`
+(`MeroKitUI`), with the same names.
+
+| Type | Module | What it is |
+| --- | --- | --- |
+| `MeroAppSession` | mero-compose | The signed-in account: sign-in/out, restore, deep links, and the backend. |
+| `MeroAppBackend` | mero-core (`com.calimero.mero.app`) | What screens need from the account: namespaces, subgroups, contexts, invitations, live events, the contract. |
+| `DelegatedAppBackend` | mero-compose | The real backend, over the account's relay. |
+| `ContextContract` | mero-core | `query` / `execute` in any context: `RelayContextContract`, or `NoRelayContextContract`. |
+| `ContextContractCalling` | mero-core | One context's contract as a generated client calls it (`contract.bound(contextId)`). |
+| `InMemoryAppBackend`, `RecordingContextContract` | mero-testkit | Fakes for view-model tests. |
+
+## Set up
+
+```kotlin
+class BoardViewModel(app: Application) : AndroidViewModel(app) {
+    val session =
+        MeroAppSession.create(
+            app,
+            packageName = "com.example.board",
+            callbackUrl = "https://board.example.com/enrol",
+            scope = viewModelScope,
+        )
+
+    init { viewModelScope.launch { session.restore() } }
+
+    /** Every deep link the activity receives. */
+    fun handleLink(url: String) = viewModelScope.launch { session.handle(url) }
+}
+```
+
+`create` keeps keys, session and nonces in the Keystore-backed stores. Pass
+`config` for another registry or Cloud manager, `walletUrl` for another
+wallet, or build the `MeroClient` yourself and use
+`MeroAppSession(client, callbackUrl, options, scope)`. The session follows the
+client in `scope`: it rebuilds its backend whenever the client's state changes.
+
+- `restore()` reconnects a stored session and asks the Cloud manager again
+  which relay serves the account: a relayless account may have earned one.
+- `signIn(context)` opens the wallet; its answer comes back as a deep link.
+  `cancelSignIn()` stops the spinner when the person returns without
+  answering. `signOut(forgetDevice)` signs out.
+- `handle(url)` takes any link the app receives. A wallet callback finishes a
+  sign-in (one that arrives during `restore()` waits for it). One of this
+  app's invitation links lands in `pendingInvitation` for the person to
+  confirm; `dismissPendingInvitation()` clears it. Another app's invitation is
+  not taken.
+- `isSignedIn`, `account`, `applicationId`, `hasRelay`, `canSubscribe` and
+  `contract` describe the session.
+
+## Screens and view models
+
+`session.backend` is a `StateFlow<MeroAppBackend?>`, null when signed out. It
+is rebuilt only when the session changes (the account, its relay, its relay
+session, the application id); `session.revision` moves when it is, so a screen
+can key its reads on it without resetting on unrelated updates.
+
+```kotlin
+class BoardsModel(
+    private val backend: MeroAppBackend,
+    private val applicationId: String,
+) {
+    suspend fun load(): List<AppNamespace> = backend.listNamespaces()
+
+    suspend fun create(name: String) {
+        val founded = backend.foundNamespace(name)
+        val group = backend.createSubgroup(founded.namespaceId, "main", isPublic = true)
+        backend.createContext(group, applicationId, "main", buildJsonObject { put("title", name) })
+    }
+}
+```
+
+The words are the protocol's: a **namespace** is what an app calls a
+workspace, team or space; a **subgroup** is a group under it (a channel, a
+board); a **context** runs the contract in a group.
+
+| `MeroAppBackend` | Through the relay |
+| --- | --- |
+| `listNamespaces()` | The account's namespaces, only this app's once its application id is known |
+| `listSubgroups(namespaceId)` | Subgroups, each with its context ids |
+| `listContexts(groupId)` | The contexts directly in a group (a namespace's root) |
+| `isMember(contextId)` / `joinContext(contextId)` | Membership of an open subgroup's context |
+| `foundNamespace(name)` | Found and name a namespace running this app; ask the cloud to host it |
+| `createSubgroup(namespaceId, name, isPublic)` | An open or restricted subgroup |
+| `createContext(groupId, applicationId, name, initArgs)` | A context, with the contract's `init` arguments |
+| `createInvitation(namespaceId)` | An invitation signed with the device key |
+| `joinNamespace(namespaceId, invitation)` | Direct admission through an admitting relay |
+| `events(contextId)` | Live events (an empty flow when `canSubscribe` is false: poll) |
+
+After `joinNamespace`, call `session.didJoinNamespace()`: a session that had
+no relay now has the admitting one, and reconnects to it.
+
+## Calling the contract
+
+```kotlin
+val posts = session.contract.query(contextId, "get_posts", buildJsonObject { put("limit", 20) })
+session.contract.execute(contextId, "post", buildJsonObject { put("text", "hi") })
+```
+
+`query` is `POST /admin-api/contexts/{id}/query` with the relay session's
+Bearer token (a warrant when there is no session yet, or when the method turns
+out to be a write); `execute` posts a warrant to `/admin-api/contexts/{id}/intents`.
+With no relay, both throw `NoRelayException`.
+
+A client generated by `mero-devtools-js` takes one context's contract as a
+`ContextContractCalling` (JSON strings in and out):
+
+```kotlin
+val board = BoardClient(session.contract.bound(contextId))
+```
+
+<Aside>
+Blank `argsJson` is read as `{}`; anything that is not JSON is refused with
+`IllegalArgumentException` before a request is made.
+</Aside>
+
+## Testing view models
+
+mero-testkit ships `InMemoryAppBackend`: founding adds a namespace, creating a
+subgroup or context adds it (the creator is a member), joining makes the
+account a member, redeeming an invitation adds the namespace and gives a
+relayless account its relay. Its contract is a `RecordingContextContract` you
+script per method.
+
+```kotlin
+val backend = InMemoryAppBackend()
+backend.recording.handler = { call -> if (call.method == "get_posts") JsonArray(emptyList()) else null }
+BoardsModel(backend, backend.applicationId).create("Roadmap")
+assertEquals("foundNamespace Roadmap", backend.log.first())
+
+backend.failure = IOException("offline")                 // every admin call fails
+backend.emit(AppContextEvent(contextId, "StateMutation")) // to streams being collected (subscriberCount)
+```

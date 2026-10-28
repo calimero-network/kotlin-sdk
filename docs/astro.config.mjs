@@ -77,6 +77,7 @@ export default defineConfig({
             'guides/compose-frontend',
             'guides/compose-state',
             'guides/compose-invitations',
+            'guides/app-session',
           ],
         },
         {

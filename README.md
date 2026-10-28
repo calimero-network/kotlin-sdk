@@ -23,8 +23,8 @@ See [`ROADMAP-TASKS/task-2-android-sdk.md`] in the planning repo for the full de
 | Module         | What it is                                                                 |
 |----------------|-----------------------------------------------------------------------------|
 | `mero-core`    | The SDK: the Cloud account layer (`account`, `cloud`, `relay`, `crypto` packages: `CloudAccount`, device keys, enrolment, `CloudClient` (device-proven routing plus cloud login sessions, HA and account linking), `connectCloud`, `RelayClient`, warrants), plus `Mero`, HTTP transport (OkHttp), `AuthApi` (incl. root/client keys + permissions), `AdminApi` (~140 methods), `RefreshCoordinator`, `TokenStore` (node-bound bundles), `RpcClient`, `SseClient`/`events()` + the long-lived `SseConnection` (`Mero.sse`, live subscribe/unsubscribe, typed migration/membership/app-version events), an experimental `WsClient`, ephemeral presence (`Mero.ephemeral`, device-signed `RelayPresenceClient`), `Capabilities` (+ presets, `capMask`/`capNames`), `classifyError`, local-node discovery, SSO with single-use callback state, and TEE trust (`tee`: Sigstore-verified releases, on-device DCAP, `SealedTransport`; `agentgate`: the mero-agent-gate client). |
-| `mero-compose` | Optional Jetpack Compose kit, the mero-react port: `MeroClient` as the provider (Cloud sign-in, node SSO with node-URL trust and token adoption, `AppMode`, `can`, the session admin, SSE-driven `isOnline`, `MeroAppStorage`, plus a development-only `login(nodeUrl, username, password)`), a state holder and `remember*` composable for every mero-react hook (reads, writes, execute, subscriptions, presence, migrations, blobs), invitations (capture from intents, `InviteRedemption`, `InvitationDialog`, `InvitationGate`, `JoinSync`, `JoinInvitation`), and `LoginSheet` (Node and Cloud tabs), `ConnectButton`, `MeroTheme`, `CalimeroLogo`, `MigrationPendingBanner`, `MigrationAdminPanel`. |
-| `mero-testkit` | Test-support: `FakeNode`, a stateful in-memory node on OkHttp MockWebServer, and `FakeCloud` (its cloud-manager + hosted-relay routes), for driving whole sign-in → call → sign-out journeys with no live service. |
+| `mero-compose` | Optional Jetpack Compose kit, the mero-react port: `MeroClient` as the provider (Cloud sign-in, node SSO with node-URL trust and token adoption, `AppMode`, `can`, the session admin, SSE-driven `isOnline`, `MeroAppStorage`, plus a development-only `login(nodeUrl, username, password)`), a state holder and `remember*` composable for every mero-react hook (reads, writes, execute, subscriptions, presence, migrations, blobs), invitations (capture from intents, `InviteRedemption`, `InvitationDialog`, `InvitationGate`, `JoinSync`, `JoinInvitation`), `LoginSheet` (Node and Cloud tabs), `ConnectButton`, `MeroTheme`, `CalimeroLogo`, `MigrationPendingBanner`, `MigrationAdminPanel`, and `MeroAppSession` (a mobile app's whole delegated session over `DelegatedAppBackend`). |
+| `mero-testkit` | Test-support: `FakeNode`, a stateful in-memory node on OkHttp MockWebServer, `FakeCloud` (its cloud-manager + hosted-relay routes), for driving whole sign-in → call → sign-out journeys with no live service, and `InMemoryAppBackend` / `RecordingContextContract` for testing an app's view models without a relay. |
 | `sample-app`   | A Compose sample in the light Calimero style: Cloud sign-in, a native chat client and an **SDK Explorer** over the relay session, plus a deterministic mock mode that drives the instrumented UI test. |
 
 ### The sample app
@@ -127,6 +127,24 @@ client.mero?.events(listOf(contextId))                      // live events over 
 
 Without Compose, `CloudAccount` runs the same flow: `beginEnrolment(callbackUrl)` →
 `completeEnrolment(url)` → `connect()`.
+
+### A mobile app's session (`MeroAppSession`)
+
+`MeroAppSession` (mero-compose) is the whole delegated session for any app: sign-in/out, restore,
+wallet callbacks and invitation links, and a `MeroAppBackend` (namespaces, subgroups, contexts,
+invitations, live events, the contract) rebuilt only when the session changes:
+
+```kotlin
+val session = MeroAppSession.create(app, "com.example.board", "https://board.example.com/enrol", scope = viewModelScope)
+viewModelScope.launch { session.restore() }        // and session.handle(url) for every deep link
+
+val namespaces = session.backend.value?.listNamespaces()
+val posts = session.contract.query(contextId, "get_posts", JsonObject(emptyMap()))
+val client = BoardClient(session.contract.bound(contextId))   // a generated client
+```
+
+View models take a `MeroAppBackend`; tests hand them mero-testkit's `InMemoryAppBackend`. See the
+[mobile app session](docs/src/content/docs/guides/app-session.mdx) guide. (Swift: `MeroAppSession`.)
 
 ### What stays on the device, and backups
 
