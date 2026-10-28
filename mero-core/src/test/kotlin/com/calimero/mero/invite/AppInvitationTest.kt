@@ -70,6 +70,12 @@ class AppInvitationTest {
     }
 
     @Test
+    fun `reads the kotlin sample's space name`() {
+        val signed = AppInvitation.decode(DESIGN_TOKEN)!!.invitation
+        assertEquals("Lab", AppInvitation.decodeJson("""{"spaceName":"Lab","invitation":${signed.raw}}""")?.name)
+    }
+
+    @Test
     fun `refuses what is not an invitation`() {
         assertNull(AppInvitation.decode("not a token"))
         assertNull(AppInvitation.decodeJson("""{"invitation":{"group_id":[1]}}"""))
