@@ -1,6 +1,7 @@
 package com.calimero.mero.app
 
 import com.calimero.mero.admin.SignedGroupOpenInvitation
+import com.calimero.mero.relay.GovernanceMemberRole
 import kotlinx.coroutines.flow.Flow
 import kotlinx.serialization.json.JsonElement
 
@@ -16,6 +17,10 @@ import kotlinx.serialization.json.JsonElement
  * mero-compose's `DelegatedAppBackend` is the real one, and `MeroAppSession` builds it from the
  * signed-in client. View models take this interface, so a test hands them mero-testkit's
  * `InMemoryAppBackend` instead.
+ *
+ * The names, blobs, leaving and members calls have defaults that throw
+ * [UnsupportedOperationException] naming the call, so a backend of an app's own, written before
+ * them, still compiles. `DelegatedAppBackend` and `InMemoryAppBackend` implement every one.
  */
 @Suppress("TooManyFunctions")
 interface MeroAppBackend {
@@ -78,7 +83,127 @@ interface MeroAppBackend {
 
     /** Live events for one context. Completes at once when [canSubscribe] is false. */
     fun events(contextId: String): Flow<AppContextEvent>
+
+    // ---- names ---------------------------------------------------------------------------
+
+    /** The contexts directly in [groupId], with their names (context metadata): [listContexts] with what a screen shows. */
+    suspend fun listContextEntries(groupId: String): List<AppContextEntry> = unsupported("listContextEntries")
+
+    /** A group's metadata (a namespace's or a subgroup's), or null if never set. */
+    suspend fun groupMetadata(groupId: String): AppMetadata? = unsupported("groupMetadata")
+
+    /** A context's metadata in its group, or null if never set. */
+    suspend fun contextMetadata(
+        groupId: String,
+        contextId: String,
+    ): AppMetadata? = unsupported("contextMetadata")
+
+    /** Rename a namespace or subgroup (`GroupMetadataSet`), keeping its metadata's `data`. */
+    suspend fun setGroupName(
+        groupId: String,
+        name: String,
+    ): Unit = unsupported("setGroupName")
+
+    /** Rename a context in its group (`ContextMetadataSet`), keeping its metadata's `data`. */
+    suspend fun setContextName(
+        groupId: String,
+        contextId: String,
+        name: String,
+    ): Unit = unsupported("setContextName")
+
+    // ---- blobs ---------------------------------------------------------------------------
+
+    /** Store [data] on the relay against [contextId], a context the account is a member of; the relay announces it to the context's other members. */
+    suspend fun uploadBlob(
+        contextId: String,
+        data: ByteArray,
+    ): AppBlob = unsupported("uploadBlob")
+
+    /** A blob's bytes, read through [contextId] (the relay checks the account is a member and that the blob belongs to that context). */
+    suspend fun getBlob(
+        blobId: String,
+        contextId: String,
+    ): ByteArray = unsupported("getBlob")
+
+    // ---- leaving and deleting ------------------------------------------------------------
+
+    /** Leave a namespace (`MemberLeft` on it): every subgroup and context in it with it. */
+    suspend fun leaveNamespace(namespaceId: String): Unit = unsupported("leaveNamespace")
+
+    /**
+     * Leave a subgroup (`MemberLeft` on it), and with it the contexts in it. An account is a member
+     * of a context through its group, so this is also how it leaves a context.
+     */
+    suspend fun leaveSubgroup(groupId: String): Unit = unsupported("leaveSubgroup")
+
+    /** Delete a subgroup and what is in it (`GroupDeleted`, a root op on its namespace). The relay refuses it unless the account may. */
+    suspend fun deleteSubgroup(groupId: String): Unit = unsupported("deleteSubgroup")
+
+    /** Take a context out of its group (`ContextDetached`): it stops being listed and served there. The relay refuses it unless the account may. */
+    suspend fun removeContext(
+        groupId: String,
+        contextId: String,
+    ): Unit = unsupported("removeContext")
+
+    // ---- members -------------------------------------------------------------------------
+
+    /** The members of a namespace or subgroup, with their roles and names (member metadata): a namespace's are the app's display names. */
+    suspend fun listMembers(groupId: String): List<AppMember> = unsupported("listMembers")
+
+    /** Set a member's role (`MemberRoleSet`). Admins only. */
+    suspend fun setMemberRole(
+        groupId: String,
+        identity: String,
+        role: GovernanceMemberRole,
+    ): Unit = unsupported("setMemberRole")
+
+    /** Remove a member (`MemberRemoved`). Admins only. */
+    suspend fun removeMember(
+        groupId: String,
+        identity: String,
+    ): Unit = unsupported("removeMember")
+
+    /** Set the account's own name in a namespace or subgroup (`MemberMetadataSet` on itself), keeping its metadata's `data`. */
+    suspend fun setMemberName(
+        groupId: String,
+        name: String,
+    ): Unit = unsupported("setMemberName")
 }
+
+private fun unsupported(method: String): Nothing = throw UnsupportedOperationException("$method is not supported by this MeroAppBackend")
+
+/** A context in a group, with its name. (Swift `AppContextEntry`.) */
+data class AppContextEntry(
+    /** The context id. */
+    val id: String,
+    /** Its name (context metadata), when it has one. */
+    val name: String?,
+)
+
+/** A group's, member's or context's metadata record. (Swift `AppMetadata`.) */
+data class AppMetadata(
+    val name: String?,
+    /** The record's other fields. Setting a name keeps them. */
+    val data: Map<String, String> = emptyMap(),
+)
+
+/** A member of a namespace or subgroup. (Swift `AppMember`.) */
+data class AppMember(
+    /** The member's account, 64 hex. */
+    val identity: String,
+    /** `Admin`, `Member` or `ReadOnly`; a relay is `RelayTee`. */
+    val role: String,
+    /** The name the member set (member metadata), when it set one. */
+    val name: String? = null,
+) {
+    val isAdmin: Boolean get() = role == GovernanceMemberRole.Admin.name
+}
+
+/** A blob stored through the relay. (Swift `AppBlob`.) */
+data class AppBlob(
+    val blobId: String,
+    val size: Long,
+)
 
 /** A namespace this account is a member of. (Swift `AppNamespace`.) */
 data class AppNamespace(

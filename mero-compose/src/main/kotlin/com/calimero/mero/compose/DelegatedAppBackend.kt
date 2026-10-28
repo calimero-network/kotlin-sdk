@@ -7,11 +7,20 @@ import com.calimero.mero.account.ResolvedApplication
 import com.calimero.mero.admin.AdminSurface
 import com.calimero.mero.admin.CreateContextRequest
 import com.calimero.mero.admin.CreateGroupInNamespaceRequest
+import com.calimero.mero.admin.MetadataRecord
+import com.calimero.mero.admin.RemoveGroupMembersRequest
+import com.calimero.mero.admin.SetMetadataRequest
 import com.calimero.mero.admin.SetSubgroupVisibilityRequest
 import com.calimero.mero.admin.SignedGroupOpenInvitation
+import com.calimero.mero.admin.UpdateMemberRoleRequest
+import com.calimero.mero.admin.UploadBlobRequest
+import com.calimero.mero.app.AppBlob
+import com.calimero.mero.app.AppContextEntry
 import com.calimero.mero.app.AppContextEvent
 import com.calimero.mero.app.AppFoundedNamespace
 import com.calimero.mero.app.AppJoinedNamespace
+import com.calimero.mero.app.AppMember
+import com.calimero.mero.app.AppMetadata
 import com.calimero.mero.app.AppNamespace
 import com.calimero.mero.app.AppSubgroup
 import com.calimero.mero.app.ContextContract
@@ -19,6 +28,7 @@ import com.calimero.mero.app.MeroAppBackend
 import com.calimero.mero.app.NoRelayContextContract
 import com.calimero.mero.app.RelayContextContract
 import com.calimero.mero.relay.ApplicationTarget
+import com.calimero.mero.relay.GovernanceMemberRole
 import com.calimero.mero.relay.RelayClient
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.async
@@ -45,6 +55,12 @@ import kotlinx.serialization.json.JsonElement
  * - **Namespaces**: [MeroClient.foundNamespace] founds through the relay;
  *   [MeroClient.createNamespaceInvitation] signs invitations with the device key;
  *   [MeroClient.joinWithInvitation] is direct admission through the relay the cloud routes to.
+ * - **Names, members, leaving and deleting**: the account admin reads them from the relay's
+ *   caller-scoped admin (`/groups/{id}/contexts`, `/members`, `/metadata`) and turns each write
+ *   into its governance op (`GroupMetadataSet`, `ContextMetadataSet`, `MemberMetadataSet`,
+ *   `MemberRoleSet`, `MemberRemoved`, `MemberLeft`, `GroupDeleted`, `ContextDetached`) on the
+ *   namespace's relay.
+ * - **Blobs**: the relay's blob routes, through a context the account is a member of.
  * - **Live updates**: the relay's event stream over the Bearer session.
  *
  * @throws IllegalStateException from the constructor when [client] holds no account session.
@@ -68,11 +84,13 @@ class DelegatedAppBackend(
     private val resolveApplication: suspend (packageName: String, registryUrl: String) -> ResolvedApplication = { pkg, registry ->
         ApplicationIds.resolveFromRegistry(pkg, registry)
     },
+    /** The admin to read and write through; null takes [MeroClient.admin]. A test names its own. */
+    adminSurface: AdminSurface? = null,
 ) : MeroAppBackend {
     override val account: String = checkNotNull(client.state.value.account) { "DelegatedAppBackend needs a signed-in account" }
 
     /** The account admin this snapshot reads and writes through. */
-    val admin: AdminSurface = checkNotNull(client.admin) { "DelegatedAppBackend needs a signed-in account" }
+    val admin: AdminSurface = adminSurface ?: checkNotNull(client.admin) { "DelegatedAppBackend needs a signed-in account" }
 
     /** The account's relay, or null when none serves it yet. */
     val relay: RelayClient? = client.relay
@@ -182,6 +200,99 @@ class DelegatedAppBackend(
         return AppJoinedNamespace(namespaceId, joined.published, joined.relayUrl)
     }
 
+    // ---- names ---------------------------------------------------------------------------
+
+    override suspend fun listContextEntries(groupId: String): List<AppContextEntry> =
+        admin.listGroupContexts(groupId).map { AppContextEntry(it.contextId, it.name) }
+
+    override suspend fun groupMetadata(groupId: String): AppMetadata? = admin.getGroupMetadata(groupId)?.toApp()
+
+    override suspend fun contextMetadata(
+        groupId: String,
+        contextId: String,
+    ): AppMetadata? = admin.getContextMetadata(groupId, contextId)?.toApp()
+
+    /** Setting metadata replaces the whole record, so the current `data` is read first and sent back with the new name. */
+    override suspend fun setGroupName(
+        groupId: String,
+        name: String,
+    ) {
+        val data = admin.getGroupMetadata(groupId)?.data
+        admin.setGroupMetadata(groupId, SetMetadataRequest(name = name, data = data))
+    }
+
+    override suspend fun setContextName(
+        groupId: String,
+        contextId: String,
+        name: String,
+    ) {
+        val data = admin.getContextMetadata(groupId, contextId)?.data
+        admin.setContextMetadata(groupId, contextId, SetMetadataRequest(name = name, data = data))
+    }
+
+    // ---- blobs ---------------------------------------------------------------------------
+
+    override suspend fun uploadBlob(
+        contextId: String,
+        data: ByteArray,
+    ): AppBlob = admin.uploadBlob(UploadBlobRequest(data = data, contextId = contextId)).let { AppBlob(it.blobId, it.size) }
+
+    override suspend fun getBlob(
+        blobId: String,
+        contextId: String,
+    ): ByteArray = admin.getBlob(blobId, contextId)
+
+    // ---- leaving and deleting ------------------------------------------------------------
+
+    override suspend fun leaveNamespace(namespaceId: String) {
+        admin.leaveNamespace(namespaceId)
+    }
+
+    override suspend fun leaveSubgroup(groupId: String) {
+        admin.leaveGroup(groupId)
+    }
+
+    override suspend fun deleteSubgroup(groupId: String) {
+        admin.deleteGroup(groupId)
+    }
+
+    override suspend fun removeContext(
+        groupId: String,
+        contextId: String,
+    ) {
+        admin.detachContextFromGroup(groupId, contextId)
+    }
+
+    // ---- members -------------------------------------------------------------------------
+
+    override suspend fun listMembers(groupId: String): List<AppMember> =
+        admin.listGroupMembers(groupId).members.map { AppMember(it.identity, it.role, it.name) }
+
+    override suspend fun setMemberRole(
+        groupId: String,
+        identity: String,
+        role: GovernanceMemberRole,
+    ) {
+        admin.updateMemberRole(groupId, identity, UpdateMemberRoleRequest(role.name))
+    }
+
+    override suspend fun removeMember(
+        groupId: String,
+        identity: String,
+    ) {
+        admin.removeGroupMembers(groupId, RemoveGroupMembersRequest(listOf(identity)))
+    }
+
+    override suspend fun setMemberName(
+        groupId: String,
+        name: String,
+    ) {
+        val data = admin.getMemberMetadata(groupId, account)?.data
+        admin.setMemberMetadata(groupId, account, SetMetadataRequest(name = name, data = data))
+    }
+
+    // ---- events --------------------------------------------------------------------------
+
     override fun events(contextId: String): Flow<AppContextEvent> {
         val mero = live ?: return emptyFlow()
         return mero
@@ -192,5 +303,7 @@ class DelegatedAppBackend(
 
     private companion object {
         const val BYTE_MASK = 0xff
+
+        fun MetadataRecord.toApp() = AppMetadata(name, data)
     }
 }

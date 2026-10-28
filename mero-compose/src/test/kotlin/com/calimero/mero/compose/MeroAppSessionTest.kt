@@ -4,12 +4,20 @@ import com.calimero.mero.account.CloudAccount
 import com.calimero.mero.account.DeviceCert
 import com.calimero.mero.account.MemorySecureStore
 import com.calimero.mero.account.NoRelayException
+import com.calimero.mero.admin.GroupContextEntry
+import com.calimero.mero.admin.GroupMember
+import com.calimero.mero.admin.MetadataRecord
+import com.calimero.mero.app.AppBlob
+import com.calimero.mero.app.AppContextEntry
+import com.calimero.mero.app.AppMember
+import com.calimero.mero.app.AppMetadata
 import com.calimero.mero.app.AppNamespace
 import com.calimero.mero.app.NoRelayContextContract
 import com.calimero.mero.app.RelayContextContract
 import com.calimero.mero.auth.PendingAuthStates
 import com.calimero.mero.crypto.SeedSigner
 import com.calimero.mero.relay.DcapRelayKeyVerifier
+import com.calimero.mero.relay.GovernanceMemberRole
 import com.calimero.mero.storage.MemoryTokenStore
 import com.calimero.mero.testkit.FakeNode
 import kotlinx.coroutines.CoroutineScope
@@ -25,6 +33,7 @@ import kotlinx.serialization.json.put
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.mockwebserver.MockWebServer
 import org.junit.After
+import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -225,6 +234,71 @@ class MeroAppSessionTest {
 
             val every = DelegatedAppBackend(s.client, packageName = pkg)
             assertEquals(listOf(mine, theirs), every.listNamespaces().map { it.id })
+        }
+
+    /** Names, blobs, leaving and members map onto the account admin's calls, which the account admin turns into reads and governance ops on the relay. */
+    @Test
+    fun `the backend's names, blobs, leaving and members go through the admin`() =
+        runBlocking {
+            val s = session()
+            signIn(s)
+            val me = s.account!!
+            val admin = RecordingAdmin()
+            admin.contexts = listOf(GroupContextEntry("c1", "Roadmap"), GroupContextEntry("c2"))
+            admin.members = listOf(GroupMember(me, "Admin", "Ana"), GroupMember("b", "Member"))
+            admin.metadata =
+                mapOf(
+                    "g" to MetadataRecord("boards", mapOf("icon" to "grid"), 1, me),
+                    "c1" to MetadataRecord("Roadmap", mapOf("color" to "red"), 1, me),
+                    me to MetadataRecord("Ana", mapOf("avatar" to "a1"), 1, me),
+                )
+            val backend = DelegatedAppBackend(s.client, packageName = pkg, adminSurface = admin)
+
+            assertEquals(listOf(AppContextEntry("c1", "Roadmap"), AppContextEntry("c2", null)), backend.listContextEntries("g"))
+            assertEquals(AppMetadata("boards", mapOf("icon" to "grid")), backend.groupMetadata("g"))
+            assertEquals("Roadmap", backend.contextMetadata("g", "c1")?.name)
+            assertNull(backend.groupMetadata("unnamed"))
+            backend.setGroupName("g", "planning")
+            backend.setContextName("g", "c1", "Q3")
+            backend.setMemberName("g", "Ana B")
+
+            assertEquals(AppBlob("blob1", 5), backend.uploadBlob("c1", "hello".toByteArray()))
+            assertArrayEquals("bytes".toByteArray(), backend.getBlob("blob1", "c1"))
+
+            assertEquals(listOf(AppMember(me, "Admin", "Ana"), AppMember("b", "Member")), backend.listMembers("g"))
+            backend.setMemberRole("g", "b", GovernanceMemberRole.ReadOnly)
+            backend.removeMember("g", "b")
+
+            backend.removeContext("g", "c2")
+            backend.deleteSubgroup("g")
+            backend.leaveSubgroup("g2")
+            backend.leaveNamespace("ns")
+
+            assertEquals(
+                listOf(
+                    "listGroupContexts g",
+                    "getGroupMetadata g",
+                    "getContextMetadata g c1",
+                    "getGroupMetadata unnamed",
+                    // A rename keeps the record's data: setting metadata replaces it whole.
+                    "getGroupMetadata g",
+                    "setGroupMetadata g planning [icon=grid]",
+                    "getContextMetadata g c1",
+                    "setContextMetadata g c1 Q3 [color=red]",
+                    "getMemberMetadata g $me",
+                    "setMemberMetadata g $me Ana B [avatar=a1]",
+                    "uploadBlob c1 5",
+                    "getBlob blob1 c1",
+                    "listGroupMembers g",
+                    "updateMemberRole g b ReadOnly",
+                    "removeGroupMembers g [b]",
+                    "detachContextFromGroup g c2",
+                    "deleteGroup g",
+                    "leaveGroup g2",
+                    "leaveNamespace ns",
+                ),
+                admin.calls,
+            )
         }
 
     @Test
