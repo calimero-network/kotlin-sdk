@@ -71,10 +71,22 @@ object InviteLink {
      * no device, and host parsing on a non-special scheme mangles a dotted slug
      * like `com.calimero.mero-tag`.
      *
-     * Returns null only for blank input — an unrecognized string is handed back
-     * unchanged, so a bare token still works and the codec gets the final say.
+     * [expectedSlug], when given, makes a link carrying a *different* app's slug return null
+     * instead of its token. Pass your own package id: another app's invitation decodes perfectly
+     * well, since the payload shape is shared, and redeeming it would join a namespace belonging to
+     * that app. This mirrors the JS `invitationFromRaw`, which rejects a foreign slug for the same
+     * reason. Null (the default) accepts any slug. A *bare token* carries no slug and is always
+     * accepted, the same latitude the web apps give a pasted code. (Swift
+     * `InviteLink.token(fromPasted:expectedSlug:)`.)
+     *
+     * Returns null for blank input, or for a link whose slug was rejected — an unrecognized string
+     * is handed back unchanged, so a bare token still works and the codec gets the final say.
      */
-    fun tokenFromPasted(input: String): String? {
+    @JvmOverloads
+    fun tokenFromPasted(
+        input: String,
+        expectedSlug: String? = null,
+    ): String? {
         val trimmed = input.trim()
         if (trimmed.isEmpty()) return null
 
@@ -83,7 +95,12 @@ object InviteLink {
         val isHttps = lower.startsWith("https://")
         val isScheme = lower.startsWith("calimero://")
         if (!isHttp && !isHttps && !isScheme) return trimmed
+        if (expectedSlug != null && !slugMatches(trimmed, expectedSlug)) return null
+        return invitationParam(trimmed)
+    }
 
+    /** The link's `invitation` parameter, percent-decoded; the link itself when it has none. */
+    private fun invitationParam(trimmed: String): String {
         val queryStart = trimmed.indexOf('?')
         if (queryStart < 0) return trimmed
 
@@ -97,6 +114,19 @@ object InviteLink {
         val match = pairs.firstOrNull { it.substringBefore('=') == INVITATION_PARAM }
         if (match == null) return trimmed
         return decodePercent(match.substringAfter('=', ""))
+    }
+
+    /**
+     * Does this link's `/<slug>/` path segment match? Compared as a path segment rather than a
+     * substring so `com.calimero.mero` cannot match `com.calimero.mero-ar`; case-insensitive,
+     * because a link that has been through a mail client may not come back the way it left.
+     */
+    private fun slugMatches(
+        link: String,
+        expected: String,
+    ): Boolean {
+        val segments = link.substringBefore('?').split('/').map { it.lowercase() }
+        return expected.lowercase() in segments
     }
 
     /** Percent-encode everything a token or slug may contain. */

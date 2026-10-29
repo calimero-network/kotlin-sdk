@@ -31,6 +31,9 @@ dependencies {
     // FakeNode is HTTP-level (no mero-core types), matching the Swift SDK's `FakeNode`, which
     // imports only Foundation. This keeps the harness usable from any consumer's unit tests.
     api(libs.okhttp.mockwebserver)
+    // InMemoryAppBackend implements mero-core's app interfaces (`com.calimero.mero.app`), as the
+    // Swift SDK's `MeroKitTestSupport` depends on `MeroKit` for the same fake.
+    api(project(":mero-core"))
     implementation(libs.kotlinx.serialization.json)
-    implementation(libs.kotlinx.coroutines.core)
+    api(libs.kotlinx.coroutines.core)
 }
