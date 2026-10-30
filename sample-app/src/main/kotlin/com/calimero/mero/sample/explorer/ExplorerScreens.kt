@@ -684,6 +684,8 @@ private fun ApprovalsSection(client: CalimeroClient) {
                     scope.launch {
                         runCatching {
                             ConsentLauncher.request(context, client, ConsentRequest.Release(ConsentScope.Account, release.version, SampleViewModel.CONSENT_CALLBACK))
+                        }.onSuccess { started ->
+                            if (started.code.isNotEmpty()) note = "Check the page shows the code ${started.code} before you approve."
                         }.onFailure { note = "Couldn't open the consent page: ${it.message}" }
                     }
                 },

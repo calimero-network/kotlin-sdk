@@ -18,6 +18,9 @@ val started = ConsentLauncher.request(
 )
 ```
 
+`started.code` is the request's confirmation code (`ABC-123`); the consent page shows the same
+one, so show it in the app before the page opens.
+
 The page sends the person back to `returnTo?request_id=…&result=approved|declined`. That is a
 hint (anyone can type a URL): confirm it with the node.
 

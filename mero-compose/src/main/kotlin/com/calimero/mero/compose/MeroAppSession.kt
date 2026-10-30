@@ -279,7 +279,8 @@ class MeroAppSession(
     /**
      * Ask the account holder to approve [request] on the node's consent page, opened in a Custom
      * Tab ([ConsentLauncher]). The page sends them back to [callbackUrl]: hand that link to
-     * [handle], and read [consentResult].
+     * [handle], and read [consentResult]. Show the answer's [ConsentStarted.code] first: the
+     * page shows the same confirmation code.
      */
     suspend fun requestConsent(
         context: Context,

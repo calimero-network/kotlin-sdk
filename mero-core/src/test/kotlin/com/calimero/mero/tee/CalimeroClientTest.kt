@@ -335,12 +335,14 @@ class CalimeroClientTest {
     @Test
     fun `asks for consent and reads where the page sent the person back`() =
         runBlocking {
-            val cluster = Cluster({ _, _ -> json(200, """{"requestId":"r1","url":"https://node0.example/consent/r1","expiresAt":9}""") })
+            val cluster = Cluster({ _, _ -> json(200, """{"requestId":"r1","url":"https://node0.example/consent/r1","expiresAt":9,"code":"7KQ-M2X"}""") })
             var opened: String? = null
             val started =
                 cluster.client().openConsentPage(ConsentRequest.Release(ConsentScope("org-1"), "2.3.110", "mero-chat://consent")) { opened = it }
             assertEquals("https://node0.example/consent/r1", opened)
             assertEquals("r1", started.requestId)
+            assertEquals("the confirmation code the page shows", "7KQ-M2X", started.code)
+            assertEquals(9L, started.expiresAt)
             val sent = Json.parseToJsonElement(cluster.nodes[0].requests[0].second).jsonObject
             assertEquals("release", sent["kind"]!!.jsonPrimitive.content)
             assertEquals("org-1", sent["scope"]!!.jsonObject["org"]!!.jsonPrimitive.content)

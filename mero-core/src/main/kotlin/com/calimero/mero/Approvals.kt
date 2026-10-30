@@ -324,6 +324,12 @@ data class ConsentStarted(
     val url: String,
     /** Unix seconds; a request lives 10 minutes. */
     val expiresAt: Long = 0,
+    /**
+     * The request's confirmation code (`ABC-123`): the consent page shows the same one, so show it
+     * to the person before they open the page, and they can check they approve what the app asked.
+     * `""` from a node that predates it.
+     */
+    val code: String = "",
 )
 
 /** `GET /consent/{id}/result`. [status] is `pending`, `approved` or `declined`. */
