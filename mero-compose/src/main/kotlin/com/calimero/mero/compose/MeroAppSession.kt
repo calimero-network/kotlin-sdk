@@ -1,25 +1,58 @@
 package com.calimero.mero.compose
 
 import android.content.Context
-import com.calimero.mero.account.ApplicationIds
-import com.calimero.mero.account.Enrolment
+import com.calimero.mero.CalimeroClient
+import com.calimero.mero.CalimeroClientOptions
+import com.calimero.mero.CalimeroError
+import com.calimero.mero.CloudPolicy
+import com.calimero.mero.ConsentRequest
+import com.calimero.mero.ConsentResult
+import com.calimero.mero.ConsentStarted
+import com.calimero.mero.LoginRequired
+import com.calimero.mero.PasskeyProvider
+import com.calimero.mero.app.CalimeroAppBackend
 import com.calimero.mero.app.ContextContract
 import com.calimero.mero.app.MeroAppBackend
-import com.calimero.mero.app.NoRelayContextContract
+import com.calimero.mero.app.OrgInvitation
+import com.calimero.mero.app.SignedOutContextContract
+import com.calimero.mero.consentReturn
 import com.calimero.mero.invite.InviteLink
-import com.calimero.mero.relay.ApplicationTarget
+import com.calimero.mero.storage.EncryptedSessionStore
+import com.calimero.mero.storage.SessionStore
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import okhttp3.OkHttpClient
+import java.io.IOException
 
-/** How a [MeroAppSession] treats links and where it founds and joins. (Swift `MeroAppSessionOptions`.) */
+/**
+ * Where an app's [MeroAppSession] signs in. (Swift `MeroAppConfig`.)
+ *
+ * @property nodeUrl one node of the app's cluster (the URL the Calimero Cloud console shows for
+ *   it, or `http://10.0.2.2:2501` for `merod local` from the emulator).
+ * @property nodes the cluster's other nodes, to move to on `421 WRONG_NODE`.
+ * @property policy what the node must attest to: [CloudPolicy.production] (real TDX quotes from a
+ *   signed mero-tee release) unless you run `merod local` ([CloudPolicy.development]).
+ */
+data class MeroAppConfig(
+    val nodeUrl: String,
+    val nodes: List<String> = emptyList(),
+    val policy: CloudPolicy = CloudPolicy.production,
+    /** The app's package (`com.example.board`); [MeroAppSession.create] sets it. */
+    val packageName: String? = null,
+    /** Carries the attestation and the sealed requests; add interceptors (logging, pinning) here. */
+    val httpClient: OkHttpClient? = null,
+)
+
+/** How a [MeroAppSession] treats links. (Swift `MeroAppSessionOptions`.) */
 data class MeroAppSessionOptions(
     /**
      * Whether a link the system handed the app is one of this app's invitations. Null takes
@@ -27,41 +60,37 @@ data class MeroAppSessionOptions(
      * package.
      */
     val isInvitation: ((String) -> Boolean)? = null,
-    /** What a new namespace is founded with. Null resolves the app's package from the registry ([DelegatedAppBackend.foundingApplication]). */
-    val foundingApplication: ApplicationTarget? = null,
-    /** Where to send a join. Null asks the Cloud manager for the admitting relay ([DelegatedAppBackend.joinNodeUrl]). */
-    val joinNodeUrl: String? = null,
 )
 
 /**
- * A Calimero app's signed-in account, delegated only: Calimero Cloud enrolment (the wallet
- * certifies this device's key), the account's relay from the Cloud manager, and the
- * [MeroAppBackend] built over that relay. Keep one for the app's life (in an `AndroidViewModel`,
- * with its `viewModelScope`). (Swift `MeroKitUI.MeroAppSession`.)
- *
- * There is no node login and no node URL: the [MeroClient] is only driven through its Cloud
- * entry points ([MeroClient.signInWithCloud], [MeroClient.restore], [MeroClient.handleEnrolmentCallback],
- * [MeroClient.signOut]).
+ * A Calimero app's signed-in account on Calimero 1.0: a passkey session on the app's cluster
+ * (`v2.…` session token, `rt_…` refresh token, kept encrypted), and the [MeroAppBackend] built over
+ * it. Keep one for the app's life (in an `AndroidViewModel`, with its `viewModelScope`). (Swift
+ * `MeroKitUI.MeroAppSession`.)
  *
  * ```kotlin
- * val session = MeroAppSession.create(app, "com.example.board", "https://board.example.com/enrol", scope = viewModelScope)
+ * val session = MeroAppSession.create(app, "com.example.board", "board://consent", MeroAppConfig(nodeUrl), scope = viewModelScope)
  * viewModelScope.launch { session.restore() }
+ * // the sign-in button: session.signIn(activity)
  * // every deep link: viewModelScope.launch { session.handle(url) }
  * ```
  *
  * Screens collect [backend] (and re-read when [revision] moves); view models take it as a
  * [MeroAppBackend], so a test hands them mero-testkit's `InMemoryAppBackend`. A generated
- * contract client calls `session.contract.bound(contextId)`.
+ * contract client calls `session.contract.bound(appId)`.
  *
- * @param scope where the session follows [client]: it rebuilds [backend] whenever the client's
- *   state changes (the application id learned, a relay session minted, a join's reconnect).
+ * @param callbackUrl where the node's consent page sends the person back (an App Link or an app
+ *   scheme the app receives): the `returnTo` of [requestConsent]. 0.x: the wallet's callback.
  */
+@Suppress("TooManyFunctions")
 class MeroAppSession(
-    val client: MeroClient,
-    /** Where the wallet sends the person back to: an App Link or an app scheme the app receives. */
+    val client: CalimeroClient,
+    /** The app's package: what app instances are created from and invitation links carry. */
+    val packageName: String,
     val callbackUrl: String,
+    val store: SessionStore,
     val options: MeroAppSessionOptions = MeroAppSessionOptions(),
-    scope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.Default),
+    private val scope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.Default),
 ) {
     private val _backend = MutableStateFlow<MeroAppBackend?>(null)
 
@@ -70,10 +99,7 @@ class MeroAppSession(
 
     private val _revision = MutableStateFlow(0)
 
-    /**
-     * Bumped whenever [backend] is rebuilt, so screens re-read. Not bumped when nothing about the
-     * session changed, so open screens are not reset.
-     */
+    /** Bumped whenever [backend] is rebuilt, so screens re-read. */
     val revision: StateFlow<Int> = _revision.asStateFlow()
 
     private val _isRestoring = MutableStateFlow(false)
@@ -81,162 +107,252 @@ class MeroAppSession(
     /** [restore] is running. */
     val isRestoring: StateFlow<Boolean> = _isRestoring.asStateFlow()
 
+    private val _isSigningIn = MutableStateFlow(false)
+
+    /** A passkey sign-in or sign-up is running. */
+    val isSigningIn: StateFlow<Boolean> = _isSigningIn.asStateFlow()
+
+    private val _lastError = MutableStateFlow<Throwable?>(null)
+
+    /** Why the last sign-in, sign-up or restore failed; cleared by the next attempt. */
+    val lastError: StateFlow<Throwable?> = _lastError.asStateFlow()
+
     private val _pendingInvitation = MutableStateFlow<String?>(null)
 
     /** An invitation link that arrived ([handle]) and waits to be redeemed. Clear it with [dismissPendingInvitation]. */
     val pendingInvitation: StateFlow<String?> = _pendingInvitation.asStateFlow()
 
+    private val _consentResult = MutableStateFlow<ConsentResult?>(null)
+
+    /** The decision the consent page sent the person back with ([handle]), confirmed with the node. */
+    val consentResult: StateFlow<ConsentResult?> = _consentResult.asStateFlow()
+
     private val restoring = Mutex()
-    private val rebuildLock = Any()
-    private var lastKey: Any? = null
+    private var signing: Job? = null
+    private var knownAccount: String? = null
 
     init {
-        rebuild()
-        scope.launch { combine(client.state, client.session, client.connection) { _, _, _ -> }.collect { rebuild() } }
+        client.onSessionChange { session ->
+            store.save(session)
+            if (session == null || session.accountId != knownAccount) {
+                knownAccount = session?.accountId
+                rebuild()
+            }
+        }
     }
 
     // ---- state ---------------------------------------------------------------------------
 
-    /** Signed in with a Calimero account. */
-    val isSignedIn: Boolean get() = client.state.value.isDelegated
+    /** Signed in. */
+    val isSignedIn: Boolean get() = client.session != null
 
-    /** The account, 64 hex, or null. */
-    val account: String? get() = client.state.value.account
+    /** The account id, or null. */
+    val account: String? get() = client.session?.accountId
 
-    /** The app's application id, once resolved from its package. */
-    val applicationId: String? get() = client.state.value.applicationId
+    /** The app's package: what 0.x called its application. */
+    val applicationId: String get() = packageName
 
-    /** Whether a relay serves the account. Without one only joining works. */
+    /** Whether the account reaches the cluster: `true` while signed in (0.x: "a relay serves it"). */
     val hasRelay: Boolean get() = _backend.value?.hasRelay ?: false
 
-    /** Whether [MeroAppBackend.events] streams; when not, poll. */
+    /** Whether [MeroAppBackend.events] streams: `true` while signed in. */
     val canSubscribe: Boolean get() = _backend.value?.canSubscribe ?: false
 
-    /** The contract in any context: [NoRelayContextContract] while signed out or relayless. `contract.bound(contextId)` for a generated client. */
-    val contract: ContextContract get() = _backend.value?.contract ?: NoRelayContextContract
+    /** The contract in any app instance: [SignedOutContextContract] while signed out. */
+    val contract: ContextContract get() = _backend.value?.contract ?: SignedOutContextContract
 
     // ---- sign-in -------------------------------------------------------------------------
 
     /**
-     * Reconnect the stored Cloud session, if there is one. The Cloud manager is asked again which
-     * relay serves the account: a relayless session may have earned one by joining elsewhere. A
-     * wallet callback that arrives meanwhile (a cold start from the wallet) waits for this to finish.
+     * Reconnect the stored session, if there is one, and check it with the node (`GET /auth/me`;
+     * an expired session token is refreshed by itself). A refused refresh forgets it; a node that
+     * cannot be reached keeps it, so an offline launch stays signed in.
      */
     suspend fun restore() {
         restoring.withLock {
             _isRestoring.value = true
             try {
-                if (client.account.isSignedIn) client.restore()
+                val saved = store.load() ?: return@withLock
+                client.useSession(saved)
+                knownAccount = saved.accountId
+                rebuild()
+                try {
+                    client.me()
+                } catch (e: LoginRequired) {
+                    client.forget()
+                    _lastError.value = e
+                } catch (e: IOException) {
+                    _lastError.value = e
+                }
             } finally {
                 _isRestoring.value = false
             }
         }
+    }
+
+    /** Sign in with the device's passkey (Credential Manager over [activity]). Watch [isSigningIn] and [lastError]. */
+    fun signIn(activity: Context) = launchSignIn { signIn(PlatformPasskey(activity)) }
+
+    /** Create an account named [name] with a new passkey on the device, and sign in. */
+    fun signUp(
+        activity: Context,
+        name: String,
+    ) = launchSignIn { signUp(PlatformPasskey(activity), name) }
+
+    /** Sign in with [passkey] (a [com.calimero.mero.SoftPasskey] on a development cluster). */
+    suspend fun signIn(passkey: PasskeyProvider) {
+        client.signIn(passkey)
         rebuild()
     }
 
-    /** Open the wallet to approve this device. Its answer comes back as a deep link: hand it to [handle]. */
-    fun signIn(context: Context) = client.signInWithCloud(context, callbackUrl)
+    /** Create an account with [passkey], and sign in. */
+    suspend fun signUp(
+        passkey: PasskeyProvider,
+        name: String,
+    ) {
+        client.signUp(passkey, name)
+        rebuild()
+    }
 
-    /** The person came back from the wallet without answering: stop the spinner. */
-    fun cancelSignIn() = client.cancelPendingSignIn()
+    /** Stop a sign-in that is waiting (the person left the passkey sheet). */
+    fun cancelSignIn() {
+        signing?.cancel()
+        _isSigningIn.value = false
+    }
 
-    /** Sign out. The device key stays (the next sign-in reuses it) unless [forgetDevice]. */
+    /** Sign out: end the session on the node, and forget it here. [forgetDevice] also clears every stored value. */
     suspend fun signOut(forgetDevice: Boolean = false) {
-        client.signOut(forgetDevice)
+        try {
+            client.signOut()
+        } catch (_: CalimeroError) {
+            client.forget()
+        } catch (_: IOException) {
+            client.forget()
+        }
+        if (forgetDevice) store.clear()
         rebuild()
     }
 
     /**
-     * A link the system handed the app: a wallet callback that finishes a sign-in, or one of this
-     * app's invitation links (held in [pendingInvitation] for the person to confirm). Returns
+     * A link the system handed the app: the consent page sending the person back
+     * (`callbackUrl?request_id=…&result=…`, confirmed with the node into [consentResult]), or one of
+     * this app's invitation links (held in [pendingInvitation] for the person to confirm). Returns
      * whether it was either.
      */
     suspend fun handle(url: String): Boolean {
         restoring.withLock { }
-        if (client.handleEnrolmentCallback(url)) {
-            rebuild()
+        consentReturn(url)?.let { back ->
+            _consentResult.value = runCatching { client.consentResult(back.requestId) }.getOrNull()
             return true
         }
-        val recognised = options.isInvitation?.invoke(url) ?: isInvitationLink(url, client.config.packageName)
+        val recognised = options.isInvitation?.invoke(url) ?: isInvitationLink(url, packageName)
         if (!recognised) return false
         _pendingInvitation.value = url
         return true
     }
+
+    /** [pendingInvitation] decoded, or null. */
+    val pendingOrgInvitation: OrgInvitation? get() = _pendingInvitation.value?.let { OrgInvitation.parse(it, packageName) }
 
     /** Forget [pendingInvitation]: redeemed, or declined. */
     fun dismissPendingInvitation() {
         _pendingInvitation.value = null
     }
 
-    /**
-     * After redeeming an invitation ([MeroAppBackend.joinNamespace]): a session that had no relay
-     * now has the admitting one, so reconnect to it.
-     */
+    /** Redeem [pendingInvitation] (`POST /invites/{token}/redeem`) and forget it. Answers the organization joined. */
+    suspend fun redeemPendingInvitation(): String? {
+        val backend =
+            _backend.value ?: throw com.calimero.mero.app
+                .SignedOutException("redeemPendingInvitation")
+        val invitation = pendingOrgInvitation ?: return null
+        val joined = backend.joinNamespace(invitation.namespaceId, invitation)
+        dismissPendingInvitation()
+        didJoinNamespace()
+        return joined.namespaceId
+    }
+
+    /** After redeeming an invitation: the account is a member at once on 1.0, so screens only re-read. */
     suspend fun didJoinNamespace() {
-        if (_backend.value?.hasRelay == true) return
-        client.restore()
-        rebuild()
+        _revision.value += 1
     }
 
     /**
-     * Rebuild [backend] from the client's current session. A no-op when nothing about the session
-     * changed, so open screens are not reset. Runs after every call here and whenever the client
-     * changes; call it after driving the client directly.
+     * Ask the account holder to approve [request] on the node's consent page, opened in a Custom
+     * Tab ([ConsentLauncher]). The page sends them back to [callbackUrl]: hand that link to
+     * [handle], and read [consentResult]. Show the answer's [ConsentStarted.code] first: the
+     * page shows the same confirmation code.
      */
+    suspend fun requestConsent(
+        context: Context,
+        request: ConsentRequest,
+    ): ConsentStarted {
+        _consentResult.value = null
+        return ConsentLauncher.request(context, client, request)
+    }
+
+    /** Rebuild [backend] from the client's session. A no-op when the account did not change. */
     fun rebuild() {
-        val state = client.state.value
-        val delegated = state.isDelegated && client.admin != null && state.account != null
-        val key = listOf(delegated, state.account, state.relayUrl, state.sessionReady, state.applicationId, client.session.value, client.connection.value)
-        synchronized(rebuildLock) {
-            if (key == lastKey) return
-            lastKey = key
-            _backend.value =
-                if (delegated) {
-                    DelegatedAppBackend(
-                        client,
-                        packageName = client.config.packageName.orEmpty(),
-                        registryUrl = client.config.registryUrl ?: ApplicationIds.DEFAULT_REGISTRY_URL,
-                        applicationId = state.applicationId,
-                        foundingApplication = options.foundingApplication,
-                        joinNodeUrl = options.joinNodeUrl,
-                    )
-                } else {
-                    null
+        val session = client.session
+        val next = session?.let { CalimeroAppBackend(client, packageName, it.accountId) }
+        val current = _backend.value as? CalimeroAppBackend
+        if (current?.account == next?.account && (current == null) == (next == null)) return
+        _backend.value = next
+        _revision.value += 1
+    }
+
+    private fun launchSignIn(block: suspend () -> Unit) {
+        signing?.cancel()
+        _lastError.value = null
+        _isSigningIn.value = true
+        signing =
+            scope.launch {
+                try {
+                    block()
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (
+                    @Suppress("TooGenericExceptionCaught") e: Exception,
+                ) {
+                    _lastError.value = e
+                } finally {
+                    _isSigningIn.value = false
                 }
-            _revision.value += 1
-        }
+            }
     }
 
     companion object {
         /**
-         * A session with its own [MeroClient] ([MeroClient.create]): keys, session and nonces in
-         * the Keystore-backed stores.
+         * A session with its own [CalimeroClient] on [config]'s cluster, its session kept in
+         * Keystore-backed encrypted preferences ([EncryptedSessionStore]).
          *
-         * @param packageName the app's registry package (`com.example.board`): what namespaces are
-         *   founded with and invitation links carry. Replaces [config]'s.
-         * @param config the registry and Cloud manager.
-         * @param walletUrl the wallet's enrolment page.
+         * @param packageName the app's registry package (`com.example.board`).
+         * @param callbackUrl where the consent page sends the person back.
          */
         @Suppress("LongParameterList")
         fun create(
             context: Context,
             packageName: String,
             callbackUrl: String,
-            config: MeroAppConfig = MeroAppConfig(),
-            walletUrl: String = Enrolment.DEFAULT_WALLET_URL,
+            config: MeroAppConfig,
             options: MeroAppSessionOptions = MeroAppSessionOptions(),
             scope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.Default),
+            store: SessionStore = EncryptedSessionStore(context, "calimero_session_$packageName"),
         ): MeroAppSession {
-            val appConfig = config.copy(packageName = packageName)
-            val client = MeroClient.create(context, cloudBaseUrl = appConfig.cloudBaseUrl, walletUrl = walletUrl, config = appConfig)
-            return MeroAppSession(client, callbackUrl, options, scope)
+            val client =
+                CalimeroClient(
+                    CalimeroClientOptions(
+                        baseUrl = config.nodeUrl,
+                        nodes = config.nodes,
+                        policy = config.policy,
+                        httpClient = config.httpClient ?: CalimeroClientOptions.defaultHttpClient(),
+                    ),
+                )
+            return MeroAppSession(client, packageName, callbackUrl, store, options, scope)
         }
 
         /**
          * Whether [raw] is an invitation to the app with [packageName]: it carries `invitation=…`,
-         * and its path names the package (another app's invitation decodes just as well, and
-         * redeeming it would join that app's namespace). Without a package any invitation link is.
-         * (Swift `MeroAppSession.isInvitationLink`.)
+         * and its path names the package. Without a package any invitation link is.
          */
         fun isInvitationLink(
             raw: String,

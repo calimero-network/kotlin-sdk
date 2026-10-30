@@ -1,11 +1,8 @@
 package com.calimero.mero.app
 
-import com.calimero.mero.account.NoRelayException
-import com.calimero.mero.relay.Warrants
 import com.calimero.mero.testkit.RecordedContractCall
 import com.calimero.mero.testkit.RecordingContextContract
 import kotlinx.coroutines.runBlocking
-import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
@@ -17,7 +14,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Assert.fail
 import org.junit.Test
 
-/** [ContextContract.bound], the shape a generated client calls, and the relayless contract. (Swift `ContextContractTests`.) */
+/** [ContextContract.bound], the shape a generated client calls, and the signed-out contract. (Swift `ContextContractTests`.) */
 class ContextContractTest {
     private val context = "11".repeat(32)
 
@@ -74,8 +71,6 @@ class ContextContractTest {
                     .args.jsonObject
             assertEquals("18446744073709551615", args["max"]!!.jsonPrimitive.content)
             assertEquals("1761650000123456789", args["at"]!!.jsonPrimitive.content)
-            // What a warrant's intentHash commits to, and what the request body carries.
-            assertEquals(exact, Warrants.canonicalJson(Json.parseToJsonElement(sent)))
         }
 
     @Test
@@ -113,17 +108,17 @@ class ContextContractTest {
         }
 
     @Test
-    fun `the relayless contract names the method`() =
+    fun `the signed-out contract names the method`() =
         runBlocking {
             for (query in listOf(true, false)) {
                 try {
                     if (query) {
-                        NoRelayContextContract.query(context, "get_feed", JsonObject(emptyMap()))
+                        SignedOutContextContract.query(context, "get_feed", JsonObject(emptyMap()))
                     } else {
-                        NoRelayContextContract.execute(context, "get_feed", JsonPrimitive(1))
+                        SignedOutContextContract.execute(context, "get_feed", JsonPrimitive(1))
                     }
-                    fail("expected NoRelayException")
-                } catch (e: NoRelayException) {
+                    fail("expected SignedOutException")
+                } catch (e: SignedOutException) {
                     assertEquals("get_feed", e.method)
                 }
             }

@@ -344,39 +344,6 @@ class NodeReleaseTest {
 
     // ---- the release a node names -----------------------------------------------------------
 
-    private val releasedImage = "merotee-ubuntu-questing-25-10-locked-read-only-2-3-87"
-
-    @Test
-    fun `reads it from the image name of a released image`() {
-        assertEquals("2.3.87", nodeReleaseVersionFromImage(releasedImage))
-        assertEquals("2.3.100", nodeReleaseVersionFromImage("merotee-ubuntu-questing-25-10-debug-read-only-2-3-100"))
-        val net = FakeNet { req, _ -> FakeNet.respond(req, 200, """{"data":{"cloudProvider":"gcp","osImage":"$releasedImage","mrtd":""}}""") }
-        assertEquals("2.3.87", runBlocking { fetchNodeReleaseVersion("https://relay.example/", net.client) })
-        assertEquals(listOf("https://relay.example/admin-api/tee/info"), net.requests)
-    }
-
-    @Test
-    fun `refuses an image that is not a released mero-tee node image`() {
-        for (name in listOf("unknown", "ubuntu-2404-tdx-v20250115", "$releasedImage-d412-1", "${releasedImage}x")) {
-            assertRefuses("not the image of a mero-tee node release") { nodeReleaseVersionFromImage(name) }
-        }
-        val net = FakeNet { req, _ -> FakeNet.respond(req, 200, """{"data":{}}""") }
-        assertRefuses("did not name the node's image") { runBlocking { fetchNodeReleaseVersion("https://relay.example", net.client) } }
-    }
-
-    @Test
-    fun `says so when a node that requires sealing refuses tee info unsealed, and fails on other refusals`() {
-        val refusing = { code: String -> FakeNet { req, _ -> FakeNet.respond(req, 403, """{"error":{"code":"$code","message":"refused"}}""") } }
-        assertRefuses("the node requires sealing and is too old to name its release") {
-            runBlocking { fetchNodeReleaseVersion("https://relay.example", refusing("sealed_required").client) }
-        }
-        assertRefuses("HTTP 403") { runBlocking { fetchNodeReleaseVersion("https://relay.example", refusing("forbidden").client) } }
-    }
-
-    // ---- createSignedReleaseVerifier --------------------------------------------------------
-
-    // The real TDX quote from dcap-qvl's samples. It is not a mero-tee image, so a verifier
-    // trusting a real release refuses it at the measurement check, after everything before it.
     private val args = TransportQuote(QUOTE_B64, NONCE, SUFFIX, COLLATERAL)
 
     private fun verifier(

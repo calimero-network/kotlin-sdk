@@ -1,1288 +1,175 @@
 package com.calimero.mero.sample.explorer
 
-import com.calimero.mero.account.ApplicationIds
-import com.calimero.mero.account.DeviceCert
-import com.calimero.mero.account.DeviceScopeInput
-import com.calimero.mero.account.accountRootFromPhrase
-import com.calimero.mero.account.generateAccountRoot
-import com.calimero.mero.account.signDeviceScope
-import com.calimero.mero.admin.AccountSignWithRootRequest
-import com.calimero.mero.admin.AddGroupMembersRequest
-import com.calimero.mero.admin.AdmitJoinRequest
-import com.calimero.mero.admin.ChangeNamespaceAdminRequest
-import com.calimero.mero.admin.CreateApplicationAliasRequest
-import com.calimero.mero.admin.CreateContextAliasRequest
-import com.calimero.mero.admin.CreateContextIntentRequest
-import com.calimero.mero.admin.CreateContextRequest
-import com.calimero.mero.admin.CreateDeviceAliasRequest
-import com.calimero.mero.admin.CreateGroupInNamespaceRequest
-import com.calimero.mero.admin.CreateGroupInvitationRequest
-import com.calimero.mero.admin.CreateGroupInvitationResult
-import com.calimero.mero.admin.CreateNamespaceInvitationRequest
-import com.calimero.mero.admin.CreateNamespaceInvitationResult
-import com.calimero.mero.admin.CreateNamespaceRequest
-import com.calimero.mero.admin.DeleteContextRequest
-import com.calimero.mero.admin.DeleteGroupRequest
-import com.calimero.mero.admin.DeleteNamespaceRequest
-import com.calimero.mero.admin.DetachContextFromGroupRequest
-import com.calimero.mero.admin.GovernanceIntentRequest
-import com.calimero.mero.admin.InstallApplicationRequest
-import com.calimero.mero.admin.InstallDevApplicationRequest
-import com.calimero.mero.admin.JoinGroupRequest
-import com.calimero.mero.admin.JoinNamespaceRequest
-import com.calimero.mero.admin.LabelDeviceRequest
-import com.calimero.mero.admin.LinkAccountDeviceRequest
-import com.calimero.mero.admin.PairCompleteRequest
-import com.calimero.mero.admin.PairInitRequest
-import com.calimero.mero.admin.PerformIntentRequest
-import com.calimero.mero.admin.PresenceIntentRequest
-import com.calimero.mero.admin.QueryContextRequest
-import com.calimero.mero.admin.RelinkDeviceRequest
-import com.calimero.mero.admin.RemoveGroupMembersRequest
-import com.calimero.mero.admin.ReparentGroupRequest
-import com.calimero.mero.admin.RescopeDeviceRequest
-import com.calimero.mero.admin.ResyncContextRequest
-import com.calimero.mero.admin.RetryGroupUpgradeRequest
-import com.calimero.mero.admin.RevokeDeviceRequest
-import com.calimero.mero.admin.RootGuardedOpRequest
-import com.calimero.mero.admin.SealToAccountRequest
-import com.calimero.mero.admin.SetContextMetadataRequest
-import com.calimero.mero.admin.SetDefaultCapabilitiesRequest
-import com.calimero.mero.admin.SetGroupMetadataRequest
-import com.calimero.mero.admin.SetMemberCapabilitiesRequest
-import com.calimero.mero.admin.SetMemberMetadataRequest
-import com.calimero.mero.admin.SetOutboundApprovalRequest
-import com.calimero.mero.admin.SetSubgroupVisibilityRequest
-import com.calimero.mero.admin.SetTeeAdmissionPolicyRequest
-import com.calimero.mero.admin.SetTeeAuthoringPolicyRequest
-import com.calimero.mero.admin.SignedGroupOpenInvitation
-import com.calimero.mero.admin.SyncGroupRequest
-import com.calimero.mero.admin.TeeAttestRequest
-import com.calimero.mero.admin.TeeRegistrationAttestRequest
-import com.calimero.mero.admin.TransferOwnershipRequest
-import com.calimero.mero.admin.UpdateContextApplicationRequest
-import com.calimero.mero.admin.UpdateMemberRoleRequest
-import com.calimero.mero.admin.UpgradeGroupRequest
-import com.calimero.mero.admin.UploadBlobRequest
-import com.calimero.mero.admin.compareSemver
-import com.calimero.mero.auth.CreateKeyRequest
-import com.calimero.mero.auth.GenerateClientKeyRequest
-import com.calimero.mero.auth.MockTokenRequest
-import com.calimero.mero.auth.RefreshTokenRequest
-import com.calimero.mero.auth.RevokeTokenRequest
-import com.calimero.mero.auth.TokenRequest
-import com.calimero.mero.auth.UpdateKeyPermissionsRequest
-import com.calimero.mero.compose.MeroClient
-import com.calimero.mero.crypto.Hex
-import com.calimero.mero.crypto.SeedSigner
-import com.calimero.mero.ephemeral.RawCodec
-import com.calimero.mero.ownerop.OwnerOpProofInput
-import com.calimero.mero.ownerop.signOwnerOpProof
-import com.calimero.mero.ownerop.transferOwnershipOp
-import com.calimero.mero.relay.ApplicationTarget
-import com.calimero.mero.relay.CreateContextInput
-import com.calimero.mero.relay.FoundNamespaceInput
-import com.calimero.mero.relay.GovernanceMemberRole
-import com.calimero.mero.relay.GovernanceOp
-import com.calimero.mero.relay.GovernanceOpKind
-import com.calimero.mero.relay.GovernanceOps
-import com.calimero.mero.relay.RelayExecutor
-import com.calimero.mero.request.RequestProofInput
-import com.calimero.mero.request.signRequestProof
+import com.calimero.mero.ApiKeyOptions
+import com.calimero.mero.AppAccess
+import com.calimero.mero.AppSource
+import com.calimero.mero.AppUpgradeTarget
+import com.calimero.mero.ConsentRequest
+import com.calimero.mero.ConsentScope
+import com.calimero.mero.OrgRole
+import com.calimero.mero.TeamJoin
+import com.calimero.mero.TeamRole
+import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonElement
-import kotlinx.serialization.json.JsonObject
-import kotlinx.serialization.json.jsonObject
 
-// The SDK surface, one `SDKOperation` per public method the Kotlin SDK exposes. The Cloud,
-// Relay and Session groups run over the signed-in account; the admin groups run against the
-// account's relay with its Bearer session (an account session is caller-scoped, so admin-only
-// routes answer 403 — that is the node speaking, not the sample failing). Split into
-// per-category lists (mirrors the Swift sample). Request bodies are entered as JSON and decoded
-// into the typed request; results are pretty-printed via [Fmt].
+// The SDK surface, one `SDKOperation` per public `CalimeroClient` method (mero-js 27's
+// `CalimeroClient`). Each runs on the signed-in session; methods the node asks the account holder
+// to confirm use the device's passkey. Arguments are entered as text (JSON where it is JSON);
+// results are pretty-printed. Mirrors the Swift sample's operation list.
 
-private val healthOps =
+private fun json(raw: String): JsonElement = Json.parseToJsonElement(raw.trim().ifEmpty { "{}" })
+
+private fun out(value: Any?): String =
+    when (value) {
+        null, Unit -> "OK"
+        is JsonElement -> Fmt.pretty.encodeToString(JsonElement.serializer(), value)
+        is ByteArray -> "${value.size} bytes"
+        else -> value.toString()
+    }
+
+private fun op(
+    id: String,
+    category: String,
+    name: String,
+    summary: String,
+    vararg fields: OpField,
+    run: suspend (OpEnv, Map<String, String>) -> Any?,
+) = SDKOperation(id, category, name, summary, fields.toList()) { env, values -> out(run(env, values)) }
+
+private val app = OpField.line("app", "App id", "the app instance's id")
+private val org = OpField.line("org", "Organization id")
+private val team = OpField.line("team", "Team id")
+private val account = OpField.line("account", "Account id")
+private val args = OpField.json("args", "Arguments (JSON)")
+
+private val identityOps =
     listOf(
-        SDKOperation("adm.health", "Health & Node", "healthCheck", "Node liveness", emptyList()) { m, _ ->
-            Fmt.json(m.admin.healthCheck())
+        op("me", "Account", "me", "GET /auth/me: the account, its passkeys and organizations") { e, _ -> e.client.me().raw },
+        op("usage", "Account", "usage", "What the account uses, with the cluster's quotas") { e, _ -> e.client.usage() },
+        op("refresh", "Account", "refresh", "Swap the refresh token for a new session (single-flight)") { e, _ -> e.client.refresh().accountId },
+        op("addPasskey", "Account", "addPasskey", "Add this device's passkey to the account") { e, _ -> e.client.addPasskey(e.passkey) },
+        op("labelPasskey", "Account", "labelPasskey", "Name one of the account's passkeys", OpField.line("id", "Credential id"), OpField.line("label", "Label")) { e, v ->
+            e.client.labelPasskey(v.v("id"), v.v("label"))
         },
-        SDKOperation("adm.isAuthed", "Health & Node", "isAuthed", "Admin auth status", emptyList()) { m, _ ->
-            Fmt.json(m.admin.isAuthed())
+        op("removePasskey", "Account", "removePasskey", "Remove one of the account's passkeys", OpField.line("id", "Credential id")) { e, v -> e.client.removePasskey(v.v("id")) },
+        op("attestation", "Account", "attestation", "The node's attestation document (display only)") { e, _ -> e.client.attestation().toString() },
+        op("listApiKeys", "Account", "listApiKeys", "The account's API keys") { e, _ -> e.client.listApiKeys().joinToString("\n") },
+        op("createApiKey", "Account", "createApiKey", "Create an API key (shown once)", OpField.line("label", "Label"), OpField.line("ttl", "TTL (seconds)", "3600")) { e, v ->
+            e.client.createApiKey(ApiKeyOptions(label = v.opt("label"), ttlSecs = v.opt("ttl")?.toLong())).toString()
         },
-        SDKOperation("adm.ready", "Health & Node", "isReady", "Readiness (can it serve?)", emptyList()) { m, _ ->
-            Fmt.json(m.admin.isReady())
-        },
-        SDKOperation("adm.identity", "Health & Node", "getNodeIdentity", "Who this node is", emptyList()) { m, _ ->
-            Fmt.json(m.admin.getNodeIdentity())
-        },
-        SDKOperation("adm.peers", "Health & Node", "getPeersCount", "Connected peer count", emptyList()) { m, _ ->
-            Fmt.json(m.admin.getPeersCount())
-        },
-        SDKOperation("adm.net", "Health & Node", "getNetworkStatus", "Network status", emptyList()) { m, _ ->
-            Fmt.json(m.admin.getNetworkStatus())
-        },
-        SDKOperation("adm.usage", "Health & Node", "getUsage", "Storage / usage stats", emptyList()) { m, _ ->
-            Fmt.json(m.admin.getUsage())
-        },
-    )
-
-private val authOps =
-    listOf(
-        SDKOperation("auth.health", "Auth & Identity", "getHealth", "Auth service health", emptyList()) { m, _ ->
-            Fmt.json(m.auth.getHealth())
-        },
-        SDKOperation("auth.identity", "Auth & Identity", "getIdentity", "Service / version / mode", emptyList()) { m, _ ->
-            Fmt.json(m.auth.getIdentity())
-        },
-        SDKOperation("auth.providers", "Auth & Identity", "getProviders", "Available auth providers", emptyList()) { m, _ ->
-            Fmt.json(m.auth.getProviders())
-        },
-        SDKOperation("auth.loginPage", "Auth & Identity", "getLoginPage", "GET /auth/login (the hosted login UI, as HTML)", emptyList()) { m, _ ->
-            m.auth.getLoginPage().take(4_000)
-        },
-        SDKOperation(
-            "auth.gen", "Auth & Identity", "generateTokens", "POST /auth/token (provider handshake)",
-            listOf(OpField.json()),
-        ) { m, i -> Fmt.json(m.auth.generateTokens(Fmt.decode<TokenRequest>(i.v("body")))) },
-        SDKOperation(
-            "auth.refresh", "Auth & Identity", "refreshToken", "Refresh an access token", listOf(OpField.json()),
-        ) { m, i -> Fmt.json(m.auth.refreshToken(Fmt.decode<RefreshTokenRequest>(i.v("body")))) },
-        SDKOperation(
-            "auth.validate", "Auth & Identity", "validateToken", "HEAD /auth/validate",
-            listOf(OpField.line("token", "Access token")),
-        ) { m, i ->
-            val r = m.auth.validateToken(i.v("token"))
-            "valid: ${r.valid}\nstatus: ${r.status}\nheaders:\n${Fmt.json(r.headers)}"
-        },
-        SDKOperation(
-            "auth.revoke", "Auth & Identity", "revokeTokens", "Revoke a client's tokens", listOf(OpField.json()),
-        ) { m, i -> Fmt.json(m.auth.revokeTokens(Fmt.decode<RevokeTokenRequest>(i.v("body")))) },
-        SDKOperation(
-            "auth.mock", "Auth & Identity", "generateMockTokens", "Mint mock tokens (dev nodes)", listOf(OpField.json()),
-        ) { m, i -> Fmt.json(m.auth.generateMockTokens(Fmt.decode<MockTokenRequest>(i.v("body")))) },
-    )
-
-private val keyOps =
-    listOf(
-        SDKOperation("key.rootList", "Root & Client Keys", "listRootKeys", "All root keys", emptyList()) { m, _ ->
-            Fmt.json(m.auth.listRootKeys())
-        },
-        SDKOperation(
-            "key.rootCreate", "Root & Client Keys", "createRootKey", "Register a root key", listOf(OpField.json()),
-        ) { m, i -> Fmt.json(m.auth.createRootKey(Fmt.decode<CreateKeyRequest>(i.v("body")))) },
-        SDKOperation(
-            "key.rootDelete", "Root & Client Keys", "deleteRootKey", "Delete a root key",
-            listOf(OpField.line("keyId", "Key ID")),
-        ) { m, i -> Fmt.json(m.auth.deleteRootKey(i.v("keyId"))) },
-        SDKOperation("key.clientList", "Root & Client Keys", "listClientKeys", "All client keys", emptyList()) { m, _ ->
-            Fmt.json(m.auth.listClientKeys())
-        },
-        SDKOperation(
-            "key.clientGen", "Root & Client Keys", "generateClientKey", "Issue a client key", listOf(OpField.json()),
-        ) { m, i -> Fmt.json(m.auth.generateClientKey(Fmt.decode<GenerateClientKeyRequest>(i.v("body")))) },
-        SDKOperation(
-            "key.clientDelete", "Root & Client Keys", "deleteClientKey", "Delete a client key",
-            listOf(OpField.line("keyId", "Key ID"), OpField.line("clientId", "Client ID")),
-        ) { m, i -> Fmt.json(m.auth.deleteClientKey(i.v("keyId"), i.v("clientId"))) },
-        SDKOperation(
-            "key.perms", "Root & Client Keys", "getKeyPermissions", "Key permissions",
-            listOf(OpField.line("keyId", "Key ID")),
-        ) { m, i -> Fmt.json(m.auth.getKeyPermissions(i.v("keyId"))) },
-        SDKOperation(
-            "key.permsUpdate", "Root & Client Keys", "updateKeyPermissions", "Add/remove key permissions",
-            listOf(
-                OpField.line("keyId", "Key ID"),
-                OpField.json("body", "Changes", """{"add":[],"remove":[]}"""),
-            ),
-        ) { m, i ->
-            Fmt.json(m.auth.updateKeyPermissions(i.v("keyId"), Fmt.decode<UpdateKeyPermissionsRequest>(i.v("body"))))
-        },
+        op("revokeApiKey", "Account", "revokeApiKey", "Revoke an API key", OpField.line("key", "Key id")) { e, v -> e.client.revokeApiKey(v.v("key")) },
+        op("signOutEverywhere", "Account", "signOutEverywhere", "End every session of the account") { e, _ -> e.client.signOutEverywhere() },
     )
 
 private val appOps =
     listOf(
-        SDKOperation("app.list", "Applications", "listApplications", "Installed applications", emptyList()) { m, _ ->
-            Fmt.json(m.admin.listApplications())
+        op("listApps", "Apps", "listApps", "Apps this account reaches", OpField.line("package", "Package (optional)")) { e, v -> e.client.listApps(pkg = v.opt("package")).joinToString("\n") },
+        op("getApp", "Apps", "getApp", "One app instance's record", app) { e, v -> e.client.getApp(v.v("app")) },
+        op("createApp", "Apps", "createApp", "Create an app instance from a package release", OpField.line("name", "Name"), OpField.line("package", "Package", "com.calimero.chat"), OpField.line("version", "Version (optional)"), OpField.line("org", "Organization (optional)"), OpField.json("initArgs", "init arguments (JSON)")) { e, v ->
+            e.client.createApp(v.v("name"), AppSource.Package(v.v("package"), v.opt("version")), org = v.opt("org"), initArgs = json(v.v("initArgs")))
         },
-        SDKOperation(
-            "app.get", "Applications", "getApplication", "One application", listOf(OpField.line("appId", "Application ID")),
-        ) { m, i -> Fmt.json(m.admin.getApplication(i.v("appId"))) },
-        SDKOperation(
-            "app.install", "Applications", "installApplication", "Install by registry coordinates",
-            listOf(OpField.json("body", "InstallApplicationRequest", """{"package":"","version":""}""")),
-        ) { m, i -> Fmt.json(m.admin.installApplication(Fmt.decode<InstallApplicationRequest>(i.v("body")))) },
-        SDKOperation(
-            "app.installDev", "Applications", "installDevApplication", "Install a local dev bundle", listOf(OpField.json()),
-        ) { m, i -> Fmt.json(m.admin.installDevApplication(Fmt.decode<InstallDevApplicationRequest>(i.v("body")))) },
-        SDKOperation(
-            "app.uninstall", "Applications", "uninstallApplication", "Uninstall",
-            listOf(OpField.line("appId", "Application ID")),
-        ) { m, i -> Fmt.json(m.admin.uninstallApplication(i.v("appId"))) },
-        SDKOperation(
-            "app.versions", "Applications", "listApplicationVersions", "Installed versions",
-            listOf(OpField.line("appId", "Application ID")),
-        ) { m, i -> Fmt.json(m.admin.listApplicationVersions(i.v("appId"))) },
-        SDKOperation(
-            "app.ctxFor", "Applications", "getContextsForApplication", "Contexts for an app",
-            listOf(OpField.line("appId", "Application ID")),
-        ) { m, i -> Fmt.json(m.admin.getContextsForApplication(i.v("appId"))) },
-        SDKOperation(
-            "app.ctxExec", "Applications", "getContextsWithExecutorsForApplication", "Contexts + executors",
-            listOf(OpField.line("appId", "Application ID")),
-        ) { m, i -> Fmt.json(m.admin.getContextsWithExecutorsForApplication(i.v("appId"))) },
-        SDKOperation(
-            "app.abi", "Applications", "getApplicationAbi", "The app's WASM ABI",
-            listOf(OpField.line("appId", "Application ID"), OpField.line("serviceName", "Service (optional)")),
-        ) { m, i -> Fmt.json(m.admin.getApplicationAbi(i.v("appId"), i.opt("serviceName")?.ifBlank { null })) },
-        SDKOperation(
-            "app.nsFor", "Applications", "listNamespacesForApplication", "Namespaces for an app",
-            listOf(OpField.line("appId", "Application ID")),
-        ) { m, i -> Fmt.json(m.admin.listNamespacesForApplication(i.v("appId"))) },
+        op("call", "Apps", "call", "POST /apps/{app}/intents: call a method", app, OpField.line("method", "Method"), args) { e, v ->
+            e.client.call(v.v("app"), v.v("method"), json(v.v("args"))).toString()
+        },
+        op("callConfirmed", "Apps", "callConfirmed", "Call a method that needs the passkey", app, OpField.line("method", "Method"), args) { e, v ->
+            e.client.callConfirmed(v.v("app"), v.v("method"), json(v.v("args")), e.passkey).toString()
+        },
+        op("view", "Apps", "view", "POST /apps/{app}/views: run a read", app, OpField.line("method", "Method"), args) { e, v ->
+            e.client.view(v.v("app"), v.v("method"), json(v.v("args"))).toString()
+        },
+        op("deleteApp", "Apps", "deleteApp", "Delete an app instance", app) { e, v -> e.client.deleteApp(v.v("app")) },
+        op("setAccess", "Apps", "setAccess", "Who may reach the app: owner, org, public or a team", app, OpField.line("team", "Team id (blank: org)")) { e, v ->
+            e.client.setAccess(v.v("app"), v.opt("team")?.let { AppAccess.Team(it) } ?: AppAccess.Org)
+        },
+        op("setAppMetadata", "Apps", "setAppMetadata", "Set the app instance's metadata", app, OpField.json("metadata", "Metadata (JSON)")) { e, v -> e.client.setAppMetadata(v.v("app"), json(v.v("metadata"))) },
+        op("appStorage", "Apps", "appStorage", "What the app's storage holds", app) { e, v -> e.client.appStorage(v.v("app")) },
+        op("appAbi", "Apps", "appAbi", "The ABI the app's bundle embeds", app) { e, v -> e.client.appAbi(v.v("app")) },
+        op("upgradeApp", "Apps", "upgradeApp", "Move an app to another release (confirmed with the passkey)", app, OpField.line("version", "Version")) { e, v ->
+            e.client.upgradeApp(v.v("app"), AppUpgradeTarget(version = v.v("version")), e.passkey)
+        },
+        op("transferApp", "Apps", "transferApp", "Hand the app to another account", app, OpField.line("to", "Account id")) { e, v -> e.client.transferApp(v.v("app"), v.v("to"), e.passkey) },
+        op("presence", "Apps", "presence", "Who is present in the app now", app) { e, v -> e.client.presence(v.v("app")).joinToString("\n") },
+        op("publishPresence", "Apps", "publishPresence", "Publish this device's presence", app, OpField.line("seq", "Sequence", "1"), OpField.line("state", "State (text)")) { e, v ->
+            e.client.publishPresence(v.v("app"), v.v("seq").toLongOrNull() ?: 1, v.opt("state")?.encodeToByteArray())
+        },
+        op("listBlobs", "Apps", "listBlobs", "The app's blobs", app) { e, v -> e.client.listBlobs(v.v("app")).joinToString("\n") },
+        op("uploadBlob", "Apps", "uploadBlob", "Upload text as a blob", app, OpField.line("text", "Text")) { e, v -> e.client.uploadBlob(v.v("app"), v.v("text").encodeToByteArray()) },
+        op("downloadBlob", "Apps", "downloadBlob", "Download a blob", app, OpField.line("id", "Blob id")) { e, v -> e.client.downloadBlob(v.v("app"), v.v("id")).decodeToString() },
+        op("blobInfo", "Apps", "blobInfo", "A blob's id and size", app, OpField.line("id", "Blob id")) { e, v -> e.client.blobInfo(v.v("app"), v.v("id")) },
+        op("deleteBlob", "Apps", "deleteBlob", "Delete a blob", app, OpField.line("id", "Blob id")) { e, v -> e.client.deleteBlob(v.v("app"), v.v("id")) },
+        op("aliases", "Apps", "aliases", "This account's aliases") { e, _ -> e.client.aliases() },
+        op("setAlias", "Apps", "setAlias", "Name an app", OpField.line("alias", "Alias"), app) { e, v -> e.client.setAlias(v.v("alias"), v.v("app")) },
+        op("alias", "Apps", "alias", "The app an alias names", OpField.line("alias", "Alias")) { e, v -> e.client.alias(v.v("alias")) },
+        op("deleteAlias", "Apps", "deleteAlias", "Forget an alias", OpField.line("alias", "Alias")) { e, v -> e.client.deleteAlias(v.v("alias")) },
     )
 
-private val pkgOps =
+private val packageOps =
     listOf(
-        SDKOperation("pkg.list", "Packages & Registry", "listPackages", "Known packages", emptyList()) { m, _ ->
-            Fmt.json(m.admin.listPackages())
+        op("packages", "Packages", "packages", "Installed packages") { e, _ -> e.client.packages().joinToString("\n") },
+        op("package", "Packages", "package", "One installed package", OpField.line("package", "Package")) { e, v -> e.client.`package`(v.v("package")) },
+        op("installPackage", "Packages", "installPackage", "Install a release from the registry", OpField.line("package", "Package"), OpField.line("version", "Version")) { e, v ->
+            e.client.installPackage(v.v("package"), v.v("version"))
         },
-        SDKOperation(
-            "pkg.versions", "Packages & Registry", "listPackageVersions", "Installed versions",
-            listOf(OpField.line("packageName", "Package name")),
-        ) { m, i -> Fmt.json(m.admin.listPackageVersions(i.v("packageName"))) },
-        SDKOperation(
-            "pkg.latest", "Packages & Registry", "getLatestPackageVersion", "Latest installed version",
-            listOf(OpField.line("packageName", "Package name")),
-        ) { m, i -> Fmt.json(m.admin.getLatestPackageVersion(i.v("packageName"))) },
-        SDKOperation(
-            "pkg.regVersions", "Packages & Registry", "getRegistryVersions", "Registry versions (off-node)",
-            listOf(OpField.line("registryUrl", "Registry URL"), OpField.line("packageName", "Package name")),
-        ) { m, i -> Fmt.json(m.admin.getRegistryVersions(i.v("registryUrl"), i.v("packageName"))) },
-        SDKOperation(
-            "pkg.install", "Packages & Registry", "installFromRegistry", "Install by coordinates",
-            listOf(OpField.line("packageName", "Package"), OpField.line("version", "Version")),
-        ) { m, i -> Fmt.json(m.admin.installFromRegistry(i.v("packageName"), i.v("version"))) },
-        SDKOperation(
-            "pkg.resolveVersion", "Packages & Registry", "resolveRegistryVersion", "Newest registry version a runtime installs (off-node)",
-            listOf(
-                OpField.line("registryUrl", "Registry URL"),
-                OpField.line("packageName", "Package name"),
-                OpField.line("runtimeVersion", "Node runtime (optional)"),
-            ),
-        ) { m, i ->
-            Fmt.json(m.admin.resolveRegistryVersion(i.v("registryUrl"), i.v("packageName"), i.opt("runtimeVersion")))
+        op("uninstallPackage", "Packages", "uninstallPackage", "Uninstall a version or the package", OpField.line("package", "Package"), OpField.line("version", "Version (optional)")) { e, v ->
+            e.client.uninstallPackage(v.v("package"), v.opt("version"))
         },
-        SDKOperation(
-            "pkg.installLatest", "Packages & Registry", "installLatestFromRegistry", "Install the newest version this node can run",
-            listOf(
-                OpField.line("registryUrl", "Registry URL"),
-                OpField.line("packageName", "Package name"),
-                OpField.line("runtimeVersion", "Node runtime (optional)"),
-            ),
-        ) { m, i ->
-            Fmt.json(m.admin.installLatestFromRegistry(i.v("registryUrl"), i.v("packageName"), i.opt("runtimeVersion")))
-        },
-        SDKOperation(
-            "pkg.semver", "Packages & Registry", "compareSemver", "Compare two versions",
-            listOf(OpField.line("a", "Version A"), OpField.line("b", "Version B")),
-        ) { _, i -> "compareSemver(${i.v("a")}, ${i.v("b")}) = ${compareSemver(i.v("a"), i.v("b"))}" },
     )
 
-private val ctxOps =
+private val orgOps =
     listOf(
-        SDKOperation("ctx.list", "Contexts", "getContexts", "All contexts", emptyList()) { m, _ ->
-            Fmt.json(m.admin.getContexts())
+        op("createOrg", "Organizations", "createOrg", "Create an organization", OpField.line("name", "Name")) { e, v -> e.client.createOrg(v.v("name")) },
+        op("getOrg", "Organizations", "getOrg", "An organization: members, teams, metadata", org) { e, v -> e.client.getOrg(v.v("org")).raw },
+        op("deleteOrg", "Organizations", "deleteOrg", "Delete an organization (passkey)", org) { e, v -> e.client.deleteOrg(v.v("org"), e.passkey) },
+        op("setOrgMetadata", "Organizations", "setOrgMetadata", "Set the organization's metadata", org, OpField.json("metadata", "Metadata (JSON)")) { e, v -> e.client.setOrgMetadata(v.v("org"), json(v.v("metadata"))) },
+        op("setMember", "Organizations", "setMember", "Add a member or change their role", org, account, OpField.line("role", "Role", "member")) { e, v ->
+            e.client.setMember(v.v("org"), v.v("account"), OrgRole.entries.first { it.wire == v.v("role") })
         },
-        SDKOperation(
-            "ctx.get", "Contexts", "getContext", "One context", listOf(OpField.line("contextId", "Context ID")),
-        ) { m, i -> Fmt.json(m.admin.getContext(i.v("contextId"))) },
-        SDKOperation(
-            "ctx.create", "Contexts", "createContext", "Create a context", listOf(OpField.json("body", "CreateContextRequest")),
-        ) { m, i -> Fmt.json(m.admin.createContext(Fmt.decode<CreateContextRequest>(i.v("body")))) },
-        SDKOperation(
-            "ctx.delete", "Contexts", "deleteContext", "Delete a context",
-            listOf(OpField.line("contextId", "Context ID"), OpField.json("body", "Body (optional)", "")),
-        ) { m, i ->
-            val req = i.opt("body")?.let { Fmt.decode<DeleteContextRequest>(it) }
-            Fmt.json(m.admin.deleteContext(i.v("contextId"), req))
+        op("removeMember", "Organizations", "removeMember", "Remove a member", org, account) { e, v -> e.client.removeMember(v.v("org"), v.v("account")) },
+        op("setMemberMetadata", "Organizations", "setMemberMetadata", "Set a member's metadata", org, account, OpField.json("metadata", "Metadata (JSON)")) { e, v ->
+            e.client.setMemberMetadata(v.v("org"), v.v("account"), json(v.v("metadata")))
         },
-        SDKOperation(
-            "ctx.join", "Contexts", "joinContext", "Join a context", listOf(OpField.line("contextId", "Context ID")),
-        ) { m, i -> Fmt.json(m.admin.joinContext(i.v("contextId"))) },
-        SDKOperation(
-            "ctx.leave", "Contexts", "leaveContext", "Leave a context",
-            listOf(OpField.line("contextId", "Context ID"), OpField.json("body", "Body (optional)", "")),
-        ) { m, i ->
-            val req = i.opt("body")?.let { Fmt.decode<Map<String, JsonElement>>(it) }
-            m.admin.leaveContext(i.v("contextId"), req)
-            "left context"
+        op("setCapabilities", "Organizations", "setCapabilities", "Set capability bits", org, OpField.line("caps", "Bits", "4"), OpField.line("account", "Account (optional)")) { e, v ->
+            e.client.setCapabilities(v.v("org"), v.v("caps").toInt(), account = v.opt("account"))
         },
-        SDKOperation(
-            "ctx.group", "Contexts", "getContextGroup", "Owning group (nullable)",
-            listOf(OpField.line("contextId", "Context ID")),
-        ) { m, i -> Fmt.json(m.admin.getContextGroup(i.v("contextId"))) },
-        SDKOperation(
-            "ctx.intent", "Contexts", "performIntent", "Execute under a warrant",
-            listOf(OpField.line("contextId", "Context ID"), OpField.json("body", "PerformIntentRequest")),
-        ) { m, i -> Fmt.json(m.admin.performIntent(i.v("contextId"), Fmt.decode<PerformIntentRequest>(i.v("body")))) },
-        SDKOperation(
-            "ctx.storage", "Contexts", "getContextStorage", "Context storage stats",
-            listOf(OpField.line("contextId", "Context ID")),
-        ) { m, i -> Fmt.json(m.admin.getContextStorage(i.v("contextId"))) },
-        SDKOperation(
-            "ctx.sync", "Contexts", "syncContext", "Sync one/all contexts",
-            listOf(OpField.line("contextId", "Context ID (blank = all)")),
-        ) { m, i ->
-            m.admin.syncContext(i.opt("contextId"))
-            "sync requested"
+        op("invite", "Organizations", "invite", "Mint an invite token", org, OpField.line("role", "Role", "member")) { e, v ->
+            e.client.invite(v.v("org"), OrgRole.entries.first { it.wire == v.v("role") })
         },
-        SDKOperation(
-            "ctx.resync", "Contexts", "resyncContext", "Force a full re-pull",
-            listOf(OpField.line("contextId", "Context ID"), OpField.json("body", "ResyncContextRequest", "{}")),
-        ) { m, i -> Fmt.json(m.admin.resyncContext(i.v("contextId"), Fmt.decode<ResyncContextRequest>(i.v("body")))) },
-        SDKOperation(
-            "ctx.updateApp", "Contexts", "updateContextApplication", "Point a context at a new app",
-            listOf(OpField.line("contextId", "Context ID"), OpField.json("body", "UpdateContextApplicationRequest")),
-        ) { m, i ->
-            m.admin.updateContextApplication(i.v("contextId"), Fmt.decode<UpdateContextApplicationRequest>(i.v("body")))
-            "application updated"
+        op("redeemInvite", "Organizations", "redeemInvite", "Redeem an invite token", OpField.line("token", "Token", "inv_…")) { e, v -> e.client.redeemInvite(v.v("token")) },
+        op("createTeam", "Organizations", "createTeam", "Create a team", org, OpField.line("name", "Name"), OpField.line("join", "Join (everyone|invite)", "everyone")) { e, v ->
+            e.client.createTeam(v.v("org"), v.v("name"), if (v.v("join") == "invite") TeamJoin.Invite else TeamJoin.Everyone)
         },
+        op("getTeam", "Organizations", "getTeam", "A team", org, team) { e, v -> e.client.getTeam(v.v("org"), v.v("team")) },
+        op("updateTeam", "Organizations", "updateTeam", "Rename a team", org, team, OpField.line("name", "Name")) { e, v -> e.client.updateTeam(v.v("org"), v.v("team"), name = v.opt("name")) },
+        op("deleteTeam", "Organizations", "deleteTeam", "Delete a team and its apps", org, team) { e, v -> e.client.deleteTeam(v.v("org"), v.v("team")) },
+        op("setTeamMember", "Organizations", "setTeamMember", "Add a member to a team", org, team, account, OpField.line("role", "Role (lead|member|readOnly)", "member")) { e, v ->
+            e.client.setTeamMember(v.v("org"), v.v("team"), v.v("account"), role = TeamRole.entries.firstOrNull { it.wire == v.v("role") })
+        },
+        op("removeTeamMember", "Organizations", "removeTeamMember", "Remove a member from a team", org, team, account) { e, v ->
+            e.client.removeTeamMember(v.v("org"), v.v("team"), v.v("account"))
+        },
+        op("upgradeRun", "Organizations", "upgradeRun", "An organization-wide upgrade run", org, OpField.line("run", "Run id")) { e, v -> e.client.upgradeRun(v.v("org"), v.v("run")) },
     )
 
-private val ctxIdOps =
+private val approvalOps =
     listOf(
-        SDKOperation(
-            "cid.gen", "Context Identity", "generateContextIdentity", "Generate a context identity", emptyList(),
-        ) { m, _ -> Fmt.json(m.admin.generateContextIdentity()) },
-        SDKOperation(
-            "cid.list", "Context Identity", "getContextIdentities", "All identities in a context",
-            listOf(OpField.line("contextId", "Context ID")),
-        ) { m, i -> Fmt.json(m.admin.getContextIdentities(i.v("contextId"))) },
-        SDKOperation(
-            "cid.owned", "Context Identity", "getContextIdentitiesOwned", "Owned identities in a context",
-            listOf(OpField.line("contextId", "Context ID")),
-        ) { m, i -> Fmt.json(m.admin.getContextIdentitiesOwned(i.v("contextId"))) },
+        op("pendingApprovals", "Approvals", "pendingApprovals", "What waits for a decision (blank: your own apps)", OpField.line("org", "Organization (optional)")) { e, v ->
+            e.client.pendingApprovals(v.opt("org"))
+        },
+        op("appsReport", "Approvals", "appsReport", "One page of a scope's apps report", OpField.line("org", "Organization (optional)")) { e, v -> e.client.appsReport(v.opt("org")) },
+        op("releaseRules", "Approvals", "releaseRules", "The cluster's governance and release deadlines") { e, _ -> e.client.releaseRules() },
+        op("requestConsent", "Approvals", "requestConsent", "Ask for a release approval on the node's consent page", OpField.line("version", "Release"), OpField.line("org", "Organization (optional)")) { e, v ->
+            e.client.requestConsent(ConsentRequest.Release(ConsentScope(v.opt("org")), v.v("version"), "mero-sample://consent"))
+        },
+        op("consentResult", "Approvals", "consentResult", "The decision on a consent request", OpField.line("id", "Request id")) { e, v -> e.client.consentResult(v.v("id")) },
+        op("publisherBinding", "Approvals", "publisherBinding", "What a signing key signs to bind itself", OpField.line("signer", "Signer id")) { e, v -> e.client.publisherBinding(v.v("signer")) },
     )
 
-private val aliasOps =
+private val rawOps =
     listOf(
-        SDKOperation("al.ctxCreate", "Aliases", "createContextAlias", "Create context alias", listOf(OpField.json())) { m, i ->
-            Fmt.json(m.admin.createContextAlias(Fmt.decode<CreateContextAliasRequest>(i.v("body"))))
-        },
-        SDKOperation(
-            "al.appCreate", "Aliases", "createApplicationAlias", "Create application alias", listOf(OpField.json()),
-        ) { m, i -> Fmt.json(m.admin.createApplicationAlias(Fmt.decode<CreateApplicationAliasRequest>(i.v("body")))) },
-        SDKOperation(
-            "al.ctxLookup", "Aliases", "lookupContextAlias", "Resolve context alias",
-            listOf(OpField.line("name", "Alias name")),
-        ) { m, i -> Fmt.json(m.admin.lookupContextAlias(i.v("name"))) },
-        SDKOperation(
-            "al.appLookup", "Aliases", "lookupApplicationAlias", "Resolve application alias",
-            listOf(OpField.line("name", "Alias name")),
-        ) { m, i -> Fmt.json(m.admin.lookupApplicationAlias(i.v("name"))) },
-        SDKOperation(
-            "al.ctxDelete", "Aliases", "deleteContextAlias", "Delete context alias",
-            listOf(OpField.line("name", "Alias name")),
-        ) { m, i -> Fmt.json(m.admin.deleteContextAlias(i.v("name"))) },
-        SDKOperation(
-            "al.appDelete", "Aliases", "deleteApplicationAlias", "Delete application alias",
-            listOf(OpField.line("name", "Alias name")),
-        ) { m, i -> Fmt.json(m.admin.deleteApplicationAlias(i.v("name"))) },
-        SDKOperation("al.ctxList", "Aliases", "listContextAliases", "All context aliases", emptyList()) { m, _ ->
-            Fmt.json(m.admin.listContextAliases())
-        },
-        SDKOperation("al.appList", "Aliases", "listApplicationAliases", "All application aliases", emptyList()) { m, _ ->
-            Fmt.json(m.admin.listApplicationAliases())
-        },
-        SDKOperation("al.devList", "Aliases", "listDeviceAliases", "All device aliases", emptyList()) { m, _ ->
-            Fmt.json(m.admin.listDeviceAliases())
-        },
-        SDKOperation("al.devCreate", "Aliases", "createDeviceAlias", "Create device alias", listOf(OpField.json())) { m, i ->
-            Fmt.json(m.admin.createDeviceAlias(Fmt.decode<CreateDeviceAliasRequest>(i.v("body"))))
-        },
-        SDKOperation(
-            "al.devLookup", "Aliases", "lookupDeviceAlias", "Resolve device alias",
-            listOf(OpField.line("name", "Alias name")),
-        ) { m, i -> Fmt.json(m.admin.lookupDeviceAlias(i.v("name"))) },
-        SDKOperation(
-            "al.devDelete", "Aliases", "deleteDeviceAlias", "Delete device alias",
-            listOf(OpField.line("name", "Alias name")),
-        ) { m, i -> Fmt.json(m.admin.deleteDeviceAlias(i.v("name"))) },
+        op("get", "Raw", "get", "GET any route (relative, sealed)", OpField.line("path", "Path", "auth/me")) { e, v -> e.client.get(v.v("path")) },
+        op("post", "Raw", "post", "POST any route (relative, sealed)", OpField.line("path", "Path"), OpField.json()) { e, v -> e.client.post(v.v("path"), json(v.v("body"))) },
     )
 
-private val blobOps =
-    listOf(
-        SDKOperation("blob.list", "Blobs", "listBlobs", "All blobs", emptyList()) { m, _ ->
-            Fmt.json(m.admin.listBlobs())
-        },
-        SDKOperation(
-            "blob.upload", "Blobs", "uploadBlob", "Upload text as a blob",
-            listOf(OpField.line("text", "Text to upload"), OpField.line("contextId", "Context ID (optional)")),
-        ) { m, i ->
-            val req = UploadBlobRequest(data = i.v("text").toByteArray(), hash = null, contextId = i.opt("contextId"))
-            Fmt.json(m.admin.uploadBlob(req))
-        },
-        SDKOperation(
-            "blob.info", "Blobs", "getBlobInfo", "Blob metadata (HEAD)", listOf(OpField.line("blobId", "Blob ID")),
-        ) { m, i -> Fmt.json(m.admin.getBlobInfo(i.v("blobId"))) },
-        SDKOperation(
-            "blob.get", "Blobs", "getBlob", "Download blob bytes", listOf(OpField.line("blobId", "Blob ID")),
-        ) { m, i ->
-            val data = m.admin.getBlob(i.v("blobId"))
-            val preview =
-                runCatching { String(data.copyOfRange(0, minOf(400, data.size))) }.getOrNull()
-                    ?: data.take(64).joinToString("") { "%02x".format(it) }
-            "${data.size} bytes\n\n$preview"
-        },
-        SDKOperation(
-            "blob.delete", "Blobs", "deleteBlob", "Delete a blob", listOf(OpField.line("blobId", "Blob ID")),
-        ) { m, i -> Fmt.json(m.admin.deleteBlob(i.v("blobId"))) },
-    )
+val sdkOperations: List<SDKOperation> = identityOps + appOps + packageOps + orgOps + approvalOps + rawOps
 
-private val nsOps =
-    listOf(
-        SDKOperation("ns.list", "Namespaces", "listNamespaces", "All namespaces", emptyList()) { m, _ ->
-            Fmt.json(m.admin.listNamespaces())
-        },
-        SDKOperation(
-            "ns.get", "Namespaces", "getNamespace", "One namespace", listOf(OpField.line("namespaceId", "Namespace ID")),
-        ) { m, i -> Fmt.json(m.admin.getNamespace(i.v("namespaceId"))) },
-        SDKOperation(
-            "ns.create", "Namespaces", "createNamespace", "Create a namespace",
-            listOf(OpField.json("body", "CreateNamespaceRequest")),
-        ) { m, i -> Fmt.json(m.admin.createNamespace(Fmt.decode<CreateNamespaceRequest>(i.v("body")))) },
-        SDKOperation(
-            "ns.delete", "Namespaces", "deleteNamespace", "Delete a namespace",
-            listOf(OpField.line("namespaceId", "Namespace ID"), OpField.json("body", "Body (optional)", "")),
-        ) { m, i ->
-            val req = i.opt("body")?.let { Fmt.decode<DeleteNamespaceRequest>(it) }
-            Fmt.json(m.admin.deleteNamespace(i.v("namespaceId"), req))
-        },
-        SDKOperation(
-            "ns.outboundList", "Namespaces", "listOutboundApprovals", "Outbound approvals, per publisher",
-            listOf(OpField.line("namespaceId", "Namespace ID")),
-        ) { m, i -> Fmt.json(m.admin.listOutboundApprovals(i.v("namespaceId"))) },
-        SDKOperation(
-            "ns.outboundSet", "Namespaces", "setOutboundApproval", "Set a publisher's outbound approval",
-            listOf(OpField.line("namespaceId", "Namespace ID"), OpField.json("body", "SetOutboundApprovalRequest")),
-        ) { m, i -> Fmt.json(m.admin.setOutboundApproval(i.v("namespaceId"), Fmt.decode<SetOutboundApprovalRequest>(i.v("body")))) },
-        SDKOperation(
-            "ns.invite", "Namespaces", "createNamespaceInvitation", "Invite to a namespace",
-            listOf(OpField.line("namespaceId", "Namespace ID"), OpField.json("body", "Body (optional)", "")),
-        ) { m, i ->
-            val req = i.opt("body")?.let { Fmt.decode<CreateNamespaceInvitationRequest>(it) }
-            when (val r = m.admin.createNamespaceInvitation(i.v("namespaceId"), req)) {
-                is CreateNamespaceInvitationResult.Single -> Fmt.json(r.data)
-                is CreateNamespaceInvitationResult.Recursive -> Fmt.json(r.data)
-            }
-        },
-        SDKOperation(
-            "ns.join", "Namespaces", "joinNamespace", "Join a namespace",
-            listOf(OpField.line("namespaceId", "Namespace ID"), OpField.json("body", "JoinNamespaceRequest")),
-        ) { m, i -> Fmt.json(m.admin.joinNamespace(i.v("namespaceId"), Fmt.decode<JoinNamespaceRequest>(i.v("body")))) },
-        SDKOperation(
-            "ns.redeem", "Namespaces", "redeemInvitation", "Redeem an invitation (joined / already a member / why not)",
-            listOf(
-                OpField.line("namespaceId", "Namespace ID"),
-                OpField.json("invitation", "SignedGroupOpenInvitation"),
-                OpField.line("groupName", "Group name (optional)", ""),
-            ),
-        ) { m, i ->
-            m.admin
-                .redeemInvitation(i.v("namespaceId"), Fmt.decode<SignedGroupOpenInvitation>(i.v("invitation")), i.opt("groupName")?.ifBlank { null })
-                .toString()
-        },
-        SDKOperation(
-            "ns.leave", "Namespaces", "leaveNamespace", "Leave a namespace",
-            listOf(OpField.line("namespaceId", "Namespace ID"), OpField.json("body", "Body (optional)", "")),
-        ) { m, i ->
-            val req = i.opt("body")?.let { Fmt.decode<Map<String, JsonElement>>(it) }
-            m.admin.leaveNamespace(i.v("namespaceId"), req)
-            "left namespace"
-        },
-        SDKOperation(
-            "ns.groupCreate", "Namespaces", "createGroupInNamespace", "Create a group in a namespace",
-            listOf(OpField.line("namespaceId", "Namespace ID"), OpField.json("body", "Body (optional)", "")),
-        ) { m, i ->
-            val req = i.opt("body")?.let { Fmt.decode<CreateGroupInNamespaceRequest>(it) }
-            Fmt.json(m.admin.createGroupInNamespace(i.v("namespaceId"), req))
-        },
-        SDKOperation(
-            "ns.groups", "Namespaces", "listNamespaceGroups", "Groups in a namespace",
-            listOf(OpField.line("namespaceId", "Namespace ID")),
-        ) { m, i -> Fmt.json(m.admin.listNamespaceGroups(i.v("namespaceId"))) },
-        SDKOperation(
-            "ns.migStatus", "Namespaces", "getMigrationStatus", "Migration rollup",
-            listOf(OpField.line("namespaceId", "Namespace ID")),
-        ) { m, i -> Fmt.json(m.admin.getMigrationStatus(i.v("namespaceId"))) },
-        SDKOperation(
-            "ns.cascade", "Namespaces", "getCascadeStatus", "Per-group cascade status",
-            listOf(OpField.line("namespaceId", "Namespace ID")),
-        ) { m, i -> Fmt.json(m.admin.getCascadeStatus(i.v("namespaceId"))) },
-        SDKOperation(
-            "ns.abort", "Namespaces", "abortMigration", "Abort a migration",
-            listOf(OpField.line("namespaceId", "Namespace ID"), OpField.json("body", "Body (optional)", "")),
-        ) { m, i ->
-            val req = i.opt("body")?.let { Fmt.decode<Map<String, JsonElement>>(it) }
-            Fmt.json(m.admin.abortMigration(i.v("namespaceId"), req))
-        },
-        SDKOperation(
-            "ns.nsProof", "Namespaces", "issueNamespaceOwnershipProof", "Namespace ownership proof",
-            listOf(OpField.line("groupId", "Group ID"), OpField.json("body", "Body (optional)", "")),
-        ) { m, i ->
-            val req = i.opt("body")?.let { Fmt.decode<Map<String, JsonElement>>(it) }
-            Fmt.json(m.admin.issueNamespaceOwnershipProof(i.v("groupId"), req))
-        },
-    )
-
-private val groupOps =
-    listOf(
-        SDKOperation(
-            "grp.create", "Groups", "createGroup", "Create a standalone group",
-            listOf(OpField.json("body", "Body (map)")),
-        ) { m, i -> Fmt.json(m.admin.createGroup(Fmt.decode<Map<String, JsonElement>>(i.v("body")))) },
-        SDKOperation(
-            "grp.info", "Groups", "getGroupInfo", "Group info", listOf(OpField.line("groupId", "Group ID")),
-        ) { m, i -> Fmt.json(m.admin.getGroupInfo(i.v("groupId"))) },
-        SDKOperation(
-            "grp.delete", "Groups", "deleteGroup", "Delete a group",
-            listOf(OpField.line("groupId", "Group ID"), OpField.json("body", "Body (optional)", "")),
-        ) { m, i ->
-            val req = i.opt("body")?.let { Fmt.decode<DeleteGroupRequest>(it) }
-            Fmt.json(m.admin.deleteGroup(i.v("groupId"), req))
-        },
-        SDKOperation(
-            "grp.contexts", "Groups", "listGroupContexts", "Contexts in a group", listOf(OpField.line("groupId", "Group ID")),
-        ) { m, i -> Fmt.json(m.admin.listGroupContexts(i.v("groupId"))) },
-        SDKOperation(
-            "grp.subgroups", "Groups", "listSubgroups", "Child subgroups", listOf(OpField.line("groupId", "Group ID")),
-        ) { m, i -> Fmt.json(m.admin.listSubgroups(i.v("groupId"))) },
-        SDKOperation(
-            "grp.leave", "Groups", "leaveGroup", "Leave a group",
-            listOf(OpField.line("groupId", "Group ID"), OpField.json("body", "Body (optional)", "")),
-        ) { m, i ->
-            val req = i.opt("body")?.let { Fmt.decode<Map<String, JsonElement>>(it) }
-            m.admin.leaveGroup(i.v("groupId"), req)
-            "left group"
-        },
-        SDKOperation(
-            "grp.defCaps", "Groups", "getDefaultCapabilities", "Default capabilities bitmask",
-            listOf(OpField.line("groupId", "Group ID")),
-        ) { m, i -> "defaultCapabilities = ${m.admin.getDefaultCapabilities(i.v("groupId"))}" },
-        SDKOperation(
-            "grp.subVis", "Groups", "getSubgroupVisibility", "Subgroup visibility",
-            listOf(OpField.line("groupId", "Group ID")),
-        ) { m, i -> "subgroupVisibility = ${m.admin.getSubgroupVisibility(i.v("groupId"))}" },
-        SDKOperation(
-            "grp.detach", "Groups", "detachContextFromGroup", "Detach a context",
-            listOf(
-                OpField.line("groupId", "Group ID"),
-                OpField.line("contextId", "Context ID"),
-                OpField.json("body", "Body (optional)", ""),
-            ),
-        ) { m, i ->
-            val req = i.opt("body")?.let { Fmt.decode<DetachContextFromGroupRequest>(it) }
-            m.admin.detachContextFromGroup(i.v("groupId"), i.v("contextId"), req)
-            "detached"
-        },
-        SDKOperation(
-            "grp.reparent", "Groups", "reparentGroup", "Move under a new parent",
-            listOf(OpField.line("childGroupId", "Child group ID"), OpField.json("body", "ReparentGroupRequest")),
-        ) { m, i -> Fmt.json(m.admin.reparentGroup(i.v("childGroupId"), Fmt.decode<ReparentGroupRequest>(i.v("body")))) },
-        SDKOperation(
-            "grp.proof", "Groups", "issueOwnershipProof", "Group ownership proof",
-            listOf(OpField.line("groupId", "Group ID"), OpField.json("body", "Body (optional)", "")),
-        ) { m, i ->
-            val req = i.opt("body")?.let { Fmt.decode<Map<String, JsonElement>>(it) }
-            Fmt.json(m.admin.issueOwnershipProof(i.v("groupId"), req))
-        },
-        SDKOperation(
-            "grp.sync", "Groups", "syncGroup", "Sync a group",
-            listOf(OpField.line("groupId", "Group ID"), OpField.json("body", "Body (optional)", "")),
-        ) { m, i ->
-            val req = i.opt("body")?.let { Fmt.decode<SyncGroupRequest>(it) }
-            Fmt.json(m.admin.syncGroup(i.v("groupId"), req))
-        },
-        SDKOperation(
-            "grp.syncContexts", "Groups", "syncGroupContexts", "Sync + join every context in a group",
-            listOf(OpField.line("groupId", "Group ID")),
-        ) { m, i -> Fmt.json(m.admin.syncGroupContexts(i.v("groupId"))) },
-    )
-
-private val memberOps =
-    listOf(
-        SDKOperation(
-            "mem.list", "Group Members", "listGroupMembers", "Members of a group", listOf(OpField.line("groupId", "Group ID")),
-        ) { m, i -> Fmt.json(m.admin.listGroupMembers(i.v("groupId"))) },
-        SDKOperation(
-            "mem.add", "Group Members", "addGroupMembers", "Add members",
-            listOf(OpField.line("groupId", "Group ID"), OpField.json("body", "AddGroupMembersRequest")),
-        ) { m, i ->
-            m.admin.addGroupMembers(i.v("groupId"), Fmt.decode<AddGroupMembersRequest>(i.v("body")))
-            "members added"
-        },
-        SDKOperation(
-            "mem.remove", "Group Members", "removeGroupMembers", "Remove members",
-            listOf(OpField.line("groupId", "Group ID"), OpField.json("body", "RemoveGroupMembersRequest")),
-        ) { m, i ->
-            m.admin.removeGroupMembers(i.v("groupId"), Fmt.decode<RemoveGroupMembersRequest>(i.v("body")))
-            "members removed"
-        },
-        SDKOperation(
-            "mem.role", "Group Members", "updateMemberRole", "Change a member's role",
-            listOf(
-                OpField.line("groupId", "Group ID"),
-                OpField.line("identity", "Identity"),
-                OpField.json("body", "UpdateMemberRoleRequest"),
-            ),
-        ) { m, i ->
-            m.admin.updateMemberRole(i.v("groupId"), i.v("identity"), Fmt.decode<UpdateMemberRoleRequest>(i.v("body")))
-            "role updated"
-        },
-        SDKOperation(
-            "mem.getCaps", "Group Members", "getMemberCapabilities", "Member capabilities",
-            listOf(OpField.line("groupId", "Group ID"), OpField.line("identity", "Identity")),
-        ) { m, i -> Fmt.json(m.admin.getMemberCapabilities(i.v("groupId"), i.v("identity"))) },
-        SDKOperation(
-            "mem.setCaps", "Group Members", "setMemberCapabilities", "Set member capabilities",
-            listOf(
-                OpField.line("groupId", "Group ID"),
-                OpField.line("identity", "Identity"),
-                OpField.json("body", "Request"),
-            ),
-        ) { m, i ->
-            m.admin.setMemberCapabilities(i.v("groupId"), i.v("identity"), Fmt.decode<SetMemberCapabilitiesRequest>(i.v("body")))
-            "capabilities set"
-        },
-        SDKOperation(
-            "mem.autoFollow", "Group Members", "setMemberAutoFollow", "Set auto-follow",
-            listOf(
-                OpField.line("groupId", "Group ID"),
-                OpField.line("identity", "Identity"),
-                OpField.json("body", "Body", "{\"autoFollow\":true}"),
-            ),
-        ) { m, i ->
-            m.admin.setMemberAutoFollow(i.v("groupId"), i.v("identity"), Fmt.decode<Map<String, JsonElement>>(i.v("body")))
-            "auto-follow set"
-        },
-        SDKOperation(
-            "mem.getMeta", "Group Members", "getMemberMetadata", "Member metadata",
-            listOf(OpField.line("groupId", "Group ID"), OpField.line("identity", "Identity")),
-        ) { m, i -> Fmt.json(m.admin.getMemberMetadata(i.v("groupId"), i.v("identity"))) },
-        SDKOperation(
-            "mem.setMeta", "Group Members", "setMemberMetadata", "Set member metadata",
-            listOf(
-                OpField.line("groupId", "Group ID"),
-                OpField.line("identity", "Identity"),
-                OpField.json("body", "Request"),
-            ),
-        ) { m, i ->
-            m.admin.setMemberMetadata(i.v("groupId"), i.v("identity"), Fmt.decode<SetMemberMetadataRequest>(i.v("body")))
-            "metadata set"
-        },
-    )
-
-private val settingsOps =
-    listOf(
-        SDKOperation(
-            "set.defCaps", "Group Settings", "setDefaultCapabilities", "Set default capabilities",
-            listOf(OpField.line("groupId", "Group ID"), OpField.json("body", "Request")),
-        ) { m, i ->
-            m.admin.setDefaultCapabilities(i.v("groupId"), Fmt.decode<SetDefaultCapabilitiesRequest>(i.v("body")))
-            "set"
-        },
-        SDKOperation(
-            "set.subVis", "Group Settings", "setSubgroupVisibility", "Set subgroup visibility",
-            listOf(OpField.line("groupId", "Group ID"), OpField.json("body", "Request")),
-        ) { m, i ->
-            m.admin.setSubgroupVisibility(i.v("groupId"), Fmt.decode<SetSubgroupVisibilityRequest>(i.v("body")))
-            "set"
-        },
-        SDKOperation(
-            "set.grpMetaSet", "Group Settings", "setGroupMetadata", "Set group metadata",
-            listOf(OpField.line("groupId", "Group ID"), OpField.json("body", "Request")),
-        ) { m, i ->
-            m.admin.setGroupMetadata(i.v("groupId"), Fmt.decode<SetGroupMetadataRequest>(i.v("body")))
-            "set"
-        },
-        SDKOperation(
-            "set.grpMetaGet", "Group Settings", "getGroupMetadata", "Get group metadata",
-            listOf(OpField.line("groupId", "Group ID")),
-        ) { m, i -> Fmt.json(m.admin.getGroupMetadata(i.v("groupId"))) },
-        SDKOperation(
-            "set.ctxMetaSet", "Group Settings", "setContextMetadata", "Set context metadata",
-            listOf(
-                OpField.line("groupId", "Group ID"),
-                OpField.line("contextId", "Context ID"),
-                OpField.json("body", "Request"),
-            ),
-        ) { m, i ->
-            m.admin.setContextMetadata(
-                i.v("groupId"),
-                i.v("contextId"),
-                Fmt.decode<SetContextMetadataRequest>(i.v("body")),
-            )
-            "set"
-        },
-        SDKOperation(
-            "set.ctxMetaGet", "Group Settings", "getContextMetadata", "Get context metadata",
-            listOf(OpField.line("groupId", "Group ID"), OpField.line("contextId", "Context ID")),
-        ) { m, i -> Fmt.json(m.admin.getContextMetadata(i.v("groupId"), i.v("contextId"))) },
-        SDKOperation(
-            "set.teeGet", "Group Settings", "getTeeAdmissionPolicy", "Get TEE admission policy",
-            listOf(OpField.line("groupId", "Group ID")),
-        ) { m, i -> Fmt.json(m.admin.getTeeAdmissionPolicy(i.v("groupId"))) },
-        SDKOperation(
-            "set.teeSet", "Group Settings", "setTeeAdmissionPolicy", "Set TEE admission policy",
-            listOf(OpField.line("groupId", "Group ID"), OpField.json("body", "Request")),
-        ) { m, i ->
-            m.admin.setTeeAdmissionPolicy(i.v("groupId"), Fmt.decode<SetTeeAdmissionPolicyRequest>(i.v("body")))
-            "set"
-        },
-    )
-
-private val upgradeOps =
-    listOf(
-        SDKOperation(
-            "up.upgrade", "Upgrade & Invites", "upgradeGroup", "Upgrade a group's app",
-            listOf(OpField.line("groupId", "Group ID"), OpField.json("body", "UpgradeGroupRequest")),
-        ) { m, i -> Fmt.json(m.admin.upgradeGroup(i.v("groupId"), Fmt.decode<UpgradeGroupRequest>(i.v("body")))) },
-        SDKOperation(
-            "up.status", "Upgrade & Invites", "getGroupUpgradeStatus", "Upgrade status (nullable)",
-            listOf(OpField.line("groupId", "Group ID")),
-        ) { m, i -> Fmt.json(m.admin.getGroupUpgradeStatus(i.v("groupId"))) },
-        SDKOperation(
-            "up.retry", "Upgrade & Invites", "retryGroupUpgrade", "Retry an upgrade",
-            listOf(OpField.line("groupId", "Group ID"), OpField.json("body", "Body (optional)", "")),
-        ) { m, i ->
-            val req = i.opt("body")?.let { Fmt.decode<RetryGroupUpgradeRequest>(it) }
-            Fmt.json(m.admin.retryGroupUpgrade(i.v("groupId"), req))
-        },
-        SDKOperation(
-            "up.invite", "Upgrade & Invites", "createGroupInvitation", "Invite to a group",
-            listOf(OpField.line("groupId", "Group ID"), OpField.json("body", "Body (optional)", "")),
-        ) { m, i ->
-            val req = i.opt("body")?.let { Fmt.decode<CreateGroupInvitationRequest>(it) }
-            when (val r = m.admin.createGroupInvitation(i.v("groupId"), req)) {
-                is CreateGroupInvitationResult.Single -> Fmt.json(r.data)
-                is CreateGroupInvitationResult.Recursive -> Fmt.json(r.data)
-            }
-        },
-        SDKOperation(
-            "up.join", "Upgrade & Invites", "joinGroup", "Join a group via invitation",
-            listOf(OpField.json("body", "JoinGroupRequest")),
-        ) { m, i -> Fmt.json(m.admin.joinGroup(Fmt.decode<JoinGroupRequest>(i.v("body")))) },
-        SDKOperation(
-            "up.joinInherit", "Upgrade & Invites", "joinSubgroupInheritance", "Join a subgroup via inheritance",
-            listOf(OpField.line("groupId", "Group ID")),
-        ) { m, i -> Fmt.json(m.admin.joinSubgroupInheritance(i.v("groupId"))) },
-    )
-
-private val teeOps =
-    listOf(
-        SDKOperation("tee.info", "TEE", "getTeeInfo", "TEE info", emptyList()) { m, _ ->
-            Fmt.json(m.admin.getTeeInfo())
-        },
-        SDKOperation("tee.attest", "TEE", "teeAttest", "Request an attestation quote", listOf(OpField.json())) { m, i ->
-            Fmt.json(m.admin.teeAttest(Fmt.decode<TeeAttestRequest>(i.v("body"))))
-        },
-    )
-
-private val accountOps =
-    listOf(
-        SDKOperation(
-            "acc.devices", "Account & Devices", "listAccountDevices", "Devices on this account", emptyList(),
-        ) { m, _ -> Fmt.json(m.admin.listAccountDevices()) },
-        SDKOperation(
-            "acc.apps", "Account & Devices", "listAccountApplications", "Applications this account speaks in",
-            emptyList(),
-        ) { m, _ -> Fmt.json(m.admin.listAccountApplications()) },
-        SDKOperation(
-            "acc.memberDevices", "Account & Devices", "listMemberDevices", "A group's members and their devices",
-            listOf(OpField.line("groupId", "Group ID")),
-        ) { m, i -> Fmt.json(m.admin.listMemberDevices(i.v("groupId"))) },
-        SDKOperation(
-            "acc.pairInit", "Account & Devices", "pairInit", "Begin pairing a device",
-            listOf(OpField.json("body", "PairInitRequest")),
-        ) { m, i -> Fmt.json(m.admin.pairInit(Fmt.decode<PairInitRequest>(i.v("body")))) },
-        SDKOperation(
-            "acc.pairComplete", "Account & Devices", "pairComplete", "Complete a pairing",
-            listOf(OpField.json("body", "PairCompleteRequest")),
-        ) { m, i -> Fmt.json(m.admin.pairComplete(Fmt.decode<PairCompleteRequest>(i.v("body")))) },
-        SDKOperation(
-            "acc.relink", "Account & Devices", "relinkDevice", "Re-link a certified device",
-            listOf(OpField.line("deviceId", "Device ID"), OpField.json("body", "RelinkDeviceRequest", """{}""")),
-        ) { m, i -> Fmt.json(m.admin.relinkDevice(i.v("deviceId"), Fmt.decode<RelinkDeviceRequest>(i.v("body")))) },
-        SDKOperation(
-            "acc.rescope", "Account & Devices", "rescopeDevice", "Replace a device's scope (rc.41)",
-            listOf(
-                OpField.line("deviceId", "Device ID"),
-                OpField.json("body", "RescopeDeviceRequest", """{"scope":"all"}"""),
-            ),
-        ) { m, i -> Fmt.json(m.admin.rescopeDevice(i.v("deviceId"), Fmt.decode<RescopeDeviceRequest>(i.v("body")))) },
-        SDKOperation(
-            "acc.label", "Account & Devices", "labelDevice", "Name a device (rc.41)",
-            listOf(
-                OpField.line("deviceId", "Device ID"),
-                OpField.json("body", "LabelDeviceRequest", """{"label":"My phone"}"""),
-            ),
-        ) { m, i -> Fmt.json(m.admin.labelDevice(i.v("deviceId"), Fmt.decode<LabelDeviceRequest>(i.v("body")))) },
-        SDKOperation(
-            "acc.revoke", "Account & Devices", "revokeAccountDevice", "Revoke a device (rotates the group key)",
-            listOf(OpField.line("namespaceId", "Namespace ID"), OpField.json("body", "RevokeDeviceRequest")),
-        ) { m, i -> Fmt.json(m.admin.revokeAccountDevice(i.v("namespaceId"), Fmt.decode<RevokeDeviceRequest>(i.v("body")))) },
-        SDKOperation(
-            "acc.revokedList", "Account & Devices", "listNamespaceRevokedDevices", "Revoked devices and withdrawn slots",
-            listOf(OpField.line("namespaceId", "Namespace ID")),
-        ) { m, i -> Fmt.json(m.admin.listNamespaceRevokedDevices(i.v("namespaceId"))) },
-        SDKOperation(
-            "acc.admit", "Account & Devices", "admitJoin", "Publish a keyholder's join",
-            listOf(OpField.line("namespaceId", "Namespace ID"), OpField.json("body", "AdmitJoinRequest")),
-        ) { m, i -> Fmt.json(m.admin.admitJoin(i.v("namespaceId"), Fmt.decode<AdmitJoinRequest>(i.v("body")))) },
-    )
-
-// Core 0.11.0-rc.83: root-guarded owner ops, account-root signing, and the delegated-execution
-// surface (intent discovery and raw intent calls — warrants are minted elsewhere).
-private val rc83Ops =
-    listOf(
-        SDKOperation(
-            "ctx.query", "Delegated & Owner Ops", "queryContext", "Read a context as the session's account",
-            listOf(OpField.line("contextId", "Context ID"), OpField.json("body", "QueryContextRequest", """{"method":"get","argsJson":{}}""")),
-        ) { m, i -> Fmt.json(m.admin.queryContext(i.v("contextId"), Fmt.decode<QueryContextRequest>(i.v("body")))) },
-        SDKOperation(
-            "ctx.intentRelay", "Delegated & Owner Ops", "getIntentRelay", "What this node can relay in a context",
-            listOf(OpField.line("contextId", "Context ID")),
-        ) { m, i -> Fmt.json(m.admin.getIntentRelay(i.v("contextId"))) },
-        SDKOperation(
-            "ctx.presenceIntent", "Delegated & Owner Ops", "presenceIntent", "Carry a signed presence statement",
-            listOf(
-                OpField.line("contextId", "Context ID"),
-                OpField.line("state", "State (hex, empty to clear)"),
-                OpField.line("seq", "Sequence"),
-                OpField.line("sentAtMs", "Sent at (ms)"),
-                OpField.line("signature", "Signature (hex)"),
-                OpField.line("authorProof", "Author proof (hex)"),
-            ),
-        ) { m, i ->
-            m.admin.presenceIntent(
-                i.v("contextId"),
-                PresenceIntentRequest(
-                    state = i.opt("state"),
-                    seq = i.v("seq").toLong(),
-                    sentAtMs = i.v("sentAtMs").toLong(),
-                    signature = i.v("signature"),
-                    authorProof = i.v("authorProof"),
-                ),
-            )
-            "presence carried"
-        },
-        SDKOperation(
-            "grp.contextIntent", "Delegated & Owner Ops", "createContextIntent", "Create a context under a creation warrant",
-            listOf(OpField.line("groupId", "Group ID"), OpField.json("body", "CreateContextIntentRequest")),
-        ) { m, i -> Fmt.json(m.admin.createContextIntent(i.v("groupId"), Fmt.decode<CreateContextIntentRequest>(i.v("body")))) },
-        SDKOperation(
-            "grp.contextIntentRelay", "Delegated & Owner Ops", "getContextIntentRelay", "Discovery for delegated context creation",
-            listOf(OpField.line("groupId", "Group ID"), OpField.line("author", "Author account (optional)")),
-        ) { m, i -> Fmt.json(m.admin.getContextIntentRelay(i.v("groupId"), i.opt("author"))) },
-        SDKOperation(
-            "grp.governanceIntent", "Delegated & Owner Ops", "governanceIntent", "Apply a governance op under a warrant",
-            listOf(OpField.line("groupId", "Group ID"), OpField.json("body", "GovernanceIntentRequest")),
-        ) { m, i -> Fmt.json(m.admin.governanceIntent(i.v("groupId"), Fmt.decode<GovernanceIntentRequest>(i.v("body")))) },
-        SDKOperation(
-            "grp.governanceIntentRelay", "Delegated & Owner Ops", "getGovernanceIntentRelay", "Discovery for delegated governance",
-            listOf(OpField.line("groupId", "Group ID")),
-        ) { m, i -> Fmt.json(m.admin.getGovernanceIntentRelay(i.v("groupId"))) },
-        SDKOperation(
-            "grp.openDelegated", "Delegated & Owner Ops", "openToDelegatedExecution", "Grant CAN_AUTHOR_ON_BEHALF by default",
-            listOf(OpField.line("groupId", "Group ID (namespace root)")),
-        ) { m, i -> m.admin.openToDelegatedExecution(i.v("groupId")).toString() },
-        SDKOperation(
-            "grp.grantAuthorship", "Delegated & Owner Ops", "grantAuthorship", "Grant one member CAN_AUTHOR_ON_BEHALF",
-            listOf(OpField.line("groupId", "Group ID"), OpField.line("account", "Member account")),
-        ) { m, i -> m.admin.grantAuthorship(i.v("groupId"), i.v("account")).toString() },
-        SDKOperation(
-            "grp.transferOwnership", "Delegated & Owner Ops", "transferOwnership", "Hand a group to another admin",
-            listOf(OpField.line("groupId", "Group ID"), OpField.json("body", "TransferOwnershipRequest")),
-        ) { m, i ->
-            m.admin.transferOwnership(i.v("groupId"), Fmt.decode<TransferOwnershipRequest>(i.v("body")))
-            "ownership transferred"
-        },
-        SDKOperation(
-            "ns.changeAdmin", "Delegated & Owner Ops", "changeNamespaceAdmin", "Repoint the namespace admin",
-            listOf(OpField.line("namespaceId", "Namespace ID"), OpField.json("body", "ChangeNamespaceAdminRequest")),
-        ) { m, i ->
-            m.admin.changeNamespaceAdmin(i.v("namespaceId"), Fmt.decode<ChangeNamespaceAdminRequest>(i.v("body")))
-            "namespace admin changed"
-        },
-        SDKOperation(
-            "grp.ownerDelete", "Delegated & Owner Ops", "ownerDeleteGroup", "Owner-only delete of an empty group",
-            listOf(OpField.line("groupId", "Group ID"), OpField.json("body", "RootGuardedOpRequest (optional)", "")),
-        ) { m, i ->
-            m.admin.ownerDeleteGroup(i.v("groupId"), Fmt.decode<RootGuardedOpRequest>(i.v("body")))
-            "group deleted"
-        },
-        SDKOperation(
-            "grp.teeAuthoring", "Delegated & Owner Ops", "setTeeAuthoringPolicy", "Which TEEs may author",
-            listOf(OpField.line("groupId", "Group ID"), OpField.json("body", "SetTeeAuthoringPolicyRequest", """{"allowedMrtd":[]}""")),
-        ) { m, i ->
-            m.admin.setTeeAuthoringPolicy(i.v("groupId"), Fmt.decode<SetTeeAuthoringPolicyRequest>(i.v("body")))
-            "authoring policy set"
-        },
-        SDKOperation(
-            "grp.teeAuthoringOff", "Delegated & Owner Ops", "disableTeeAuthoringPolicy", "Turn TEE authorship off",
-            listOf(OpField.line("groupId", "Group ID"), OpField.json("body", "RootGuardedOpRequest (optional)", "")),
-        ) { m, i ->
-            m.admin.disableTeeAuthoringPolicy(i.v("groupId"), Fmt.decode<RootGuardedOpRequest>(i.v("body")))
-            "authoring policy disabled"
-        },
-        SDKOperation(
-            "acc.signWithRoot", "Delegated & Owner Ops", "signWithAccountRoot", "Sign a payload with the account root",
-            listOf(OpField.json("body", "AccountSignWithRootRequest", """{"domain":"mdma.account-login","payload":""}""")),
-        ) { m, i -> Fmt.json(m.admin.signWithAccountRoot(Fmt.decode<AccountSignWithRootRequest>(i.v("body")))) },
-        SDKOperation(
-            "acc.linkDevice", "Delegated & Owner Ops", "linkAccountDevice", "Bind a certified device into a namespace",
-            listOf(OpField.line("namespaceId", "Namespace ID"), OpField.json("body", "LinkAccountDeviceRequest")),
-        ) { m, i -> Fmt.json(m.admin.linkAccountDevice(i.v("namespaceId"), Fmt.decode<LinkAccountDeviceRequest>(i.v("body")))) },
-        SDKOperation(
-            "acc.seal", "Delegated & Owner Ops", "sealToAccount", "Seal bytes to a member's root key",
-            listOf(
-                OpField.line("groupId", "Group ID"),
-                OpField.line("account", "Member account"),
-                OpField.json("body", "SealToAccountRequest", """{"plaintext":""}"""),
-            ),
-        ) { m, i -> Fmt.json(m.admin.sealToAccount(i.v("groupId"), i.v("account"), Fmt.decode<SealToAccountRequest>(i.v("body")))) },
-        SDKOperation(
-            "acc.groupMemberDevices", "Delegated & Owner Ops", "listGroupMemberDevices", "Member accounts and their devices",
-            listOf(OpField.line("groupId", "Group ID")),
-        ) { m, i -> Fmt.json(m.admin.listGroupMemberDevices(i.v("groupId"))) },
-        SDKOperation(
-            "tee.registrationAttest", "TEE", "teeRegistrationAttest", "Attestation quote for fleet registration",
-            listOf(OpField.json("body", "TeeRegistrationAttestRequest", """{"nonce":""}""")),
-        ) { m, i -> Fmt.json(m.admin.teeRegistrationAttest(Fmt.decode<TeeRegistrationAttestRequest>(i.v("body")))) },
-    )
-
-private fun argsOf(raw: String?): JsonElement = raw?.trim()?.takeIf { it.isNotEmpty() }?.let { Fmt.pretty.parseToJsonElement(it) } ?: JsonObject(emptyMap())
-
-private fun pretty(value: JsonElement?): String = value?.let { Fmt.pretty.encodeToString(JsonElement.serializer(), it) } ?: "null"
-
-private val sessionOps =
-    listOf(
-        SDKOperation("ses.session", "Session", "account.session", "The signed-in account, device and relay", emptyList()) { e, _ ->
-            val s = e.account.session() ?: return@SDKOperation "signed out"
-            "account:  ${s.account}\ndevice:   ${s.device}\nrelay:    ${s.relayUrl ?: "none yet"}\nexecutor: ${s.executorAccount ?: "unknown"}"
-        },
-        SDKOperation("ses.cert", "Session", "verifyDeviceCredential", "Read back this device's certificate", emptyList()) { e, _ ->
-            val s = e.account.session() ?: return@SDKOperation "signed out"
-            DeviceCert.verify(s.credential).toString().replace(", ", ",\n  ")
-        },
-        SDKOperation("ses.keys", "Session", "deviceKeys", "This device's public keys", emptyList()) { e, _ ->
-            val k = e.account.deviceKeys.load() ?: return@SDKOperation "no device keys yet"
-            "signing (Ed25519):  ${k.signPublicKey}\ndelivery (X25519): ${k.kemPublicKey}"
-        },
-        SDKOperation("ses.login", "Session", "loginToRelay", "Mint an account_proof session on the relay", emptyList()) { e, _ ->
-            val t = e.account.loginToRelay()
-            "access token expires at ${t.expiresAt}"
-        },
-    )
-
-private val cloudOps =
-    listOf(
-        SDKOperation("cld.relays", "Cloud", "getAccountRelays", "Relays serving this account (routing-proven)", emptyList()) { e, _ ->
-            val s = e.account.session() ?: error("signed out")
-            e.account
-                .cloud(s)
-                .getAccountRelays(s.account)
-                .joinToString("\n\n") { it.toString() }
-                .ifEmpty { "no relays" }
-        },
-        SDKOperation("cld.choose", "Cloud", "chooseRelay", "Which relay to talk to, and why", emptyList()) { e, _ ->
-            e.account.chooseRelay().toString()
-        },
-        SDKOperation(
-            "cld.routing", "Cloud", "getNamespaceRouting", "Nodes that serve a namespace",
-            listOf(OpField.line("namespaceId", "Namespace ID")),
-        ) { e, i ->
-            e.account
-                .cloud()
-                .getNamespaceRouting(i.v("namespaceId"))
-                .toString()
-        },
-        SDKOperation("cld.nodeKey", "Cloud", "relayNodeKey", "The relay's attested node key", emptyList()) { e, _ ->
-            e.account.relayNodeKey(e.relay.relayUrl)
-        },
-        SDKOperation(
-            "cld.enableHa", "Cloud", "enableHaAsAccount", "Ask the cloud to host a namespace this account founded",
-            listOf(OpField.line("namespaceId", "Namespace ID"), OpField.line("salt", "Founding salt (hex)")),
-        ) { e, i ->
-            val s = e.account.session() ?: error("signed out")
-            pretty(e.account.cloud(s).enableHaAsAccount(i.v("namespaceId"), i.v("salt"), s.account, s.credential, relayUrl = s.relayUrl))
-        },
-        SDKOperation(
-            "cld.registry", "Cloud", "resolveFromRegistry", "An app's id, version and publisher from the registry",
-            listOf(OpField.line("package", "Package", "com.calimero.chat")),
-        ) { _, i -> ApplicationIds.resolveFromRegistry(i.opt("package") ?: "com.calimero.chat").toString() },
-    )
-
-private val spaceOps =
-    listOf(
-        SDKOperation(
-            "spc.found", "Spaces", "foundNamespace", "Found a namespace as this account (+ app, mask, name, HA)",
-            listOf(
-                OpField.line("package", "App package (optional)", "com.calimero.chat"),
-                OpField.line("name", "Name (optional)"),
-                OpField.line("capabilities", "Default capabilities", "231"),
-            ),
-        ) { e, i ->
-            val app =
-                i.opt("package")?.let { pkg ->
-                    ApplicationIds.resolveFromRegistry(pkg).let { ApplicationTarget(it.applicationId, it.packageName, it.version) }
-                }
-            val r = e.client.foundNamespace(app, i.opt("capabilities")?.toLong() ?: MeroClient.DEFAULT_SPACE_CAPABILITIES, i.opt("name"))
-            "namespace: ${r.namespaceId}\nsalt:      ${r.founded.salt}\ntee:       ${r.founded.teeEnabled}\n" +
-                "app set:   ${r.founded.applicationSet}\nmask set:  ${r.founded.defaultCapabilitiesSet}\n" +
-                "hosted:    ${r.haEnabled}${r.haError?.let { "\n  $it" }.orEmpty()}"
-        },
-        SDKOperation(
-            "spc.invite", "Spaces", "createNamespaceInvitation", "Mint an invitation signed by this device",
-            listOf(OpField.line("namespaceId", "Namespace ID")),
-        ) { e, i -> Fmt.json(e.client.createNamespaceInvitation(i.v("namespaceId"))) },
-        SDKOperation(
-            "spc.nsId", "Spaces", "foundedNamespaceId", "The id a founder + salt derive",
-            listOf(OpField.line("founder", "Founder account"), OpField.line("salt", "Salt (hex)")),
-        ) { _, i -> GovernanceOps.foundedNamespaceId(i.v("founder"), i.v("salt")) },
-        SDKOperation(
-            "spc.addMember", "Spaces", "memberAddedOp", "Add an account to a group (delegated governance)",
-            listOf(OpField.line("groupId", "Group ID"), OpField.line("member", "Member account"), OpField.line("role", "Role", "Member")),
-        ) { e, i ->
-            val op = GovernanceOps.memberAddedOp(i.v("member"), GovernanceMemberRole.valueOf(i.opt("role") ?: "Member"))
-            e.relay.govern(i.v("groupId"), op).toString()
-        },
-        SDKOperation(
-            "spc.name", "Spaces", "groupMetadataSetOp", "Name a group (delegated governance)",
-            listOf(OpField.line("groupId", "Group ID"), OpField.line("name", "Name")),
-        ) { e, i -> e.relay.govern(i.v("groupId"), GovernanceOps.groupMetadataSetOp(name = i.v("name"))).toString() },
-        SDKOperation(
-            "spc.subgroup", "Spaces", "subgroupCreation", "Create a restricted subgroup of a namespace",
-            listOf(OpField.line("namespaceId", "Namespace ID")),
-        ) { e, i ->
-            val s = e.account.session() ?: error("signed out")
-            val created = GovernanceOps.subgroupCreation(i.v("namespaceId"), restricted = true, admin = s.account)
-            e.relay.govern(i.v("namespaceId"), created.op).toString()
-        },
-    )
-
-private val relayOps =
-    listOf(
-        SDKOperation(
-            "rel.describe", "Relay", "describe", "Who executes in a context, and what a warrant pins",
-            listOf(OpField.line("contextId", "Context ID")),
-        ) { e, i -> e.relay.describe(i.v("contextId")).toString() },
-        SDKOperation(
-            "rel.call", "Relay", "call", "Read by query, or write by warrant on 409",
-            listOf(OpField.line("contextId", "Context ID"), OpField.line("method", "Method"), OpField.json("args", "argsJson", "{}")),
-        ) { e, i -> pretty(e.relay.call(i.v("contextId"), i.v("method"), argsOf(i.opt("args")))) },
-        SDKOperation(
-            "rel.query", "Relay", "query", "Run a view method (no warrant)",
-            listOf(OpField.line("contextId", "Context ID"), OpField.line("method", "Method"), OpField.json("args", "argsJson", "{}")),
-        ) { e, i -> pretty(e.relay.query(i.v("contextId"), i.v("method"), argsOf(i.opt("args")))) },
-        SDKOperation(
-            "rel.execute", "Relay", "execute", "Sign a warrant and have the relay run it",
-            listOf(OpField.line("contextId", "Context ID"), OpField.line("method", "Method"), OpField.json("args", "argsJson", "{}")),
-        ) { e, i ->
-            val r = e.relay.execute(i.v("contextId"), i.v("method"), argsOf(i.opt("args")))
-            "rootHash: ${r.rootHash}\nreturns:\n${pretty(r.returns)}"
-        },
-        SDKOperation(
-            "rel.describeCreation", "Relay", "describeCreation", "Who would create a context in a group",
-            listOf(OpField.line("groupId", "Group ID")),
-        ) { e, i -> e.relay.describeCreation(i.v("groupId")).toString() },
-        SDKOperation(
-            "rel.createContext", "Relay", "createContext", "Create a context under a creation warrant",
-            listOf(
-                OpField.line("groupId", "Group ID"),
-                OpField.line("applicationId", "Application ID"),
-                OpField.line("name", "Name (optional)"),
-                OpField.json("initArgs", "initArgs", "{}"),
-            ),
-        ) { e, i ->
-            e.relay
-                .createContext(
-                    CreateContextInput(
-                        groupId = i.v("groupId"),
-                        applicationId = i.v("applicationId"),
-                        initArgs = argsOf(i.opt("initArgs")),
-                        name = i.opt("name"),
-                    ),
-                ).toString()
-        },
-        SDKOperation(
-            "rel.describeGovernance", "Relay", "describeGovernance", "Who would act on a group's governance",
-            listOf(OpField.line("groupId", "Group ID")),
-        ) { e, i -> e.relay.describeGovernance(i.v("groupId")).toString() },
-        SDKOperation(
-            "rel.govern", "Relay", "govern", "Publish an encoded governance op under a warrant",
-            listOf(OpField.line("groupId", "Group ID"), OpField.line("kind", "Plane", "group"), OpField.line("op", "Op bytes (hex)")),
-        ) { e, i ->
-            val kind = if (i.v("kind") == "root") GovernanceOpKind.ROOT else GovernanceOpKind.GROUP
-            e.relay.govern(i.v("groupId"), GovernanceOp(kind, Hex.decodeUnsized(i.v("op"), "op"))).toString()
-        },
-        SDKOperation(
-            "rel.found", "Relay", "foundNamespace", "Found a namespace (genesis) naming the relay's executor",
-            listOf(OpField.line("executorAccount", "Relay account"), OpField.line("executorKey", "Relay node key")),
-        ) { e, i -> e.relay.foundNamespace(FoundNamespaceInput(RelayExecutor(i.v("executorAccount"), i.v("executorKey")))).toString() },
-    )
-
-private val rpcOps =
-    listOf(
-        SDKOperation(
-            "rpc.execute", "RPC", "rpc.execute", "Call a contract method",
-            listOf(
-                OpField.line("contextId", "Context ID"),
-                OpField.line("method", "Method"),
-                OpField.json("args", "argsJson", "{}"),
-            ),
-        ) { m, i ->
-            val args: JsonObject = i.opt("args")?.let { Fmt.pretty.parseToJsonElement(it).jsonObject } ?: JsonObject(emptyMap())
-            Fmt.json(m.rpc.executeRaw(contextId = i.v("contextId"), method = i.v("method"), argsJson = args))
-        },
-        SDKOperation(
-            "rpc.migrate", "RPC", "rpc.migrateMyEntries", "Re-sign my entries to current schema",
-            listOf(OpField.line("contextId", "Context ID")),
-        ) { m, i -> Fmt.json(m.rpc.migrateMyEntries(i.v("contextId"))) },
-        SDKOperation(
-            "rpc.pending", "RPC", "rpc.countMyPending", "Count my pending entries",
-            listOf(OpField.line("contextId", "Context ID")),
-        ) { m, i -> "pending = ${m.rpc.countMyPending(i.v("contextId"))}" },
-    )
-
-// Presence: an account's (device-signed through its relay) and a node's own (`set_ephemeral`).
-// Live presence and events are read by the chat screen, not a form.
-private val presenceOps =
-    listOf(
-        SDKOperation(
-            "pre.set", "Presence", "presence.set", "Set this account's presence (signed, resent every 2.5 s)",
-            listOf(OpField.line("contextId", "Context ID"), OpField.json("state", "State (any JSON)", "{\"typing\":true}")),
-        ) { e, i ->
-            val presence = e.client.presence ?: error("No relay connection")
-            presence.set(i.v("contextId"), i.v("state").encodeToByteArray(), RawCodec)
-            "presence set; resending until cleared"
-        },
-        SDKOperation(
-            "pre.clear", "Presence", "presence.clear", "Retract this account's presence",
-            listOf(OpField.line("contextId", "Context ID")),
-        ) { e, i ->
-            (e.client.presence ?: error("No relay connection")).clear(i.v("contextId"))
-            "presence retracted"
-        },
-        SDKOperation(
-            "pre.publish", "Presence", "publishPresence", "Sign and post one presence update (no heartbeat)",
-            listOf(OpField.line("contextId", "Context ID"), OpField.line("state", "State (text, empty to retract)")),
-        ) { e, i ->
-            e.relay.publishPresence(i.v("contextId"), i.opt("state")?.encodeToByteArray(), seq = System.currentTimeMillis())
-            "presence posted"
-        },
-        SDKOperation(
-            "pre.ephemeralSet", "Presence", "ephemeral.set", "A node's own presence slice (set_ephemeral)",
-            listOf(OpField.line("contextId", "Context ID"), OpField.json("state", "State (any JSON)", "{\"cursor\":1}")),
-        ) { m, i ->
-            m.mero.ephemeral.set(i.v("contextId"), i.v("state").encodeToByteArray(), RawCodec)
-            "slice set"
-        },
-    )
-
-// Signing primitives: an account root, owner-op root proofs, device scopes and request
-// proofs, all offline. Secrets typed here stay in this process; this is a developer tool.
-private val signingOps =
-    listOf(
-        SDKOperation(
-            "sig.generateRoot", "Signing", "generateAccountRoot", "Mint an account root and its 24-word phrase",
-            emptyList(),
-        ) { _, _ ->
-            val root = generateAccountRoot()
-            "accountId: ${root.accountId}\npublicKey: ${root.publicKey}\nphrase: ${root.phrase}"
-        },
-        SDKOperation(
-            "sig.rootFromPhrase", "Signing", "accountRootFromPhrase", "Restore a root's identity from its phrase",
-            listOf(OpField.line("phrase", "24-word phrase")),
-        ) { _, i ->
-            val root = accountRootFromPhrase(i.v("phrase"))
-            "accountId: ${root.accountId}\npublicKey: ${root.publicKey}"
-        },
-        SDKOperation(
-            "sig.ownerOpProof", "Signing", "signOwnerOpProof", "Sign a transfer-ownership root proof offline",
-            listOf(
-                OpField.line("namespaceId", "Namespace ID"),
-                OpField.line("groupId", "Group ID"),
-                OpField.line("newOwner", "New owner account"),
-                OpField.line("counter", "ownerOpCounter", "0"),
-                OpField.line("rootSecret", "Root secret (hex)"),
-            ),
-        ) { _, i ->
-            signOwnerOpProof(
-                OwnerOpProofInput(
-                    namespaceId = i.v("namespaceId"),
-                    groupId = i.v("groupId"),
-                    op = transferOwnershipOp(i.v("newOwner")),
-                    counter = i.v("counter").toLong(),
-                    rootSecret = i.v("rootSecret"),
-                ),
-            )
-        },
-        SDKOperation(
-            "sig.transferWithRoot", "Signing", "transferOwnership", "Transfer a group, root proof minted here",
-            listOf(
-                OpField.line("groupId", "Group ID"),
-                OpField.line("newOwner", "New owner account"),
-                OpField.line("rootSecret", "Root secret (hex)"),
-            ),
-        ) { m, i ->
-            m.admin.transferOwnership(i.v("groupId"), i.v("newOwner"), SeedSigner(i.v("rootSecret"), "rootSecret"))
-            "ownership transferred"
-        },
-        SDKOperation(
-            "sig.deviceScope", "Signing", "signDeviceScope", "Scope a device to applications (empty = all)",
-            listOf(
-                OpField.line("device", "Device ID"),
-                OpField.line("applications", "Application IDs, comma-separated"),
-                OpField.line("rootSecret", "Root secret (hex)"),
-            ),
-        ) { _, i ->
-            val apps =
-                i
-                    .v("applications")
-                    .split(',')
-                    .map { it.trim() }
-                    .filter { it.isNotEmpty() }
-            signDeviceScope(DeviceScopeInput(device = i.v("device"), applications = apps, rootSecret = i.v("rootSecret")))
-        },
-        SDKOperation(
-            "sig.requestProof", "Signing", "signRequestProof", "The X-Calimero-Proof value for one request",
-            listOf(
-                OpField.line("method", "Method", "GET"),
-                OpField.line("path", "Path and query", "/admin-api/namespaces"),
-                OpField.line("credential", "Device credential (hex)"),
-                OpField.line("deviceSecret", "Device secret (hex)"),
-                OpField.json("body", "Body (exact bytes, optional)", ""),
-            ),
-        ) { _, i ->
-            signRequestProof(
-                RequestProofInput(
-                    method = i.v("method"),
-                    path = i.v("path"),
-                    credential = i.v("credential"),
-                    body = i.opt("body")?.encodeToByteArray(),
-                    deviceSecret = i.v("deviceSecret"),
-                ),
-            )
-        },
-    )
-
-/** The full registry, in display order. */
-val sdkOperations: List<SDKOperation> =
-    sessionOps + cloudOps + spaceOps + relayOps + healthOps + authOps + keyOps + appOps + pkgOps + ctxOps + ctxIdOps +
-        aliasOps + blobOps + nsOps + groupOps + memberOps + settingsOps + upgradeOps +
-        accountOps + teeOps + rc83Ops + presenceOps + signingOps + rpcOps
-
-/** Operations that run on a Cloud session's account layer or relay (the Swift sample's `cloudRun`). */
-val cloudOperationIds: Set<String> = (sessionOps + cloudOps + spaceOps + relayOps).mapTo(HashSet()) { it.id }
-
-/** Categories in display order (as first seen in [sdkOperations]). */
 val sdkCategories: List<String> = sdkOperations.map { it.category }.distinct()

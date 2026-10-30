@@ -1,0 +1,48 @@
+---
+title: Apps
+description: Create app instances from packages, call intents, read views, stream events, store blobs and publish presence.
+---
+
+## Create an instance
+
+```kotlin
+val appId = client.createApp(
+    name = "general",
+    source = AppSource.Package("com.calimero.chat"),      // installed from the registry if missing
+    org = orgId,
+    access = AppAccess.Team(teamId),                       // or Owner, Org, Public, Accounts(…)
+    initArgs = buildJsonObject { put("name", "general") },
+)
+```
+
+A raw bundle (`uploadBundle`, `AppSource.Bundle(hash)`) and `.mpk` uploads work only on a `--dev`
+cluster; production installs only from the registry (`installPackage`).
+
+## Calls and views
+
+```kotlin
+val call = client.call(appId, "send_message", args)        // CallResult(index, result, events)
+val view = client.view(appId, "get_messages", args)        // ViewResult(index, result); stale = true reads any replica
+```
+
+`call` mints an idempotency key (`node:c-…`) unless you give one, and retries a `503` or a dropped
+connection with the **same key** (6 times, 200 ms doubling to 2 s). When it gives up it throws
+`UnavailableError`, whose `committed` is `Committed.No` (the node said it did not run) or
+`Committed.Unknown`. An app's own refusal is `AppError(appCode, fields)`.
+
+## Events
+
+```kotlin
+client.events(appId, from = 0).collect { event -> /* event.kind, event.data */ }
+```
+
+A sealed server-sent event stream; cancel the collecting coroutine to close it.
+
+## Blobs and presence
+
+```kotlin
+val blob = client.uploadBlob(appId, bytes)                  // BlobInfo(blobId base58, id hex, size)
+val back = client.downloadBlob(appId, blob.blobId)
+client.publishPresence(appId, seq = 1, state = "typing".encodeToByteArray())
+client.presence(appId)
+```

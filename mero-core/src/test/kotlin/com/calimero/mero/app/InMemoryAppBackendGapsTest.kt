@@ -1,8 +1,5 @@
 package com.calimero.mero.app
 
-import com.calimero.mero.account.NoRelayException
-import com.calimero.mero.admin.SignedGroupOpenInvitation
-import com.calimero.mero.relay.GovernanceMemberRole
 import com.calimero.mero.testkit.InMemoryAppBackend
 import com.calimero.mero.testkit.RecordingContextContract
 import kotlinx.coroutines.flow.Flow
@@ -75,7 +72,7 @@ class InMemoryAppBackendGapsTest {
             assertThrows<IllegalArgumentException> { runBlocking { backend.getBlob(blob.blobId, "other") } }
 
             backend.hasRelay = false
-            assertThrows<NoRelayException> { runBlocking { backend.uploadBlob(s.context, ByteArray(0)) } }
+            assertThrows<SignedOutException> { runBlocking { backend.uploadBlob(s.context, ByteArray(0)) } }
         }
 
     @Test
@@ -156,7 +153,7 @@ class InMemoryAppBackendGapsTest {
 /** A backend written before the names, blobs and members calls: the defaults keep it compiling. */
 private class MinimalBackend : MeroAppBackend {
     override val account = ""
-    override val contract: ContextContract = NoRelayContextContract
+    override val contract: ContextContract = SignedOutContextContract
     override val hasRelay = false
     override val canSubscribe = false
 
@@ -185,11 +182,11 @@ private class MinimalBackend : MeroAppBackend {
         initArgs: JsonElement,
     ): String = ""
 
-    override suspend fun createInvitation(namespaceId: String): SignedGroupOpenInvitation = InMemoryAppBackend.invitation(namespaceId)
+    override suspend fun createInvitation(namespaceId: String): OrgInvitation = InMemoryAppBackend.invitation(namespaceId)
 
     override suspend fun joinNamespace(
         namespaceId: String,
-        invitation: SignedGroupOpenInvitation,
+        invitation: OrgInvitation,
     ): AppJoinedNamespace = AppJoinedNamespace(namespaceId, false, "")
 
     override fun events(contextId: String): Flow<AppContextEvent> = emptyFlow()

@@ -1,310 +1,104 @@
 # mero-kotlin — Calimero Android SDK
 
-A native Kotlin SDK that gives an Android app the same capabilities
-[`@calimero-network/mero-js`](https://github.com/calimero-network/mero-js) gives a web app, talking
-to a **remote** Calimero node over HTTP(S)+SSE. No embedded node on device.
+The Android client for **Calimero 1.0**, the confidential cloud. It gives an Android app what
+[`@calimero-network/mero-js`](https://github.com/calimero-network/mero-js) ≥ 27 gives a web app,
+with the same names: `CalimeroClient` verifies a node's TDX attestation, seals every request to it
+(`calimero/sealed-http/v2`, Noise NK), signs people in with **passkeys**, and calls apps'
+**intents** and **views**. It is the Android twin of
+[`calimero-network/swift-sdk`](https://github.com/calimero-network/swift-sdk).
 
-It is a faithful port of the mero-js v7.0.1 wire contract (and the mero-react v4.4.0 ergonomics), and
-the Android mirror of [`calimero-network/swift-sdk`](https://github.com/calimero-network/swift-sdk).
-See [`ROADMAP-TASKS/task-2-android-sdk.md`] in the planning repo for the full design.
-
-> **Status: Calimero Cloud sign-in on mobile, plus the transport + auth core, full Admin API,
-> JSON-RPC and the SSE event client.** On a phone, people sign in with their Calimero account
-> (a passkey in the wallet) and the app talks to the account's hosted relay through signed
-> warrants — no node URL, username or password. Server-side and tooling code can still sign in to
-> a node with credentials, drive the whole
-> ~140-method Admin API (contexts, groups, namespaces, invitations, registry install, root/client
-> keys and permissions), call contracts over JSON-RPC, and subscribe to live node events over SSE.
-> The sample app is an **SDK Explorer** over all 198 catalogued methods plus a native Calimero chat
-> client — feature-for-feature with the Swift SDK's sample. See [Roadmap](#roadmap).
+> **Calimero 1.0 only.** The 0.x API (`/admin-api`, `/jsonrpc`, `/ws`, `/sse`, `/auth/token`,
+> relays, delegated execution, `/api/cloud/*`) is gone from core, and from this SDK. See
+> [Migrating from 0.x](https://calimero-network.github.io/kotlin-sdk/reference/migrating-from-0x/).
 
 ## Modules
 
-| Module         | What it is                                                                 |
-|----------------|-----------------------------------------------------------------------------|
-| `mero-core`    | The SDK: the Cloud account layer (`account`, `cloud`, `relay`, `crypto` packages: `CloudAccount`, device keys, enrolment, `CloudClient` (device-proven routing plus cloud login sessions, HA and account linking), `connectCloud`, `RelayClient`, warrants), plus `Mero`, HTTP transport (OkHttp), `AuthApi` (incl. root/client keys + permissions), `AdminApi` (~140 methods), `RefreshCoordinator`, `TokenStore` (node-bound bundles), `RpcClient`, `SseClient`/`events()` + the long-lived `SseConnection` (`Mero.sse`, live subscribe/unsubscribe, typed migration/membership/app-version events), an experimental `WsClient`, ephemeral presence (`Mero.ephemeral`, device-signed `RelayPresenceClient`), `Capabilities` (+ presets, `capMask`/`capNames`), `classifyError`, local-node discovery, SSO with single-use callback state, and TEE trust (`tee`: Sigstore-verified releases, on-device DCAP, `SealedTransport`; `agentgate`: the mero-agent-gate client). |
-| `mero-compose` | Optional Jetpack Compose kit, the mero-react port: `MeroClient` as the provider (Cloud sign-in, node SSO with node-URL trust and token adoption, `AppMode`, `can`, the session admin, SSE-driven `isOnline`, `MeroAppStorage`, plus a development-only `login(nodeUrl, username, password)`), a state holder and `remember*` composable for every mero-react hook (reads, writes, execute, subscriptions, presence, migrations, blobs), invitations (capture from intents, `InviteRedemption`, `InvitationDialog`, `InvitationGate`, `JoinSync`, `JoinInvitation`), `LoginSheet` (Node and Cloud tabs), `ConnectButton`, `MeroTheme`, `CalimeroLogo`, `MigrationPendingBanner`, `MigrationAdminPanel`, and `MeroAppSession` (a mobile app's whole delegated session over `DelegatedAppBackend`). |
-| `mero-testkit` | Test-support: `FakeNode`, a stateful in-memory node on OkHttp MockWebServer, `FakeCloud` (its cloud-manager + hosted-relay routes), for driving whole sign-in → call → sign-out journeys with no live service, and `InMemoryAppBackend` / `RecordingContextContract` for testing an app's view models without a relay. |
-| `sample-app`   | A Compose sample in the light Calimero style: Cloud sign-in, a native chat client and an **SDK Explorer** over the relay session, plus a deterministic mock mode that drives the instrumented UI test. |
+| Module | What it is |
+|---|---|
+| `mero-core` | `CalimeroClient` and its typed errors (`AppError`, `ConfirmRequired`, `WrongNode`, `LoginRequired`, `NotFound`, `UnavailableError`, …); attestation (`CloudPolicy`, `fetchAttestedKey`: mock quotes only when allowed, real quotes checked against Sigstore-signed mero-tee releases and Intel's DCAP collateral on the device); the sealed transport (`tee.SealedTransport`); passkeys (`PasskeyProvider`, `SoftPasskey`); approvals and the consent page; `SessionStore`; and the app-facing layer in `app` (`MeroAppBackend`, `ContextContract`, `CalimeroAppBackend`, `OrgInvitation`). Also the mero-agent-gate client (`agentgate`). |
+| `mero-compose` | `MeroAppSession` (a mobile app's signed-in account over `CalimeroAppBackend`), `PlatformPasskey` (Android Credential Manager), `ConsentLauncher` (the node's consent page in a Custom Tab), `MeroTheme`. |
+| `mero-testkit` | `InMemoryAppBackend` and `RecordingContextContract`: test an app's view models with no cluster. |
+| `sample-app` | **Mero Chat** sample in the light Calimero style: Home / Chat / SDK tabs. |
 
 ### The sample app
 
-A light, Calimero-styled Compose app. Sign-in is **Continue with Calimero** only; the wallet
-redirects back to `mero-sample://enrol` (override with the `callbackUrl` intent extra in a debug build). After that:
-
-- **Chat** — a native chat client over the account's relay: messages are read with
-  `RelayClient.call` (query) and sent as warrants (`execute`), channels are created with a creation
-  warrant, and a space is joined by redeeming an invite as the account.
-- **Explore SDK** — every catalogued SDK method as a searchable, categorized form, with new Session,
-  Cloud and Relay groups first. A CI gate (`ci/check-registry-parity.sh`) fails the build if a
-  public SDK method has no entry here.
-- Technical IDs (account, device, relay, keys) sit behind "Show technical details".
-
-Mock mode (`--ez mock true`) runs the whole flow against an in-app `FakeNode` and a mock wallet that
-certifies the device with a fixed root, which is what the instrumented `LoginFlowTest` drives.
-
-The launch extras (`mock`, `callbackUrl`, `contextId`, `chatUser`, `invite`, `nodeUrl`) are test
-hooks and are read only in debug builds: the launcher activity is exported, so in a release build
-any app could set them. The mock backend and `mero-testkit` are debug-only too. Release builds
-block cleartext and opt out of backup; the debug build allows http only to `localhost`,
-`127.0.0.1` and `10.0.2.2` (`src/debug/res/xml/network_security_config.xml`). Do the same in an
-app built from this sample.
-
-A **Diagnostics** screen (the `>_` button) shows every request/auth event the session recorded,
-copyable — so a failed connection is debuggable without Android Studio attached.
+- **Sign in**: a passkey on a Calimero Cloud cluster (enter the cluster URL from the console;
+  sign in, or create an account), or **Developer node** for `merod local`
+  (`http://10.0.2.2:2501` from the emulator) with *Allow mock attestation* and a software passkey
+  kept (encrypted) on the device. Debug builds also offer an in-app demo on `InMemoryAppBackend`.
+- **Home**: the account and node, your **organizations and teams** (create one with a `general`
+  team, copy an invite link, redeem one), and **approvals** (node releases your scope has not
+  approved), which open the node's consent page in a Custom Tab; it returns to
+  `mero-sample://consent`.
+- **Chat**: mero-chat (`com.calimero.chat`) on the app-facing layer: spaces are organizations,
+  channels are app instances, messages are views and calls, live updates are the app's events.
+- **SDK**: every public `CalimeroClient` method as a form (`ci/check-registry-parity.sh` keeps
+  that true).
 
 ## Install
 
-Published to **GitHub Packages** on each `v*` tag (see [PUBLISHING.md](PUBLISHING.md) for the
-consumer repository + credentials snippet, and the Maven Central roadmap):
-
 ```kotlin
 dependencies {
-    implementation("com.calimero.mero:mero-core:0.1.0")
-    implementation("com.calimero.mero:mero-compose:0.1.0") // optional UI kit
+    implementation("com.calimero.mero:mero-core:<version>")
+    implementation("com.calimero.mero:mero-compose:<version>")  // MeroAppSession, passkeys, consent
+    testImplementation("com.calimero.mero:mero-testkit:<version>")
 }
 ```
 
-- **Kotlin 2.x**, coroutines + `Flow` throughout.
-- **minSdk 24**, compileSdk 34.
-- Dependencies: OkHttp (+ `okhttp-sse`), kotlinx.serialization, AndroidX Security, AndroidX Browser,
-  Bouncy Castle (`bcprov-jdk18on`, for Ed25519/X25519 below API 33).
+Kotlin 2.x, coroutines and `Flow`; minSdk 24, compileSdk 34. See [PUBLISHING.md](PUBLISHING.md).
 
-Coordinates are `com.calimero.mero:{mero-core,mero-compose}:<version>`. Maven — not npm — is the
-Android package registry; there's a full walkthrough in [PUBLISHING.md](PUBLISHING.md).
-
-## Quick start: Sign in with Calimero (Compose)
-
-Mobile sign-in is **Cloud only**. The person approves this device in the Calimero wallet (a passkey,
-opened in a Chrome Custom Tab); the wallet redirects back with a certificate for a key that never
-leaves the phone; the SDK finds the relay that serves the account and logs in to it.
+## Quick start
 
 ```kotlin
-val client = remember { MeroClient.create(context) }   // keys + session in EncryptedSharedPreferences
-LaunchedEffect(Unit) { client.restore() }               // reconnect a persisted session
-
-MeroProvider(client) {
-    val state by client.state.collectAsStateWithLifecycle()
-    if (state.isAuthenticated) MyApp() else LoginSheet(callbackUrl = "myapp://calimero-enrol")
-}
-
-// In the Activity that owns the callback intent filter (scheme myapp, host calimero-enrol,
-// or an https App Link): hand the redirect over.
-override fun onNewIntent(intent: Intent) {
-    super.onNewIntent(intent)
-    intent.data?.toString()?.let { url -> lifecycleScope.launch { client.handleEnrolmentCallback(url) } }
-}
-
-// Then, over the account's relay:
-val relay = client.relay!!
-relay.call(contextId, "get_messages")                       // a view: POST …/query; a write: a warrant
-relay.execute(contextId, "send_message", buildJsonObject { put("text", "hi") })
-client.mero?.events(listOf(contextId))                      // live events over the relay (Bearer)
-```
-
-- **Callback URL.** Any absolute URL the app receives works on the SDK side: an https App Link or an
-  app scheme. The hosted wallet currently redirects only to `https://` callbacks; app-scheme
-  callbacks need the pending mero-wallet change, so production apps should use a verified App Link.
-- **Signed in without a relay.** A brand-new account is a member of nothing, so no relay serves it
-  yet: `state.signedInWithoutRelay` is true and `state.relayNote` says why. Redeeming an invitation
-  (`client.joinWithInvitation(namespaceId, invitation)`) admits the account and gives it a relay.
-- **Relay node key.** Bearer reads and SSE need the relay's node key, learned from its TEE
-  attestation behind a pluggable `RelayKeyVerifier`. The default `DcapRelayKeyVerifier` verifies
-  the TDX quote **on the device**: Intel's chain (a built-in DCAP port), the signed mero-tee release
-  the relay runs, every register of its image, and the nonce and key binding. Writes do not depend
-  on it.
-- **Warrant nonces.** Each write spends a nonce from a counter the device keeps
-  (`PersistedNonceSource`, one rising sequence per relay). No node serves a lookup of where the
-  sequence stands, so keep that counter in durable storage. A write refused for its nonce throws
-  `IntentRefusedException` with `retryable = true` after one attempt; call again and the next
-  warrant signs a fresh nonce.
-- **Sealed to the TD.** A delegated session seals every request to a hosted relay to its attested
-  TD, so TLS that ends outside the enclave reads none of it (`SealedTransport`; `connectCloud`'s
-  `seal`). See the [TEE trust](docs/src/content/docs/guides/tee-trust.mdx) and
-  [sealed transport](docs/src/content/docs/guides/sealed-transport.mdx) guides. Private agents in a
-  TD are attested and provisioned with the [agent gate](docs/src/content/docs/guides/agent-gate.mdx)
-  client.
-
-Without Compose, `CloudAccount` runs the same flow: `beginEnrolment(callbackUrl)` →
-`completeEnrolment(url)` → `connect()`.
-
-### A mobile app's session (`MeroAppSession`)
-
-`MeroAppSession` (mero-compose) is the whole delegated session for any app: sign-in/out, restore,
-wallet callbacks and invitation links, and a `MeroAppBackend` (namespaces, subgroups, contexts,
-invitations, live events, the contract) rebuilt only when the session changes:
-
-```kotlin
-val session = MeroAppSession.create(app, "com.example.board", "https://board.example.com/enrol", scope = viewModelScope)
-viewModelScope.launch { session.restore() }        // and session.handle(url) for every deep link
-
-val namespaces = session.backend.value?.listNamespaces()
-val posts = session.contract.query(contextId, "get_posts", JsonObject(emptyMap()))
-val client = BoardClient(session.contract.bound(contextId))   // a generated client
-```
-
-View models take a `MeroAppBackend`; tests hand them mero-testkit's `InMemoryAppBackend`. See the
-[mobile app session](docs/src/content/docs/guides/app-session.mdx) guide. (Swift: `MeroAppSession`.)
-
-### What stays on the device, and backups
-
-`signOut()` (or `logout()`) retires the relay session and forgets the account: its tokens, session,
-relay map, subgroup namespaces and the pinned keys of its relays, plus the invitation attempt
-ledger. The device keys stay, along with the warrant nonces spent under them, so signing back in
-takes one approval. `signOut(forgetDevice = true)` drops those too. Use it on a shared or handed-over
-device, so the next account does not sign in with a key already certified to this one.
-
-Keys, session, nonces and tokens are in `EncryptedSharedPreferences` files (`mero_account`,
-`mero_tokens`, `mero_relay_tokens`, `mero_auth_state`, `mero_cloud_link`). The Keystore key that
-encrypts them never leaves the device, so a copy restored from a backup or a device transfer cannot
-be read. The SDK detects this, deletes the file and starts over (the person signs in again). To
-avoid that, exclude the files from backups. For Android 12+, add
-`android:dataExtractionRules="@xml/data_extraction_rules"` to `<application>`:
-
-```xml
-<!-- res/xml/data_extraction_rules.xml -->
-<data-extraction-rules>
-    <cloud-backup>
-        <exclude domain="sharedpref" path="mero_account.xml" />
-        <exclude domain="sharedpref" path="mero_tokens.xml" />
-        <exclude domain="sharedpref" path="mero_relay_tokens.xml" />
-        <exclude domain="sharedpref" path="mero_auth_state.xml" />
-        <exclude domain="sharedpref" path="mero_cloud_link.xml" />
-    </cloud-backup>
-    <device-transfer>
-        <!-- the same five <exclude> lines -->
-    </device-transfer>
-</data-extraction-rules>
-```
-
-For Android 11 and below, put the same `<exclude>` lines in a `<full-backup-content>` file and
-reference it with `android:fullBackupContent`. If you pass your own `fileName` to a store, exclude
-that file too.
-
-## Quick start (core, self-hosted node)
-
-For servers, tools and tests that talk to a node you run (the Compose kit has a development-only
-`MeroClient.login(nodeUrl, username, password)`; `discoverLocalNodes(host = ANDROID_EMULATOR_HOST)`
-finds running dev nodes):
-
-```kotlin
-val mero = Mero(
-    MeroConfig(
-        baseUrl = "https://node.example.com",
-        tokenStore = EncryptedPrefsTokenStore(context),          // Keystore-backed, survives restarts
-        refreshLockFile = File(context.filesDir, "mero-refresh.lock"), // cross-process refresh lock
+val client = CalimeroClient(
+    CalimeroClientOptions(
+        baseUrl = clusterUrl,
+        nodes = otherNodes,                    // failover on 421 WRONG_NODE
+        policy = CloudPolicy.production,       // real TDX quotes, mero-tee >= 2.3.109
+        onSession = store::save,               // keep the newest session: refresh tokens are single-use
     ),
 )
+client.signIn(PlatformPasskey(activity))
 
-// Credential login. The admin account is created by `merod init`; there is no
-// first-login setup code (core stopped honouring `bootstrap_secret`).
-mero.authenticate(Credentials("alice", "s3cret"))
-
-// Call a contract method — result decoded with kotlinx.serialization.
-val summary: MigrateMyEntriesSummary = mero.rpc.migrateMyEntries(contextId)
-
-// Drive the node's admin surface (contexts, groups, namespaces, invitations, registry install).
-val contexts = mero.admin.getContexts()
-
-// Subscribe to live node events (auto-reconnecting SSE); cancel the coroutine to close the stream.
-scope.launch {
-    mero.events(listOf(contextId)).collect { event -> /* e.g. re-fetch messages */ }
-}
-
-// Presence: publish your cursor, watch everyone's (replayed to late subscribers).
-mero.ephemeral.set(contextId, Cursor(line = 3, col = 7))
-scope.launch { mero.ephemeral.subscribe<Cursor>(contextId).collect { entry -> /* render */ } }
-
-// Logout (best-effort POST /auth/logout + revoke, then local clear).
-mero.logout(clientId = null)
+val org = client.createOrg("Acme")
+val app = client.createApp("general", AppSource.Package("com.calimero.chat"), org = org, initArgs = args)
+client.call(app, "send_message", message)              // retried on 503 with one idempotency key
+client.view(app, "get_messages", page).result
+client.events(app).collect { /* sealed SSE */ }
 ```
 
-### Core 0.11.0; re-login after upgrading from before rc.83
+For `merod local`: `CloudPolicy.development` (`allowMock = true`) and a `SoftPasskey("localhost",
+"http://localhost:3000")`.
 
-The SDK is pinned to core `0.11.0` ([`ci/core-version`](ci/core-version)), and signs namespace
-ops at schema 27, the only version a 0.11.0 node accepts. rc.83 made
-`key_id` a required JWT claim, so tokens minted by an older node no longer verify: after upgrading
-the node, users sign in again. When `/auth/refresh` answers `401` the SDK drops the stored bundle,
-so `mero.isAuthenticated` turns `false` instead of every call failing. `mero.logout()` now also
-retires the refresh token on the node (`POST /auth/logout`). See [CHANGELOG.md](CHANGELOG.md) for
-the full rc.41 → 0.11.0 delta.
+### A mobile app's session
 
-### 401 → refresh, done right
+```kotlin
+val session = MeroAppSession.create(app, "com.example.board", callbackUrl = "board://consent",
+    config = MeroAppConfig(nodeUrl = clusterUrl), scope = viewModelScope)
+viewModelScope.launch { session.restore() }
+session.signIn(activity)                              // the passkey sheet
+session.backend.collect { backend -> /* MeroAppBackend: orgs, teams, app instances, contract */ }
+```
 
-Refresh tokens are **single-use** (core#3083): replaying one revokes the whole family. The SDK never
-refreshes proactively — an OkHttp `Authenticator` reacts to `401 token_expired`, and
-`RefreshCoordinator` serializes refresh with (1) in-process single-flight, (2) a cross-process
-`FileLock`, and (3) a store re-read inside the lock so a bundle another process already rotated is
-adopted rather than replayed. A terminal `x-auth-error: token_reuse|token_revoked` throws
-`AuthRevokedException` and clears the store — no refresh, no retry.
+`MeroAppBackend` keeps the 0.x method names apps were written against (`listNamespaces`,
+`createSubgroup`, `createContext`, `joinNamespace`, …), mapped onto organizations, teams and app
+instances; see the [App session guide](https://calimero-network.github.io/kotlin-sdk/guides/app-session/).
 
 ## Build & test
 
 ```bash
-./gradlew ktlintCheck detekt              # lint (ktlint 1.x, enforcing + detekt)
-./gradlew testDebugUnitTest               # JVM unit + mock tests (FakeNode / MockWebServer)
-./gradlew lint                            # Android Lint
-./gradlew assembleDebug                   # build all modules + sample
-./gradlew :sample-app:connectedDebugAndroidTest  # instrumented UI test (needs an emulator)
+./gradlew ktlintCheck detekt testDebugUnitTest lint assembleDebug   # what CI runs
+./gradlew :sample-app:assembleDebugAndroidTest                       # instrumented tests compile
+./gradlew :sample-app:connectedDebugAndroidTest                      # the demo UI test (an emulator)
+./ci/check-registry-parity.sh                                        # every client method in the SDK tab
 ```
 
-Or run everything (build → unit → lint → live-node e2e → instrumented UI) with a PASS/FAIL summary:
+`CalimeroClientTest` drives the client against stand-in cloud nodes through the **real** sealed
+channel and a mock attestation: retries with one idempotency key, single-flight refresh on `401`,
+failover on `421 WRONG_NODE`, `412` confirmations, sealed SSE, the consent request, and the app
+backend's org/team/app mapping. See [TESTING.md](TESTING.md).
 
-```bash
-./test-all.sh                # add --skip-e2e / --skip-ui to skip the node/emulator sections
-./run-app.sh                 # build, boot a local node, install & launch the sample on an emulator
-./run-all-2.sh               # two-user stack: 2 nodes + 2 emulators, for invites/chat by hand
-./android-e2e.sh             # full-feature app e2e against a live merod
-./chat-multi-e2e.sh          # two-node, two-emulator chat sync e2e
-./ci/check-registry-parity.sh  # every SDK method must have an SDK Explorer entry
-```
-
-Backend-level sync is checked independently of the app by two **merobox** scenarios that boot real
-`merod` nodes in Docker (`ci/merobox/`, run by `merobox-sync.yml` / `merobox-chat-sync.yml`): a
-kv-store write must replicate across two nodes in both directions, and a message sent in a real
-`com.calimero.chat` channel on node 1 must be readable on node 2. Node image and app bundle both come
-from the release pinned in [`ci/core-version`](ci/core-version). See
-[ci/merobox/README.md](ci/merobox/README.md).
-
-See **[TESTING.md](TESTING.md)** for the full matrix (mock vs live node, env vars, emulator setup).
-Unit + mock tests cover the highest-risk logic: single-flight/cross-process refresh, the terminal
-`x-auth-error` path, the full login→call→refresh→logout journey via `FakeNode`, Admin API request
-shaping, JSON-RPC unwrap/error mapping, JWT `exp` parsing, SSO callback parsing and its single-use state,
-node-bound token persistence, error classification and local-node discovery. A live-node
-`RealNodeE2ETest` runs in CI's `e2e.yml` (and self-skips locally unless `MERO_E2E_NODE_URL` is set).
-
-## Roadmap
-
-- [x] **M1** — Transport + auth core, RpcClient, token store, SSO parse/build, Compose login UI.
-- [x] **M2** — Full Admin API (~110 methods): contexts, groups, namespaces, invitations, registry install.
-- [x] **M3** — SSE event client (`okhttp-sse`) with auto-reconnect via `Mero.events(...)`.
-- [x] **M4** — SSO in-app flow (Custom Tabs + deep-link callback) in the sample app.
-- [x] **M4.5** — Cloud-only sign-in on mobile: device keys, wallet enrolment, cloud routing, relay
-  login, warranted writes (golden vectors shared with mero-js).
-- [x] **M4.6** — mero-js parity: single-use SSO callback state, node-bound tokens, capability
-  presets, `classifyError`, local-node discovery, pinned relay keys and relay logout.
-- [x] **M4.7** — mero-js parity: long-lived SSE connection with live subscriptions and
-  typed group events, experimental WebSocket client, ephemeral presence (node and
-  device-signed relay presence).
-- [x] **M4.8** — mero-js parity: signing primitives. Owner-op root proofs (and root-signed
-  owner-op calls), BIP39 account roots with store-held root signers, cloud link/login
-  proofs, device scopes, and request proofs (`X-Calimero-Proof`) on HTTP, SSE and WebSocket.
-- [x] **M4.9** — mero-js parity: Calimero Cloud login sessions (Google or account root),
-  owned namespaces, relays and machines, HA (API and Custom Tab pages), account linking
-  (direct and through the consent page), `connectCloud` / `connectCloudWithAccount`.
-- [x] **M4.10** — mero-js parity: delegated accounts (multi-relay map, relay key learning,
-  delegated client reading by query, account admin facade over `AdminSurface`, delegated
-  governance and founding, step-typed invitation bootstrap, `redeemInvitation`) and the
-  unified `MeroTransportClient` (node or relay).
-- [x] **M4.11** — mero-js parity: TEE trust. Sigstore-verified mero-tee releases, on-device DCAP
-  quote verification (`Dcap`, a dcap-qvl port), DCAP-verified relay node keys, the sealed
-  transport (Noise NK, wire-identical with core) for `connectCloud` and delegated sessions, and
-  the mero-agent-gate client (HPKE Auth mode, signed agent policies).
-- [x] **M5** — mero-react parity in Compose: the provider (app modes, node SSO trust and token
-  adoption, online state, account/node admin, `can`), a state holder per hook, the invitation
-  flow (capture, redemption, dialog, gate, join sync), and the Node/Cloud login sheet, connect
-  button, theme and migration composables.
-- [ ] **M6** — Maven Central publishing, version-aligned to the mero-js contract.
+Docs: <https://calimero-network.github.io/kotlin-sdk/> (sources in `docs/`).
 
 ## License
 

@@ -1,0 +1,34 @@
+---
+title: CalimeroClient
+description: Every CalimeroClient method, grouped as mero-js groups them.
+---
+
+`CalimeroClient(CalimeroClientOptions(baseUrl, nodes, policy, httpClient, retry, onSession))`.
+Every method is `suspend`; paths are relative to the node and sealed.
+
+| Group | Methods |
+|---|---|
+| Session | `useApiKey`, `useSession`, `session`, `nodeUrl`, `onSessionChange`, `forget` |
+| Identity | `signUp`, `signIn`, `refresh`, `signOut`, `signOutEverywhere`, `me`, `addPasskey`, `removePasskey`, `labelPasskey`, `usage`, `attestation` |
+| API keys | `listApiKeys`, `createApiKey`, `revokeApiKey` |
+| Packages | `uploadBundle`, `uploadPackage`, `installPackage`, `packages`, `` `package` ``, `uninstallPackage` |
+| App instances | `listApps`, `getApp`, `createApp`, `deleteApp`, `setAccess`, `setAppMetadata`, `appStorage`, `appAbi`, `transferApp`, `upgradeApp` |
+| Calls | `call`, `callConfirmed`, `view`, `events` |
+| Blobs | `uploadBlob`, `downloadBlob`, `listBlobs`, `blobInfo`, `deleteBlob` |
+| Presence | `publishPresence`, `presence`, `presenceStream` |
+| Aliases | `setAlias`, `aliases`, `alias`, `deleteAlias` |
+| Organizations | `createOrg`, `getOrg`, `deleteOrg`, `setOrgMetadata`, `setMember`, `removeMember`, `setMemberMetadata`, `setCapabilities`, `invite`, `redeemInvite` |
+| Teams | `createTeam`, `getTeam`, `updateTeam`, `deleteTeam`, `setTeamMember`, `removeTeamMember` |
+| Upgrades | `upgradeOrg`, `upgradeRun`, `retryUpgradeRun`, `upgradePublished` |
+| Approvals | `approveRelease`, `approveOutbound`, `appsReport`, `appsReportAll`, `releaseRules`, `pendingApprovals`, `requestConsent`, `openConsentPage`, `consentResult`, `waitForConsent`, `publisherBinding`, `bindPublisher` |
+| Operator | `opsApps`, `opsOrgs`, `setReleaseDeadline`, `liftReleaseDeadline` |
+| Raw | `get`, `post`, `put`, `delete`, `postConfirmed`, `deleteConfirmed` |
+
+Helpers beside it: `errorFrom`, `fetchAttestedKey`, `claimedRelease`, `pendingApprovalsFrom`,
+`releaseConsent`, `withdrawConsent`, `upgradeConsent`, `consentReturn`, `stalledBy`,
+`compareVersions`, `publisherBindingMessage`, `OrgCapabilities`, `b64url` / `fromB64url`.
+
+Where Kotlin differs from mero-js in shape only: `AbortSignal` → cancel the coroutine (and
+`events` is a `Flow`); option objects → named parameters; `'unknown' | false` → `Committed`;
+`createApp(name, string | {package…})` → `AppSource.Bundle` / `AppSource.Package`; a session
+change is reported through `onSession` / `onSessionChange` so it can be stored.

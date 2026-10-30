@@ -1,0 +1,32 @@
+---
+title: Organizations and teams
+description: Create organizations and teams, manage members and capabilities, and invite people with org invite tokens.
+---
+
+```kotlin
+val org = client.createOrg("Acme")
+val team = client.createTeam(org, "general", TeamJoin.Everyone)        // open to every member
+client.setMember(org, accountId, OrgRole.Admin)
+client.setTeamMember(org, team, accountId, role = TeamRole.Lead)
+client.setCapabilities(org, OrgCapabilities.of("CREATE_APP", "INVITE_MEMBERS"), account = accountId)
+val info = client.getOrg(org)                                           // members, teams, metadata, …
+val me = client.me()                                                    // the account's orgs
+```
+
+## Invites
+
+```kotlin
+val token = client.invite(org, OrgRole.Member, teams = listOf(team))   // "inv_…", one use, 7 days
+client.redeemInvite(token)                                              // the redeemer joins at once
+```
+
+Apps pass invites around as an `OrgInvitation`; in a link it is
+`base58(deflate({"invitation": "inv_…", "namespaceId": "<orgId>", "contextId"?, "name"?}))` in the
+`invitation` query parameter, the same keys 0.x links had:
+
+```kotlin
+val link = OrgInvitation(org, token, name = "Acme").link("com.calimero.chat")
+val parsed = OrgInvitation.parse(pastedLink, expectedSlug = "com.calimero.chat")
+```
+
+Deleting an organization needs the owner's passkey: `client.deleteOrg(org, PlatformPasskey(activity))`.

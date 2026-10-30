@@ -1,17 +1,11 @@
 package com.calimero.mero.tee
 
-import com.calimero.mero.admin.AdminSurface
-import com.calimero.mero.admin.TeeAttestRequest
-import com.calimero.mero.crypto.Hex
 import com.calimero.mero.crypto.concat
-import com.calimero.mero.crypto.randomBytes
 import com.calimero.mero.crypto.sha256
 import com.calimero.mero.http.PlainJsonHttp
-import com.calimero.mero.http.trimBase
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
-import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.add
@@ -60,7 +54,7 @@ import java.util.concurrent.atomic.AtomicLong
  *
  * A node speaks plain HTTP and any TLS in front of it ends outside the enclave, at whatever
  * proxy or relay the operator runs, so everything crossing that hop (the bearer token,
- * JSON-RPC arguments, results) is readable there. Sealing encrypts it so that only the
+ * a call's arguments, results) is readable there. Sealing encrypts it so that only the
  * attested TD can read it, and only the TD can produce a response the client accepts. The
  * session keys come from both sides' ephemeral keys, so once a session is gone (an hour at
  * most) what was sent in it cannot be opened, not even with the transport key. Responses
@@ -137,117 +131,17 @@ fun transportKeyBinding(
     transportKey: ByteArray,
 ): ByteArray = sha256(concat(TRANSPORT_BINDING_DOMAIN.encodeToByteArray(), inner, transportKey))
 
-/** What `POST /admin-api/tee/attest {bindTransportKey: true}` answered, as [fetchAttestedTransportKey] reads it. */
-data class TransportAttestation(
-    val quoteB64: String,
-    /** The X25519 transport key (hex) the quote binds; null from a node that predates sealing. */
-    val transportPublicKey: String?,
-    /** The DCAP collateral, raw, when it was asked for. */
-    val collateral: JsonElement? = null,
-)
-
-/**
- * Ask a node for its transport key and accept it only if a quote [verify] accepted commits to
- * it (mero-js `fetchAttestedTransportKey`). [attest] posts the request to the node's
- * `/admin-api/tee/attest`; [applicationHash] (hex), when given with [applicationId], is the
- * bytecode hash you expect the attested application to have, so the quote only verifies if it
- * runs that exact bytecode.
- */
-suspend fun fetchAttestedTransportKey(
-    verify: VerifyTransportQuote,
-    applicationId: String? = null,
-    applicationHash: String? = null,
-    attest: suspend (TeeAttestRequest) -> TransportAttestation,
-): ByteArray {
-    require((applicationId == null) == (applicationHash == null)) { "applicationId and applicationHash are given together or not at all" }
-    val nonce = Hex.encode(randomBytes(32))
-    val attested =
-        attest(
-            TeeAttestRequest(
-                nonce = nonce,
-                applicationId = applicationId,
-                bindTransportKey = true,
-                includeCollateral = if (verify.includeCollateral) true else null,
-            ),
-        )
-    val reported = attested.transportPublicKey ?: refuse("The node did not report a transport key; it predates sealed transport")
-    val transportKey = Hex.decode(reported, "transportPublicKey", 32)
-    val inner = applicationHash?.let { Hex.decode(it, "applicationHash", 32) } ?: ByteArray(32)
-    val reportDataSuffix = Hex.encode(transportKeyBinding(inner, transportKey))
-    val verified = verify.verify(TransportQuote(attested.quoteB64, nonce, reportDataSuffix, attested.collateral?.let(DcapCollateral::fromJson)))
-    if (!verified) refuse("The attestation did not verify, so its transport key is not trusted")
-    return transportKey
-}
-
-/** [fetchAttestedTransportKey] through a node's [AdminSurface] (`teeAttest`). */
-suspend fun fetchAttestedTransportKey(
-    admin: AdminSurface,
-    verify: VerifyTransportQuote,
-    applicationId: String? = null,
-    applicationHash: String? = null,
-): ByteArray =
-    fetchAttestedTransportKey(verify, applicationId, applicationHash) { request ->
-        admin.teeAttest(request).let { TransportAttestation(it.quoteB64, it.transportPublicKey, it.collateral) }
-    }
-
-/**
- * [SealedTransport] for a node you know only by URL (mero-js `createAttestedSealedFetch`): it
- * attests the node's transport key with [verify], over `POST /admin-api/tee/attest` (the one
- * call that needs no credential and is never sealed), and seals everything else to it. A
- * restarted node is attested again, through the same verifier.
- *
- * This is what to hand a [com.calimero.mero.relay.RelayClient] for a TEE relay, so the warrant
- * and the method's arguments reach only the attested TD:
- *
- * ```kotlin
- * val sealed = createAttestedSealedFetch(relayUrl, createQuoteVerifier(...))
- * val relay = RelayClient(relayUrl, ..., httpClient = sealed.client)
- * ```
- */
-fun createAttestedSealedFetch(
-    baseUrl: String,
-    verify: VerifyTransportQuote,
-    applicationId: String? = null,
-    applicationHash: String? = null,
-    httpClient: OkHttpClient = PlainJsonHttp.defaultClient(),
-): SealedTransport {
-    val attestUrl = "${baseUrl.trimBase()}/admin-api/tee/attest"
-    val http = PlainJsonHttp(httpClient, role = null)
-    return SealedTransport(baseUrl, httpClient) {
-        fetchAttestedTransportKey(verify, applicationId, applicationHash) { request ->
-            val body =
-                buildJsonObject {
-                    put("nonce", request.nonce)
-                    request.applicationId?.let { put("applicationId", it) }
-                    put("bindTransportKey", true)
-                    request.includeCollateral?.let { put("includeCollateral", it) }
-                }
-            val response = http.execute("POST", attestUrl, body.toString())
-            if (!response.isSuccessful) refuse("The node refused to attest: HTTP ${response.status}")
-            val data =
-                runCatching { (sealedJson.parseToJsonElement(response.body) as JsonObject)["data"] as? JsonObject }.getOrNull()
-                    ?: refuse("The attestation response is malformed")
-            TransportAttestation(
-                quoteB64 = data.string("quoteB64") ?: refuse("The attestation response is malformed"),
-                transportPublicKey = data.string("transportPublicKey"),
-                collateral = data["collateral"]?.takeIf { it is JsonObject },
-            )
-        }
-    }
-}
-
 /**
  * Seals every request to a TEE node's attested transport key — mero-js `createSealedFetch`, as
  * an OkHttp [Interceptor]. Use [client] (the given client with this interceptor in front) for
- * every request to the node: as a [com.calimero.mero.relay.RelayClient]'s or
- * [com.calimero.mero.MeroConfig]'s `httpClient`.
+ * every request to the node. [com.calimero.mero.CalimeroClient] opens one per node it uses.
  *
  * A request for any URL outside [baseUrl] is refused rather than sent in the clear: falling
  * back to plaintext would silently undo the point of sealing.
  *
  * The transport key is either fixed bytes (a restarted node then surfaces as
  * [StaleTransportKeyException]) or a suspend step that attests and returns it — typically
- * `{ fetchAttestedTransportKey(admin, verify) }`: a restarted node is then attested again,
+ * `{ fetchAttestedKey(baseUrl, policy) }`: a restarted node is then attested again,
  * through your verifier, and the request retried once. A failed attestation is not
  * remembered: the next request attests again (mero-js keeps the failure).
  *
@@ -293,15 +187,6 @@ class SealedTransport private constructor(
     private var transportKey: ByteArray? = fixedKey
     private var session: Session? = null
 
-    /**
-     * Set by [com.calimero.mero.account] for a delegated session's relay: a logged-in request
-     * the TD says it cannot guard sealed (`403 sealed_route_unguarded`, answered from inside the
-     * envelope, so nobody on the way can forge it) goes out plain from then on.
-     */
-    internal var plainWhenUnguarded: Boolean = false
-
-    @Volatile private var unguarded = false
-
     /** [httpClient] with this interceptor in front of its own. */
     val client: OkHttpClient = base.newBuilder().apply { interceptors().add(0, this@SealedTransport) }.build()
 
@@ -323,7 +208,6 @@ class SealedTransport private constructor(
                 .readTimeout(chain.readTimeoutMillis().toLong(), TimeUnit.MILLISECONDS)
                 .writeTimeout(chain.writeTimeoutMillis().toLong(), TimeUnit.MILLISECONDS)
                 .build()
-        if (plainWhenUnguarded && unguarded && needsSession(request)) return carrier.newCall(request).execute()
 
         val body = request.body?.let { b -> Buffer().also { b.writeTo(it) }.readByteArray() } ?: ByteArray(0)
         val head = requestHead(request, encodedPath.removePrefix(basePath) + (url.encodedQuery?.let { "?$it" } ?: ""))
@@ -338,11 +222,6 @@ class SealedTransport private constructor(
                 if (e.code != "unknown_session") throw e
                 send(carrier, renew(carrier, open), head, body, request)
             }
-        if (plainWhenUnguarded && isUnguardedRefusal(response)) {
-            response.close()
-            unguarded = true
-            return carrier.newCall(request).execute()
-        }
         return response
     }
 
@@ -452,22 +331,6 @@ class SealedTransport private constructor(
             if (source.request(MAX_HANDSHAKE_REPLY + 1)) throw SealedTransportException("The handshake reply is malformed: it is too long")
             return sessionFrom(noise, source.readByteArray())
         }
-    }
-
-    private fun needsSession(request: Request): Boolean =
-        request.header("authorization") != null ||
-            request.url.encodedPath
-                .removePrefix(basePath)
-                .startsWith("/auth/")
-
-    private fun isUnguardedRefusal(response: Response): Boolean {
-        if (response.code != 403) return false
-        val code =
-            runCatching {
-                ((sealedJson.parseToJsonElement(response.peekBody(MAX_FRAME_LEN.toLong()).string()) as JsonObject)["error"] as? JsonObject)
-                    .string("code")
-            }.getOrNull()
-        return code == "sealed_route_unguarded"
     }
 
     internal companion object {

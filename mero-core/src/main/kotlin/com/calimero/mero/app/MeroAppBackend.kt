@@ -1,67 +1,86 @@
 package com.calimero.mero.app
 
-import com.calimero.mero.admin.SignedGroupOpenInvitation
-import com.calimero.mero.relay.GovernanceMemberRole
 import kotlinx.coroutines.flow.Flow
 import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonNull
 
 /**
- * Everything an app's screens need from a signed-in Calimero account, and nothing a node would
- * offer: the phone holds no node. The account's relay reads, writes, creates and admits on its
- * behalf. (Swift `MeroKit.MeroAppBackend`.)
+ * Everything an app's screens need from a signed-in Calimero account. (Swift
+ * `MeroKit.MeroAppBackend`.)
  *
- * The words are the protocol's: a *namespace* is what an app calls a workspace, team or space; a
- * *subgroup* is a group under it (a channel's, a board's); a *context* runs the app's contract in
- * a group.
+ * The method names are the 0.x ones the native apps were written against; on Calimero 1.0 each
+ * maps onto the cluster's own model:
  *
- * mero-compose's `DelegatedAppBackend` is the real one, and `MeroAppSession` builds it from the
- * signed-in client. View models take this interface, so a test hands them mero-testkit's
- * `InMemoryAppBackend` instead.
+ * | here | Calimero 1.0 |
+ * |---|---|
+ * | namespace (`namespaceId`) | organization (`orgId`) |
+ * | subgroup (`groupId` of a subgroup) | team, as `"{orgId}/{teamId}"` ([teamGroupId]) |
+ * | a namespace's root group (`groupId` = `namespaceId`) | the organization itself (apps not on a team) |
+ * | context (`contextId`) | app instance (`appId`) |
+ * | application (`applicationId`) | package (`com.example.app`), optionally `package#service` |
+ * | contract query / execute | `POST /apps/{app}/views` / `POST /apps/{app}/intents` |
+ * | invitation | an org invite token (`inv_…`), as [OrgInvitation] |
+ * | relay | none: the account talks to the cluster itself over the sealed channel |
+ *
+ * [CalimeroAppBackend] is the real one, built by mero-compose's `MeroAppSession` from the signed-in
+ * [com.calimero.mero.CalimeroClient]. View models take this interface, so a test hands them
+ * mero-testkit's `InMemoryAppBackend` instead.
  *
  * The names, blobs, leaving and members calls have defaults that throw
- * [UnsupportedOperationException] naming the call, so a backend of an app's own, written before
- * them, still compiles. `DelegatedAppBackend` and `InMemoryAppBackend` implement every one.
+ * [UnsupportedOperationException] naming the call, so a backend of an app's own still compiles.
  */
 @Suppress("TooManyFunctions")
 interface MeroAppBackend {
     /** The account, 64 hex. */
     val account: String
 
-    /** The contract in any context: relay query for reads, warrants for writes. [NoRelayContextContract] while no relay serves the account. */
+    /** The contract in any app instance: views for reads, intents for writes. */
     val contract: ContextContract
 
-    /** Whether a relay serves this account. Without one only joining works. */
+    /**
+     * Whether the account can reach the cluster. 0.x: "a relay serves this account". On 1.0 there
+     * is no relay, so a signed-in backend is always `true`; kept so apps written against 0.x
+     * compile unchanged.
+     */
     val hasRelay: Boolean
 
-    /** Whether [events] streams (the relay's Bearer session is up). When not, poll. */
+    /** Whether [events] streams. Always `true` on 1.0 (`GET /apps/{app}/events`, sealed SSE). */
     val canSubscribe: Boolean
 
-    /** The namespaces this account is in, for this app's application only when the session knows it (an account is used across apps). */
+    /** The organizations this account is in (`GET /auth/me`), as namespaces. */
     suspend fun listNamespaces(): List<AppNamespace>
 
-    /** The subgroups of a namespace and the contexts in each. */
+    /** The teams of an organization this account sees, and the app instances of this app on each. */
     suspend fun listSubgroups(namespaceId: String): List<AppSubgroup>
 
-    /** The contexts directly in [groupId] (a namespace's root group, or a subgroup). */
+    /** The app instances of this app directly in [groupId]: an organization (apps on no team), or a team ([teamGroupId]). */
     suspend fun listContexts(groupId: String): List<String>
 
-    /** Whether the account is a member of the context's group, so its contract calls work. */
+    /** Whether the account reaches the app instance, so its contract calls work (`GET /apps/{app}`). */
     suspend fun isMember(contextId: String): Boolean
 
-    /** Join a context in an open subgroup: `MemberJoinedOpen` on its group, through the relay. */
+    /**
+     * Join an app instance. On 1.0 an open team admits every member of its organization by itself,
+     * so this only checks the app is reachable; an invite-only team needs a lead to add the
+     * account. Throws [com.calimero.mero.NotFound] when it is not reachable.
+     */
     suspend fun joinContext(contextId: String)
 
-    /** Found a namespace running this app through the relay, named [name]. */
+    /** Create an organization named [name] (`POST /orgs`). */
     suspend fun foundNamespace(name: String): AppFoundedNamespace
 
-    /** Create a subgroup under [namespaceId], open (anyone in the namespace may join) or restricted. Returns its group id. */
+    /** Create a team in [namespaceId], open (`join: everyone`) or invite-only. Returns its group id ([teamGroupId]). */
     suspend fun createSubgroup(
         namespaceId: String,
         name: String,
         isPublic: Boolean,
     ): String
 
-    /** Create a context running [applicationId] in [groupId], initialised with [initArgs] (the contract's `init` arguments). Returns its context id. */
+    /**
+     * Create an app instance of [applicationId] (a package, or `package#service`) in [groupId]
+     * (an organization, or a team: the instance is then reachable by that team), initialised with
+     * [initArgs]. Returns its app id.
+     */
     suspend fun createContext(
         groupId: String,
         applicationId: String,
@@ -69,42 +88,51 @@ interface MeroAppBackend {
         initArgs: JsonElement,
     ): String
 
-    /** Mint an invitation to a namespace, signed with the device key. */
-    suspend fun createInvitation(namespaceId: String): SignedGroupOpenInvitation
+    /** Mint an invite to an organization (`POST /orgs/{org}/invites`, role `member`, one use, 7 days). */
+    suspend fun createInvitation(namespaceId: String): OrgInvitation
 
-    /**
-     * Redeem an invitation: direct admission through an admitting relay. A relayless account gets
-     * that relay; reconnect after (`MeroAppSession.didJoinNamespace()`).
-     */
+    /** Redeem an invite (`POST /invites/{token}/redeem`): the account joins the organization at once. */
     suspend fun joinNamespace(
         namespaceId: String,
-        invitation: SignedGroupOpenInvitation,
+        invitation: OrgInvitation,
     ): AppJoinedNamespace
 
-    /** Live events for one context. Completes at once when [canSubscribe] is false. */
+    /** Live events for one app instance (`GET /apps/{app}/events`, from now on). */
     fun events(contextId: String): Flow<AppContextEvent>
+
+    /**
+     * Create an app instance of one [service] of a multi-service package (battleships' lobby and
+     * match). The default joins them as `package#service` for [createContext].
+     */
+    suspend fun createServiceContext(
+        groupId: String,
+        applicationId: String,
+        service: String,
+        name: String,
+        initArgs: JsonElement,
+    ): String = createContext(groupId, "$applicationId#$service", name, initArgs)
 
     // ---- names ---------------------------------------------------------------------------
 
-    /** The contexts directly in [groupId], with their names (context metadata): [listContexts] with what a screen shows. */
+    /** The app instances directly in [groupId], with their names: [listContexts] with what a screen shows. */
     suspend fun listContextEntries(groupId: String): List<AppContextEntry> = unsupported("listContextEntries")
 
-    /** A group's metadata (a namespace's or a subgroup's), or null if never set. */
+    /** An organization's or a team's name and metadata, or null if it has none. */
     suspend fun groupMetadata(groupId: String): AppMetadata? = unsupported("groupMetadata")
 
-    /** A context's metadata in its group, or null if never set. */
+    /** An app instance's name and metadata, or null if it has none. */
     suspend fun contextMetadata(
         groupId: String,
         contextId: String,
     ): AppMetadata? = unsupported("contextMetadata")
 
-    /** Rename a namespace or subgroup (`GroupMetadataSet`), keeping its metadata's `data`. */
+    /** Rename a team (`POST /orgs/{org}/teams/{team}`), or set an organization's display name in its metadata. */
     suspend fun setGroupName(
         groupId: String,
         name: String,
     ): Unit = unsupported("setGroupName")
 
-    /** Rename a context in its group (`ContextMetadataSet`), keeping its metadata's `data`. */
+    /** Set an app instance's display name in its metadata, keeping the rest. */
     suspend fun setContextName(
         groupId: String,
         contextId: String,
@@ -113,13 +141,13 @@ interface MeroAppBackend {
 
     // ---- blobs ---------------------------------------------------------------------------
 
-    /** Store [data] on the relay against [contextId], a context the account is a member of; the relay announces it to the context's other members. */
+    /** Store [data] as one of [contextId]'s blobs (`POST /apps/{app}/blobs`). */
     suspend fun uploadBlob(
         contextId: String,
         data: ByteArray,
     ): AppBlob = unsupported("uploadBlob")
 
-    /** A blob's bytes, read through [contextId] (the relay checks the account is a member and that the blob belongs to that context). */
+    /** A blob's bytes, one of [contextId]'s (`GET /apps/{app}/blobs/{id}`). */
     suspend fun getBlob(
         blobId: String,
         contextId: String,
@@ -127,19 +155,16 @@ interface MeroAppBackend {
 
     // ---- leaving and deleting ------------------------------------------------------------
 
-    /** Leave a namespace (`MemberLeft` on it): every subgroup and context in it with it. */
+    /** Leave an organization (`DELETE /orgs/{org}/members/{me}`): every team and app in it with it. */
     suspend fun leaveNamespace(namespaceId: String): Unit = unsupported("leaveNamespace")
 
-    /**
-     * Leave a subgroup (`MemberLeft` on it), and with it the contexts in it. An account is a member
-     * of a context through its group, so this is also how it leaves a context.
-     */
+    /** Leave a team (`DELETE /orgs/{org}/teams/{team}/members/{me}`), and with it the apps on it. */
     suspend fun leaveSubgroup(groupId: String): Unit = unsupported("leaveSubgroup")
 
-    /** Delete a subgroup and what is in it (`GroupDeleted`, a root op on its namespace). The relay refuses it unless the account may. */
+    /** Delete a team and its apps. The node refuses it unless the account may. */
     suspend fun deleteSubgroup(groupId: String): Unit = unsupported("deleteSubgroup")
 
-    /** Take a context out of its group (`ContextDetached`): it stops being listed and served there. The relay refuses it unless the account may. */
+    /** Delete an app instance (its owner, or an admin of its organization). */
     suspend fun removeContext(
         groupId: String,
         contextId: String,
@@ -147,23 +172,23 @@ interface MeroAppBackend {
 
     // ---- members -------------------------------------------------------------------------
 
-    /** The members of a namespace or subgroup, with their roles and names (member metadata): a namespace's are the app's display names. */
+    /** The members of an organization or a team, with their roles and names (member metadata). */
     suspend fun listMembers(groupId: String): List<AppMember> = unsupported("listMembers")
 
-    /** Set a member's role (`MemberRoleSet`). Admins only. */
+    /** Set a member's role. Admins (organization) and leads (team) only. */
     suspend fun setMemberRole(
         groupId: String,
         identity: String,
         role: GovernanceMemberRole,
     ): Unit = unsupported("setMemberRole")
 
-    /** Remove a member (`MemberRemoved`). Admins only. */
+    /** Remove a member. Admins (organization) and leads (team) only. */
     suspend fun removeMember(
         groupId: String,
         identity: String,
     ): Unit = unsupported("removeMember")
 
-    /** Set the account's own name in a namespace or subgroup (`MemberMetadataSet` on itself), keeping its metadata's `data`. */
+    /** Set the account's own display name in an organization (member metadata), keeping the rest. */
     suspend fun setMemberName(
         groupId: String,
         name: String,
@@ -187,11 +212,11 @@ data class AppMetadata(
     val data: Map<String, String> = emptyMap(),
 )
 
-/** A member of a namespace or subgroup. (Swift `AppMember`.) */
+/** A member of an organization or a team. (Swift `AppMember`.) */
 data class AppMember(
-    /** The member's account, 64 hex. */
+    /** The member's account id. */
     val identity: String,
-    /** `Admin`, `Member` or `ReadOnly`; a relay is `RelayTee`. */
+    /** `Admin`, `Member` or `ReadOnly` ([GovernanceMemberRole]); an organization's owner is `Admin`. */
     val role: String,
     /** The name the member set (member metadata), when it set one. */
     val name: String? = null,
@@ -199,53 +224,87 @@ data class AppMember(
     val isAdmin: Boolean get() = role == GovernanceMemberRole.Admin.name
 }
 
-/** A blob stored through the relay. (Swift `AppBlob`.) */
+/**
+ * A member's role, as the apps name it. On 1.0: an organization's `admin` / `member` / `guest`, a
+ * team's `lead` / `member` / `readOnly`.
+ */
+enum class GovernanceMemberRole {
+    Admin,
+    Member,
+    ReadOnly,
+}
+
+/** One of an app instance's blobs. (Swift `AppBlob`.) */
 data class AppBlob(
     val blobId: String,
     val size: Long,
 )
 
-/** A namespace this account is a member of. (Swift `AppNamespace`.) */
+/** An organization this account is in. (Swift `AppNamespace`.) */
 data class AppNamespace(
-    /** The namespace id, 64 hex. */
+    /** The organization id. */
     val id: String,
-    /** Its name, when it has one. */
+    /** Its name. */
     val name: String?,
-    /** The application it runs: what a new context in it is created with. */
+    /** The app's package: what a new app instance in it is created from. */
     val applicationId: String,
     val memberCount: Int = 0,
 )
 
-/** A subgroup of a namespace, and the contexts in it. (Swift `AppSubgroup`.) */
+/** A team of an organization, and the app instances of this app on it. (Swift `AppSubgroup`.) */
 data class AppSubgroup(
+    /** `"{orgId}/{teamId}"` ([teamGroupId]). */
     val groupId: String,
     val name: String?,
     val contextIds: List<String>,
+    /** Whether every member of the organization is in it (`join: everyone`). */
+    val isPublic: Boolean = false,
 )
 
-/** What founding a namespace came to. (Swift `AppFoundedNamespace`.) */
+/** What creating an organization came to. (Swift `AppFoundedNamespace`.) */
 data class AppFoundedNamespace(
     val namespaceId: String,
-    /** Whether the cloud agreed to host the namespace. Invitees find it only then. */
-    val haEnabled: Boolean,
-    /** Why [haEnabled] is false, in words a person can act on. */
+    /** 0.x: whether the cloud agreed to host the namespace. Always `true` on 1.0: the cluster hosts it. */
+    val haEnabled: Boolean = true,
     val haError: String? = null,
-    /** Why the name could not be set, when the namespace exists anyway. */
     val nameError: String? = null,
 )
 
-/** What redeeming an invitation came to. (Swift `AppJoinedNamespace`.) */
+/** What redeeming an invite came to. (Swift `AppJoinedNamespace`.) */
 data class AppJoinedNamespace(
     val namespaceId: String,
-    /** NOT "joined": membership lands once peers apply the op. */
-    val published: Boolean,
-    /** The relay that admitted the account. */
-    val relayUrl: String,
+    /** 0.x: the join was published, not yet applied. On 1.0 the account is a member at once: `true`. */
+    val published: Boolean = true,
+    /** 0.x: the relay that admitted the account. On 1.0 the node the client uses. */
+    val relayUrl: String = "",
 )
 
-/** A live event in a context: something changed there. (Swift `AppContextEvent`.) */
+/** A live event in an app instance: something changed there. (Swift `AppContextEvent`.) */
 data class AppContextEvent(
     val contextId: String,
-    /** The node's event kind, e.g. `StateMutation`, `ExecutionEvent`, `Ephemeral`. */
+    /** The app's event kind (`#[app::event]`). */
     val kind: String,
+    /** The event's data, parsed as JSON when it is. */
+    val data: JsonElement = JsonNull,
+    /** The event's id (its log position), when the node sent one. */
+    val id: String = "",
 )
+
+/** The group id of [team] in [org]: what [AppSubgroup.groupId] and the team calls take. */
+fun teamGroupId(
+    org: String,
+    team: String,
+): String = "$org/$team"
+
+/** A group id read back: the organization, and the team when it names one. */
+data class GroupRef(
+    val org: String,
+    val team: String?,
+) {
+    companion object {
+        fun parse(groupId: String): GroupRef {
+            val cut = groupId.indexOf('/')
+            return if (cut < 0) GroupRef(groupId, null) else GroupRef(groupId.substring(0, cut), groupId.substring(cut + 1))
+        }
+    }
+}

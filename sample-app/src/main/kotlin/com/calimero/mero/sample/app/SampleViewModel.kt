@@ -1,63 +1,241 @@
 package com.calimero.mero.sample.app
 
 import android.app.Application
+import android.content.Context
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
-import com.calimero.mero.compose.MeroAppConfig
-import com.calimero.mero.compose.MeroClient
+import com.calimero.mero.CalimeroClient
+import com.calimero.mero.CalimeroClientOptions
+import com.calimero.mero.CloudPolicy
+import com.calimero.mero.SoftPasskey
+import com.calimero.mero.app.MeroAppBackend
+import com.calimero.mero.compose.MeroAppSession
+import com.calimero.mero.sample.chat.ChatService
 import com.calimero.mero.sample.mock.MockBackend
+import com.calimero.mero.storage.EncryptedSessionStore
+import com.calimero.mero.storage.MemorySessionStore
+import com.calimero.mero.storage.SessionStore
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
+import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
+
+/** How the sample is signed in. */
+enum class SignInMode {
+    /** A real cluster: real TDX quotes from a signed mero-tee release, the device's passkey. */
+    CLOUD,
+
+    /** `merod local` (or any `--dev` cluster): mock attestation allowed, a software passkey kept on the device. */
+    DEV,
+
+    /** Debug builds: no network at all, mero-testkit's in-memory backend. */
+    DEMO,
+}
 
 /**
- * Owns the app's [MeroClient] for the activity's lifetime.
+ * Owns the sample's session for the activity's lifetime: a [MeroAppSession] on the cluster the
+ * person chose (its [CalimeroClient] is what the SDK tab drives), or the in-memory demo.
  *
- * - Real mode: [MeroClient.create] (Keystore-backed keys, session and relay tokens) against the
- *   hosted wallet and cloud manager, then [MeroClient.restore] to reconnect a saved session: the
- *   Cloud account's, or a node sign-in, including a username/password one, while its tokens validate.
- * - Mock mode (debug builds only): [MockBackend], an in-app FakeNode playing both the cloud
- *   manager and the relay plus a mock wallet — so the whole sign-in runs with no network.
+ * The node URL and mode are kept beside the session ([SessionStore]), so a relaunch restores it.
  */
+@Suppress("TooManyFunctions")
 class SampleViewModel(
     app: Application,
 ) : AndroidViewModel(app) {
-    var client by mutableStateOf<MeroClient?>(null)
+    private val store: SessionStore =
+        runCatching<SessionStore> { EncryptedSessionStore(app, "mero_sample_session") }.getOrElse { MemorySessionStore() }
+
+    var mode by mutableStateOf(store.value(KEY_MODE)?.let { runCatching { SignInMode.valueOf(it) }.getOrNull() } ?: SignInMode.CLOUD)
         private set
-    var mock by mutableStateOf(false)
-        private set
-    var startError by mutableStateOf<String?>(null)
+    var nodeUrl by mutableStateOf(store.value(KEY_NODE) ?: DEFAULT_CLOUD_NODE)
         private set
 
-    private var stopMock: (() -> Unit)? = null
+    /** The session on a real cluster; null in the demo and while signed out of every mode. */
+    var session by mutableStateOf<MeroAppSession?>(null)
+        private set
+
+    /** What the screens run on: the session's backend, or the demo's. */
+    var backend by mutableStateOf<MeroAppBackend?>(null)
+        private set
+    var busy by mutableStateOf(false)
+        private set
+    var error by mutableStateOf<String?>(null)
+        private set
+    var restoring by mutableStateOf(true)
+        private set
+    private val bumps = MutableStateFlow(0)
+
+    /** Bumped whenever the session changes: screens re-read. */
+    val revision: StateFlow<Int> get() = session?.revision ?: bumps
+
+    /** The client the SDK tab drives; null in the demo. */
+    val client: CalimeroClient? get() = session?.client
+
     private var started = false
 
-    fun start(mock: Boolean) {
+    /** Restore the last session (or start the demo when [demo]). */
+    fun start(demo: Boolean) {
         if (started) return
         started = true
-        this.mock = mock
-        if (!mock) {
-            // The sample's callback is the `mero-sample://` scheme. A release app uses a verified
-            // https App Link and leaves allowCustomSchemeCallbacks off: any app can claim a scheme.
-            val c = MeroClient.create(getApplication(), config = MeroAppConfig(allowCustomSchemeCallbacks = true))
-            client = c
-            viewModelScope.launch { runCatching { c.restore() } }
+        if (demo && MockBackend.AVAILABLE) {
+            restoring = false
             return
         }
         viewModelScope.launch {
             try {
-                val session = MockBackend.start()
-                stopMock = session.stop
-                client = session.client
-            } catch (e: Exception) {
-                startError = "Mock backend failed to start: ${e.message}"
+                if (store.load() != null && mode != SignInMode.DEMO) {
+                    open(mode, nodeUrl).restore()
+                }
+            } finally {
+                restoring = false
             }
         }
     }
 
-    override fun onCleared() {
-        super.onCleared()
-        stopMock?.invoke()
+    /** Sign in (or, with [create], sign up as [name]) on a real cluster with the device's passkey. */
+    fun signInCloud(
+        activity: Context,
+        url: String,
+        create: Boolean,
+        name: String,
+    ) = attempt {
+        val s = open(SignInMode.CLOUD, url)
+        if (create) {
+            s.signUp(
+                com.calimero.mero.compose
+                    .PlatformPasskey(activity),
+                name,
+            )
+        } else {
+            s.signIn(
+                com.calimero.mero.compose
+                    .PlatformPasskey(activity),
+            )
+        }
+    }
+
+    /**
+     * Sign in to a development cluster (`merod local`) with a software passkey kept on the device:
+     * the first time it signs up as [name], after that it signs in with the same key.
+     */
+    fun signInDev(
+        url: String,
+        name: String,
+    ) = attempt {
+        val s = open(SignInMode.DEV, url)
+        val saved = store.value(KEY_DEV_PASSKEY + url)?.let { runCatching { SoftPasskey.restore(it) }.getOrNull() }
+        if (saved != null) {
+            s.signIn(saved)
+        } else {
+            val passkey = SoftPasskey(rpId = url.toHttpUrlOrNull()?.host?.let(::devRpId) ?: "localhost", origin = DEV_ORIGIN)
+            s.signUp(passkey, name.ifBlank { "android" })
+            store.setValue(KEY_DEV_PASSKEY + url, passkey.export())
+        }
+    }
+
+    /** The in-memory demo: no network, no passkey. */
+    fun startDemo() {
+        mode = SignInMode.DEMO
+        session = null
+        backend = MockBackend.backend()
+        bumps.value += 1
+    }
+
+    fun signOut() =
+        viewModelScope.launch {
+            session?.signOut()
+            session = null
+            backend = null
+            bumps.value += 1
+        }
+
+    /** A link the app received: the consent page coming back, or an invite. */
+    fun handleLink(url: String) =
+        viewModelScope.launch {
+            session?.handle(url)
+        }
+
+    private fun attempt(block: suspend () -> Unit) {
+        error = null
+        busy = true
+        viewModelScope.launch {
+            try {
+                block()
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                error = friendly(e)
+                SampleLog.log(SampleLog.Level.ERR, "sign-in failed: ${e.message}")
+            } finally {
+                busy = false
+            }
+        }
+    }
+
+    /** A [MeroAppSession] on [url] under [newMode]'s policy, its backend mirrored into [backend]. */
+    private fun open(
+        newMode: SignInMode,
+        url: String,
+    ): MeroAppSession {
+        val trimmed = url.trim().trimEnd('/')
+        mode = newMode
+        nodeUrl = trimmed
+        store.setValue(KEY_MODE, newMode.name)
+        store.setValue(KEY_NODE, trimmed)
+        val policy = if (newMode == SignInMode.DEV) CloudPolicy.development else CloudPolicy.production
+        val client =
+            CalimeroClient(
+                CalimeroClientOptions(baseUrl = trimmed, policy = policy, httpClient = SampleHttp.client),
+            )
+        val s = MeroAppSession(client, ChatService.PACKAGE_NAME, CONSENT_CALLBACK, store, scope = viewModelScope)
+        session = s
+        viewModelScope.launch { s.backend.collectLatest { backend = it } }
+        return s
+    }
+
+    private fun friendly(e: Exception): String =
+        when (e) {
+            is com.calimero.mero.PasskeyCancelled -> "You dismissed the passkey sheet, so nothing changed."
+            is com.calimero.mero.tee.TeeTrustException -> "The node did not attest: ${e.message}"
+            is com.calimero.mero.CalimeroError -> "${e.code}: ${e.nodeMessage}"
+            is java.io.IOException -> "Can't reach $nodeUrl. Is the node running?"
+            else -> e.message ?: e.toString()
+        }
+
+    companion object {
+        /** Where the consent page sends the person back; must match the manifest's intent filter. */
+        const val CONSENT_CALLBACK = "mero-sample://consent"
+
+        /** The origin `merod local` allows (`--origins`); a software passkey's client data claims it. */
+        const val DEV_ORIGIN = "http://localhost:3000"
+
+        /** `merod local` from the emulator. */
+        const val DEFAULT_DEV_NODE = "http://10.0.2.2:2501"
+        const val DEFAULT_CLOUD_NODE = ""
+        private const val KEY_MODE = "mode"
+        private const val KEY_NODE = "nodeUrl"
+        private const val KEY_DEV_PASSKEY = "devPasskey:"
+
+        /** The emulator reaches the host as 10.0.2.2, but `merod local`'s relying party is `localhost`. */
+        private fun devRpId(host: String): String = if (host == "10.0.2.2" || host == "127.0.0.1") "localhost" else host
+    }
+}
+
+/** The sample's HTTP client: the SDK's default, logged into [SampleLog]. */
+object SampleHttp {
+    val client: okhttp3.OkHttpClient by lazy {
+        CalimeroClientOptions
+            .defaultHttpClient()
+            .newBuilder()
+            .addInterceptor { chain ->
+                val request = chain.request()
+                SampleLog.log(SampleLog.Level.REQ, "${request.method} ${request.url.encodedPath}")
+                chain.proceed(request)
+            }.build()
     }
 }

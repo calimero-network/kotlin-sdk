@@ -10,10 +10,8 @@ import java.io.IOException
 import java.util.concurrent.TimeUnit
 
 /**
- * A bare JSON-over-HTTP helper for the account layer's clients (cloud manager, relay
- * intents, relay login), which talk to absolute URLs on hosts other than the node a
- * [com.calimero.mero.Mero] is bound to, and carry their own authentication (a routing
- * proof, a warrant, an optional Bearer) rather than the token store's.
+ * A bare JSON-over-HTTP helper for what is fetched in the clear: a node's `/attestation`,
+ * a signed release from its mirror, Intel's collateral, an agent gate.
  *
  * Non-2xx answers come back as an [HttpResponse]; only a transport failure throws
  * ([NetworkException]).
@@ -55,11 +53,7 @@ internal class PlainJsonHttp(
                 HttpResponse(
                     status = resp.code,
                     headers = resp.headers.names().associateWith { resp.header(it).orEmpty() },
-                    body =
-                        resp.body
-                            ?.boundedBytes(OkHttpTransport.DEFAULT_MAX_RESPONSE_BYTES)
-                            ?.toString(Charsets.UTF_8)
-                            .orEmpty(),
+                    body = resp.body?.let { readBounded(it.source()) }.orEmpty(),
                     url = url,
                 )
             }
@@ -76,6 +70,24 @@ internal class PlainJsonHttp(
                 .writeTimeout(timeoutMs, TimeUnit.MILLISECONDS)
                 .build()
     }
+}
+
+/** A response as [PlainJsonHttp] answers it. */
+internal class HttpResponse(
+    val status: Int,
+    val headers: Map<String, String>,
+    val body: String,
+    val url: String,
+) {
+    val isSuccessful: Boolean get() = status in 200..299
+}
+
+/** The most bytes of a plain response read (a release, collateral): 16 MiB. */
+internal const val MAX_PLAIN_RESPONSE_BYTES: Long = 16L * 1024 * 1024
+
+private fun readBounded(source: okio.BufferedSource): String {
+    if (source.request(MAX_PLAIN_RESPONSE_BYTES + 1)) throw NetworkException("The response is larger than $MAX_PLAIN_RESPONSE_BYTES bytes")
+    return source.readUtf8()
 }
 
 /** Strip trailing slashes from a base URL. */

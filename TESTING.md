@@ -1,348 +1,49 @@
 # TESTING — mero-kotlin (kotlin-sdk)
 
-Exact, section-by-section steps to test everything in this repo. Run every command
-from the repo root (`kotlin-sdk/`) unless a section says otherwise.
+Run every command from the repo root. You need **JDK 17** and the **Android SDK**
+(`ANDROID_HOME`, or `sdk.dir` in `local.properties`).
 
-`./test-all.sh` runs §0–§6 in one shot with a PASS/FAIL/SKIP summary; the sections
-below are what it automates, plus how to run each by hand.
-
----
-
-## 0. Prerequisites (do this first — one-time / after any toolchain change)
-
-The build and unit tests need **JDK 17** and the **Android SDK**. Instrumented
-tests (§6) and the app scripts additionally need `adb` + `emulator` on `PATH` (or
-`ANDROID_HOME` set) and at least one **AVD** (Android Virtual Device) created.
+## 1. What CI runs (`.github/workflows/ci.yml`)
 
 ```bash
-# JDK 17 present?
-java -version                      # → openjdk version "17.x"
-
-# Android SDK present? (Android Studio installs it here by default on macOS)
-export ANDROID_HOME="$HOME/Library/Android/sdk"   # Linux: ~/Android/Sdk
-ls "$ANDROID_HOME/platform-tools/adb"             # adb
-ls "$ANDROID_HOME/emulator/emulator"              # emulator
-
-# Put the tools on PATH for this shell:
-export PATH="$ANDROID_HOME/platform-tools:$ANDROID_HOME/emulator:$PATH"
-
-# List AVDs — you need at least one (two for the multi-user chat e2e):
-emulator -list-avds
-# Create one from Android Studio ▸ Device Manager, or via cmdline-tools:
-#   sdkmanager "system-images;android-30;default;x86_64"
-#   avdmanager create avd -n mero30 -k "system-images;android-30;default;x86_64"
-```
-
-> **Emulator ⇄ host networking.** A merod node runs on the **host** at
-> `http://localhost:4001`. From **inside the emulator** the same node is reached at
-> **`http://10.0.2.2:4001`** (`10.0.2.2` is the emulator's alias for the host
-> loopback). The app scripts and instrumented e2e already use `10.0.2.2`; the JVM
-> `RealNodeE2ETest` runs on the host and uses `localhost`.
-
----
-
-## 1. Build
-
-```bash
-./gradlew assembleDebug            # debug APK/AARs for all modules
-./gradlew assembleDebug --stacktrace
-```
-
-Expected: builds `:mero-core`, `:mero-compose`, and `:sample-app` with no errors.
-
-### Dependency verification
-
-Every dependency and plugin is checked against `gradle/verification-metadata.xml`
-(SHA-256), and the wrapper's distribution against `distributionSha256Sum`. After
-changing a dependency or plugin version, regenerate the metadata with the tasks CI
-runs, then review the diff:
-
-```bash
-./gradlew --write-verification-metadata sha256 help ktlintCheck detekt \
-  testDebugUnitTest lint assembleDebug :sample-app:assembleDebugAndroidTest
-```
-
-AGP downloads `aapt2` for the host OS only, so after an AGP bump add the hash of
-the other platforms' `aapt2-<version>-{linux,osx,windows}.jar` by hand (from
-`dl.google.com/android/maven2/com/android/tools/build/aapt2/<version>/`); CI runs
-on Linux.
-
----
-
-## 2. Lint + unit tests (the everyday run — no node, no emulator)
-
-```bash
-./gradlew ktlintCheck detekt       # style + static analysis (what CI enforces)
-./gradlew testDebugUnitTest        # JVM unit + MockWebServer-backed e2e
-```
-
-The unit suite covers the auth state machine, RPC client, SSO (including the
-single-use callback state, `AuthCallbackStateTest`), JWT, capabilities, token store
-(and its node binding, `TokenOriginTest`), error classification, local-node
-discovery (real loopback sockets), and the mocked end-to-end journeys (against
-OkHttp `MockWebServer`).
-
-`RealNodeE2ETest` (§4) **self-skips** (JUnit `assume`) because `MERO_E2E_NODE_URL`
-is not set — that is correct here; run it against a real node in §4.
-
-Run a single test class or method while iterating:
-
-```bash
-./gradlew :mero-core:testDebugUnitTest --tests '*RpcClientTest*'
-./gradlew :mero-core:testDebugUnitTest --tests '*RpcClientTest.executeUnwrapsOutput'
-```
-
----
-
-## 3. Android Lint (what CI enforces — must be clean)
-
-```bash
+./gradlew ktlintCheck detekt
+./gradlew testDebugUnitTest
 ./gradlew lint
+./gradlew assembleDebug
+./gradlew :sample-app:assembleDebugAndroidTest   # instrumented tests must compile
+./ci/check-registry-parity.sh                     # every public CalimeroClient method has an SDK-tab entry
 ```
 
-`ktlintCheck`, `detekt`, and `lint` must all exit 0 — this is exactly what `ci.yml`
-runs on every PR.
+The unit tests need no network and no node:
 
----
+| Suite | What |
+|---|---|
+| `mero-core` `tee/CalimeroClientTest` | `CalimeroClient` against stand-in cloud nodes, through the real Noise NK sealed channel with a mock attestation: mock quotes refused unless allowed, intents/views, 503 retries with one idempotency key, single-flight refresh on 401, 421 failover, 412 confirmations, sealed SSE, consent, the app backend's mapping, `SoftPasskey` signatures. |
+| `mero-core` `tee/*` | The sealed transport's wire format, DCAP, Sigstore releases, PCCS collateral, against pinned vectors. |
+| `mero-core` `app/*` | `ContextContract`, `InMemoryAppBackend`. |
+| `mero-core` `agentgate/*` | The agent gate client. |
+| `sample-app` `ChatServiceTest` | The chat on `InMemoryAppBackend`. |
 
-## 4. Live end-to-end tests (against a real merod node)
-
-These are the tests that skip in §2. They run only when `MERO_E2E_NODE_URL` is set,
-so you need a node first. This is a **JVM** test — it runs on your machine (not in
-an emulator), so it talks to the node at `localhost`.
-
-### 4a. Boot a node
+## 2. Instrumented UI tests (`instrumented.yml`, an emulator)
 
 ```bash
-# Download the PINNED merod (Linux x86_64) — the same release CI uses, so a local
-# green means what a CI green means. On macOS use merod_aarch64-apple-darwin.
-. ./ci/core-version                     # CORE_TAG, MEROD_IMAGE
-URL=$(gh release view "$CORE_TAG" --repo calimero-network/core --json assets \
-  -q '.assets[] | select(.name | test("merod_x86_64-unknown-linux-gnu\\.tar\\.gz$")) | .url')
-curl -sL "$URL" | tar xz && chmod +x ./merod
-
-# Init a single node with embedded auth + an admin account.
-# The admin is created AT INIT — there is no first-login bootstrap secret (core
-# stopped honouring one; rc.29 parses the field only to discard it). The password
-# is never a plain flag; pass it via stdin (below), a file
-# (--admin-password-file <PATH>), or env (MERO_AUTH_ADMIN_PASSWORD).
-# --auth-storage persistent keeps the init-time admin into `run`.
-printf 'dev-password' | ./merod --home ./e2e-node --node e2e init \
-  --server-port 4001 --swarm-port 4002 \
-  --auth-mode embedded --auth-storage persistent \
-  --admin-user dev --admin-password-stdin
-
-# Run the node:
-./merod --home ./e2e-node --node e2e run > merod.log 2>&1 &
-echo $! > merod.pid
-
-# Wait for health:
-until curl -sf http://localhost:4001/admin-api/health >/dev/null; do sleep 1; done
-echo "node healthy"
+./gradlew :sample-app:connectedDebugAndroidTest
 ```
 
-### 4b. Run the live e2e tests
+`LoginFlowTest` checks the sign-in screen's Cloud and developer paths, then runs the in-app demo
+(no network) through Home, Chat and sign-out.
+
+## 3. By hand against `merod local`
 
 ```bash
-MERO_E2E_NODE_URL=http://localhost:4001 \
-MERO_E2E_USER=dev MERO_E2E_PASS=dev-password \
-./gradlew :mero-core:testDebugUnitTest --tests '*RealNodeE2ETest*'
+# in calimero-network/core (merod is Linux-only; on macOS run it in Docker)
+cargo run -p merod -- local        # three nodes on 127.0.0.1:2501-2503, --dev, mock attestation
+./gradlew :sample-app:installDebug
 ```
 
-Expected: `RealNodeE2ETest` now **executes** (not skips). `MERO_E2E_USER` /
-`MERO_E2E_PASS` must match the `--admin-user` / password you set at init. CI runs
-this in `.github/workflows/e2e.yml` (manual + weekly) and guards against a
-vacuous all-skipped green by inspecting the JUnit XML.
+In the app: **Developer node (merod local)** → `http://10.0.2.2:2501` (the emulator's alias for
+the host), a name, *Allow mock attestation* → Connect. The first time it signs up with a software
+passkey kept on the device; after that it signs in with it.
 
-### 4b-2. Two-node invite → join (optional)
-
-`TwoNodeInviteJoinE2ETest` mints an invitation on one node and joins with it from
-another, **through the SDK's own types** — the round trip an app makes when it
-puts an invitation in a share link and hands it back. It self-skips unless a
-second node is given:
-
-```bash
-# Node B needs to reach node A: mDNS is off by default since core rc.26, so name
-# the peer explicitly. `peer_id` is in node A's config.toml right after init.
-PEER=$(awk -F'"' '/^peer_id/{print $2; exit}' ./e2e-node/e2e/config.toml)
-printf 'dev-password' | ./merod --home ./e2e-node --node e2e-b init \
-  --server-port 4011 --swarm-port 4012 \
-  --auth-mode embedded --auth-storage persistent \
-  --admin-user dev --admin-password-stdin \
-  --boot-nodes "/ip4/127.0.0.1/tcp/4002/p2p/$PEER"
-./merod --home ./e2e-node --node e2e-b run > merod-b.log 2>&1 &
-
-# Both nodes need the app installed: since core#3652 an http-registry node serves
-# no bytecode to peers, so the joiner cannot get it from the inviter.
-gh release download "$CORE_TAG" --repo calimero-network/core \
-  --pattern 'kv-store-test-fixture.mpk' --output /tmp/kv-store.mpk --clobber
-
-MERO_E2E_NODE_URL=http://localhost:4001 \
-MERO_E2E_NODE_B_URL=http://localhost:4011 \
-MERO_E2E_BUNDLE=/tmp/kv-store.mpk \
-./gradlew :mero-core:testDebugUnitTest --tests '*TwoNodeInviteJoinE2ETest*'
-```
-
-### 4c. Stop the node
-
-```bash
-kill "$(cat merod.pid)" 2>/dev/null; rm -f merod.pid
-```
-
----
-
-## 5. Runnable example
-
-Unlike the Swift SDK (which ships a `MeroExample` CLI), the Kotlin SDK's runnable
-demo **is the sample-app** — exercised interactively via `./run-app.sh` and under
-test in §6. There is no standalone JVM/console entry point, so `test-all.sh` marks
-§5 as **SKIP**. (If a `:mero-core-cli`-style module is added later, wire it into
-`test-all.sh` §5.)
-
-```bash
-./run-app.sh            # fresh node on :4001 + sample-app on an emulator
-./run-app.sh --mock     # in-app mock (no node): Continue with Calimero, then Approve in the mock wallet
-./run-app.sh --help     # all flags
-```
-
-For the two-user flows (invitations, cross-user chat) there's a second launcher that
-brings up the whole stack — two nodes **and** two emulators, each app pointed at its
-own node. `run-app-2.sh` is an alias for it:
-
-```bash
-./run-all-2.sh          # node A :4001 + node B :4011, app on two emulators (dev1 / dev2)
-HEADLESS=1 ./run-all-2.sh   # same, emulators with -no-window
-AVD_A=pixel_a AVD_B=pixel_b ./run-all-2.sh   # pick the AVDs explicitly
-```
-
-Two **distinct** AVDs are needed — a second instance of an already-running AVD can't
-start. The script clones one (`emulator_b`) from an installed system image if you only
-have one. Emulators share no clipboard, so move the invite with
-`adb -s <serial-B> shell input text '<invite-code>'`.
-
----
-
-## 6. Instrumented UI tests — `sample-app` (Android emulator)
-
-The Android analog of Swift's XCUITest: builds the Compose sample app and drives
-Cloud sign-in (mock wallet callback delivered as a `mero-sample://enrol` intent) → home →
-relay call → sign out in the emulator against an **in-app mock** (no node).
-
-```bash
-# Boot an emulator (or let the command below reuse a running one):
-emulator -avd "$(emulator -list-avds | head -1)" -no-boot-anim &
-adb wait-for-device
-
-# Run the instrumented suite (in-app mock only — the node-backed classes below
-# are filtered out; they run against a live node via android-e2e.sh):
-./gradlew :sample-app:connectedDebugAndroidTest \
-  -Pandroid.testInstrumentationRunnerArguments.notClass=com.calimero.mero.sample.AppE2ETest,com.calimero.mero.sample.ChatMultiUserTest
-```
-
-Expected: `BUILD SUCCESSFUL` with the instrumented suite green. CI runs this in
-`.github/workflows/instrumented.yml` on every PR using
-`reactivecircus/android-emulator-runner` (API 30, `default`, `x86_64`).
-
-### In-app mock vs live node
-
-| | In-app mock | Live node |
-|---|---|---|
-| Backend | a fake wired into the app | a real merod on `:4001` |
-| Launch | `./run-app.sh --mock` / `am start … --ez mock true` | `./run-app.sh` |
-| Instrumented tests | `instrumented.yml` (PR gate) | `android-e2e.yml` (manual/main/weekly) |
-| Sign in with | the in-app mock wallet (Approve / Decline) | Calimero Cloud (wallet passkey) |
-
-### Node-backed app e2e (heavier)
-
-```bash
-./android-e2e.sh              # 1 node + 1 emulator: full-feature AppE2ETest
-./chat-multi-e2e.sh           # 2 nodes + 2 emulators: cross-user chat (informational)
-```
-
-⚠️ **`chat-multi-e2e.sh` role 3 is expected red on core rc.32, and it is not a sync bug.**
-Roles 1 and 2 pass — the guest joins via the invite, sees the host's message and replies. Role 3
-(host sees the reply) fails because the published `com.calimero.chat` 3.1.1 declares
-`minRuntimeVersion 0.11.0-rc.28`: rc.31/rc.32 moved the `CrdtType` borsh tags into the `0x80+`
-range and stamped collection entries, so applying the guest's delta panics inside the **app's**
-`__calimero_sync` with `Unexpected variant tag: 136` (= `0x88`). Node A's log shows it plainly.
-Fixing it means republishing the chat app against rc.32. The control is the merobox kv-store lane,
-which syncs both directions on the same nodes — its app is built from the rc.32 release itself.
-
-The job stays `continue-on-error`, so this does not block a merge.
-
-The host role logs the invite as `MERO_E2E_INVITE=<token>`; the script scrapes it from logcat and
-hands it to the guest as the `invite` runner arg, which the test passes on as a launch extra so the
-chat screen installs the chat app and joins on open (no typing a 1 KB code). `chatUser=dev1|dev2` keeps the
-two emulators' chat display names apart — the login user is the admin on both nodes.
-
----
-
-## 7. Backend sync checks without the app (merobox, Docker)
-
-Two-node protocol-level checks that isolate node + WASM + sync from the app and emulator. They boot
-real `merod` containers, so they need Docker:
-
-```bash
-pip install merobox
-
-# The app bundle is not committed — fetch it from the pinned core release first.
-. ./ci/core-version
-gh release download "$CORE_TAG" --repo calimero-network/core \
-  --pattern 'kv-store-test-fixture.mpk' \
-  --output ci/merobox/res/kv-store.mpk --clobber
-
-merobox bootstrap validate ci/merobox/sync-two-node.yml       # schema only, no Docker
-merobox bootstrap run      ci/merobox/sync-two-node.yml       # kv-store, node 1 → node 2
-merobox bootstrap run      ci/merobox/sync-two-node-bidi.yml  # both directions
-```
-
-Node image and app bundle both come from `ci/core-version`; CI fails the job if a
-scenario's `image:` drifts from that file. It must be an `.mpk` — a dev install
-refuses a raw `.wasm` ("not a signed application bundle").
-
-`merobox-sync.yml` runs both kv-store scenarios as a **gating** job; `merobox-chat-sync.yml`
-downloads the real published `com.calimero.chat` app and asserts a chat message syncs node 1 → node 2
-(**informational** — it depends on what the registry currently serves; it skips with the reason when
-the package is unpublished or the registry is unreachable). Details and the "`1111…` = wasm/node
-mismatch" history are in [ci/merobox/README.md](ci/merobox/README.md).
-
-## 8. SDK ↔ sample parity
-
-```bash
-./ci/check-registry-parity.sh   # fails if a public SDK method has no SDK Explorer entry
-```
-
-The sample doubles as the SDK's living documentation, so CI enforces this. Intentional omissions
-(internal plumbing, flows the UI drives) are listed with reasons in the script's `EXCLUDED`.
-
----
-
-## Environment variables
-
-| Var | Used by | Meaning |
-|-----|---------|---------|
-| `MERO_E2E_NODE_URL` | `RealNodeE2ETest` (§4) | node URL; unset ⇒ the test self-skips |
-| `MERO_E2E_USER` | `RealNodeE2ETest` | admin username (matches `--admin-user`) |
-| `MERO_E2E_PASS` | `RealNodeE2ETest` | admin password (matches the piped password) |
-| `CORE_TAG` / `MEROD_IMAGE` | `ci/core-version` | the pinned core release every node lane uses |
-| `ANDROID_HOME` | scripts, §6 | Android SDK location (`adb`, `emulator`) |
-| `ANDROID_SERIAL` | scripts, §6 | target a specific emulator when several are running |
-
----
-
-## Quick reference — full green pass
-
-```bash
-export ANDROID_HOME="$HOME/Library/Android/sdk"                 # §0 (if needed)
-export PATH="$ANDROID_HOME/platform-tools:$ANDROID_HOME/emulator:$PATH"
-./gradlew assembleDebug                                          # §1
-./gradlew ktlintCheck detekt testDebugUnitTest                   # §2
-./gradlew lint                                                   # §3
-./ci/check-registry-parity.sh                                    # §8
-# §4 live e2e and §6 instrumented tests are optional / heavier — run as needed:
-./test-all.sh                                                    # all of §0–§6
-```
-
-CI mirrors these: `ci.yml` (§1–§3, §8 + instrumented-test compile + merobox scenario validation),
-`instrumented.yml` (§6 mock), `e2e.yml` (§4), `android-e2e.yml` (§6 live node + multi-user),
-`merobox-sync.yml` / `merobox-chat-sync.yml` (§7).
+A real cluster needs a passkey the cluster's relying-party domain allows for this app
+(`assetlinks.json`); use the cluster URL from the Calimero Cloud console.

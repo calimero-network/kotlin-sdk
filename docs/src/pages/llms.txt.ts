@@ -11,9 +11,9 @@ const BASE = '/kotlin-sdk';
 
 const TRACKS: Record<string, string> = {
   'get-started': 'Get Started — install, authenticate, and make your first call',
-  understand: 'Understand — the SDK architecture, the token model, and glossary',
-  guides: 'Guides — contexts & apps, RPC, events, groups, blobs, and the Compose frontend',
-  reference: 'Reference — the Mero class, the admin & auth API surface, and errors',
+  understand: 'Understand — Calimero 1.0, the SDK layers, and the glossary',
+  guides: 'Guides — apps, organizations, approvals, the sealed transport and the app session',
+  reference: 'Reference — CalimeroClient, errors, and migrating from 0.x',
 };
 
 export const GET: APIRoute = async () => {

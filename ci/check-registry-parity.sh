@@ -4,7 +4,7 @@
 # sample app's SDK Explorer.
 #
 # The sample app doubles as the SDK's living documentation: if a method exists on
-# AdminApi/AuthApi/RpcClient but no `SDKOperation` invokes it, the explorer quietly
+# CalimeroClient but no `SDKOperation` invokes it, the explorer quietly
 # stops covering part of the surface. This script diffs the two lists and fails
 # with the missing names.
 #
@@ -20,33 +20,44 @@ REGISTRY="sample-app/src/main/kotlin/com/calimero/mero/sample/explorer/Operation
 
 # Internal / non-explorer methods, each with a reason.
 EXCLUDED=(
-  authenticate       # Mero-level login flow, driven by the login screen
-  logout             # ditto
+  signUp             # driven by the sign-in screen (a passkey ceremony)
+  signIn             # ditto
+  signOut            # the Home tab's Sign out
+  forget             # local only: drops the session without a request
+  useApiKey          # credential plumbing, not a request
+  useSession         # ditto
+  onSessionChange    # ditto
   events             # SSE stream — consumed live by the chat screen, not a form
-  execute            # raw HttpClient escape hatch behind rpc/admin
-  executeRaw         # ditto, untyped variant
-  encodeComponent    # internal: percent-encoding helper
-  pathSegment        # internal: one id as one path segment (SEC-02)
-  compareSemverComponent  # internal: helper behind compareSemver
-  origin             # internal: base-URL accessor
-  fetchExternal      # internal: cross-node fetch helper
-  getMetadataRecord  # internal: shared metadata decoder
-  listAliases        # internal: shared decoder behind the three list*Aliases methods
-  rawJson            # internal: untyped passthrough used by typed wrappers
-  subscribe          # SSE subscription plumbing
-  blobPath           # internal: blob path + context_id query builder
-  send               # internal: status-only request helper
-  textOf             # internal: unwraps an RPC error's data into its text (RpcException.reason)
-  taggedText         # internal: the {type, data} case behind textOf
+  presenceStream     # SSE stream, as events
+  put                # raw escape hatch; get and post have entries
+  delete             # ditto
+  postConfirmed      # raw escape hatch behind the confirmed methods
+  deleteConfirmed    # ditto
+  appsReportAll      # every page of appsReport (which has an entry)
+  openConsentPage    # requestConsent + a navigation: the Approvals card on Home
+  waitForConsent     # polling around consentResult (which has an entry)
+  upgradeOrg         # operator-scale upgrade runs: not a phone's job
+  retryUpgradeRun    # ditto
+  upgradePublished   # publisher upgrade runs: ditto
+  approveRelease     # refused to an app's own session: approvals go through requestConsent
+  approveOutbound    # ditto
+  bindPublisher      # a package signing key's job, not a phone's
+  setMemberMetadata  # the chat sets display names through MeroAppBackend.setMemberName
+  uploadBundle       # development-only raw WASM upload
+  uploadPackage      # development-only .mpk upload
+  opsApps            # operator token only
+  opsOrgs            # ditto
+  setReleaseDeadline # ditto
+  liftReleaseDeadline # ditto
 )
 
 methods() {
-  grep -ohE '\bfun [a-zA-Z0-9_]+' \
-    "$CORE_SRC/admin/AdminApi.kt" "$CORE_SRC/auth/AuthApi.kt" "$CORE_SRC/rpc/RpcClient.kt" \
-    | sed -E 's/^fun //' | sort -u
+  # Public members of the class only: four-space indent, no visibility modifier.
+  grep -hE '^    (suspend )?fun ' "$CORE_SRC/CalimeroClient.kt" \
+    | grep -ohE 'fun `?[a-zA-Z0-9_]+' | sed -E 's/^fun `?//' | sort -u
 }
 
-# Third string literal of each SDKOperation(...) is the method name.
+# Third string literal of each op(...) is the method name.
 registry_names() {
   grep -ohE '"[a-zA-Z0-9_.]+", *"[^"]+", *"[a-zA-Z0-9_.]+"' "$REGISTRY" \
     | awk -F'", *"' '{ gsub(/"/, "", $3); print $3 }' | sort -u

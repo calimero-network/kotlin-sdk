@@ -155,12 +155,9 @@ private fun ChatHome(
     val scope = rememberCoroutineScope()
     var newSpace by remember { mutableStateOf(false) }
     var joining by remember { mutableStateOf(false) }
-    // Re-list whenever the session moves: a relay session that is still being attested lists
-    // nothing yet, and lands here again once it is ready (or has failed, which is shown).
-    val auth by service.session.collectAsState()
-    LaunchedEffect(service.appId, auth.sessionReady, auth.isLoading, auth.relayUrl) {
-        if (service.appId != null) service.loadSpaces()
-    }
+    // Re-list whenever the session changes (a sign-in, a redeemed invite).
+    val revision by service.revision.collectAsState()
+    LaunchedEffect(revision) { service.loadSpaces() }
 
     Box(Modifier.fillMaxSize().background(Cal.bg)) {
         Column(Modifier.fillMaxSize()) {
