@@ -1,0 +1,35 @@
+---
+title: User approvals
+description: Ask the account holder to approve a release, an upgrade or outbound hosts on the node's consent page, opened in a Custom Tab.
+---
+
+Approvals happen **only on the node's consent page**, never in the app: a session opened on an
+app is refused (`403`) if it tries `approveRelease` itself.
+
+```kotlin
+// What waits for a decision: unapproved node releases, newer package releases, a stalled deadline.
+val pending = client.pendingApprovals(org)
+
+// Ask: POST /consent/requests, then open the page in a Custom Tab.
+val started = ConsentLauncher.request(
+    activity,
+    client,
+    ConsentRequest.Release(ConsentScope(org), pending.releases.first().version, returnTo = "myapp://consent"),
+)
+```
+
+The page sends the person back to `returnTo?request_id=…&result=approved|declined`. That is a
+hint (anyone can type a URL): confirm it with the node.
+
+```kotlin
+// In the activity that receives the link:
+consentReturn(url)?.let { back -> client.consentResult(back.requestId) }
+// or poll:
+client.waitForConsent(started.requestId, expiresAt = started.expiresAt)
+```
+
+`MeroAppSession.requestConsent(context, request)` and `MeroAppSession.handle(url)` do both, and
+put the confirmed result in `session.consentResult`.
+
+`409 CONSENT_STALE` means what the page showed changed: ask again. `409 RELEASE_DEADLINE`
+(`ReleaseDeadlineError`) means new work is stopped until the scope approves `release`.

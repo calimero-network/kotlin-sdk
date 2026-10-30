@@ -1,11 +1,8 @@
 name: Instrumented Tests
 
 # Android instrumented tests (the analog of Swift's XCUITest): builds the Compose
-# sample app and drives login → home → RPC → logout in an Android emulator against
-# an IN-APP MOCK (no node). This is the PR gate for UI behaviour.
-#
-# Node-backed / multi-user e2e is heavier (real merod, cross-user sync) and does
-# NOT run here — it lives in android-e2e.yml (manual / main / weekly).
+# sample app and drives sign-in → home → chat → sign-out in an Android emulator on
+# the IN-APP DEMO (no cluster). This is the PR gate for UI behaviour.
 on:
   push:
     branches:
@@ -97,9 +94,9 @@ jobs:
           # so the gradle exit code propagates and a real test failure fails the job.
           # Single-line gradle invocation: the action runs this under sh and backslash line
           # continuations don't survive (the `\` gets passed to gradle as a task name).
-          # In-app mock only — node/multi-user e2e classes run in android-e2e.yml; filter them out.
+          # In-app demo only (mero-testkit's InMemoryAppBackend): no cluster.
           script: |
-            ./gradlew :sample-app:connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.notClass=com.calimero.mero.sample.AppE2ETest,com.calimero.mero.sample.ChatMultiUserTest --stacktrace > instrumented.log 2>&1 || { cat instrumented.log; exit 1; }
+            ./gradlew :sample-app:connectedDebugAndroidTest --stacktrace > instrumented.log 2>&1 || { cat instrumented.log; exit 1; }
             cat instrumented.log
 
       - name: Upload logs

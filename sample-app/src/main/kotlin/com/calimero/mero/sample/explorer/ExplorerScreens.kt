@@ -1,10 +1,9 @@
-@file:Suppress("TooManyFunctions", "MatchingDeclarationName")
+@file:Suppress("MatchingDeclarationName")
 
 package com.calimero.mero.sample.explorer
 
 import android.content.Intent
 import androidx.activity.compose.BackHandler
-import androidx.compose.animation.AnimatedContent
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -28,7 +27,6 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -36,6 +34,7 @@ import androidx.compose.material.icons.automirrored.outlined.Logout
 import androidx.compose.material.icons.filled.Apps
 import androidx.compose.material.icons.filled.Cloud
 import androidx.compose.material.icons.filled.Forum
+import androidx.compose.material.icons.outlined.AddCircleOutline
 import androidx.compose.material.icons.outlined.Apps
 import androidx.compose.material.icons.outlined.CheckCircle
 import androidx.compose.material.icons.outlined.Clear
@@ -44,15 +43,18 @@ import androidx.compose.material.icons.outlined.DeleteSweep
 import androidx.compose.material.icons.outlined.Dns
 import androidx.compose.material.icons.outlined.ErrorOutline
 import androidx.compose.material.icons.outlined.ExpandMore
+import androidx.compose.material.icons.outlined.Fingerprint
 import androidx.compose.material.icons.outlined.Forum
+import androidx.compose.material.icons.outlined.Groups
 import androidx.compose.material.icons.outlined.Home
 import androidx.compose.material.icons.outlined.Info
+import androidx.compose.material.icons.outlined.Link
 import androidx.compose.material.icons.outlined.MonitorHeart
 import androidx.compose.material.icons.outlined.PlayArrow
+import androidx.compose.material.icons.outlined.Science
 import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material.icons.outlined.Share
-import androidx.compose.material.icons.outlined.VpnKey
-import androidx.compose.material.icons.outlined.Wallet
+import androidx.compose.material.icons.outlined.VerifiedUser
 import androidx.compose.material.icons.outlined.WarningAmber
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
@@ -60,9 +62,12 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.NavigationBarItemDefaults
+import androidx.compose.material3.Switch
+import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
@@ -87,14 +92,19 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import com.calimero.mero.compose.MeroAuthState
-import com.calimero.mero.compose.MeroClient
-import com.calimero.mero.compose.MeroErrorReason
-import com.calimero.mero.sample.app.NodePrefs
+import com.calimero.mero.CalimeroClient
+import com.calimero.mero.ConsentRequest
+import com.calimero.mero.ConsentScope
+import com.calimero.mero.PendingApprovals
+import com.calimero.mero.app.MeroAppBackend
+import com.calimero.mero.app.OrgInvitation
+import com.calimero.mero.compose.ConsentLauncher
 import com.calimero.mero.sample.app.SampleLog
+import com.calimero.mero.sample.app.SampleViewModel
+import com.calimero.mero.sample.app.SignInMode
 import com.calimero.mero.sample.chat.ChatScreen
 import com.calimero.mero.sample.chat.ChatService
+import com.calimero.mero.sample.mock.MockBackend
 import com.calimero.mero.sample.ui.Cal
 import com.calimero.mero.sample.ui.CalCard
 import com.calimero.mero.sample.ui.CalIconTile
@@ -106,7 +116,6 @@ import com.calimero.mero.sample.ui.CalTextButton
 import com.calimero.mero.sample.ui.CalTextField
 import com.calimero.mero.sample.ui.Callout
 import com.calimero.mero.sample.ui.CalloutKind
-import com.calimero.mero.sample.ui.CardHead
 import com.calimero.mero.sample.ui.ChatAvatar
 import com.calimero.mero.sample.ui.Hairline
 import com.calimero.mero.sample.ui.IconTile
@@ -122,38 +131,29 @@ import com.calimero.mero.sample.ui.screenPad
 import kotlinx.coroutines.launch
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 
-/** Launch-time options for the explorer (callback URL, e2e hooks, mock defaults). */
+/** Launch-time options for the explorer (e2e hooks). */
 data class ExplorerOptions(
-    /** Where the wallet sends the person back; must match the manifest's intent filter. */
-    val callbackUrl: String,
-    /** Prefilled context for the SDK explorer's calls. */
-    val initialContextId: String = "",
     val chatDisplayName: String? = null,
     val autoJoinInvite: String? = null,
-    /** Prefills "Manually enter node URL" (the `nodeUrl` launch extra the live e2e tests pass). */
+    /** Prefills the developer node URL and opens the sign-in screen on it. */
     val nodeUrl: String? = null,
-    /** Shown on the login screen in mock mode: the in-app stand-in for the wallet. */
-    val mockWallet: (@Composable () -> Unit)? = null,
 )
 
-/** Root of the app: sign-in (Calimero Cloud, or a node URL), then the tabs. */
+/** Root of the app: sign-in (a passkey on Calimero Cloud, or a development node), then the tabs. */
 @Composable
 fun ExplorerApp(
-    client: MeroClient,
+    vm: SampleViewModel,
     options: ExplorerOptions,
 ) {
     MeroExplorerTheme {
-        val state by client.state.collectAsStateWithLifecycle()
-        LaunchedEffect(state.isAuthenticated) {
-            if (state.isAuthenticated) {
-                SampleLog.log(
-                    SampleLog.Level.OK,
-                    state.nodeUrl?.let { "authenticated on the node $it" } ?: "signed in as account ${state.account?.take(ACCOUNT_LOG)}…",
-                )
-            }
+        val backend = vm.backend
+        LaunchedEffect(backend?.account) {
+            backend?.let { SampleLog.log(SampleLog.Level.OK, "signed in as account ${it.account.take(ACCOUNT_LOG)}…") }
         }
-        AnimatedContent(targetState = state.isAuthenticated, label = "auth") { signedIn ->
-            if (signedIn) SignedIn(client, state, options) else LoginScreen(client, state, options)
+        when {
+            vm.restoring -> Box(Modifier.fillMaxSize().background(Cal.bg), contentAlignment = Alignment.Center) { CircularProgressIndicator(color = Cal.accentInk) }
+            backend == null -> LoginScreen(vm, options)
+            else -> SignedIn(vm, backend, options)
         }
     }
 }
@@ -161,54 +161,37 @@ fun ExplorerApp(
 // ---- Sign in -----------------------------------------------------------------------------
 
 /**
- * Calimero Cloud first: one button opens the wallet, the person approves this device with their
- * passkey, and the app connects to the relay serving their account. Under it, "Manually enter
- * node URL" signs in to a node directly (a local `merod`) with its admin username and password.
+ * Calimero Cloud first: the cluster's node URL (from the console) and the device's passkey,
+ * through Android's Credential Manager. Under it, "Developer node" signs in to `merod local` with
+ * mock attestation allowed and a software passkey kept on the device; debug builds also offer the
+ * in-memory demo.
  */
 @Composable
-@Suppress("LongMethod")
+@Suppress("LongMethod", "CyclomaticComplexMethod")
 private fun LoginScreen(
-    client: MeroClient,
-    state: MeroAuthState,
+    vm: SampleViewModel,
     options: ExplorerOptions,
 ) {
     val context = LocalContext.current
-    val scope = rememberCoroutineScope()
     val focus = LocalFocusManager.current
-    val prefs = remember { NodePrefs(context) }
-    var manual by rememberSaveable { mutableStateOf(options.nodeUrl != null) }
-    var nodeUrl by rememberSaveable { mutableStateOf(options.nodeUrl ?: prefs.lastNodeUrl) }
-    var username by rememberSaveable { mutableStateOf(prefs.lastNodeUser) }
-    var password by remember { mutableStateOf("") }
+    var dev by rememberSaveable { mutableStateOf(options.nodeUrl != null || vm.mode == SignInMode.DEV) }
+    var cloudUrl by rememberSaveable { mutableStateOf(if (vm.mode == SignInMode.CLOUD) vm.nodeUrl else "") }
+    var devUrl by rememberSaveable { mutableStateOf(options.nodeUrl ?: if (vm.mode == SignInMode.DEV) vm.nodeUrl else SampleViewModel.DEFAULT_DEV_NODE) }
+    var name by rememberSaveable { mutableStateOf(options.chatDisplayName ?: "") }
+    var newAccount by rememberSaveable { mutableStateOf(false) }
+    var allowMock by rememberSaveable { mutableStateOf(true) }
     var localError by remember { mutableStateOf<String?>(null) }
     var showLogs by remember { mutableStateOf(false) }
     if (showLogs) {
         DiagnosticsScreen(onBack = { showLogs = false })
         return
     }
+    val error = localError ?: vm.error
 
-    val loading = state.isLoading
-    val canConnect = !loading && nodeUrl.isNotBlank() && username.isNotEmpty() && password.isNotEmpty()
-    val error = localError ?: friendlyNodeError(state, nodeUrl.trim())
-
-    fun connect() {
-        if (!canConnect) return
-        val url = nodeUrl.trim().trimEnd('/')
-        val parsed = url.toHttpUrlOrNull()
-        if (parsed == null || !(url.startsWith("http://") || url.startsWith("https://"))) {
-            localError = "Enter a full node URL, like ${NodePrefs.DEFAULT_NODE_URL}."
-            return
-        }
-        localError = null
-        focus.clearFocus()
-        prefs.lastNodeUrl = url
-        prefs.lastNodeUser = username
-        SampleLog.log(SampleLog.Level.REQ, "node $url")
-        scope.launch {
-            if (!client.login(url, username, password)) {
-                SampleLog.log(SampleLog.Level.ERR, "node login failed: ${client.state.value.error}")
-            }
-        }
+    fun valid(url: String): Boolean {
+        val ok = url.trim().toHttpUrlOrNull() != null
+        localError = if (ok) null else "Enter a full node URL, like ${SampleViewModel.DEFAULT_DEV_NODE}."
+        return ok
     }
 
     Box(Modifier.fillMaxSize().background(Cal.bg)) {
@@ -222,7 +205,7 @@ private fun LoginScreen(
                     .padding(horizontal = 24.dp),
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {
-                Spacer(Modifier.height(if (manual) 40.dp else 96.dp))
+                Spacer(Modifier.height(48.dp))
                 Column(
                     Modifier.widthIn(max = 440.dp),
                     horizontalAlignment = Alignment.CenterHorizontally,
@@ -231,7 +214,7 @@ private fun LoginScreen(
                     CalIconTile(76.dp)
                     Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         Text(
-                            if (manual) "Connect to a node" else "Welcome to MeroKit",
+                            if (dev) "Connect to a dev node" else "Welcome to MeroKit",
                             color = Cal.text,
                             fontSize = 32.sp,
                             lineHeight = 38.sp,
@@ -240,10 +223,10 @@ private fun LoginScreen(
                             modifier = Modifier.testTag("loginTitle"),
                         )
                         Text(
-                            if (manual) {
-                                "Sign in to a node you run, like a local merod, with its admin username and password."
+                            if (dev) {
+                                "Sign in to merod local, or any --dev cluster. Its attestation is a mock, so allow it only for a node you run."
                             } else {
-                                "Private, peer-to-peer apps on Calimero. Sign in with your passkey; your account key never leaves the wallet."
+                                "Confidential apps on Calimero Cloud. The node proves what it runs before anything is sent, and you sign in with your passkey."
                             },
                             color = Cal.textDim,
                             fontSize = 16.sp,
@@ -251,91 +234,108 @@ private fun LoginScreen(
                             textAlign = TextAlign.Center,
                         )
                     }
-                    Spacer(Modifier.height(10.dp))
-                    if (error != null) {
-                        Callout(error, kind = CalloutKind.DANGER, modifier = Modifier.testTag("loginError"))
-                    } else if (state.cancelled && !manual) {
-                        Callout(
-                            "You declined in the wallet, so nothing was saved. You can try again.",
-                            kind = CalloutKind.INFO,
-                            modifier = Modifier.testTag("cloudLoginCancelled"),
-                        )
-                    }
-                    if (manual) {
-                        CalCard(padding = 18.dp) {
-                            Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
+                    Spacer(Modifier.height(4.dp))
+                    if (error != null) Callout(error, kind = CalloutKind.DANGER, modifier = Modifier.testTag("loginError"))
+                    CalCard(padding = 18.dp) {
+                        Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
+                            if (dev) {
                                 CalTextField(
-                                    nodeUrl,
-                                    { nodeUrl = it },
+                                    devUrl,
+                                    { devUrl = it },
                                     "Node URL",
-                                    placeholder = NodePrefs.DEFAULT_NODE_URL,
+                                    placeholder = SampleViewModel.DEFAULT_DEV_NODE,
                                     modifier = Modifier.testTag("nodeUrlField"),
                                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri, imeAction = ImeAction.Next),
                                 )
-                                CalTextField(
-                                    username,
-                                    { username = it },
-                                    "Username",
-                                    placeholder = NodePrefs.DEFAULT_NODE_USER,
-                                    modifier = Modifier.testTag("usernameField"),
-                                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
-                                )
-                                CalTextField(
-                                    password,
-                                    { password = it },
-                                    "Password",
-                                    placeholder = "Admin password",
-                                    password = true,
-                                    modifier = Modifier.testTag("passwordField"),
-                                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password, imeAction = ImeAction.Go),
-                                    keyboardActions = KeyboardActions(onGo = { connect() }),
-                                )
+                                CalTextField(name, { name = it }, "Your name", placeholder = "ada", modifier = Modifier.testTag("nameField"))
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Column(Modifier.weight(1f)) {
+                                        Text("Allow mock attestation", color = Cal.text, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
+                                        Text("merod local signs no TDX quote", color = Cal.textFaint, fontSize = 12.sp)
+                                    }
+                                    Switch(
+                                        checked = allowMock,
+                                        onCheckedChange = { allowMock = it },
+                                        colors = SwitchDefaults.colors(checkedTrackColor = Cal.lime, checkedThumbColor = Cal.onLime),
+                                        modifier = Modifier.testTag("allowMock"),
+                                    )
+                                }
                                 LoadingPrimaryButton(
-                                    text = "Connect to node",
+                                    text = "Connect",
                                     icon = Icons.Outlined.Dns,
-                                    loading = loading,
-                                    enabled = canConnect,
-                                    onClick = ::connect,
+                                    loading = vm.busy,
+                                    enabled = !vm.busy && devUrl.isNotBlank() && allowMock,
+                                    onClick = {
+                                        if (valid(devUrl)) {
+                                            focus.clearFocus()
+                                            vm.signInDev(devUrl, name)
+                                        }
+                                    },
                                     modifier = Modifier.testTag("loginButton"),
                                 )
                                 Text(
-                                    "In the emulator, 10.0.2.2 is your computer. On a phone, use your computer's LAN address.",
+                                    "In the emulator, 10.0.2.2 is your computer. A software passkey is kept on this device for this node.",
                                     color = Cal.textFaint,
                                     fontSize = 12.sp,
                                     textAlign = TextAlign.Center,
                                     modifier = Modifier.fillMaxWidth(),
                                 )
+                            } else {
+                                CalTextField(
+                                    cloudUrl,
+                                    { cloudUrl = it },
+                                    "Cluster URL",
+                                    placeholder = "https://<cluster>.calimero.network",
+                                    modifier = Modifier.testTag("cloudUrlField"),
+                                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri, imeAction = ImeAction.Done),
+                                )
+                                if (newAccount) {
+                                    CalTextField(name, { name = it }, "Your name", placeholder = "ada", modifier = Modifier.testTag("nameField"))
+                                }
+                                LoadingPrimaryButton(
+                                    text = if (newAccount) "Create account with a passkey" else "Sign in with passkey",
+                                    icon = Icons.Outlined.Fingerprint,
+                                    loading = vm.busy,
+                                    enabled = !vm.busy && cloudUrl.isNotBlank() && (!newAccount || name.isNotBlank()),
+                                    onClick = {
+                                        if (valid(cloudUrl)) {
+                                            focus.clearFocus()
+                                            SampleLog.log(SampleLog.Level.REQ, "passkey ${if (newAccount) "sign-up" else "sign-in"} on $cloudUrl")
+                                            vm.signInCloud(context, cloudUrl, newAccount, name)
+                                        }
+                                    },
+                                    modifier = Modifier.testTag("cloudLoginButton"),
+                                )
+                                CalTextButton(
+                                    if (newAccount) "I already have an account" else "New here? Create an account",
+                                    onClick = { newAccount = !newAccount },
+                                    underline = true,
+                                    modifier = Modifier.align(Alignment.CenterHorizontally).testTag("toggleSignUp"),
+                                )
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Icon(Icons.Outlined.VerifiedUser, null, tint = Cal.textFaint, modifier = Modifier.size(14.dp))
+                                    Spacer(Modifier.width(6.dp))
+                                    Text("The node's TDX quote is verified before your passkey is used", color = Cal.textFaint, fontSize = 12.sp)
+                                }
                             }
                         }
-                    } else {
-                        Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                            LoadingPrimaryButton(
-                                text = "Continue with Calimero Cloud",
-                                icon = Icons.Filled.Cloud,
-                                loading = loading,
-                                enabled = !loading,
-                                onClick = {
-                                    SampleLog.log(SampleLog.Level.REQ, "opening the Calimero wallet")
-                                    client.signInWithCloud(context, options.callbackUrl)
-                                },
-                                modifier = Modifier.testTag("cloudLoginButton"),
-                            )
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Icon(Icons.Outlined.VpnKey, null, tint = Cal.textFaint, modifier = Modifier.size(14.dp))
-                                Spacer(Modifier.width(6.dp))
-                                Text("Opens the Calimero wallet to approve this device", color = Cal.textFaint, fontSize = 12.sp)
-                            }
-                        }
-                        options.mockWallet?.invoke()
+                    }
+                    if (MockBackend.AVAILABLE) {
+                        CalSecondaryButton(
+                            "Try the in-app demo",
+                            onClick = { vm.startDemo() },
+                            icon = Icons.Outlined.Science,
+                            modifier = Modifier.fillMaxWidth().testTag("demoButton"),
+                        )
                     }
                     CalTextButton(
-                        if (manual) "Use Calimero Cloud instead" else "Manually enter node URL",
+                        if (dev) "Use Calimero Cloud instead" else "Developer node (merod local)",
                         onClick = {
-                            manual = !manual
+                            dev = !dev
                             localError = null
                         },
-                        underline = !manual,
-                        modifier = Modifier.testTag(if (manual) "useCloud" else "manualNode"),
+                        underline = !dev,
+                        modifier = Modifier.testTag(if (dev) "useCloud" else "manualNode"),
                     )
                 }
                 Spacer(Modifier.height(24.dp))
@@ -350,76 +350,22 @@ private fun LoginScreen(
     }
 }
 
-/** The lime primary button, full width, with a spinner in place of the icon while [loading]. */
-@Composable
-private fun LoadingPrimaryButton(
-    text: String,
-    icon: ImageVector,
-    loading: Boolean,
-    enabled: Boolean,
-    onClick: () -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    Box(contentAlignment = Alignment.Center) {
-        CalPrimaryButton(text, onClick = onClick, enabled = enabled, icon = if (loading) null else icon, modifier = modifier.fillMaxWidth())
-        if (loading) {
-            CircularProgressIndicator(
-                color = Cal.onLime,
-                strokeWidth = 2.dp,
-                modifier = Modifier.align(Alignment.CenterStart).padding(start = 20.dp).size(18.dp),
-            )
-        }
-    }
-}
-
-/**
- * The SDK's node-login error, in the words the sign-in screen uses. It branches on
- * [MeroAuthState.errorReason] (a bad password, a lockout, a node that is not there), never on the
- * message; anything else shows [MeroAuthState.error] as is.
- */
-private fun friendlyNodeError(
-    state: MeroAuthState,
-    nodeUrl: String,
-): String? {
-    val error = state.error ?: return null
-    return when (state.errorReason) {
-        MeroErrorReason.UNREACHABLE -> "Can't reach a node at $nodeUrl. Is merod running?"
-        MeroErrorReason.INVALID_CREDENTIALS -> "The node refused that username or password."
-        MeroErrorReason.RATE_LIMITED -> "Too many failed sign-ins. Wait a little, then try again."
-        MeroErrorReason.NODE_ERROR -> "The node hit an error (HTTP ${state.errorStatus}). Check its logs."
-        else -> error
-    }
-}
-
 // ---- Signed in: Home, Chat, SDK -------------------------------------------------------------
-
-private enum class Tab(
-    val label: String,
-    val icon: ImageVector,
-    val selectedIcon: ImageVector,
-    val tag: String,
-) {
-    HOME("Home", Icons.Outlined.Home, Icons.Outlined.Home, "tabHome"),
-    CHAT("Chat", Icons.Outlined.Forum, Icons.Filled.Forum, "tabChat"),
-    SDK("SDK", Icons.Outlined.Apps, Icons.Filled.Apps, "tabSdk"),
-}
 
 @Composable
 private fun SignedIn(
-    client: MeroClient,
-    state: MeroAuthState,
+    vm: SampleViewModel,
+    backend: MeroAppBackend,
     options: ExplorerOptions,
 ) {
     var tab by rememberSaveable { mutableStateOf(Tab.HOME) }
     var inChannel by remember { mutableStateOf(false) }
     var sdkOp by remember { mutableStateOf<SDKOperation?>(null) }
-    var runAll by remember { mutableStateOf(false) }
-    var components by remember { mutableStateOf(false) }
-    val runAllModel = remember(client, state.nodeUrl, state.account) { RunAllModel() }
     var showLogs by remember { mutableStateOf(false) }
-    val chat = remember(client, state.nodeUrl, state.account) { ChatService(client, options.chatDisplayName) }
+    val chat = remember(backend) { ChatService(backend, options.chatDisplayName, vm.revision) }
+    val client = vm.client
 
-    BackHandler(enabled = tab != Tab.HOME && !inChannel && sdkOp == null && !runAll && !components && !showLogs) { tab = Tab.HOME }
+    BackHandler(enabled = tab != Tab.HOME && !inChannel && sdkOp == null && !showLogs) { tab = Tab.HOME }
 
     if (showLogs) {
         DiagnosticsScreen(onBack = { showLogs = false })
@@ -430,8 +376,8 @@ private fun SignedIn(
             when (tab) {
                 Tab.HOME ->
                     HomeScreen(
-                        client = client,
-                        state = state,
+                        vm = vm,
+                        backend = backend,
                         displayName = chat.username,
                         onOpenChat = { tab = Tab.CHAT },
                         onOpenSdk = { tab = Tab.SDK },
@@ -441,14 +387,14 @@ private fun SignedIn(
                 Tab.SDK -> {
                     val op = sdkOp
                     when {
-                        runAll -> RunAllScreen(client, runAllModel, signedInToNode = state.isNodeSession, onBack = { runAll = false })
-                        components -> LoginComponentPreview(onBack = { components = false })
-                        op == null ->
-                            SdkListScreen(
-                                onOpenOp = { sdkOp = it },
-                                onOpenRunAll = { runAll = true },
-                                onOpenComponents = { components = true },
-                            )
+                        client == null ->
+                            Column(Modifier.fillMaxSize()) {
+                                TopBar("Explore SDK")
+                                Box(Modifier.padding(screenPad)) {
+                                    Callout("The in-app demo has no cluster to call. Sign in to a node to explore the SDK.", kind = CalloutKind.INFO)
+                                }
+                            }
+                        op == null -> SdkListScreen(onOpenOp = { sdkOp = it })
                         else -> {
                             BackHandler { sdkOp = null }
                             OperationRunner(client, op, onBack = { sdkOp = null })
@@ -457,8 +403,7 @@ private fun SignedIn(
                 }
             }
         }
-        // The bottom bar hides inside a channel, where the composer sits, and over the login preview.
-        if (!(tab == Tab.CHAT && inChannel) && !(tab == Tab.SDK && components)) {
+        if (!(tab == Tab.CHAT && inChannel)) {
             Hairline()
             NavigationBar(containerColor = Cal.surface, tonalElevation = 0.dp) {
                 Tab.entries.forEach { t ->
@@ -486,14 +431,13 @@ private fun SignedIn(
 @Composable
 @Suppress("LongMethod", "LongParameterList")
 private fun HomeScreen(
-    client: MeroClient,
-    state: MeroAuthState,
+    vm: SampleViewModel,
+    backend: MeroAppBackend,
     displayName: String,
     onOpenChat: () -> Unit,
     onOpenSdk: () -> Unit,
     onOpenLogs: () -> Unit,
 ) {
-    val scope = rememberCoroutineScope()
     Box(Modifier.fillMaxSize().background(Cal.bg)) {
         LimeGlow(height = 320.dp)
         Column(
@@ -520,14 +464,9 @@ private fun HomeScreen(
                 }
                 CalIconTile(34.dp)
             }
-            ConnectionCard(state)
-            state.relayNote?.let { note ->
-                Callout(
-                    note,
-                    kind = if (state.relayUrl == null) CalloutKind.INFO else CalloutKind.WARNING,
-                    modifier = Modifier.testTag("sessionNote"),
-                )
-            }
+            ConnectionCard(vm, backend)
+            OrganizationsSection(vm, backend)
+            vm.client?.let { ApprovalsSection(it) }
             CalSection("Try it") {
                 CalRow(
                     Icons.Filled.Forum,
@@ -554,7 +493,7 @@ private fun HomeScreen(
                         .fillMaxWidth()
                         .clickable {
                             SampleLog.log(SampleLog.Level.REQ, "sign out")
-                            scope.launch { client.signOut() }
+                            vm.signOut()
                         }.padding(horizontal = 14.dp, vertical = 12.dp)
                         .testTag("signOutButton"),
                     verticalAlignment = Alignment.CenterVertically,
@@ -575,32 +514,217 @@ private fun HomeScreen(
 }
 
 @Composable
-private fun ConnectionCard(state: MeroAuthState) {
-    val node = state.nodeUrl
-    val live = state.relayUrl != null || node != null
+private fun ConnectionCard(
+    vm: SampleViewModel,
+    backend: MeroAppBackend,
+) {
+    val demo = vm.mode == SignInMode.DEMO
+    val node = vm.client?.nodeUrl
     val status =
         when {
-            node != null -> node.toHttpUrlOrNull()?.let { "${it.host}:${it.port}" } ?: node
-            state.relayUrl == null -> "Signed in, no relay yet"
-            else -> state.relayUrl!!.toHttpUrlOrNull()?.host ?: state.relayUrl!!
+            demo -> "In-app demo, no network"
+            else -> node?.toHttpUrlOrNull()?.let { if (it.port == 443 || it.port == 80) it.host else "${it.host}:${it.port}" } ?: node.orEmpty()
         }
     CalCard(Modifier.testTag("homeAccount"), padding = 16.dp) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            IconTile(if (node != null) Icons.Outlined.Dns else Icons.Filled.Cloud, accent = true, size = 40.dp)
+            IconTile(if (vm.mode == SignInMode.CLOUD) Icons.Filled.Cloud else Icons.Outlined.Dns, accent = true, size = 40.dp)
             Spacer(Modifier.width(12.dp))
             Column(Modifier.weight(1f)) {
-                Text(if (node != null) "Your node" else "Calimero Cloud", color = Cal.text, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
+                Text(
+                    when (vm.mode) {
+                        SignInMode.CLOUD -> "Calimero Cloud"
+                        SignInMode.DEV -> "Development node"
+                        SignInMode.DEMO -> "Demo"
+                    },
+                    color = Cal.text,
+                    fontSize = 15.sp,
+                    fontWeight = FontWeight.SemiBold,
+                )
                 Text(status, color = Cal.textFaint, fontSize = 13.sp, maxLines = 1)
             }
-            LivePill(live)
+            LivePill(true)
         }
         TechDetails {
-            state.account?.let { IdField("Account", it) }
-            state.device?.let { IdField("Device", it) }
-            state.relayUrl?.let { IdField("Relay", it) }
+            IdField("Account", backend.account)
             node?.let { IdField("Node", it) }
+            if (vm.mode == SignInMode.DEV) IdField("Attestation", "mock (allowed for this node)")
         }
     }
+}
+
+/** The account's organizations and their teams: create one, invite to one, redeem an invite. */
+@Composable
+@Suppress("LongMethod")
+private fun OrganizationsSection(
+    vm: SampleViewModel,
+    backend: MeroAppBackend,
+) {
+    val scope = rememberCoroutineScope()
+    val clipboard = LocalClipboardManager.current
+    val revision by vm.revision.collectAsState()
+    var orgs by remember { mutableStateOf<List<Pair<String, String>>>(emptyList()) }
+    var teams by remember { mutableStateOf<Map<String, List<String>>>(emptyMap()) }
+    var note by remember { mutableStateOf<String?>(null) }
+    var newOrg by remember { mutableStateOf("") }
+    var invite by remember { mutableStateOf("") }
+
+    suspend fun reload() {
+        runCatching {
+            val listed = backend.listNamespaces()
+            orgs = listed.map { it.id to (it.name ?: "Organization") }
+            teams = listed.associate { org -> org.id to backend.listSubgroups(org.id).map { it.name ?: "team" } }
+        }.onFailure { note = "Couldn't list organizations: ${it.message}" }
+    }
+    LaunchedEffect(backend, revision) { reload() }
+
+    CalSection("Organizations") {
+        if (orgs.isEmpty()) {
+            Text(
+                "No organizations yet. Create one, or redeem an invite.",
+                color = Cal.textFaint,
+                fontSize = 13.sp,
+                modifier = Modifier.padding(14.dp).testTag("noOrgs"),
+            )
+        }
+        orgs.forEachIndexed { i, (id, name) ->
+            if (i > 0) RowDivider()
+            CalRow(
+                Icons.Outlined.Groups,
+                name,
+                onClick = {
+                    scope.launch {
+                        runCatching { backend.createInvitation(id).copy(name = name) }
+                            .onSuccess {
+                                clipboard.setText(AnnotatedString(it.link(ChatService.PACKAGE_NAME)))
+                                note = "Invite link to $name copied."
+                            }.onFailure { note = "Couldn't create an invite: ${it.message}" }
+                    }
+                },
+                subtitle = teams[id].orEmpty().let { if (it.isEmpty()) "No teams yet · tap to copy an invite" else it.joinToString(" · ") + " · tap to copy an invite" },
+                modifier = Modifier.testTag("org:$name"),
+            )
+        }
+    }
+    note?.let { Callout(it, kind = CalloutKind.INFO, modifier = Modifier.testTag("orgNote")) }
+    CalCard(padding = 16.dp) {
+        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            CalTextField(newOrg, { newOrg = it }, "New organization", placeholder = "Acme", modifier = Modifier.testTag("newOrgField"))
+            CalSecondaryButton(
+                "Create with a general team",
+                icon = Icons.Outlined.AddCircleOutline,
+                enabled = newOrg.isNotBlank(),
+                onClick = {
+                    val name = newOrg.trim()
+                    scope.launch {
+                        runCatching {
+                            val org = backend.foundNamespace(name).namespaceId
+                            backend.createSubgroup(org, "general", isPublic = true)
+                        }.onSuccess {
+                            newOrg = ""
+                            note = "Created $name."
+                            reload()
+                        }.onFailure { note = "Couldn't create $name: ${it.message}" }
+                    }
+                },
+                modifier = Modifier.fillMaxWidth().testTag("createOrg"),
+            )
+            CalTextField(invite, { invite = it }, "Invite link or code", placeholder = "https://links.calimero.network/…", modifier = Modifier.testTag("inviteField"))
+            CalSecondaryButton(
+                "Redeem invite",
+                icon = Icons.Outlined.Link,
+                enabled = invite.isNotBlank(),
+                onClick = {
+                    val parsed = OrgInvitation.parse(invite)
+                    if (parsed == null) {
+                        note = "That isn't an invite."
+                    } else {
+                        scope.launch {
+                            runCatching { backend.joinNamespace(parsed.namespaceId, parsed) }
+                                .onSuccess {
+                                    invite = ""
+                                    note = "Joined ${parsed.name ?: "the organization"}."
+                                    reload()
+                                }.onFailure { note = "Couldn't redeem it: ${it.message}" }
+                        }
+                    }
+                },
+                modifier = Modifier.fillMaxWidth().testTag("redeemInvite"),
+            )
+        }
+    }
+}
+
+/**
+ * What waits for the account holder's decision: mero-tee releases the cluster runs that their
+ * scope has not approved, and app upgrades. Approving opens the node's consent page in a Custom Tab.
+ */
+@Composable
+private fun ApprovalsSection(client: CalimeroClient) {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    var pending by remember { mutableStateOf<PendingApprovals?>(null) }
+    var note by remember { mutableStateOf<String?>(null) }
+    LaunchedEffect(client) { pending = runCatching { client.pendingApprovals() }.onFailure { note = it.message }.getOrNull() }
+    val releases = pending?.releases.orEmpty()
+    CalSection("Approvals") {
+        if (releases.isEmpty()) {
+            Text(
+                if (pending == null) "Checking…" else "Nothing waits for your approval.",
+                color = Cal.textFaint,
+                fontSize = 13.sp,
+                modifier = Modifier.padding(14.dp).testTag("noApprovals"),
+            )
+        }
+        releases.forEachIndexed { i, release ->
+            if (i > 0) RowDivider()
+            CalRow(
+                Icons.Outlined.VerifiedUser,
+                "Node release ${release.version}",
+                onClick = {
+                    scope.launch {
+                        runCatching {
+                            ConsentLauncher.request(context, client, ConsentRequest.Release(ConsentScope.Account, release.version, SampleViewModel.CONSENT_CALLBACK))
+                        }.onFailure { note = "Couldn't open the consent page: ${it.message}" }
+                    }
+                },
+                subtitle = "${release.nodes} node(s) · review on the consent page",
+            )
+        }
+    }
+    note?.let { Callout(it, kind = CalloutKind.WARNING) }
+}
+
+/** The lime primary button, full width, with a spinner in place of the icon while [loading]. */
+@Composable
+private fun LoadingPrimaryButton(
+    text: String,
+    icon: ImageVector,
+    loading: Boolean,
+    enabled: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Box(contentAlignment = Alignment.Center) {
+        CalPrimaryButton(text, onClick = onClick, enabled = enabled, icon = if (loading) null else icon, modifier = modifier.fillMaxWidth())
+        if (loading) {
+            CircularProgressIndicator(
+                color = Cal.onLime,
+                strokeWidth = 2.dp,
+                modifier = Modifier.align(Alignment.CenterStart).padding(start = 20.dp).size(18.dp),
+            )
+        }
+    }
+}
+
+private enum class Tab(
+    val label: String,
+    val icon: ImageVector,
+    val selectedIcon: ImageVector,
+    val tag: String,
+) {
+    HOME("Home", Icons.Outlined.Home, Icons.Outlined.Home, "tabHome"),
+    CHAT("Chat", Icons.Outlined.Forum, Icons.Filled.Forum, "tabChat"),
+    SDK("SDK", Icons.Outlined.Apps, Icons.Filled.Apps, "tabSdk"),
 }
 
 // ---- Diagnostics ---------------------------------------------------------------------------
@@ -656,15 +780,11 @@ private fun DiagnosticsScreen(onBack: () -> Unit) {
     }
 }
 
-private const val ACCOUNT_LOG = 12
-
 /** The categorized, searchable SDK surface. */
 @Composable
 @Suppress("LongMethod")
 private fun SdkListScreen(
     onOpenOp: (SDKOperation) -> Unit,
-    onOpenRunAll: () -> Unit,
-    onOpenComponents: () -> Unit,
     onBack: (() -> Unit)? = null,
 ) {
     var search by remember { mutableStateOf("") }
@@ -686,10 +806,6 @@ private fun SdkListScreen(
             Modifier.fillMaxSize().padding(horizontal = screenPad).testTag("opList"),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            if (search.isEmpty()) {
-                item { Box(Modifier.padding(top = 16.dp)) { RunAllEntry(onClick = onOpenRunAll) } }
-                item { ComponentsEntry(onClick = onOpenComponents) }
-            }
             item {
                 Row(
                     Modifier
@@ -766,11 +882,12 @@ private fun SdkListScreen(
 
 @Composable
 private fun OperationRunner(
-    client: MeroClient,
+    client: CalimeroClient,
     op: SDKOperation,
     onBack: () -> Unit,
 ) {
     val scope = rememberCoroutineScope()
+    val context = LocalContext.current
     val inputs = remember { mutableStateMapOf<String, String>() }
     var output by remember { mutableStateOf("") }
     var failed by remember { mutableStateOf(false) }
@@ -803,7 +920,7 @@ private fun OperationRunner(
                         running = true
                         scope.launch {
                             try {
-                                output = op.run(OpEnv(client), inputs.toMap())
+                                output = op.run(OpEnv(client, context), inputs.toMap())
                                 failed = false
                             } catch (e: Exception) {
                                 output = e.message ?: e.toString()
@@ -845,26 +962,4 @@ private fun OperationRunner(
     }
 }
 
-/** The mock-mode stand-in for the wallet: approve or decline the pending sign-in in-app. */
-@Composable
-fun MockWalletCard(
-    pendingUrl: String?,
-    onApprove: () -> Unit,
-    onDecline: () -> Unit,
-) {
-    if (pendingUrl == null) return
-    CalCard(Modifier.widthIn(max = 480.dp).testTag("mockWallet")) {
-        CardHead(Icons.Outlined.Wallet, "Mock wallet", "Stands in for the Calimero wallet in mock mode")
-        Spacer(Modifier.size(14.dp))
-        Text(
-            "Approve this device for a throwaway test account? The real wallet asks for your passkey here.",
-            color = Cal.textDim,
-            fontSize = 14.sp,
-        )
-        Spacer(Modifier.size(14.dp))
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            CalPrimaryButton("Approve", onClick = onApprove, modifier = Modifier.testTag("mockWalletApprove"))
-            CalSecondaryButton("Decline", onClick = onDecline, modifier = Modifier.testTag("mockWalletDecline"))
-        }
-    }
-}
+private const val ACCOUNT_LOG = 12

@@ -1,7 +1,5 @@
 package com.calimero.mero.testkit
 
-import com.calimero.mero.account.NoRelayException
-import com.calimero.mero.admin.SignedGroupOpenInvitation
 import com.calimero.mero.app.AppBlob
 import com.calimero.mero.app.AppContextEntry
 import com.calimero.mero.app.AppContextEvent
@@ -12,24 +10,21 @@ import com.calimero.mero.app.AppMetadata
 import com.calimero.mero.app.AppNamespace
 import com.calimero.mero.app.AppSubgroup
 import com.calimero.mero.app.ContextContract
+import com.calimero.mero.app.GovernanceMemberRole
 import com.calimero.mero.app.MeroAppBackend
-import com.calimero.mero.app.NoRelayContextContract
-import com.calimero.mero.crypto.Hex
-import com.calimero.mero.relay.GovernanceMemberRole
+import com.calimero.mero.app.OrgInvitation
+import com.calimero.mero.app.SignedOutContextContract
+import com.calimero.mero.app.SignedOutException
 import kotlinx.coroutines.channels.SendChannel
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.callbackFlow
 import kotlinx.coroutines.flow.emptyFlow
-import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonNull
-import kotlinx.serialization.json.JsonPrimitive
-import kotlinx.serialization.json.buildJsonObject
-import kotlinx.serialization.json.put
 
-// In-memory stand-ins for an app's delegated session, so an app's view models are unit-testable
-// with no relay, no cloud and no wallet. (Swift MeroKitTestSupport `InMemoryAppBackend` /
+// In-memory stand-ins for an app's signed-in session, so an app's view models are unit-testable
+// with no cluster and no passkey. (Swift MeroKitTestSupport `InMemoryAppBackend` /
 // `RecordingContextContract`.)
 
 /** One contract call a [RecordingContextContract] saw. */
@@ -81,10 +76,9 @@ class RecordingContextContract(
  * A [MeroAppBackend] that keeps its namespaces, subgroups, contexts and memberships in memory,
  * and whose contract is a [RecordingContextContract].
  *
- * It behaves like the relay as far as a view model can tell: founding adds a namespace, creating a
+ * It behaves like a Calimero 1.0 cluster as far as a view model can tell: founding adds a namespace, creating a
  * subgroup or a context adds it (the creator is a member of a context it creates), joining a
- * context makes the account a member, and redeeming an invitation adds the namespace and gives a
- * relayless account its relay. Names, members and blobs behave the same way: the founder or creator
+ * context makes the account a member, and redeeming an invitation adds the namespace. Names, members and blobs behave the same way: the founder or creator
  * of a group is its `Admin`, a joiner a `Member`; leaving or deleting takes the contexts with it; a
  * blob reads back only through the context it was stored in. Seed state with [namespaces],
  * [subgroups], [members], [contextNames] and [groupMembers]; make every
@@ -118,7 +112,7 @@ class InMemoryAppBackend(
     /** What [foundNamespace] reports about hosting. */
     @Volatile var haEnabled: Boolean = true
 
-    /** The relay [joinNamespace] reports. */
+    /** The node [joinNamespace] reports. */
     @Volatile var joinRelayUrl: String = "https://relay.test"
 
     /** The namespaces the account is in. */
@@ -166,8 +160,8 @@ class InMemoryAppBackend(
     /** How many [events] streams are being collected. */
     val subscriberCount: Int get() = synchronized(lock) { streams.size }
 
-    /** [recording], or [NoRelayContextContract] while [hasRelay] is false. */
-    override val contract: ContextContract get() = if (hasRelay) recording else NoRelayContextContract
+    /** [recording], or [SignedOutContextContract] while [hasRelay] is false. */
+    override val contract: ContextContract get() = if (hasRelay) recording else SignedOutContextContract
 
     // ---- MeroAppBackend ------------------------------------------------------------------
 
@@ -183,7 +177,7 @@ class InMemoryAppBackend(
 
     override suspend fun foundNamespace(name: String): AppFoundedNamespace =
         step("foundNamespace $name") {
-            if (!hasRelay) throw NoRelayException("foundNamespace")
+            if (!hasRelay) throw SignedOutException("foundNamespace")
             val id = mint("aa")
             namespaces = namespaces + AppNamespace(id, name, applicationId, memberCount = 1)
             groupMembers = groupMembers + (id to listOf(AppMember(account, GovernanceMemberRole.Admin.name)))
@@ -197,7 +191,7 @@ class InMemoryAppBackend(
     ): String =
         step("createSubgroup $namespaceId $name ${if (isPublic) "open" else "restricted"}") {
             val id = mint("bb")
-            subgroups = subgroups + (namespaceId to subgroups[namespaceId].orEmpty() + AppSubgroup(id, name, emptyList()))
+            subgroups = subgroups + (namespaceId to subgroups[namespaceId].orEmpty() + AppSubgroup(id, name, emptyList(), isPublic))
             if (isPublic) subgroupsCreatedOpen += id
             groupMembers = groupMembers + (id to listOf(AppMember(account, GovernanceMemberRole.Admin.name)))
             id
@@ -223,11 +217,11 @@ class InMemoryAppBackend(
             id
         }
 
-    override suspend fun createInvitation(namespaceId: String): SignedGroupOpenInvitation = step("createInvitation $namespaceId") { invitation(namespaceId) }
+    override suspend fun createInvitation(namespaceId: String): OrgInvitation = step("createInvitation $namespaceId") { invitation(namespaceId) }
 
     override suspend fun joinNamespace(
         namespaceId: String,
-        invitation: SignedGroupOpenInvitation,
+        invitation: OrgInvitation,
     ): AppJoinedNamespace =
         step("joinNamespace $namespaceId") {
             if (namespaces.none { it.id == namespaceId }) namespaces = namespaces + AppNamespace(namespaceId, null, applicationId)
@@ -285,13 +279,13 @@ class InMemoryAppBackend(
         data: ByteArray,
     ): AppBlob =
         step("uploadBlob $contextId ${data.size}") {
-            if (!hasRelay) throw NoRelayException("uploadBlob")
+            if (!hasRelay) throw SignedOutException("uploadBlob")
             val id = mint("dd")
             storedBlobs[id] = contextId to data.copyOf()
             AppBlob(id, data.size.toLong())
         }
 
-    /** Throws [IllegalArgumentException] unless the blob was stored through [contextId], as the relay refuses it. */
+    /** Throws [IllegalArgumentException] unless the blob was stored through [contextId], as the node refuses it. */
     override suspend fun getBlob(
         blobId: String,
         contextId: String,
@@ -435,30 +429,8 @@ class InMemoryAppBackend(
     companion object {
         private const val HEX_RADIX = 16
         private const val ID_LENGTH = 64
-        private const val NAMESPACE_BYTES = 32
-        private const val NEVER_EXPIRES = 4_102_444_800L
 
-        /** An invitation to [namespaceId] shaped like a real one (its signature is not). */
-        fun invitation(namespaceId: String): SignedGroupOpenInvitation {
-            val group =
-                runCatching { Hex.decode(namespaceId, "namespaceId", NAMESPACE_BYTES).map { it.toInt() and 0xff } }
-                    .getOrDefault(List(NAMESPACE_BYTES) { 0 })
-
-            fun bytes(values: List<Int>) = JsonArray(values.map { JsonPrimitive(it) })
-            return SignedGroupOpenInvitation(
-                buildJsonObject {
-                    put(
-                        "invitation",
-                        buildJsonObject {
-                            put("inviter_identity", bytes(List(NAMESPACE_BYTES) { 1 }))
-                            put("group_id", bytes(group))
-                            put("expiration_timestamp", NEVER_EXPIRES)
-                            put("secret_salt", bytes(List(NAMESPACE_BYTES) { 2 }))
-                        },
-                    )
-                    put("inviter_signature", "00".repeat(64))
-                },
-            )
-        }
+        /** An invite to [namespaceId] shaped like a real one (its token is made up). */
+        fun invitation(namespaceId: String): OrgInvitation = OrgInvitation(namespaceId, "inv_fake-$namespaceId")
     }
 }

@@ -3,7 +3,8 @@ package com.calimero.mero.invite
 /**
  * Shareable invitation links, matching `@calimero-network/mero-platform`.
  *
- * A native app is a client of a node that runs on a computer, so the *link* is
+ * A link carries an [com.calimero.mero.app.OrgInvitation] (`base58(deflate({invitation, namespaceId, …}))`).
+ * Historically a native app was a client of a node on a computer, so the *link* is
  * not something the phone opens — it is something the phone hands to a person,
  * who opens it on the machine with the desktop app. There the launcher resolves
  * the slug, installs the app if it is missing, and joins the namespace. What the

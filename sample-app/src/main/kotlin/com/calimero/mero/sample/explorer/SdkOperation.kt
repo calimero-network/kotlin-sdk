@@ -1,11 +1,9 @@
 package com.calimero.mero.sample.explorer
 
-import com.calimero.mero.Mero
-import com.calimero.mero.account.CloudAccount
-import com.calimero.mero.admin.AdminApi
-import com.calimero.mero.auth.AuthApi
-import com.calimero.mero.compose.MeroClient
-import com.calimero.mero.relay.RelayClient
+import android.content.Context
+import com.calimero.mero.CalimeroClient
+import com.calimero.mero.PasskeyProvider
+import com.calimero.mero.compose.PlatformPasskey
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 
@@ -36,25 +34,15 @@ data class OpField(
 }
 
 /**
- * What an operation runs against: the signed-in [MeroClient]. [admin] / [auth] are the core
- * clients pointed at the account's relay (Bearer once the relay session is minted); [relay]
- * is the warrant client; [account] is the Cloud account layer.
+ * What an operation runs against: the signed-in [CalimeroClient], and the device's passkey for the
+ * calls the node asks the account holder to confirm (`412 CONFIRM_REQUIRED`).
  */
 class OpEnv(
-    val client: MeroClient,
+    val client: CalimeroClient,
+    private val context: Context,
 ) {
-    val account: CloudAccount get() = client.account
-    val relay: RelayClient get() = client.relay ?: error(NO_RELAY)
-    val mero: Mero get() = client.mero ?: error(NO_RELAY)
-    val admin: AdminApi get() = mero.admin
-    val auth: AuthApi get() = mero.auth
-
-    /** JSON-RPC on the relay. An account session gets 403 here — writes go through [relay]. */
-    val rpc: com.calimero.mero.rpc.RpcClient get() = mero.rpc
-
-    private companion object {
-        const val NO_RELAY = "No relay serves this account yet — redeem an invitation first."
-    }
+    /** The device's passkey (Credential Manager), for confirmed calls. */
+    val passkey: PasskeyProvider get() = PlatformPasskey(context)
 }
 
 /**

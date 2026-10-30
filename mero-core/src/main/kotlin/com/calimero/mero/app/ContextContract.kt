@@ -1,33 +1,33 @@
 package com.calimero.mero.app
 
-import com.calimero.mero.account.NoRelayException
-import com.calimero.mero.relay.RelayClient
+import com.calimero.mero.CalimeroClient
 import kotlinx.serialization.SerializationException
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
 
-// A context's contract, as an app on a phone reaches it. There is no node on the phone, so there
-// is no JSON-RPC: a read is the relay's account-scoped query, a write is a warrant the device key
-// signs. Every app makes the same two calls; only the method names differ, and those belong to the
-// app (or to the client mero-devtools-js generates for it, over [ContextContractCalling]).
+// An app instance's contract, as an app on a phone reaches it: a read is a view
+// (`POST /apps/{app}/views`), a write a call (`POST /apps/{app}/intents`), both sealed to the
+// attested node. Every app makes the same two calls; only the method names differ, and those
+// belong to the app (or to the client mero-devtools-js generates for it, over
+// [ContextContractCalling]).
 
 /**
- * The two ways an app reaches the contract in a context. (Swift `MeroKit.ContextContract`.)
+ * The two ways an app reaches the contract in an app instance. (Swift `MeroKit.ContextContract`.)
  *
- * [RelayContextContract] is the real one; [NoRelayContextContract] stands in for an account no
- * relay serves yet. [bound] fixes the context, for a generated client.
+ * [CloudContextContract] is the real one; [SignedOutContextContract] stands in while no one is
+ * signed in. [bound] fixes the app instance, for a generated client.
  */
 interface ContextContract {
-    /** Run a view (`#[app::view]`) as the account, through the relay's query path. */
+    /** Run a view (`#[app::view]`): the method's return value. */
     suspend fun query(
         contextId: String,
         method: String,
         args: JsonElement,
     ): JsonElement?
 
-    /** Run a mutation as the account: a warrant posted to the relay's intents route. */
+    /** Run a mutation: the method's return value. */
     suspend fun execute(
         contextId: String,
         method: String,
@@ -39,47 +39,56 @@ interface ContextContract {
 }
 
 /**
- * [ContextContract] over the account's [RelayClient]. (Swift `RelayContextContract`.)
+ * [ContextContract] over a signed-in [CalimeroClient]. (Swift `CloudContextContract`.)
  *
- * - `query` is `POST /admin-api/contexts/{id}/query` with the relay session's Bearer token
- *   ([RelayClient.call]). Without a session, or when the relay says the method is a write, it
- *   falls back to a warrant, which reads too.
- * - `execute` is `POST /admin-api/contexts/{id}/intents` carrying a warrant the device key signs
- *   ([RelayClient.execute]); the method's return value is its `returns`.
+ * - `query` is [CalimeroClient.view] (strong consistency): its `result`.
+ * - `execute` is [CalimeroClient.call] (an idempotency key per call, retried on `503`): its
+ *   `result`. An app's refusal throws [com.calimero.mero.AppError].
  */
-class RelayContextContract(
-    val relay: RelayClient,
+class CloudContextContract(
+    val client: CalimeroClient,
 ) : ContextContract {
     override suspend fun query(
         contextId: String,
         method: String,
         args: JsonElement,
-    ): JsonElement? = relay.call(contextId, method, args)
+    ): JsonElement? = client.view(contextId, method, args).result.takeUnless { it is JsonNull }
 
     override suspend fun execute(
         contextId: String,
         method: String,
         args: JsonElement,
-    ): JsonElement? = relay.execute(contextId, method, args).returns
+    ): JsonElement? = client.call(contextId, method, args).result.takeUnless { it is JsonNull }
 }
 
-/**
- * The contract of an account no relay serves yet: every call throws [NoRelayException], naming
- * the method. Redeeming an invitation is how the account gets a relay. (Swift `NoRelayContextContract`.)
- */
-object NoRelayContextContract : ContextContract {
+/** No one is signed in: there is no account to call the contract as. (0.x: `NoRelayException`.) */
+class SignedOutException(
+    /** The method that was called. */
+    val method: String,
+) : IllegalStateException("$method needs a signed-in account")
+
+/** 0.x name of [SignedOutException]. */
+@Deprecated("No relays on Calimero 1.0", ReplaceWith("SignedOutException"))
+typealias NoRelayException = SignedOutException
+
+/** The contract while no one is signed in: every call throws [SignedOutException], naming the method. */
+object SignedOutContextContract : ContextContract {
     override suspend fun query(
         contextId: String,
         method: String,
         args: JsonElement,
-    ): JsonElement? = throw NoRelayException(method)
+    ): JsonElement? = throw SignedOutException(method)
 
     override suspend fun execute(
         contextId: String,
         method: String,
         args: JsonElement,
-    ): JsonElement? = throw NoRelayException(method)
+    ): JsonElement? = throw SignedOutException(method)
 }
+
+/** 0.x name of [SignedOutContextContract]. */
+@Deprecated("No relays on Calimero 1.0", ReplaceWith("SignedOutContextContract"))
+val NoRelayContextContract: ContextContract get() = SignedOutContextContract
 
 /**
  * One context's contract, in the shape a generated client calls: JSON in, JSON out, as strings.
@@ -94,7 +103,7 @@ interface ContextContractCalling {
         argsJson: String,
     ): String
 
-    /** Run a mutation: as [query], through a warrant. */
+    /** Run a mutation: as [query], as a call. */
     suspend fun execute(
         method: String,
         argsJson: String,

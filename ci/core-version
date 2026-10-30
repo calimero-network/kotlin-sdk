@@ -1,11 +1,7 @@
-# The core release this SDK is tested against. Single source of truth: every
-# workflow and script that boots a node reads this file, so a bump is one edit.
+# The core release this SDK speaks to: Calimero 1.0 (the confidential cloud). Nodes are
+# `merod` 1.0 clusters; for local development run `cargo run -p merod -- local` (three nodes on
+# 127.0.0.1:2501-2503, --dev, mock attestation).
 #
-# Pinned, never "latest": an unpinned download makes a green lane turn red on a
-# commit of its own that changed nothing (core rc.26 turning mDNS off did exactly
-# that across the fleet). Bump deliberately, and let CI tell you what moved.
-#
-# MEROD_IMAGE must name the SAME release as CORE_TAG. ghcr.io/calimero-network/merod
-# publishes a tag per rc — `edge` is a moving target and must not be used here.
-CORE_TAG=0.11.0
-MEROD_IMAGE=ghcr.io/calimero-network/merod:0.11.0
+# Informational: no workflow boots a node any more (the 0.x e2e and merobox lanes were removed
+# with the 0.x API). Bump it when the SDK is checked against a newer core.
+CORE_TAG=1.0.0-rc.3

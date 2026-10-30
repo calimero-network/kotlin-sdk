@@ -1,20 +1,10 @@
 package com.calimero.mero.sample.mock
 
-import androidx.compose.runtime.Composable
+import com.calimero.mero.app.MeroAppBackend
 
-/**
- * Release builds carry no mock backend: mero-testkit is a debug-only dependency, and the
- * `mock` launch extra is ignored (see `MainActivity`). The debug variant of this object is the
- * real one.
- */
+/** Release builds have no demo: mero-testkit is a debug-only dependency. */
 object MockBackend {
-    const val AVAILABLE = false
+    const val AVAILABLE: Boolean = false
 
-    fun start(): MockSession = error("The mock backend is only in debug builds.")
-
-    fun walletCard(
-        @Suppress("UNUSED_PARAMETER") deliver: (String) -> Unit,
-    ): (@Composable () -> Unit)? = null
-
-    fun clearPending() = Unit
+    fun backend(): MeroAppBackend = throw UnsupportedOperationException("the in-memory demo is in debug builds only")
 }

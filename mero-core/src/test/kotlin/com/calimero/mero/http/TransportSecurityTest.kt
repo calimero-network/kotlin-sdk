@@ -1,22 +1,10 @@
 package com.calimero.mero.http
 
-import com.calimero.mero.account.Enrolment
-import com.calimero.mero.relay.attestRelayNodeKey
-import com.calimero.mero.tee.cloudNodeReleaseUrl
-import kotlinx.coroutines.runBlocking
-import kotlinx.serialization.json.Json
-import okhttp3.MediaType.Companion.toMediaType
-import okhttp3.OkHttpClient
-import okhttp3.Protocol
-import okhttp3.Response
-import okhttp3.ResponseBody.Companion.toResponseBody
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
-import org.junit.Assert.fail
 import org.junit.Test
-import java.util.concurrent.atomic.AtomicInteger
 
 /** Plain http only to local hosts (SEC-06). (Swift `TransportSecurityTests`.) */
 class TransportSecurityTest {
@@ -88,48 +76,5 @@ class TransportSecurityTest {
         TransportSecurity.allowInsecureHttp = true
         TransportSecurity.checkNodeUrl("http://node.example")
         TransportSecurity.checkServiceUrl("http://cloud.example", "cloud")
-    }
-
-    @Test
-    fun `the node client refuses plain http across the network before sending`() =
-        runBlocking {
-            val sent = AtomicInteger()
-            val client =
-                OkHttpClient
-                    .Builder()
-                    .addInterceptor { chain ->
-                        sent.incrementAndGet()
-                        Response
-                            .Builder()
-                            .request(chain.request())
-                            .protocol(Protocol.HTTP_1_1)
-                            .code(200)
-                            .message("OK")
-                            .body("{}".toResponseBody("application/json".toMediaType()))
-                            .build()
-                    }.build()
-            val remote = OkHttpTransport("http://node.example", client, Json)
-            try {
-                remote.execute("POST", "/auth/token")
-                fail("expected a refusal")
-            } catch (e: InsecureTransportException) {
-                assertEquals("node", e.role)
-            }
-            assertEquals("nothing left the device", 0, sent.get())
-
-            OkHttpTransport("http://localhost:2428", client, Json).execute("POST", "/auth/token")
-            assertEquals(1, sent.get())
-        }
-
-    @Test
-    fun `the relay, the mirror and the wallet must be https`() {
-        val relay = runCatching { runBlocking { attestRelayNodeKey("http://relay.example", allowMock = true) } }.exceptionOrNull()
-        assertEquals("relay", (relay as? InsecureTransportException)?.role)
-        assertTrue(runCatching { cloudNodeReleaseUrl("http://mirror.example", "2.3.99") }.isFailure)
-        val wallet =
-            runCatching {
-                Enrolment.deviceEnrolmentUrl("a".repeat(64), "b".repeat(64), "https://app.example/enrol", walletUrl = "http://wallet.example")
-            }.exceptionOrNull()
-        assertEquals("wallet", (wallet as? InsecureTransportException)?.role)
     }
 }

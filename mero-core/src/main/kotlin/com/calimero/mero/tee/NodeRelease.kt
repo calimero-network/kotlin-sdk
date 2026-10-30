@@ -22,8 +22,8 @@ import okhttp3.OkHttpClient
  *
  * What is trusted: the signer ([NODE_RELEASE_SIGNER], the identity core pins as
  * `NODE_RELEASE_IDENTITY`), the Sigstore public-good trust root, and the minimum release you
- * pass. What is not: the transport, the server that serves the release, and the relay's choice
- * of release — a relay can present any genuinely signed release at or above the minimum and no
+ * pass. What is not: the transport, the server that serves the release, and the node's choice
+ * of release — a node can present any genuinely signed release at or above the minimum and no
  * other, and its quote must then match that release's measurements exactly.
  */
 
@@ -152,53 +152,29 @@ suspend fun fetchNodeRelease(
     return SignedNodeRelease(version, publishedMrtds, bundle)
 }
 
-private val RELEASED_IMAGE = Regex("^merotee-.+-(\\d+)-(\\d+)-(\\d+)$")
+/** Where mero-tee publishes its releases' assets, as core's `calimero-tee-release` fetches them. */
+const val GITHUB_RELEASES: String = "https://github.com/calimero-network/mero-tee/releases/download"
 
 /**
- * The release a mero-tee node image was built from, read from its name, e.g.
- * `merotee-ubuntu-questing-25-10-locked-read-only-2-3-87` is `2.3.87`. Throws for any other
- * name, including the suffixed images of unreleased builds.
+ * Node release [version] straight from its GitHub release (`mero-tee-v{version}`):
+ * `published-mrtds.json` and its cosign bundle, the files core's Rust client verifies (mero-js
+ * `fetchGithubNodeRelease`). Only fetched: verify it with [trustSignedRelease].
  */
-fun nodeReleaseVersionFromImage(osImage: String): String {
-    val match = RELEASED_IMAGE.find(osImage) ?: refuse("${jsonString(osImage)} is not the image of a mero-tee node release")
-    return match.groupValues.drop(1).joinToString(".") { it.toBigInteger().toString() }
-}
-
-/**
- * The release the TEE node at [baseUrl] says it runs, from the image name its
- * `GET /admin-api/tee/info` reports. The node's own claim, and not trusted: it only picks
- * which signed release to fetch, and the quote must then match that release's measurements.
- *
- * `/tee/info` is read in the clear, before any session exists. A node that requires sealing
- * serves it unsealed from core#4196 on; an older one refuses it with `403 sealed_required`,
- * and then this throws saying so.
- */
-suspend fun fetchNodeReleaseVersion(
-    baseUrl: String,
+suspend fun fetchGithubNodeRelease(
+    version: String,
+    base: String = GITHUB_RELEASES,
     httpClient: OkHttpClient = PlainJsonHttp.defaultClient(),
-): String =
-    readNodeReleaseVersion(baseUrl, httpClient)
-        ?: refuse(
-            "${infoUrl(baseUrl)} was refused unsealed: the node requires sealing and is too old to name its " +
-                "release before a session exists. Name the release it runs yourself (createSignedReleaseSealedFetch's " +
-                "`releaseVersion`), or upgrade the node",
-        )
+): SignedNodeRelease {
+    val tag = "mero-tee-v${releaseVersion(version, "version")}"
+    val url = "${base.trimBase()}/$tag/published-mrtds.json"
+    val http = PlainJsonHttp(httpClient, role = null)
 
-private fun infoUrl(baseUrl: String): String = "${baseUrl.trimBase()}/admin-api/tee/info"
-
-/** As [fetchNodeReleaseVersion], but null when the node refuses `/tee/info` as `sealed_required`. */
-internal suspend fun readNodeReleaseVersion(
-    baseUrl: String,
-    httpClient: OkHttpClient,
-): String? {
-    val url = infoUrl(baseUrl)
-    val response = PlainJsonHttp(httpClient, role = null).execute("GET", url)
-    val body = runCatching { releaseJson.parseToJsonElement(response.body) as? JsonObject }.getOrNull()
-    if (response.status == 403 && (body?.get("error") as? JsonObject).string("code") == "sealed_required") return null
-    if (!response.isSuccessful) refuse("Fetching $url failed: HTTP ${response.status}")
-    if (body == null) refuse("$url did not answer with JSON")
-    val osImage = (body["data"] as? JsonObject).string("osImage") ?: refuse("$url did not name the node's image")
-    return nodeReleaseVersionFromImage(osImage)
+    suspend fun get(target: String): String {
+        val response = http.execute("GET", target)
+        if (!response.isSuccessful) refuse("Fetching $target failed: HTTP ${response.status}")
+        return response.body
+    }
+    return SignedNodeRelease(version, get(url), get("$url.bundle.json"))
 }
 
 /**
@@ -220,13 +196,13 @@ fun cloudNodeReleaseUrl(
  * [trustedMeasurementsFromReleases] reads a bundled file.
  *
  * ```kotlin
- * val version = fetchNodeReleaseVersion(relayUrl)
+ * val version = claimedRelease(doc, minReleaseVersion = "2.3.87")
  * val release = fetchNodeRelease(cloudNodeReleaseUrl(DEFAULT_RELEASE_MIRROR, version))
  * val verifier = trustSignedRelease(release, PRODUCTION_PROFILE, minReleaseVersion = "2.3.87").verifier()
  * ```
  *
  * @param minReleaseVersion the oldest release accepted, e.g. `2.3.87`. Required: every release
- *   ever signed stays validly signed, so without a floor a relay could present an old release,
+ *   ever signed stays validly signed, so without a floor a node could present an old release,
  *   with a flaw since fixed, and a quote from that old image would pass.
  */
 @Suppress("LongParameterList")
@@ -271,8 +247,7 @@ class SignedReleaseVerifierOptions(
  * A [createQuoteVerifier] whose trusted image is the signed release the node says it runs
  * (mero-js `createSignedReleaseVerifier`). On each attestation it gets the release, checks it
  * with [trustSignedRelease], and verifies the quote against that release's measurements only.
- * Use it as [com.calimero.mero.cloud.ConnectCloudOptions.seal], or with
- * [createAttestedSealedFetch]; [createSignedReleaseSealedFetch] does the latter for you.
+ * [com.calimero.mero.CloudPolicy.verifyQuote] takes one.
  */
 fun createSignedReleaseVerifier(options: SignedReleaseVerifierOptions): QuoteVerifier {
     releaseVersion(options.minReleaseVersion, "minReleaseVersion")
@@ -287,93 +262,6 @@ fun createSignedReleaseVerifier(options: SignedReleaseVerifierOptions): QuoteVer
         ).verifier(options.dcapVerify, options.fetchCollateral, options.now)
             .verify(args)
     }
-}
-
-/** What a custom [SignedReleaseSealedFetchOptions.releaseSource] is asked for. */
-data class NodeReleaseRequest(
-    /** The TEE node's base URL. */
-    val baseUrl: String,
-    /** The release it named, read from its `/admin-api/tee/info` (or the fallback). Untrusted. */
-    val version: String,
-    /** The client the sealed transport carries its requests on. */
-    val httpClient: OkHttpClient,
-)
-
-/** What [createSignedReleaseSealedFetch] needs; mero-js `SignedReleaseSealedFetchOptions`. */
-@Suppress("LongParameterList")
-class SignedReleaseSealedFetchOptions(
-    /** The TEE node's (the relay's) base URL. */
-    val baseUrl: String,
-    /** The oldest release accepted; see [trustSignedRelease]. */
-    val minReleaseVersion: String,
-    val profile: String = PRODUCTION_PROFILE,
-    val allowDebugProfile: Boolean = false,
-    /**
-     * The base URL of a mirror serving [cloudNodeReleaseUrl]'s path, asked for the release the
-     * node names each time it is attested. Only a transport: the release is verified.
-     */
-    val releaseMirror: String = DEFAULT_RELEASE_MIRROR,
-    /** Get the release some other way (a file bundled with the app); takes precedence over [releaseMirror]. Untrusted too. */
-    val releaseSource: (suspend (NodeReleaseRequest) -> SignedNodeRelease)? = null,
-    /**
-     * The release to fetch when the node will not name one: a node that requires sealing and
-     * predates core#4196 refuses `/tee/info` unsealed. Used only then; a node that answers is
-     * taken at its word. Either way untrusted: the quote must match the signed release.
-     */
-    val releaseVersion: String? = null,
-    /** Also require the node to run this application with this bytecode hash. */
-    val applicationId: String? = null,
-    val applicationHash: String? = null,
-    val identity: String? = null,
-    val issuer: String? = null,
-    val dcapVerify: DcapVerify = Dcap,
-    val fetchCollateral: (suspend (ByteArray) -> DcapCollateral)? = null,
-    val now: () -> Long = System::currentTimeMillis,
-    /** Carries the release, the attestation and the envelopes. */
-    val httpClient: OkHttpClient = PlainJsonHttp.defaultClient(),
-)
-
-/**
- * [createAttestedSealedFetch] for a TEE node known only by URL, trusting whatever signed release
- * at or above `minReleaseVersion` it runs (mero-js `createSignedReleaseSealedFetch`): it reads
- * the release the node names from its `/tee/info` (or takes `releaseVersion` when a node too
- * old to serve that unsealed requires sealing), gets that release from the mirror (or
- * `releaseSource`), verifies its signature, builds the quote verifier from its measurements,
- * attests the node and seals everything to it.
- *
- * ```kotlin
- * val sealed = createSignedReleaseSealedFetch(SignedReleaseSealedFetchOptions(relayUrl, minReleaseVersion = "2.3.87"))
- * val relay = RelayClient(relayUrl, ..., httpClient = sealed.client)
- * ```
- */
-fun createSignedReleaseSealedFetch(options: SignedReleaseSealedFetchOptions): SealedTransport {
-    val fallback = options.releaseVersion?.let { releaseVersion(it, "releaseVersion") }
-    val http = options.httpClient
-    val release: suspend () -> SignedNodeRelease = {
-        val version =
-            if (fallback == null) {
-                fetchNodeReleaseVersion(options.baseUrl, http)
-            } else {
-                readNodeReleaseVersion(options.baseUrl, http) ?: fallback
-            }
-        options.releaseSource?.invoke(NodeReleaseRequest(options.baseUrl, version, http))
-            ?: fetchNodeRelease(cloudNodeReleaseUrl(options.releaseMirror, version), http)
-    }
-    val verifier =
-        createSignedReleaseVerifier(
-            SignedReleaseVerifierOptions(
-                release = release,
-                minReleaseVersion = options.minReleaseVersion,
-                profile = options.profile,
-                allowDebugProfile = options.allowDebugProfile,
-                identity = options.identity,
-                issuer = options.issuer,
-                dcapVerify = options.dcapVerify,
-                fetchCollateral = options.fetchCollateral,
-                now = options.now,
-            ),
-        )
-    return createAttestedSealedFetch(options.baseUrl, verifier, options.applicationId, options.applicationHash, http)
 }
 
 private val RELEASE_VERSION = Regex("^(\\d+)\\.(\\d+)\\.(\\d+)(?:-([0-9A-Za-z.-]+))?(?:\\+[0-9A-Za-z.-]+)?$")
