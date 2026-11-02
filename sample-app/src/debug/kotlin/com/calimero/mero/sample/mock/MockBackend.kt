@@ -1,56 +1,83 @@
 package com.calimero.mero.sample.mock
 
-import androidx.compose.runtime.Composable
-import com.calimero.mero.account.CloudAccount
-import com.calimero.mero.account.MemorySecureStore
-import com.calimero.mero.compose.MeroClient
-import com.calimero.mero.relay.DcapRelayKeyVerifier
-import com.calimero.mero.sample.explorer.MockWalletCard
-import com.calimero.mero.storage.MemoryTokenStore
-import com.calimero.mero.testkit.FakeNode
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
+import com.calimero.mero.app.MeroAppBackend
+import com.calimero.mero.testkit.InMemoryAppBackend
+import com.calimero.mero.testkit.RecordedContractCall
+import com.calimero.mero.testkit.RecordingContextContract
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonNull
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.put
 
 /**
- * The in-app mock backend, for `run-app.sh --mock` and the instrumented `LoginFlowTest`: a
- * [FakeNode] plays both the cloud manager and the relay, and the wallet is [MockWallet], so the
- * whole sign-in runs with no network.
- *
- * Debug builds only. The release variant of this object has no mock, so neither mero-testkit
- * nor the mock wallet's throwaway account root ship in a release APK.
+ * The debug demo: mero-testkit's [InMemoryAppBackend] with a tiny in-memory mero-chat contract
+ * (`get_messages`, `send_message`, `get_profiles`, `set_profile`), so the whole app runs with no
+ * cluster and no passkey. Drives the instrumented `LoginFlowTest`.
  */
 object MockBackend {
-    const val AVAILABLE = true
+    const val AVAILABLE: Boolean = true
 
-    suspend fun start(): MockSession {
-        // MockWebServer.url() does a reverse-DNS lookup: never on the main thread.
-        val server = withContext(Dispatchers.IO) { FakeNode().start() }
-        val base = withContext(Dispatchers.IO) { server.url("/").toString().trimEnd('/') }
-        val account =
-            CloudAccount(
-                MemorySecureStore(),
-                cloudBaseUrl = base,
-                walletUrl = MOCK_WALLET_URL,
-                relayKeyVerifier = DcapRelayKeyVerifier(allowMock = true),
-            )
-        val client = MeroClient(account, MemoryTokenStore(), launchWallet = { _, url -> MockWallet.pendingUrl = url })
-        return MockSession(client) { Thread { runCatching { server.shutdown() } }.start() }
+    fun backend(): MeroAppBackend {
+        val messages = mutableMapOf<String, MutableList<JsonObject>>()
+        val profiles = mutableMapOf<String, String>()
+        lateinit var backend: InMemoryAppBackend
+        val contract =
+            RecordingContextContract { call: RecordedContractCall ->
+                synchronized(messages) { answer(call, messages, profiles, backend.account) }
+            }
+        backend = InMemoryAppBackend(recording = contract)
+        backend.applicationId = "com.calimero.chat"
+        return backend
     }
 
-    /** The in-app "Mock wallet" sheet; [deliver] routes the redirect it builds back to the app. */
-    fun walletCard(deliver: (String) -> Unit): (@Composable () -> Unit)? =
-        {
-            MockWalletCard(
-                pendingUrl = MockWallet.pendingUrl,
-                onApprove = { deliver(MockWallet.approve()) },
-                onDecline = { deliver(MockWallet.decline()) },
-            )
+    private fun answer(
+        call: RecordedContractCall,
+        messages: MutableMap<String, MutableList<JsonObject>>,
+        profiles: MutableMap<String, String>,
+        account: String,
+    ): JsonElement {
+        val args = call.args as? JsonObject ?: JsonObject(emptyMap())
+
+        fun s(key: String) = (args[key] as? JsonPrimitive)?.contentOrNull.orEmpty()
+        return when (call.method) {
+            "get_messages" -> {
+                val list = messages[call.contextId].orEmpty()
+                buildJsonObject {
+                    put("total_count", list.size)
+                    put("messages", JsonArray(list))
+                    put("start_position", 0)
+                }
+            }
+            "send_message" -> {
+                val list = messages.getOrPut(call.contextId) { mutableListOf() }
+                list +=
+                    buildJsonObject {
+                        put("id", "m${list.size + 1}")
+                        put("text", s("message"))
+                        put("sender", account)
+                        put("sender_username", profiles[account].orEmpty())
+                        put("timestamp", System.currentTimeMillis() / 1000)
+                    }
+                JsonNull
+            }
+            "set_profile" -> {
+                profiles[account] = s("username")
+                JsonNull
+            }
+            "get_profiles" ->
+                JsonArray(
+                    profiles.map { (identity, name) ->
+                        buildJsonObject {
+                            put("identity", identity)
+                            put("username", name)
+                        }
+                    },
+                )
+            else -> JsonNull
         }
-
-    /** A real redirect arrived: the mock wallet has nothing pending any more. */
-    fun clearPending() {
-        MockWallet.pendingUrl = null
     }
-
-    private const val MOCK_WALLET_URL = "https://wallet.mock/account-enroll"
 }

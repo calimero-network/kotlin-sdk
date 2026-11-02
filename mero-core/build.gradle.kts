@@ -58,7 +58,6 @@ dependencies {
     api(libs.okhttp.sse)
 
     implementation(libs.androidx.security.crypto)
-    implementation(libs.androidx.browser)
     // Ed25519 signing and X25519 key generation for the Cloud account layer. The JCA has
     // neither below API 33, and minSdk is 24. Only the lightweight API is used (no provider
     // registration), so it does not clash with the platform's repackaged copy.
@@ -82,7 +81,7 @@ publishing {
             afterEvaluate { from(components["release"]) }
             pom {
                 name.set("mero-core")
-                description.set("Calimero Android SDK — core (auth, tokens, JSON-RPC, transport).")
+                description.set("Calimero Android SDK — core: the Calimero 1.0 client (attestation, sealed transport, passkeys).")
                 url.set("https://github.com/calimero-network/kotlin-sdk")
                 licenses {
                     license {

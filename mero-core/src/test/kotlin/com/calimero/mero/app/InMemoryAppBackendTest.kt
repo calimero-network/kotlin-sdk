@@ -1,7 +1,5 @@
 package com.calimero.mero.app
 
-import com.calimero.mero.account.NoRelayException
-import com.calimero.mero.crypto.Hex
 import com.calimero.mero.testkit.InMemoryAppBackend
 import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.toList
@@ -37,7 +35,7 @@ class InMemoryAppBackendTest {
             assertEquals("Team", namespaces.first().name)
             assertEquals(64, founded.namespaceId.length)
             assertTrue(founded.haEnabled)
-            assertEquals(listOf(AppSubgroup(group, "general", listOf(context))), backend.listSubgroups(founded.namespaceId))
+            assertEquals(listOf(AppSubgroup(group, "general", listOf(context), isPublic = true)), backend.listSubgroups(founded.namespaceId))
             assertEquals(listOf(context), backend.listContexts(group))
             assertTrue("the creator is a member of what it creates", backend.isMember(context))
             assertEquals(setOf(group), backend.publicSubgroups)
@@ -65,7 +63,7 @@ class InMemoryAppBackendTest {
             try {
                 backend.contract.query("c", "get", JsonObject(emptyMap()))
                 fail("a relayless contract refuses")
-            } catch (_: NoRelayException) {
+            } catch (_: SignedOutException) {
             }
 
             val invitation = InMemoryAppBackend.invitation(namespace)
@@ -75,14 +73,8 @@ class InMemoryAppBackendTest {
             assertEquals("https://relay.test", joined.relayUrl)
             assertTrue(backend.hasRelay)
             assertEquals(listOf(namespace), backend.listNamespaces().map { it.id })
-            assertEquals(
-                namespace,
-                Hex.encode(
-                    invitation.invitation.groupId
-                        .map { it.toByte() }
-                        .toByteArray(),
-                ),
-            )
+            assertEquals(namespace, invitation.namespaceId)
+            assertEquals(invitation, OrgInvitation.decode(invitation.encoded()))
         }
 
     @Test

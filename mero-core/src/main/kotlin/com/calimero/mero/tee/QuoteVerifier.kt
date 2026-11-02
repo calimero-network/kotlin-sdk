@@ -26,7 +26,7 @@ import org.bouncycastle.util.encoders.Base64
 
 /**
  * The collateral a quote is verified against — TCB info, QE identity, CRLs and their chains —
- * in dcap-qvl's form (`QuoteCollateralV3`). What `/admin-api/tee/attest` returns with
+ * in dcap-qvl's form (`QuoteCollateralV3`). What a node returned with
  * `includeCollateral`. Byte fields arrive as hex or as arrays of numbers; [fromJson] takes both.
  */
 @Suppress("LongParameterList")

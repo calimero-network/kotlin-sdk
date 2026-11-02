@@ -12,7 +12,7 @@ import androidx.compose.ui.unit.dp
 
 /**
  * Theme tokens for the mero-compose components — mero-react `MeroTheme`, with the same fields,
- * plus the ones [LoginView] draws its whole screen from (== the Swift SDK's `MeroTheme`).
+ * plus the ones a sign-in screen draws from (== the Swift SDK's `MeroTheme`).
  *
  * Provide one with [ProvideMeroTheme]; components read [LocalMeroTheme]. Presets:
  * [MeroTheme.calimeroLight] (the default) and [MeroTheme.calimero] (dark, mero-react's palette).
@@ -20,7 +20,7 @@ import androidx.compose.ui.unit.dp
  *
  * ```kotlin
  * ProvideMeroTheme(MeroTheme.calimeroLight.copy(primary = Color(0xFF5B5BD6), primaryText = Color.White)) {
- *     LoginView(callbackUrl = "myapp://enrol", mode = LoginMode.CLOUD_ONLY)
+ *     MyScreen()
  * }
  * ```
  */
@@ -31,7 +31,7 @@ data class MeroTheme(
     val primaryHover: Color,
     /** Text drawn on [primary]. */
     val primaryText: Color,
-    /** The main surface (sheets, dialogs, the [LoginView] screen). */
+    /** The main surface (sheets, dialogs, a sign-in screen). */
     val background: Color,
     /** The secondary surface (fields, chips). */
     val backgroundSecondary: Color,
@@ -46,7 +46,7 @@ data class MeroTheme(
     val overlay: Color,
     /** Corner radius of buttons and fields. */
     val radius: Dp,
-    /** Cards and panels (the node form on [LoginView]). */
+    /** Cards and panels (a sign-in form). */
     val surface: Color = backgroundSecondary,
     /** Link-style and tertiary text. */
     val textTertiary: Color = textSecondary,
@@ -58,7 +58,7 @@ data class MeroTheme(
     val controlHeight: Dp = 52.dp,
     /** The font family of titles (Swift's `titleDesign`). */
     val titleFontFamily: FontFamily = FontFamily.Default,
-    /** A soft glow of [primary] behind the top of [LoginView]. */
+    /** A soft glow of [primary] behind the top of a sign-in screen. */
     val showsGlow: Boolean = true,
 ) {
     companion object {
@@ -110,7 +110,7 @@ data class MeroTheme(
 /** mero-react's `defaultMeroTheme` (dark): [MeroTheme.calimero]. */
 val defaultMeroTheme: MeroTheme = MeroTheme.calimero
 
-/** The light Calimero tokens [LoginSheetColors] has always defaulted to (white sheet). See also [MeroTheme.calimeroLight]. */
+/** The light Calimero tokens (white sheet). See also [MeroTheme.calimeroLight]. */
 val lightMeroTheme: MeroTheme =
     MeroTheme(
         primary = Color(0xFFA5FF11),

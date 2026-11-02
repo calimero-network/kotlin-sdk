@@ -61,6 +61,11 @@ dependencies {
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.viewmodel.compose)
     implementation(libs.androidx.lifecycle.runtime.compose)
+    implementation(libs.androidx.browser)
+    api(libs.androidx.credentials)
+    implementation(libs.androidx.credentials.play.services)
+    implementation(libs.androidx.security.crypto)
+    implementation(libs.kotlinx.serialization.json)
 
     implementation(platform(libs.compose.bom))
     implementation(libs.compose.ui)
@@ -71,7 +76,6 @@ dependencies {
 
     testImplementation(libs.junit)
     testImplementation(libs.kotlinx.coroutines.test)
-    testImplementation(libs.okhttp.mockwebserver)
     testImplementation(project(":mero-testkit"))
 }
 
@@ -95,7 +99,7 @@ publishing {
             artifact(javadocJar)
             pom {
                 name.set("mero-compose")
-                description.set("Calimero Android SDK — Jetpack Compose login UI kit.")
+                description.set("Calimero Android SDK — app session, passkeys and consent for Jetpack Compose apps.")
                 url.set("https://github.com/calimero-network/kotlin-sdk")
                 licenses {
                     license {

@@ -50,9 +50,8 @@ android {
 dependencies {
     implementation(project(":mero-core"))
     implementation(project(":mero-compose"))
-    // Reused for the in-app mock backend (run-app.sh --mock / instrumented UI tests): a FakeNode on
-    // a local MockWebServer, so the app runs the full login→home flow with no live node. Debug
-    // only (src/debug/…/MockBackend.kt): a release build carries no mock.
+    // The in-app demo (instrumented UI tests): mero-testkit's InMemoryAppBackend, so the app runs
+    // sign-in → home → chat with no cluster. Debug only (src/debug/…/MockBackend.kt).
     debugImplementation(project(":mero-testkit"))
 
     implementation(libs.androidx.core.ktx)
@@ -73,7 +72,7 @@ dependencies {
     debugImplementation(libs.compose.ui.tooling)
     debugImplementation(libs.compose.ui.test.manifest)
 
-    // JVM unit tests of the chat logic against the in-process FakeNode (no emulator).
+    // JVM unit tests of the chat logic against InMemoryAppBackend (no emulator).
     testImplementation(project(":mero-testkit"))
     testImplementation(libs.junit)
     testImplementation(libs.kotlinx.coroutines.test)

@@ -23,11 +23,10 @@ purpose: moving coordinates afterwards is a breaking change for every consumer.
 ## Testing before release
 
 Before tagging, make sure the suite is green — see [TESTING.md](TESTING.md). At a
-minimum run what CI enforces plus the live-node e2e:
+minimum run what CI enforces:
 
 ```bash
-./gradlew ktlintCheck detekt testDebugUnitTest lint assembleDebug   # ci.yml (§1–§3)
-./test-all.sh                                                       # all of §0–§6, incl. live-node e2e
+./gradlew ktlintCheck detekt testDebugUnitTest lint assembleDebug   # ci.yml
 ```
 
 ## How a release happens
@@ -140,7 +139,7 @@ so a broken release config fails on the pull request rather than on a tag that c
 
 `mero-core` and `mero-compose` only. `mero-testkit` applies `maven-publish` but registers no
 publication, so it is not published — it exists for this repo's own tests. Register a publication
-for it if consumers ever need the fake node.
+for it if consumers need `InMemoryAppBackend` from Maven.
 
-Version-align releases to the mero-js contract they implement (mero-kotlin 0.1.x ⇄ mero-js 7.x for
-now; bump to 7.x when the API surface reaches parity).
+Version-align releases to the mero-js contract they implement: this SDK speaks Calimero 1.0, as
+mero-js ≥ 27's `CalimeroClient` does; a release that drops the 0.x API is a major version.
