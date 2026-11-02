@@ -42,6 +42,13 @@ val NODE_RELEASE_SIGNER: SignerIdentity =
 const val DEFAULT_RELEASE_MIRROR: String = "https://cloud.calimero.network"
 
 /**
+ * Where Intel's collateral for a quote comes from by default: the cloud's mirror of the PCCS paths
+ * [PccsCollateral] reads (mero-js `DEFAULT_COLLATERAL_MIRROR`). It only carries Intel-signed items,
+ * each verified up to Intel's root CA, so it cannot forge anything.
+ */
+const val DEFAULT_COLLATERAL_MIRROR: String = "$DEFAULT_RELEASE_MIRROR/api/tee/pcs"
+
+/**
  * A node release as the servers hand it out (`{"data": ...}`): the release's
  * `published-mrtds.json`, byte for byte, and its cosign bundle. Unverified until
  * [verifySignedNodeRelease] says otherwise.

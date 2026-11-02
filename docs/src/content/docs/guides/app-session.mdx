@@ -21,6 +21,9 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
 
 // The sign-in button (Credential Manager over the activity):
 session.signIn(activity)            // or session.signUp(activity, name)
+// The passkey that approves step-ups (invites, member changes, leaving): the Activity on screen.
+override fun onCreate(…) { …; session.passkey = PlatformPasskey(this) }
+override fun onDestroy() { session.passkey = null; … }
 // Every deep link (consent returns, invites):
 viewModelScope.launch { session.handle(url) }
 ```
@@ -33,6 +36,7 @@ viewModelScope.launch { session.handle(url) }
 | `restore()`, `signIn(…)`, `signUp(…)`, `cancelSignIn()`, `signOut()` | session lifecycle |
 | `handle(url)`, `pendingInvitation`, `pendingOrgInvitation`, `redeemPendingInvitation()`, `dismissPendingInvitation()` | links |
 | `requestConsent(context, request)`, `consentResult` | approvals on the consent page |
+| `passkey` | approves the backend's step-ups (`createInvitation`, `leaveNamespace`, `leaveSubgroup`, `setMemberRole`, `removeMember`); null: they throw `ConfirmRequired` |
 
 ## The backend's words
 

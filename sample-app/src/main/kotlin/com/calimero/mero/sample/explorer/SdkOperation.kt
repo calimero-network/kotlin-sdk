@@ -34,15 +34,17 @@ data class OpField(
 }
 
 /**
- * What an operation runs against: the signed-in [CalimeroClient], and the device's passkey for the
- * calls the node asks the account holder to confirm (`412 CONFIRM_REQUIRED`).
+ * What an operation runs against: the signed-in [CalimeroClient], and the passkey for the calls the
+ * node asks the account holder to confirm (`412 CONFIRM_REQUIRED`).
  */
 class OpEnv(
     val client: CalimeroClient,
     private val context: Context,
+    /** The software passkey of a development node, if signed in to one. */
+    private val devPasskey: PasskeyProvider? = null,
 ) {
-    /** The device's passkey (Credential Manager), for confirmed calls. */
-    val passkey: PasskeyProvider get() = PlatformPasskey(context)
+    /** The development node's software passkey, else the device's (Credential Manager). */
+    val passkey: PasskeyProvider get() = devPasskey ?: PlatformPasskey(context)
 }
 
 /**

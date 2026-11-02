@@ -2,6 +2,7 @@ package com.calimero.mero
 
 import com.calimero.mero.crypto.Hex
 import com.calimero.mero.crypto.randomBytes
+import com.calimero.mero.http.NetworkException
 import com.calimero.mero.http.PlainJsonHttp
 import com.calimero.mero.http.trimBase
 import com.calimero.mero.tee.SealedTransport
@@ -50,8 +51,9 @@ data class CalimeroClientOptions(
     val baseUrl: String,
     /**
      * Other nodes of the same cluster, in the order to move to them when a node answers
-     * `421 WRONG_NODE`. Each is attested under the same [policy] before anything is sent to it.
-     * Without them a `421` reaches the caller as [WrongNode].
+     * `421 WRONG_NODE` (its release may not serve this account), or stays unavailable to a call or
+     * a view through all its retries. Each is attested under the same [policy] before anything is
+     * sent to it. Without them a `421` reaches the caller as [WrongNode].
      */
     val nodes: List<String> = emptyList(),
     val policy: CloudPolicy,
@@ -71,6 +73,28 @@ data class CalimeroClientOptions(
         fun defaultHttpClient(): OkHttpClient = PlainJsonHttp.defaultClient(30_000)
     }
 }
+
+/** How [CalimeroClient.connect] reaches a Calimero Cloud cluster by name (mero-js `CalimeroConnectOptions`). */
+data class CalimeroConnectOptions(
+    /** The cluster's name, e.g. `eu-shared-1`. */
+    val cluster: String,
+    /** What every node must attest to before anything is sent to it. */
+    val policy: CloudPolicy,
+    /** The node directory to ask. Default [DEFAULT_DIRECTORY]. */
+    val directory: String = DEFAULT_DIRECTORY,
+    /** Try the nodes in this zone (e.g. `europe-west4-a`) first. */
+    val zone: String? = null,
+    /** Carries the directory, the attestation and the sealed envelopes. */
+    val httpClient: OkHttpClient = CalimeroClientOptions.defaultHttpClient(),
+    /** How calls and views retry a 503 or a failed connection. */
+    val retry: CloudRetryOptions = CloudRetryOptions(),
+    /** As [CalimeroClientOptions.onSession]. */
+    val onSession: ((CalimeroSession?) -> Unit)? = null,
+    /** Randomness for the weighted node order, in [0, 1). For tests. */
+    val random: () -> Double = Math::random,
+    /** The current time in milliseconds. For tests. */
+    val now: () -> Long = System::currentTimeMillis,
+)
 
 /**
  * The client for Calimero 1.0, the confidential cloud (mero-js `CalimeroClient`): one app = one
@@ -94,10 +118,21 @@ class CalimeroClient(
     /** A client for one node, trusting it under [policy]. */
     constructor(baseUrl: String, policy: CloudPolicy) : this(CalimeroClientOptions(baseUrl, policy = policy))
 
-    /** Every node this client may use, `baseUrl` first. */
-    private val nodeUrls: List<String> = (listOf(options.baseUrl) + options.nodes).map { it.trimBase() }.distinct()
+    /** Every node this client may use, `baseUrl` first (or as the directory last ordered them). */
+    @Volatile private var nodeUrls: List<String> = (listOf(options.baseUrl) + options.nodes).map { it.trimBase() }.distinct()
 
+    /** The one in use: an index into [nodeUrls]. */
     @Volatile private var at = 0
+
+    /** Where a client made by [connect] re-reads its node list. */
+    private class DirectorySource(
+        val options: CalimeroConnectOptions,
+        /** When the listing is due to be read again (ms since the epoch). */
+        @Volatile var due: Long,
+        @Volatile var reading: Boolean = false,
+    )
+
+    @Volatile private var source: DirectorySource? = null
 
     private val channels = HashMap<String, SealedTransport>()
     private val lock = Any()
@@ -114,8 +149,11 @@ class CalimeroClient(
             .build()
     }
 
-    /** The node requests go to now: `baseUrl`, until a `421 WRONG_NODE` moved the client on. */
-    val nodeUrl: String get() = nodeUrls[at]
+    /** The node requests go to now: `baseUrl`, until a `421 WRONG_NODE` or a failover moved the client on. */
+    val nodeUrl: String get() = synchronized(lock) { nodeUrls[at] }
+
+    /** Every node this client may use, in the order it moves through them. */
+    val nodes: List<String> get() = nodeUrls
 
     /** The session in use, or null (signed out, or an API key). */
     val session: CalimeroSession? get() = current
@@ -128,11 +166,70 @@ class CalimeroClient(
             }
         }
 
-    /** Move on from node [from] to the next one. False when there is no other. */
-    private fun moveOn(from: Int): Boolean {
-        if (nodeUrls.size < 2) return false
-        synchronized(lock) { if (at == from) at = (from + 1) % nodeUrls.size }
+    /**
+     * Move on from node [from] (the one that answered `421 WRONG_NODE`) to the next one. False when
+     * there is no other. A request that saw the same node refuse after another request moved on
+     * already does not move again.
+     */
+    private fun moveOn(from: String): Boolean =
+        synchronized(lock) {
+            if (nodeUrls.size < 2) return false
+            if (nodeUrls[at] == from) at = (at + 1) % nodeUrls.size
+            true
+        }
+
+    /**
+     * Fail over from node [from], where a request's retries ran out, to the next node it has not
+     * [tried]. False when it has tried them all. A request whose node another request moved away
+     * from already goes to that node, if untried.
+     */
+    private fun failOver(
+        from: String,
+        tried: Set<String>,
+    ): Boolean {
+        synchronized(lock) {
+            val urls = nodeUrls
+            if (urls[at] != from && urls[at] !in tried) return true
+            for (step in 1 until urls.size) {
+                val next = (at + step) % urls.size
+                if (urls[next] !in tried) {
+                    at = next
+                    break
+                }
+            }
+            if (urls[at] in tried) return false
+        }
+        reread()
         return true
+    }
+
+    /**
+     * Read the node list again from the directory, in the background, for a client made by
+     * [connect]: the node in use stays first, then the directory's order; a node no longer listed is
+     * dropped. A failed read is ignored. One read at a time.
+     */
+    private fun reread() {
+        val src = source ?: return
+        synchronized(lock) {
+            if (src.reading) return
+            src.reading = true
+        }
+        scope.launch {
+            try {
+                val listing = readDirectory(src.options.directory, src.options.cluster, options.httpClient)
+                val listed = orderNodes(listing.nodes, src.options.zone, src.options.random)
+                synchronized(lock) {
+                    val current = nodeUrls[at]
+                    nodeUrls = listOf(current) + listed.filter { it != current }
+                    at = 0
+                }
+                src.due = src.options.now() + (listing.refreshAfterSeconds * 1000).toLong()
+            } catch (_: DirectoryError) {
+                // Keep the list the client has.
+            } finally {
+                src.reading = false
+            }
+        }
     }
 
     /** Authenticate every request with an API key (`cal_…`, or an operator token). */
@@ -183,6 +280,7 @@ class CalimeroClient(
         stream: Boolean,
     ): Response =
         withContext(Dispatchers.IO) {
+            source?.let { if (it.options.now() >= it.due) reread() }
             val url = nodeUrl
             val builder = Request.Builder().url("$url/$path")
             auth?.let { builder.header("authorization", "Bearer $it") }
@@ -239,7 +337,7 @@ class CalimeroClient(
         var moved = false
         while (true) {
             val token = auth
-            val from = at
+            val from = nodeUrl
             val response = request(method, path, body, stream)
             if (response.isSuccessful) return response
             val error = refusal(response)
@@ -275,34 +373,53 @@ class CalimeroClient(
     /**
      * [json] for a call or a view: while the node answers 503 or cannot be reached, the same
      * request, with the same idempotency key, is sent again after [retryDelayMs] (or the pause the
-     * node asked for, if longer), at most `retries` times. Every other answer is final. The last
-     * failure surfaces as [UnavailableError]: the node's 503, or reason `network` for a connection
-     * that failed, whose `committed` is [Committed.Unknown]. `retries` 0 sends the request once.
+     * node asked for, if longer), at most `retries` times. Every other answer is final.
+     *
+     * When a node's retries run out, the request fails over to the next node the client knows and
+     * its retries start again there, with the same key: the key is kept in the app's replicated
+     * log, so the cluster answers it once whichever node it reaches. Each node is tried once per
+     * request. The last failure surfaces as [UnavailableError]: the node's 503, or reason `network`
+     * for a connection that failed, whose `committed` is [Committed.Unknown].
+     *
+     * [once] sends the request exactly once, to the node in use (the confirmed attempt of
+     * [callConfirmed], whose challenge is single-use).
      */
-    @Suppress("ThrowsCount")
+    @Suppress("ThrowsCount", "NestedBlockDepth")
     private suspend fun retried(
         path: String,
         body: JsonObject,
-        retries: Int = options.retry.retries,
+        once: Boolean = false,
     ): JsonElement {
-        var attempt = 0
+        val retries = if (once) 0 else options.retry.retries
+        val tried = HashSet<String>()
         while (true) {
-            val unavailable =
-                try {
-                    return json("POST", path, jsonBody(body))
-                } catch (e: UnavailableError) {
-                    e
-                } catch (e: SealedTransportException) {
-                    throw e
-                } catch (e: StaleTransportKeyException) {
-                    throw e
-                } catch (e: IOException) {
-                    UnavailableError("NETWORK", "the node could not be reached: ${e.message}", cause = e)
-                }
-            if (attempt >= retries) throw unavailable
-            val backoff = retryDelayMs(attempt, options.retry)
-            delay(maxOf(backoff, ((unavailable.retryAfter ?: 0.0) * 1000).toLong()))
-            attempt += 1
+            var node: String
+            var attempt = 0
+            var unavailable: UnavailableError
+            while (true) {
+                node = nodeUrl
+                tried += node
+                unavailable =
+                    try {
+                        return json("POST", path, jsonBody(body))
+                    } catch (e: UnavailableError) {
+                        e
+                    } catch (e: SealedTransportException) {
+                        // A node that cannot be reached to attest it is as unavailable as one
+                        // that drops the connection; any other sealed-channel failure is final.
+                        if (e.status != null || e.cause !is NetworkException) throw e
+                        UnavailableError("NETWORK", "the node could not be reached: ${e.cause?.message}", cause = e)
+                    } catch (e: StaleTransportKeyException) {
+                        throw e
+                    } catch (e: IOException) {
+                        UnavailableError("NETWORK", "the node could not be reached: ${e.message}", cause = e)
+                    }
+                if (attempt >= retries) break
+                val backoff = retryDelayMs(attempt, options.retry)
+                delay(maxOf(backoff, ((unavailable.retryAfter ?: 0.0) * 1000).toLong()))
+                attempt += 1
+            }
+            if (once || !failOver(node, tried)) throw unavailable
         }
     }
 
@@ -439,24 +556,35 @@ class CalimeroClient(
         )
     }
 
-    /** Add another passkey (another device) to the signed-in account; answers its credential id. */
-    suspend fun addPasskey(passkey: PasskeyProvider): String {
+    /**
+     * Add another passkey (another device, [passkey]) to the signed-in account; answers its
+     * credential id. The node asks for the approval of a passkey the account already has
+     * (`412 CONFIRM_REQUIRED`, never the new one), which [approver] gives.
+     */
+    suspend fun addPasskey(
+        passkey: PasskeyProvider,
+        approver: PasskeyProvider,
+    ): String {
         val begin = post("auth/passkeys/add/begin") as JsonObject
         val registration = passkey.create(begin["options"] as? JsonObject ?: JsonObject(emptyMap()))
         val done =
-            post(
+            postConfirmed(
                 "auth/passkeys/add/finish",
                 buildJsonObject {
                     put("challengeId", begin.string("challengeId").orEmpty())
                     put("registration", wire.encodeToJsonElement(registration))
                 },
+                approver,
             ) as JsonObject
         return done.string("credentialId").orEmpty()
     }
 
-    /** Remove one of the account's passkeys (not the last). */
-    suspend fun removePasskey(credentialId: String) {
-        delete("auth/passkeys/${seg(credentialId)}")
+    /** Remove one of the account's passkeys (not the last), approved with [passkey] (one it has). */
+    suspend fun removePasskey(
+        credentialId: String,
+        passkey: PasskeyProvider,
+    ) {
+        deleteConfirmed("auth/passkeys/${seg(credentialId)}", passkey)
     }
 
     /** Name one of the account's passkeys (a device label); `""` clears the name. */
@@ -489,28 +617,64 @@ class CalimeroClient(
         delete("auth/apikeys/${seg(keyId)}")
     }
 
-    /** Create an API key for an agent or server. The key is returned once. */
-    suspend fun createApiKey(options: ApiKeyOptions = ApiKeyOptions()): ApiKeyCreated =
-        typed(ApiKeyCreated.serializer(), "POST", "auth/apikeys", jsonBody(wire.encodeToJsonElement(options)))
+    /**
+     * Create an API key for an agent or server, approved with the account's [passkey]
+     * (`412 CONFIRM_REQUIRED`); needs a passkey session (an API key is refused `403`). The key is
+     * returned once.
+     */
+    suspend fun createApiKey(
+        options: ApiKeyOptions,
+        passkey: PasskeyProvider,
+    ): ApiKeyCreated = wire.decodeFromJsonElement(ApiKeyCreated.serializer(), postConfirmed("auth/apikeys", wire.encodeToJsonElement(options) as JsonObject, passkey))
 
     // ---------------------------------------------------------------- apps
 
     /** Upload a raw WASM bundle (development clusters only); answers its hash. */
     suspend fun uploadBundle(wasm: ByteArray): String = (json("POST", "bundles", Body(wasm, "application/wasm")) as JsonObject).string("hash").orEmpty()
 
-    /** Upload a blob for [app]: `blobId` is base58 (what apps print), `id` hex. */
+    /**
+     * Upload a blob for [app]: `blobId` is base58 (what apps print), `id` hex. [contentType]
+     * (printable ASCII; the node refuses another with `400`) is sent as the upload's
+     * `Content-Type`: a component app records it and serves downloads with it. A component app
+     * holding as many blobs as it may answers `429 QUOTA_EXCEEDED`.
+     */
     suspend fun uploadBlob(
         app: String,
         data: ByteArray,
-    ): BlobInfo = wire.decodeFromJsonElement(BlobInfo.serializer(), json("POST", "apps/${seg(app)}/blobs", Body(data, "application/octet-stream")))
+        contentType: String = OCTET_STREAM,
+    ): BlobInfo = wire.decodeFromJsonElement(BlobInfo.serializer(), json("POST", "apps/${seg(app)}/blobs", Body(data, contentType)))
 
     /** One of [app]'s blobs, by id (base58 or hex). */
     suspend fun downloadBlob(
         app: String,
         id: String,
-    ): ByteArray {
-        val response = exchange("GET", "apps/${seg(app)}/blobs/${seg(id)}")
-        return withContext(Dispatchers.IO) { response.use { it.body?.bytes() ?: ByteArray(0) } }
+    ): ByteArray = blobContent(app, id).data
+
+    /**
+     * Download a component app's blob with a grant one of its runs handed out (`BlobRef::grant`,
+     * up to 24 h). No session needed: the grant is the permission. A bad or expired grant answers
+     * [NotFound], as a missing blob.
+     */
+    suspend fun downloadBlobGranted(
+        app: String,
+        id: String,
+        grant: String,
+    ): ByteArray = blobContent(app, id, grant).data
+
+    /**
+     * [downloadBlob] (or, with [grant], [downloadBlobGranted]) with the content type the node
+     * serves it as: the uploader's, for a component app; `application/octet-stream` otherwise.
+     */
+    suspend fun blobContent(
+        app: String,
+        id: String,
+        grant: String? = null,
+    ): BlobContent {
+        val query = grant?.let { "?grant=${enc(it)}" }.orEmpty()
+        val response = exchange("GET", "apps/${seg(app)}/blobs/${seg(id)}$query")
+        return withContext(Dispatchers.IO) {
+            response.use { BlobContent(it.body?.bytes() ?: ByteArray(0), it.header("content-type") ?: OCTET_STREAM) }
+        }
     }
 
     /** [app]'s blobs. */
@@ -600,6 +764,13 @@ class CalimeroClient(
         post("apps/${seg(app)}/metadata", buildJsonObject { put("metadata", metadata) })
     }
 
+    /**
+     * A component app's xcalls: how many messages wait in its outbox, and the dead letters (never
+     * delivered), newest last. Its owner's or an org admin's (`403` to anyone else);
+     * `409 NOT_SUPPORTED` for an app on the wasmer runtime, whose xcalls are follow-ups.
+     */
+    suspend fun appXcalls(app: String): AppXcalls = typed(AppXcalls.serializer(), "GET", "apps/${seg(app)}/xcalls")
+
     /** What the app's storage holds: `{ keys, bytes, blobs, blobBytes }`. */
     suspend fun appStorage(app: String): JsonObject = get("apps/${seg(app)}/storage") as JsonObject
 
@@ -682,7 +853,8 @@ class CalimeroClient(
 
     /**
      * Create an app instance from a bundle hash, or from a package release (installed from the
-     * registry first if the cluster lacks it). Answers its app id. A failed init throws code
+     * registry first if the cluster lacks it), or from what a deployment offers
+     * ([AppSource.Package.deployment]). Answers its app id. A failed init throws code
      * `INIT_FAILED`.
      */
     @Suppress("LongParameterList")
@@ -704,6 +876,7 @@ class CalimeroClient(
                         put("package", source.`package`)
                         source.version?.let { put("version", it) }
                         source.service?.let { put("service", it) }
+                        source.deployment?.let { put("deployment", it) }
                     }
                 }
                 org?.let { put("org", it) }
@@ -744,7 +917,7 @@ class CalimeroClient(
         val body = callBody(method, args, idempotencyKey ?: newIdempotencyKey())
         // The confirmed attempt goes out exactly once: its challenge is single-use, so a resend
         // would be refused on the challenge, not answered from the key.
-        val answer = confirmed(body, passkey) { b -> retried(path, b, if (b.containsKey("confirm")) 0 else options.retry.retries) }
+        val answer = confirmed(body, passkey) { b -> retried(path, b, once = b.containsKey("confirm")) }
         return wire.decodeFromJsonElement(CallResult.serializer(), answer)
     }
 
@@ -985,9 +1158,23 @@ class CalimeroClient(
     suspend fun openConsentPage(
         request: ConsentRequest,
         navigate: (String) -> Unit,
+    ): ConsentStarted = openConsentPage(request, OpenConsentOptions(navigate))
+
+    /**
+     * [requestConsent], then send the person to the consent page ([OpenConsentOptions.navigate]).
+     * [OpenConsentOptions.confirm] runs first with the node's answer, so the app can show the
+     * person its `code`; when it answers `false` the page is not opened. When the node sends a
+     * `code` that is not [confirmationCode] of `requestId`, it throws [CalimeroError]
+     * (`CONSENT_CODE_MISMATCH`) and does not navigate ([checkConsentCode]).
+     */
+    suspend fun openConsentPage(
+        request: ConsentRequest,
+        options: OpenConsentOptions,
     ): ConsentStarted {
         val started = requestConsent(request)
-        navigate(started.url)
+        checkConsentCode(started)
+        if (options.confirm?.invoke(started) == false) return started
+        options.navigate(started.url)
         return started
     }
 
@@ -1060,43 +1247,50 @@ class CalimeroClient(
 
     // ---------------------------------------------------------------- members and teams
 
-    /** Add a member, or change their role. */
+    /** Add a member, or change their role, approved with the caller's [passkey]. */
     suspend fun setMember(
         org: String,
         account: String,
         role: OrgRole,
+        passkey: PasskeyProvider,
     ) {
-        post(
+        postConfirmed(
             "orgs/${seg(org)}/members",
             buildJsonObject {
                 put("account", account)
                 put("role", role.wire)
             },
+            passkey,
         )
     }
 
+    /** Remove a member, or leave ([account] the caller's own), approved with the caller's [passkey]. */
     suspend fun removeMember(
         org: String,
         account: String,
-    ): JsonElement = delete("orgs/${seg(org)}/members/${seg(account)}")
+        passkey: PasskeyProvider,
+    ): JsonElement = deleteConfirmed("orgs/${seg(org)}/members/${seg(account)}", passkey)
 
     /**
      * Set capability bits ([OrgCapabilities]): for a member ([account]), for a member of one team
-     * ([account] and [team]), or the organization's default (neither).
+     * ([account] and [team]), or the organization's default (neither). Approved with the caller's
+     * [passkey].
      */
     suspend fun setCapabilities(
         org: String,
         capabilities: Int,
+        passkey: PasskeyProvider,
         account: String? = null,
         team: String? = null,
     ) {
-        post(
+        postConfirmed(
             "orgs/${seg(org)}/capabilities",
             buildJsonObject {
                 put("capabilities", capabilities)
                 account?.let { put("account", it) }
                 team?.let { put("team", it) }
             },
+            passkey,
         )
     }
 
@@ -1156,16 +1350,18 @@ class CalimeroClient(
         delete("orgs/${seg(org)}/teams/${seg(team)}")
     }
 
-    /** Add a member to a team, or change their row: role, lead, capability bits. */
+    /** Add a member to a team, or change their row: role, lead, capability bits. Approved with the caller's [passkey]. */
+    @Suppress("LongParameterList")
     suspend fun setTeamMember(
         org: String,
         team: String,
         account: String,
+        passkey: PasskeyProvider,
         role: TeamRole? = null,
         lead: Boolean? = null,
         capabilities: Int? = null,
     ) {
-        post(
+        postConfirmed(
             "orgs/${seg(org)}/teams/${seg(team)}/members",
             buildJsonObject {
                 put("account", account)
@@ -1173,41 +1369,166 @@ class CalimeroClient(
                 lead?.let { put("lead", it) }
                 capabilities?.let { put("capabilities", it) }
             },
+            passkey,
         )
     }
 
+    /** Remove a member from a team, approved with the caller's [passkey]. */
     suspend fun removeTeamMember(
         org: String,
         team: String,
         account: String,
+        passkey: PasskeyProvider,
     ) {
-        delete("orgs/${seg(org)}/teams/${seg(team)}/members/${seg(account)}")
+        deleteConfirmed("orgs/${seg(org)}/teams/${seg(team)}/members/${seg(account)}", passkey)
     }
 
-    /** Mint an invite token (`inv_…`) to [org] with [role], into [teams]; one use and 7 days unless said otherwise. */
+    /**
+     * Make an invite token (`inv_…`) into [org] with [role], into [teams], approved with the
+     * caller's [passkey]; one use and 7 days unless said otherwise. [redeemInvite] takes it (no
+     * approval there).
+     */
+    @Suppress("LongParameterList")
     suspend fun invite(
         org: String,
         role: OrgRole,
+        passkey: PasskeyProvider,
         teams: List<String> = emptyList(),
         ttlSecs: Long? = null,
         uses: Int? = null,
     ): String {
         require(role != OrgRole.Owner) { "an invite cannot make an owner" }
-        return (
-            post(
-                "orgs/${seg(org)}/invites",
-                buildJsonObject {
-                    put("role", role.wire)
-                    put("teams", JsonArray(teams.map(::JsonPrimitive)))
-                    ttlSecs?.let { put("ttlSecs", it) }
-                    uses?.let { put("uses", it) }
-                },
-            ) as JsonObject
-        ).string("token").orEmpty()
+        val body =
+            buildJsonObject {
+                put("role", role.wire)
+                put("teams", JsonArray(teams.map(::JsonPrimitive)))
+                ttlSecs?.let { put("ttlSecs", it) }
+                uses?.let { put("uses", it) }
+            }
+        return (postConfirmed("orgs/${seg(org)}/invites", body, passkey) as JsonObject).string("token").orEmpty()
     }
 
-    /** Redeem an invite token: the account joins its organization. Answers `{ org }`. */
+    /** Redeem an invite token (no approval): the account joins its organization. Answers `{ org }`. */
     suspend fun redeemInvite(token: String): JsonObject = post("invites/${seg(token)}/redeem") as JsonObject
+
+    // ---------------------------------------------------------------- deployers
+
+    /**
+     * Let an account or organization install apps where the cluster's deployments are `granted`,
+     * until [until] (null: the grant does not end). The cluster's owner grants it, approved with
+     * [passkey], where governance says `deployers: owner`; elsewhere the operator grants with its
+     * key, and this is refused `403`.
+     */
+    suspend fun grantDeployer(
+        deployer: Deployer,
+        passkey: PasskeyProvider,
+        until: Instant? = null,
+    ): DeployerGranted {
+        val body =
+            buildJsonObject {
+                put("deployer", wire.encodeToJsonElement(Deployer.serializer(), deployer))
+                until?.let { put("until", it.toString()) }
+            }
+        return wire.decodeFromJsonElement(DeployerGranted.serializer(), postConfirmed("deployers", body, passkey))
+    }
+
+    /**
+     * Who may install apps on the cluster: its deployments rule, who grants deployers, its owner
+     * and every grant. For the cluster's owner, or the operator (its token, [useApiKey]).
+     */
+    suspend fun deployers(): DeployersInfo = typed(DeployersInfo.serializer(), "GET", "deployers")
+
+    /**
+     * End a deployer's grant, as the cluster's owner, approved with [passkey]. Apps it installed,
+     * and the apps running them, stay.
+     */
+    suspend fun revokeDeployer(
+        deployer: Deployer,
+        passkey: PasskeyProvider,
+    ) {
+        revokeDeployer(deployer.key, passkey)
+    }
+
+    /** [revokeDeployer] by the grant's key (`account:{id}` or `org:{id}`). */
+    suspend fun revokeDeployer(
+        key: String,
+        passkey: PasskeyProvider,
+    ) {
+        deleteConfirmed("deployers/${seg(key)}", passkey)
+    }
+
+    // ---------------------------------------------------------------- deployments
+
+    /**
+     * Create a deployment: [owner]'s (the caller's own account, or an organization where it holds
+     * `MANAGE_APPLICATION` org-wide) list of the apps it offers, named [name] (1 to 64 characters,
+     * one line) for customers. Approved with [passkey]; where deployments are `granted` the caller
+     * needs a deployer grant. Answers the deployment's id.
+     */
+    suspend fun createDeployment(
+        name: String,
+        owner: Deployer,
+        passkey: PasskeyProvider,
+    ): String {
+        val body =
+            buildJsonObject {
+                put("name", name)
+                put("owner", wire.encodeToJsonElement(Deployer.serializer(), owner))
+            }
+        return (postConfirmed("deployments", body, passkey) as JsonObject).string("id").orEmpty()
+    }
+
+    /** The deployments the caller manages: its account's, and its organizations' where it holds `MANAGE_APPLICATION`. */
+    suspend fun deployments(): List<DeploymentInfo> = listOf("deployments", DeploymentInfo.serializer(), get("deployments"))
+
+    /** A deployment as anyone may read it: its name, its owner's kind and name, and the apps it offers. Public. */
+    suspend fun deployment(id: String): PublicDeployment = typed(PublicDeployment.serializer(), "GET", "deployments/${seg(id)}")
+
+    /** Delete a deployment that offers nothing and has no instances, approved with [passkey]. */
+    suspend fun deleteDeployment(
+        id: String,
+        passkey: PasskeyProvider,
+    ) {
+        deleteConfirmed("deployments/${seg(id)}", passkey)
+    }
+
+    /**
+     * Offer `pkg@version` (installed, and seen by the caller) as [app] (1 to 64 letters, digits,
+     * `.`, `_`, `-`) in deployment [id], or move an offered app to another release of its package.
+     * Approved with [passkey].
+     */
+    @Suppress("LongParameterList")
+    suspend fun offerApp(
+        id: String,
+        app: String,
+        pkg: String,
+        version: String,
+        passkey: PasskeyProvider,
+    ): DeploymentOffered {
+        val body =
+            buildJsonObject {
+                put("app", app)
+                put("package", pkg)
+                put("version", version)
+            }
+        return wire.decodeFromJsonElement(DeploymentOffered.serializer(), postConfirmed("deployments/${seg(id)}/apps", body, passkey))
+    }
+
+    /** Withdraw [app] from deployment [id], approved with [passkey]; refused while an instance created from the deployment still runs it. */
+    suspend fun withdrawApp(
+        id: String,
+        app: String,
+        passkey: PasskeyProvider,
+    ) {
+        deleteConfirmed("deployments/${seg(id)}/apps/${seg(app)}", passkey)
+    }
+
+    /**
+     * The organizations with instances created from deployment [id], for its managers: each one's
+     * id, name, instance count, apps and releases, and first instance. Never members, teams or app
+     * data.
+     */
+    suspend fun deploymentOrgs(id: String): DeploymentOrgs = typed(DeploymentOrgs.serializer(), "GET", "deployments/${seg(id)}/orgs")
 
     // ---------------------------------------------------------------- helpers
 
@@ -1233,8 +1554,60 @@ class CalimeroClient(
         )
     }
 
-    internal companion object {
-        val wire =
+    companion object {
+        /**
+         * A client for the Calimero Cloud cluster named [CalimeroConnectOptions.cluster]: its node
+         * list read from the public node directory, those in `zone` first, each group in
+         * weighted-random order. The directory only picks which nodes to try: each is attested under
+         * `policy` before anything is sent to it. Throws [DirectoryError] when the directory names no
+         * usable node.
+         *
+         * The list is read again in the background after a failover, and at the first request once
+         * the directory's `refreshAfterSeconds` has passed.
+         */
+        suspend fun connect(options: CalimeroConnectOptions): CalimeroClient {
+            val listing = readDirectory(options.directory, options.cluster, options.httpClient)
+            val order = orderNodes(listing.nodes, options.zone, options.random)
+            val client =
+                CalimeroClient(
+                    CalimeroClientOptions(
+                        baseUrl = order.first(),
+                        nodes = order.drop(1),
+                        policy = options.policy,
+                        httpClient = options.httpClient,
+                        retry = options.retry,
+                        onSession = options.onSession,
+                    ),
+                )
+            client.source = DirectorySource(options, options.now() + (listing.refreshAfterSeconds * 1000).toLong())
+            return client
+        }
+
+        /**
+         * Throw [CalimeroError] `CONSENT_CODE_MISMATCH` when the node answered a consent request with
+         * a `code` that is not the one its page shows for that request ([confirmationCode]). A node
+         * that predates the code (`""`) passes.
+         */
+        fun checkConsentCode(started: ConsentStarted) {
+            if (started.code.isEmpty()) return
+            val expected = confirmationCode(started.requestId)
+            if (started.code != expected) {
+                throw CalimeroError(
+                    200,
+                    "CONSENT_CODE_MISMATCH",
+                    "the consent page code does not match the request",
+                    buildJsonObject {
+                        put("requestId", started.requestId)
+                        put("code", started.code)
+                        put("expected", expected)
+                    },
+                )
+            }
+        }
+
+        internal const val OCTET_STREAM = "application/octet-stream"
+
+        internal val wire =
             Json {
                 ignoreUnknownKeys = true
                 coerceInputValues = true
@@ -1243,28 +1616,28 @@ class CalimeroClient(
             }
 
         /** One URL path segment, so an id cannot reach another route. */
-        fun seg(value: String): String = URLEncoder.encode(value, "UTF-8").replace("+", "%20")
+        internal fun seg(value: String): String = URLEncoder.encode(value, "UTF-8").replace("+", "%20")
 
-        fun enc(value: String): String = seg(value)
+        internal fun enc(value: String): String = seg(value)
 
-        fun parseOrNull(text: String): JsonElement? = runCatching { wire.parseToJsonElement(text) }.getOrNull()
+        internal fun parseOrNull(text: String): JsonElement? = runCatching { wire.parseToJsonElement(text) }.getOrNull()
 
         private val JSON_LITERAL = Regex("^(true|false|null|-?\\d+(\\.\\d+)?([eE][+-]?\\d+)?)$")
 
         /** [text] as JSON only when it is JSON (the parser takes a bare word as a literal). */
-        fun strictJson(text: String): JsonElement? =
+        internal fun strictJson(text: String): JsonElement? =
             parseOrNull(text)?.takeUnless { it is JsonPrimitive && !it.isString && !JSON_LITERAL.matches(it.content) }
 
         /** The ceremonies that mint a session, which [exchange] never repeats by itself. */
-        fun ceremony(path: String): Boolean = path == "auth/refresh" || path.startsWith("auth/passkey/")
+        internal fun ceremony(path: String): Boolean = path == "auth/refresh" || path.startsWith("auth/passkey/")
 
         /**
          * A key for a call the caller gave none, made once so every retry shares it: `node:c-` and
          * 16 random bytes in base64url, as the Rust client mints it (kept 10 minutes by the node).
          */
-        fun newIdempotencyKey(): String = "node:c-${b64url(randomBytes(16))}"
+        internal fun newIdempotencyKey(): String = "node:c-${b64url(randomBytes(16))}"
 
-        fun callBody(
+        internal fun callBody(
             method: String,
             args: JsonElement,
             key: String,
@@ -1275,7 +1648,7 @@ class CalimeroClient(
                 put("idempotencyKey", key)
             }
 
-        fun accessJson(access: AppAccess): JsonObject =
+        internal fun accessJson(access: AppAccess): JsonObject =
             buildJsonObject {
                 when (access) {
                     AppAccess.Owner -> put("kind", "owner")
@@ -1293,7 +1666,7 @@ class CalimeroClient(
             }
 
         /** Read a refused response's body and map it ([errorFrom]). */
-        fun refusal(response: Response): CalimeroError =
+        internal fun refusal(response: Response): CalimeroError =
             response.use {
                 val text = runCatching { it.body?.string().orEmpty() }.getOrDefault("")
                 val body = if (text.isBlank()) JsonObject(emptyMap()) else parseOrNull(text) ?: buildJsonObject { put("message", text) }
@@ -1301,7 +1674,7 @@ class CalimeroClient(
             }
 
         /** Server-sent event frames: `{ id, kind, data }` each, `data` parsed as JSON when it is. */
-        suspend fun sseFrames(
+        internal suspend fun sseFrames(
             source: BufferedSource,
             emit: suspend (CloudEvent) -> Unit,
         ) {

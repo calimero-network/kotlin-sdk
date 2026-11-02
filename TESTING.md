@@ -18,7 +18,7 @@ The unit tests need no network and no node:
 
 | Suite | What |
 |---|---|
-| `mero-core` `tee/CalimeroClientTest` | `CalimeroClient` against stand-in cloud nodes, through the real Noise NK sealed channel with a mock attestation: mock quotes refused unless allowed, intents/views, 503 retries with one idempotency key, single-flight refresh on 401, 421 failover, 412 confirmations, sealed SSE, consent, the app backend's mapping, `SoftPasskey` signatures. |
+| `mero-core` `tee/CalimeroClientTest` | `CalimeroClient` against stand-in cloud nodes, through the real Noise NK sealed channel with a mock attestation: mock quotes refused unless allowed, intents/views, 503 retries with one idempotency key, single-flight refresh on 401, 421 failover, failover of a call whose node stays unavailable (one idempotency key across nodes), `connect` through the node directory, 412 step-ups on invites/members/API keys (and the app layer without a passkey), blob content types and grants, deployments/deployers/xcalls routes, collateral age, sealed SSE, consent, the app backend's mapping, `SoftPasskey` signatures. |
 | `mero-core` `tee/*` | The sealed transport's wire format, DCAP, Sigstore releases, PCCS collateral, against pinned vectors. |
 | `mero-core` `app/*` | `ContextContract`, `InMemoryAppBackend`. |
 | `mero-core` `agentgate/*` | The agent gate client. |

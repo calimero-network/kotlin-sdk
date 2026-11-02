@@ -5,6 +5,7 @@ import com.calimero.mero.crypto.fromBase64
 import com.calimero.mero.crypto.randomBytes
 import com.calimero.mero.http.PlainJsonHttp
 import com.calimero.mero.http.trimBase
+import com.calimero.mero.tee.DEFAULT_COLLATERAL_MIRROR
 import com.calimero.mero.tee.DEFAULT_RELEASE_MIRROR
 import com.calimero.mero.tee.Dcap
 import com.calimero.mero.tee.DcapCollateral
@@ -19,11 +20,13 @@ import com.calimero.mero.tee.cloudNodeReleaseUrl
 import com.calimero.mero.tee.compareReleaseVersions
 import com.calimero.mero.tee.fetchGithubNodeRelease
 import com.calimero.mero.tee.fetchNodeRelease
+import com.calimero.mero.tee.parseIsoMillis
 import com.calimero.mero.tee.releaseVersion
 import com.calimero.mero.tee.transportKeyBinding
 import com.calimero.mero.tee.trustSignedRelease
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonObject
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.OkHttpClient
 
@@ -68,6 +71,9 @@ sealed interface ReleaseSource {
     }
 }
 
+/** [CloudReleasePolicy.collateralSource] for Intel's PCS itself ([PccsCollateral.INTEL_PCS_URL]). */
+const val INTEL_COLLATERAL_SOURCE: String = "intel"
+
 /** How the signed release a node names is trusted (core's `Measurements::Release`). */
 data class CloudReleasePolicy(
     /**
@@ -84,8 +90,22 @@ data class CloudReleasePolicy(
     val releaseSource: ReleaseSource = ReleaseSource.Mirror(),
     /** DCAP verification; defaults to the SDK's own, [Dcap]. */
     val dcapVerify: DcapVerify = Dcap,
-    /** Intel's collateral for a quote; defaults to Intel's PCS ([PccsCollateral.INTEL_PCS_URL]). */
+    /** Intel's collateral for a quote; defaults to [PccsCollateral] from [collateralSource]. */
     val fetchCollateral: (suspend (ByteArray) -> DcapCollateral)? = null,
+    /**
+     * Where the default [fetchCollateral] gets Intel's collateral: a PCCS base URL (default
+     * [DEFAULT_COLLATERAL_MIRROR], the cloud's mirror), or `"intel"` ([INTEL_COLLATERAL_SOURCE])
+     * for Intel's PCS itself. Untrusted either way: every item is signed by Intel and verified up
+     * to Intel's root CA.
+     */
+    val collateralSource: String = DEFAULT_COLLATERAL_MIRROR,
+    /**
+     * Refuse collateral whose TCB info Intel issued more than this many days ago. Null: only
+     * Intel's own `nextUpdate` (about 30 days out) bounds how old it may be. A mirror cannot forge
+     * collateral, but it can replay an older, still valid copy; this shortens that window. Too
+     * small a value refuses every node if Intel is slow to re-sign.
+     */
+    val maxCollateralAgeDays: Double? = null,
     /** Override the release signer (defaults to the mero-tee node release workflow). */
     val identity: String? = null,
     val issuer: String? = null,
@@ -169,6 +189,43 @@ private suspend fun releaseFor(
         is ReleaseSource.Mirror -> fetchNodeRelease(cloudNodeReleaseUrl(source.baseUrl, version), http)
     }
 
+/** The collateral fetch a policy gets unless it brings its own: [PccsCollateral] against [source]. */
+private fun defaultCollateral(
+    source: String,
+    http: OkHttpClient,
+): suspend (ByteArray) -> DcapCollateral {
+    val url = if (source == INTEL_COLLATERAL_SOURCE) PccsCollateral.INTEL_PCS_URL else source
+    return { quote -> PccsCollateral.fetch(quote, url, http) }
+}
+
+private const val MS_PER_DAY = 86_400_000.0
+
+/**
+ * [fetch], refusing collateral older than [maxCollateralAgeDays] (by its TCB info's `issueDate`).
+ * Null: [fetch] itself, untouched (Intel's `nextUpdate` is checked when the quote is verified).
+ */
+fun freshCollateral(
+    fetch: suspend (ByteArray) -> DcapCollateral,
+    maxCollateralAgeDays: Double?,
+    now: () -> Long = System::currentTimeMillis,
+): suspend (ByteArray) -> DcapCollateral {
+    if (maxCollateralAgeDays == null) return fetch
+    return { quote ->
+        val collateral = fetch(quote)
+        val issued =
+            runCatching {
+                parseIsoMillis((attestJson.parseToJsonElement(collateral.tcbInfo) as JsonObject).string("issueDate")!!)
+            }.getOrNull() ?: throw TeeTrustException("The quote's collateral names no TCB info issue date")
+        val ageDays = (now() - issued) / MS_PER_DAY
+        if (ageDays > maxCollateralAgeDays) {
+            throw TeeTrustException(
+                "The quote's collateral was issued ${ageDays.toLong()} days ago, more than the ${maxCollateralAgeDays.toBigDecimal().stripTrailingZeros().toPlainString()} this client accepts",
+            )
+        }
+        collateral
+    }
+}
+
 /** Judge a real quote as core's `Measurements::Release` does. */
 private suspend fun verifyRelease(
     doc: AttestationDoc,
@@ -187,8 +244,7 @@ private suspend fun verifyRelease(
             policy.identity,
             policy.issuer,
         )
-    val fetchCollateral: suspend (ByteArray) -> DcapCollateral =
-        policy.fetchCollateral ?: { q -> PccsCollateral.fetch(q, PccsCollateral.INTEL_PCS_URL, http) }
+    val fetchCollateral = freshCollateral(policy.fetchCollateral ?: defaultCollateral(policy.collateralSource, http), policy.maxCollateralAgeDays, policy.now)
     return trusted.verifier(policy.dcapVerify, fetchCollateral, policy.now).verify(quote)
 }
 

@@ -91,6 +91,8 @@ data class AppInfo(
     val bundle: String = "",
     val `package`: String? = null,
     val version: String? = null,
+    /** The deployment it was created from, if any. */
+    val deployment: String? = null,
 )
 
 /** An organization-wide upgrade run, as `upgradeOrg`, `upgradeRun` and `retryUpgradeRun` answer it. */
@@ -247,10 +249,18 @@ sealed interface AppSource {
         val hash: String,
     ) : AppSource
 
+    /**
+     * A package release. With [deployment], the instance runs the release that deployment offers
+     * for [package] ([version], if given, must be it) and records the deployment; no install, no
+     * deployer grant. A package or version it does not offer answers `400 NOT_OFFERED`, several
+     * offered releases with no [version] `400 VERSION_REQUIRED`, an unknown [service]
+     * `400 NO_SUCH_SERVICE`. A page opened through `/d/{deployment}/` finds it with [pageDeployment].
+     */
     data class Package(
         val `package`: String,
         val version: String? = null,
         val service: String? = null,
+        val deployment: String? = null,
     ) : AppSource
 }
 

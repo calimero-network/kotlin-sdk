@@ -49,6 +49,21 @@ EXCLUDED=(
   opsOrgs            # ditto
   setReleaseDeadline # ditto
   liftReleaseDeadline # ditto
+  connect            # how the client is made (by cluster name), not a request; the sample signs in by node URL
+  downloadBlobGranted # core rc.7 routes, kept out of the sample as in the Swift sample
+  blobContent        # ditto
+  appXcalls          # ditto
+  grantDeployer      # ditto (the cluster owner's)
+  deployers          # ditto
+  revokeDeployer     # ditto
+  createDeployment   # ditto
+  deployments        # ditto
+  deployment         # ditto
+  deleteDeployment   # ditto
+  offerApp           # ditto
+  withdrawApp        # ditto
+  deploymentOrgs     # ditto
+  checkConsentCode   # run by openConsentPage / ConsentLauncher
 )
 
 methods() {

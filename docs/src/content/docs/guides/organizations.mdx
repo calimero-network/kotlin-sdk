@@ -6,9 +6,11 @@ description: Create organizations and teams, manage members and capabilities, an
 ```kotlin
 val org = client.createOrg("Acme")
 val team = client.createTeam(org, "general", TeamJoin.Everyone)        // open to every member
-client.setMember(org, accountId, OrgRole.Admin)
-client.setTeamMember(org, team, accountId, role = TeamRole.Lead)
-client.setCapabilities(org, OrgCapabilities.of("CREATE_APP", "INVITE_MEMBERS"), account = accountId)
+val passkey = PlatformPasskey(activity)                                  // member changes are passkey step-ups
+client.setMember(org, accountId, OrgRole.Admin, passkey)
+client.setTeamMember(org, team, accountId, passkey, role = TeamRole.Lead)
+client.setCapabilities(org, OrgCapabilities.of("CREATE_APP", "INVITE_MEMBERS"), passkey, account = accountId)
+client.removeMember(org, accountId, passkey)                            // your own account: leave
 val info = client.getOrg(org)                                           // members, teams, metadata, …
 val me = client.me()                                                    // the account's orgs
 ```
@@ -16,8 +18,8 @@ val me = client.me()                                                    // the a
 ## Invites
 
 ```kotlin
-val token = client.invite(org, OrgRole.Member, teams = listOf(team))   // "inv_…", one use, 7 days
-client.redeemInvite(token)                                              // the redeemer joins at once
+val token = client.invite(org, OrgRole.Member, passkey, teams = listOf(team))   // "inv_…", one use, 7 days
+client.redeemInvite(token)                                              // no approval: the redeemer joins at once
 ```
 
 Apps pass invites around as an `OrgInvitation`; in a link it is
@@ -30,3 +32,25 @@ val parsed = OrgInvitation.parse(pastedLink, expectedSlug = "com.calimero.chat")
 ```
 
 Deleting an organization needs the owner's passkey: `client.deleteOrg(org, PlatformPasskey(activity))`.
+
+In the app layer (`MeroAppBackend`), `createInvitation`, `leaveNamespace`, `leaveSubgroup`,
+`setMemberRole` and `removeMember` are step-ups too: they use `MeroAppSession.passkey`, which the
+app sets from the Activity on screen (`session.passkey = PlatformPasskey(this)`). While it is null
+they throw `ConfirmRequired`.
+
+## Deployments
+
+A deployment is an account's or organization's list of the package releases it offers customers;
+an instance created from it runs the offered release, with no install and no deployer grant.
+
+```kotlin
+val id = client.createDeployment("Chat", Deployer.Org(org), passkey)
+client.offerApp(id, app = "chat", pkg = "com.calimero.chat", version = "1.0.0", passkey = passkey)
+client.deployment(id)                                                   // public: name, owner, apps
+// a customer's app (or a page opened through /d/{id}/, see pageDeployment):
+client.createApp("chat", AppSource.Package("com.calimero.chat", deployment = id), org = customerOrg)
+```
+
+Where the cluster's deployments are `granted`, the cluster's owner lets accounts or organizations
+install apps: `grantDeployer(Deployer.Account(id), passkey, until)`, `deployers()`,
+`revokeDeployer(deployer, passkey)`.

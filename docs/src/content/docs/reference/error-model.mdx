@@ -10,7 +10,7 @@ turns it into a typed exception, matching status **and** code. Every one extends
 | Error | Status / code | Meaning |
 |---|---|---|
 | `LoginRequired` | 401 `UNAUTHENTICATED` | Refreshing could not help (no refresh token, or it was refused): sign in again. |
-| `WrongNode` | 421 `WRONG_NODE` | This node's release may not serve the account; the client already moved on once. |
+| `WrongNode` | 421 `WRONG_NODE` | This node's release may not serve the account; the client already moved on once (a refresh: through every node). |
 | `NotLeader` | 421 `NOT_LEADER` | Leader-only route (operator); `leaderUrl` says where. Not followed by itself. |
 | `NotFound` | 404 `NOT_FOUND` | Does not exist *for this caller* (an app it may not reach looks the same). |
 | `ConfirmRequired` | 412 `CONFIRM_REQUIRED` | Needs a passkey assertion over this call; pass a `passkey`. |
@@ -21,8 +21,10 @@ turns it into a typed exception, matching status **and** code. Every one extends
 | `ConsentStale` | 409 `CONSENT_STALE` | The consent page's facts changed; ask again. |
 | `AppError` | 422 `APP_ERROR` | The app refused: `appCode` and named `fields`. |
 | `TrapError` | 422 `TRAP` | The run trapped (`kind`: `OutOfFuel`, …). |
-| `UnavailableError` | 503, or no answer | After the retries: `reason`, `committed` (`No` / `Unknown`), `retryAfter`. |
+| `UnavailableError` | 503, or no answer | After the retries, on every node the client knows: `reason`, `committed` (`No` / `Unknown`), `retryAfter`. |
 | `CalimeroError` | anything else | `status` and `code` as the node sent them. |
 
 Outside the node's answers: `TeeTrustException` (the quote, release or collateral did not
-verify), `SealedTransportException` (the envelope itself was refused), `PasskeyCancelled`.
+verify), `SealedTransportException` (the envelope itself was refused), `PasskeyCancelled`, and
+`DirectoryError` from `CalimeroClient.connect` (`reason` `Unreachable`, `NotFound`, `BadResponse`
+or `Empty`; `cluster`).

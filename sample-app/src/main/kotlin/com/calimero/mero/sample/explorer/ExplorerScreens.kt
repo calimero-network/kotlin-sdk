@@ -95,6 +95,7 @@ import androidx.compose.ui.unit.sp
 import com.calimero.mero.CalimeroClient
 import com.calimero.mero.ConsentRequest
 import com.calimero.mero.ConsentScope
+import com.calimero.mero.PasskeyProvider
 import com.calimero.mero.PendingApprovals
 import com.calimero.mero.app.MeroAppBackend
 import com.calimero.mero.app.OrgInvitation
@@ -397,7 +398,7 @@ private fun SignedIn(
                         op == null -> SdkListScreen(onOpenOp = { sdkOp = it })
                         else -> {
                             BackHandler { sdkOp = null }
-                            OperationRunner(client, op, onBack = { sdkOp = null })
+                            OperationRunner(client, op, vm.devPasskey, onBack = { sdkOp = null })
                         }
                     }
                 }
@@ -886,6 +887,7 @@ private fun SdkListScreen(
 private fun OperationRunner(
     client: CalimeroClient,
     op: SDKOperation,
+    devPasskey: PasskeyProvider?,
     onBack: () -> Unit,
 ) {
     val scope = rememberCoroutineScope()
@@ -922,7 +924,7 @@ private fun OperationRunner(
                         running = true
                         scope.launch {
                             try {
-                                output = op.run(OpEnv(client, context), inputs.toMap())
+                                output = op.run(OpEnv(client, context, devPasskey), inputs.toMap())
                                 failed = false
                             } catch (e: Exception) {
                                 output = e.message ?: e.toString()

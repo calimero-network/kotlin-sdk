@@ -53,7 +53,7 @@ Kotlin 2.x, coroutines and `Flow`; minSdk 24, compileSdk 34. See [PUBLISHING.md]
 val client = CalimeroClient(
     CalimeroClientOptions(
         baseUrl = clusterUrl,
-        nodes = otherNodes,                    // failover on 421 WRONG_NODE
+        nodes = otherNodes,                    // failover on 421 WRONG_NODE and on a node that stays down
         policy = CloudPolicy.production,       // real TDX quotes, mero-tee >= 2.3.109
         onSession = store::save,               // keep the newest session: refresh tokens are single-use
     ),
@@ -67,6 +67,10 @@ client.view(app, "get_messages", page).result
 client.events(app).collect { /* sealed SSE */ }
 ```
 
+By cluster name instead of a node URL: `CalimeroClient.connect(CalimeroConnectOptions("eu-shared-1",
+CloudPolicy.production))` reads the nodes from the Calimero Cloud node directory and fails over
+between them.
+
 For `merod local`: `CloudPolicy.development` (`allowMock = true`) and a `SoftPasskey("localhost",
 "http://localhost:3000")`.
 
@@ -77,6 +81,7 @@ val session = MeroAppSession.create(app, "com.example.board", callbackUrl = "boa
     config = MeroAppConfig(nodeUrl = clusterUrl), scope = viewModelScope)
 viewModelScope.launch { session.restore() }
 session.signIn(activity)                              // the passkey sheet
+session.passkey = PlatformPasskey(activity)           // approves invites, member changes, leaving (412 step-ups)
 session.backend.collect { backend -> /* MeroAppBackend: orgs, teams, app instances, contract */ }
 ```
 

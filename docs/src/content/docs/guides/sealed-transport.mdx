@@ -19,7 +19,10 @@ Rust client (`attest::verify`, `Measurements::Release`):
   the release's `published-mrtds.json` is fetched (`ReleaseSource.Mirror` by default, `Github`, or
   `Custom`) and its **Sigstore** signature checked against the mero-tee release workflow; the
   quote's **DCAP** signature chain and TCB status are checked against Intel's collateral (from
-  Intel's PCS, on the device); the TD must not be a debug TD; and all five registers must be the
+  the cloud's mirror, `DEFAULT_COLLATERAL_MIRROR`, by default; `collateralSource =
+  "intel"` asks Intel's PCS, a URL a PCCS of yours,
+  `fetchCollateral` replaces the fetch; the mirror cannot forge anything, every item is
+  Intel-signed, and `maxCollateralAgeDays` bounds how old a replayed copy may be); the TD must not be a debug TD; and all five registers must be the
   release's image for the trusted profile (`locked-read-only` unless `allowDebugProfile`).
 
 ```kotlin

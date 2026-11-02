@@ -20,6 +20,10 @@ data class Governance(
     val releases: String = "owner",
     val appUpgrades: String = "owner",
     val outbound: String = "owner",
+    /** Who may install apps: any account ([DeploymentsRule.Open], or null) or granted deployers only. */
+    val deployments: DeploymentsRule? = null,
+    /** Who grants deployers: the operator ([DeployersRule.Operator], or null) or the cluster's owner. */
+    val deployers: DeployersRule? = null,
 )
 
 /** Whose report: the account's own apps outside any organization (`kind = "account"`), or an organization's. */
@@ -331,6 +335,38 @@ data class ConsentStarted(
      */
     val code: String = "",
 )
+
+/** How [CalimeroClient.openConsentPage] sends the person to the page (mero-js `OpenConsentOptions`). */
+class OpenConsentOptions(
+    /** Opens the page's `url` (a Custom Tab: mero-compose's `ConsentLauncher`). */
+    val navigate: (String) -> Unit,
+    /**
+     * Runs after the node answers and before navigating, with the answer: show the person
+     * [ConsentStarted.code] here so they can check the page shows the same. Answer `false` and the
+     * page is not opened (the request stays on the node until it expires).
+     */
+    val confirm: (suspend (ConsentStarted) -> Boolean)? = null,
+)
+
+private const val CROCKFORD = "0123456789ABCDEFGHJKMNPQRSTVWXYZ"
+
+/**
+ * The confirmation code the node's consent page shows for [requestId]: the first 30 bits of
+ * SHA-256 of its UTF-8 bytes, big-endian, as six Crockford base32 characters written `XXX-XXX`
+ * (core's consent page). Compare it with [ConsentStarted.code] to check the node's answer.
+ */
+fun confirmationCode(requestId: String): String {
+    val h =
+        com.calimero.mero.crypto
+            .sha256(requestId.encodeToByteArray())
+    val word = ((h[0].toLong() and 0xff) shl 24) or ((h[1].toLong() and 0xff) shl 16) or ((h[2].toLong() and 0xff) shl 8) or (h[3].toLong() and 0xff)
+    val code = StringBuilder()
+    for (i in 0 until 6) {
+        if (i == 3) code.append('-')
+        code.append(CROCKFORD[((word ushr (27 - 5 * i)) and 31).toInt()])
+    }
+    return code.toString()
+}
 
 /** `GET /consent/{id}/result`. [status] is `pending`, `approved` or `declined`. */
 @Serializable

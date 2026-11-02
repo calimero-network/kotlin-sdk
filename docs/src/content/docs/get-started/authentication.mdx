@@ -46,15 +46,29 @@ reads anything. Give the client the cluster's other nodes (`nodes`) and it moves
 repeats the request once (a refresh: once per node). `421 NOT_LEADER` (operator routes) is typed
 as `NotLeader` with its `leaderUrl`, and not followed by itself.
 
+A call or a view whose node stays unavailable (`503`, or no answer) through all its retries fails
+over to the next node, where its retries start again with the same idempotency key; each node is
+tried once per request, and `UnavailableError` reaches you only when every node failed. The
+confirmed attempt of `callConfirmed` is sent once, to one node.
+
+Or let the client find the nodes: `CalimeroClient.connect(CalimeroConnectOptions("eu-shared-1",
+CloudPolicy.production, zone = "europe-west4-a"))` reads the cluster's nodes from the public node
+directory (`DEFAULT_DIRECTORY`), the zone's first, each group in weighted-random order, and reads it
+again after a failover and once its `refreshAfterSeconds` pass. The directory only picks which nodes
+to try: each is attested under your policy. It throws `DirectoryError` (`reason` `Unreachable`,
+`NotFound`, `BadResponse` or `Empty`) when it names no usable node.
+
 ## Step-up confirmations
 
 Some calls need the account holder's passkey over that exact call (`412 CONFIRM_REQUIRED`):
-deleting an org, transferring an app, `#[app::confirm]` methods. The `*Confirmed` methods and
-those that take a `passkey` answer it themselves.
+deleting an org, transferring an app, adding or removing a passkey, creating an API key, member,
+capability and team-member changes, making an invite, deployments and deployers, and
+`#[app::confirm]` methods. The `*Confirmed` methods and those that take a `passkey` answer it
+themselves; `addPasskey(newPasskey, approver)` is approved by a passkey the account already has.
 
 ## API keys
 
 ```kotlin
 client.useApiKey("cal_…")
-val created = client.createApiKey(ApiKeyOptions(label = "agent", apps = listOf(appId), readOnly = true))
+val created = client.createApiKey(ApiKeyOptions(label = "agent", apps = listOf(appId), readOnly = true), passkey)
 ```

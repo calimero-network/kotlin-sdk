@@ -127,6 +127,16 @@ class MeroAppSession(
     /** The decision the consent page sent the person back with ([handle]), confirmed with the node. */
     val consentResult: StateFlow<ConsentResult?> = _consentResult.asStateFlow()
 
+    /**
+     * The passkey that approves the account's step-ups on 1.0 (`412 CONFIRM_REQUIRED`): inviting,
+     * member and role changes, leaving an organization or a team, through [backend]. The passkey
+     * sheet needs an Activity, so set it from the one on screen and clear it when it goes:
+     * `session.passkey = PlatformPasskey(this)` in `onCreate`, `null` in `onDestroy`. While it is
+     * null those methods throw [com.calimero.mero.ConfirmRequired]; a dismissed sheet throws
+     * [com.calimero.mero.ConfirmCancelled].
+     */
+    @Volatile var passkey: PasskeyProvider? = null
+
     private val restoring = Mutex()
     private var signing: Job? = null
     private var knownAccount: String? = null
@@ -279,21 +289,23 @@ class MeroAppSession(
     /**
      * Ask the account holder to approve [request] on the node's consent page, opened in a Custom
      * Tab ([ConsentLauncher]). The page sends them back to [callbackUrl]: hand that link to
-     * [handle], and read [consentResult]. Show the answer's [ConsentStarted.code] first: the
-     * page shows the same confirmation code.
+     * [handle], and read [consentResult]. Show the answer's [ConsentStarted.code] in [confirm]
+     * before the page opens (answer `false` and it does not): the page shows the same confirmation
+     * code. A code that is not the page's throws `CONSENT_CODE_MISMATCH`.
      */
     suspend fun requestConsent(
         context: Context,
         request: ConsentRequest,
+        confirm: (suspend (ConsentStarted) -> Boolean)? = null,
     ): ConsentStarted {
         _consentResult.value = null
-        return ConsentLauncher.request(context, client, request)
+        return ConsentLauncher.request(context, client, request, confirm)
     }
 
     /** Rebuild [backend] from the client's session. A no-op when the account did not change. */
     fun rebuild() {
         val session = client.session
-        val next = session?.let { CalimeroAppBackend(client, packageName, it.accountId) }
+        val next = session?.let { CalimeroAppBackend(client, packageName, it.accountId) { passkey } }
         val current = _backend.value as? CalimeroAppBackend
         if (current?.account == next?.account && (current == null) == (next == null)) return
         _backend.value = next

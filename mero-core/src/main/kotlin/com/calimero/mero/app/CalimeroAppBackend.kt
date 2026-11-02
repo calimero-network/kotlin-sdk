@@ -6,6 +6,7 @@ import com.calimero.mero.CalimeroClient
 import com.calimero.mero.NotFound
 import com.calimero.mero.OrgInfo
 import com.calimero.mero.OrgRole
+import com.calimero.mero.PasskeyProvider
 import com.calimero.mero.TeamJoin
 import com.calimero.mero.TeamRole
 import kotlinx.coroutines.flow.Flow
@@ -24,6 +25,12 @@ import kotlinx.serialization.json.contentOrNull
  * instances of [packageName]; see [MeroAppBackend] for the whole mapping. Names live where 1.0
  * keeps them: a team's and an organization's `name`, an app instance's `name`, overridden by a
  * `name` in its metadata once renamed; a member's display name is `name` in their member metadata.
+ *
+ * Member changes, leaving and invitations are passkey step-ups on 1.0 (`412 CONFIRM_REQUIRED`):
+ * they are approved with the passkey [passkey] answers when one is needed (mero-compose's
+ * `MeroAppSession.passkey`, a `PlatformPasskey` over the app's Activity). While it answers null they
+ * throw [PasskeyRequired] and send nothing; a dismissed passkey sheet throws
+ * [com.calimero.mero.ConfirmCancelled].
  */
 @Suppress("TooManyFunctions")
 class CalimeroAppBackend(
@@ -32,6 +39,8 @@ class CalimeroAppBackend(
     val packageName: String,
     /** The signed-in account's id. */
     override val account: String,
+    /** The passkey that approves step-ups, asked for each time one is needed; null: none to hand. */
+    val passkey: () -> PasskeyProvider? = { null },
 ) : MeroAppBackend {
     override val contract: ContextContract = CloudContextContract(client)
     override val hasRelay: Boolean = true
@@ -97,7 +106,7 @@ class CalimeroAppBackend(
     }
 
     override suspend fun createInvitation(namespaceId: String): OrgInvitation {
-        val token = client.invite(namespaceId, OrgRole.Member)
+        val token = client.invite(namespaceId, OrgRole.Member, approver("createInvitation"))
         val name = runCatching { client.getOrg(namespaceId).name }.getOrNull()
         return OrgInvitation(namespaceId, token, name = name)
     }
@@ -168,13 +177,13 @@ class CalimeroAppBackend(
     // ---- leaving and deleting ------------------------------------------------------------
 
     override suspend fun leaveNamespace(namespaceId: String) {
-        client.removeMember(namespaceId, account)
+        client.removeMember(namespaceId, account, approver("leaveNamespace"))
     }
 
     override suspend fun leaveSubgroup(groupId: String) {
         val ref = GroupRef.parse(groupId)
         val team = ref.team ?: return leaveNamespace(ref.org)
-        client.removeTeamMember(ref.org, team, account)
+        client.removeTeamMember(ref.org, team, account, approver("leaveSubgroup"))
     }
 
     override suspend fun deleteSubgroup(groupId: String) {
@@ -236,7 +245,7 @@ class CalimeroAppBackend(
                     GovernanceMemberRole.Member -> OrgRole.Member
                     GovernanceMemberRole.ReadOnly -> OrgRole.Guest
                 }
-            client.setMember(ref.org, identity, orgRole)
+            client.setMember(ref.org, identity, orgRole, approver("setMemberRole"))
         } else {
             val teamRole =
                 when (role) {
@@ -244,7 +253,7 @@ class CalimeroAppBackend(
                     GovernanceMemberRole.Member -> TeamRole.Member
                     GovernanceMemberRole.ReadOnly -> TeamRole.ReadOnly
                 }
-            client.setTeamMember(ref.org, ref.team, identity, role = teamRole)
+            client.setTeamMember(ref.org, ref.team, identity, approver("setMemberRole"), role = teamRole)
         }
     }
 
@@ -253,7 +262,8 @@ class CalimeroAppBackend(
         identity: String,
     ) {
         val ref = GroupRef.parse(groupId)
-        if (ref.team == null) client.removeMember(ref.org, identity) else client.removeTeamMember(ref.org, ref.team, identity)
+        val passkey = approver("removeMember")
+        if (ref.team == null) client.removeMember(ref.org, identity, passkey) else client.removeTeamMember(ref.org, ref.team, identity, passkey)
     }
 
     override suspend fun setMemberName(
@@ -266,6 +276,9 @@ class CalimeroAppBackend(
     }
 
     // ---- helpers -------------------------------------------------------------------------
+
+    /** The passkey that approves [method]'s step-up, or [PasskeyRequired]. */
+    private fun approver(method: String): PasskeyProvider = passkey() ?: throw PasskeyRequired(method)
 
     /** This package's apps in [org], by team (null: on no team). */
     private suspend fun appsByTeam(org: String): Map<String?, List<com.calimero.mero.ReportedApp>> =

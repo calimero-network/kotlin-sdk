@@ -34,6 +34,7 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         val demo = MockBackend.AVAILABLE && BuildConfig.DEBUG && intent?.getBooleanExtra(EXTRA_DEMO, false) == true
         vm.start(demo)
+        vm.attach(this)
         if (demo) vm.startDemo()
         val options =
             ExplorerOptions(
@@ -43,6 +44,11 @@ class MainActivity : ComponentActivity() {
             )
         consumeLink(intent)
         setContent { ExplorerApp(vm, options) }
+    }
+
+    override fun onDestroy() {
+        vm.attach(null)
+        super.onDestroy()
     }
 
     override fun onNewIntent(intent: Intent) {

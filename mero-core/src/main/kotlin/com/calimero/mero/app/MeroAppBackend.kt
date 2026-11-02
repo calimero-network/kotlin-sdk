@@ -88,7 +88,7 @@ interface MeroAppBackend {
         initArgs: JsonElement,
     ): String
 
-    /** Mint an invite to an organization (`POST /orgs/{org}/invites`, role `member`, one use, 7 days). */
+    /** Mint an invite to an organization (`POST /orgs/{org}/invites`, role `member`, one use, 7 days); a passkey step-up. */
     suspend fun createInvitation(namespaceId: String): OrgInvitation
 
     /** Redeem an invite (`POST /invites/{token}/redeem`): the account joins the organization at once. */
@@ -155,10 +155,10 @@ interface MeroAppBackend {
 
     // ---- leaving and deleting ------------------------------------------------------------
 
-    /** Leave an organization (`DELETE /orgs/{org}/members/{me}`): every team and app in it with it. */
+    /** Leave an organization (`DELETE /orgs/{org}/members/{me}`, a passkey step-up): every team and app in it with it. */
     suspend fun leaveNamespace(namespaceId: String): Unit = unsupported("leaveNamespace")
 
-    /** Leave a team (`DELETE /orgs/{org}/teams/{team}/members/{me}`), and with it the apps on it. */
+    /** Leave a team (`DELETE /orgs/{org}/teams/{team}/members/{me}`, a passkey step-up), and with it the apps on it. */
     suspend fun leaveSubgroup(groupId: String): Unit = unsupported("leaveSubgroup")
 
     /** Delete a team and its apps. The node refuses it unless the account may. */
@@ -175,14 +175,14 @@ interface MeroAppBackend {
     /** The members of an organization or a team, with their roles and names (member metadata). */
     suspend fun listMembers(groupId: String): List<AppMember> = unsupported("listMembers")
 
-    /** Set a member's role. Admins (organization) and leads (team) only. */
+    /** Set a member's role. Admins (organization) and leads (team) only; a passkey step-up. */
     suspend fun setMemberRole(
         groupId: String,
         identity: String,
         role: GovernanceMemberRole,
     ): Unit = unsupported("setMemberRole")
 
-    /** Remove a member. Admins (organization) and leads (team) only. */
+    /** Remove a member. Admins (organization) and leads (team) only; a passkey step-up. */
     suspend fun removeMember(
         groupId: String,
         identity: String,

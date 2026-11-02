@@ -47,15 +47,15 @@ private val identityOps =
         op("me", "Account", "me", "GET /auth/me: the account, its passkeys and organizations") { e, _ -> e.client.me().raw },
         op("usage", "Account", "usage", "What the account uses, with the cluster's quotas") { e, _ -> e.client.usage() },
         op("refresh", "Account", "refresh", "Swap the refresh token for a new session (single-flight)") { e, _ -> e.client.refresh().accountId },
-        op("addPasskey", "Account", "addPasskey", "Add this device's passkey to the account") { e, _ -> e.client.addPasskey(e.passkey) },
+        op("addPasskey", "Account", "addPasskey", "Add this device's passkey to the account") { e, _ -> e.client.addPasskey(e.passkey, approver = e.passkey) },
         op("labelPasskey", "Account", "labelPasskey", "Name one of the account's passkeys", OpField.line("id", "Credential id"), OpField.line("label", "Label")) { e, v ->
             e.client.labelPasskey(v.v("id"), v.v("label"))
         },
-        op("removePasskey", "Account", "removePasskey", "Remove one of the account's passkeys", OpField.line("id", "Credential id")) { e, v -> e.client.removePasskey(v.v("id")) },
+        op("removePasskey", "Account", "removePasskey", "Remove one of the account's passkeys", OpField.line("id", "Credential id")) { e, v -> e.client.removePasskey(v.v("id"), e.passkey) },
         op("attestation", "Account", "attestation", "The node's attestation document (display only)") { e, _ -> e.client.attestation().toString() },
         op("listApiKeys", "Account", "listApiKeys", "The account's API keys") { e, _ -> e.client.listApiKeys().joinToString("\n") },
         op("createApiKey", "Account", "createApiKey", "Create an API key (shown once)", OpField.line("label", "Label"), OpField.line("ttl", "TTL (seconds)", "3600")) { e, v ->
-            e.client.createApiKey(ApiKeyOptions(label = v.opt("label"), ttlSecs = v.opt("ttl")?.toLong())).toString()
+            e.client.createApiKey(ApiKeyOptions(label = v.opt("label"), ttlSecs = v.opt("ttl")?.toLong()), e.passkey).toString()
         },
         op("revokeApiKey", "Account", "revokeApiKey", "Revoke an API key", OpField.line("key", "Key id")) { e, v -> e.client.revokeApiKey(v.v("key")) },
         op("signOutEverywhere", "Account", "signOutEverywhere", "End every session of the account") { e, _ -> e.client.signOutEverywhere() },
@@ -122,17 +122,17 @@ private val orgOps =
         op("deleteOrg", "Organizations", "deleteOrg", "Delete an organization (passkey)", org) { e, v -> e.client.deleteOrg(v.v("org"), e.passkey) },
         op("setOrgMetadata", "Organizations", "setOrgMetadata", "Set the organization's metadata", org, OpField.json("metadata", "Metadata (JSON)")) { e, v -> e.client.setOrgMetadata(v.v("org"), json(v.v("metadata"))) },
         op("setMember", "Organizations", "setMember", "Add a member or change their role", org, account, OpField.line("role", "Role", "member")) { e, v ->
-            e.client.setMember(v.v("org"), v.v("account"), OrgRole.entries.first { it.wire == v.v("role") })
+            e.client.setMember(v.v("org"), v.v("account"), OrgRole.entries.first { it.wire == v.v("role") }, e.passkey)
         },
-        op("removeMember", "Organizations", "removeMember", "Remove a member", org, account) { e, v -> e.client.removeMember(v.v("org"), v.v("account")) },
+        op("removeMember", "Organizations", "removeMember", "Remove a member (or leave: your own account)", org, account) { e, v -> e.client.removeMember(v.v("org"), v.v("account"), e.passkey) },
         op("setMemberMetadata", "Organizations", "setMemberMetadata", "Set a member's metadata", org, account, OpField.json("metadata", "Metadata (JSON)")) { e, v ->
             e.client.setMemberMetadata(v.v("org"), v.v("account"), json(v.v("metadata")))
         },
         op("setCapabilities", "Organizations", "setCapabilities", "Set capability bits", org, OpField.line("caps", "Bits", "4"), OpField.line("account", "Account (optional)")) { e, v ->
-            e.client.setCapabilities(v.v("org"), v.v("caps").toInt(), account = v.opt("account"))
+            e.client.setCapabilities(v.v("org"), v.v("caps").toInt(), e.passkey, account = v.opt("account"))
         },
         op("invite", "Organizations", "invite", "Mint an invite token", org, OpField.line("role", "Role", "member")) { e, v ->
-            e.client.invite(v.v("org"), OrgRole.entries.first { it.wire == v.v("role") })
+            e.client.invite(v.v("org"), OrgRole.entries.first { it.wire == v.v("role") }, e.passkey)
         },
         op("redeemInvite", "Organizations", "redeemInvite", "Redeem an invite token", OpField.line("token", "Token", "inv_…")) { e, v -> e.client.redeemInvite(v.v("token")) },
         op("createTeam", "Organizations", "createTeam", "Create a team", org, OpField.line("name", "Name"), OpField.line("join", "Join (everyone|invite)", "everyone")) { e, v ->
@@ -142,10 +142,10 @@ private val orgOps =
         op("updateTeam", "Organizations", "updateTeam", "Rename a team", org, team, OpField.line("name", "Name")) { e, v -> e.client.updateTeam(v.v("org"), v.v("team"), name = v.opt("name")) },
         op("deleteTeam", "Organizations", "deleteTeam", "Delete a team and its apps", org, team) { e, v -> e.client.deleteTeam(v.v("org"), v.v("team")) },
         op("setTeamMember", "Organizations", "setTeamMember", "Add a member to a team", org, team, account, OpField.line("role", "Role (lead|member|readOnly)", "member")) { e, v ->
-            e.client.setTeamMember(v.v("org"), v.v("team"), v.v("account"), role = TeamRole.entries.firstOrNull { it.wire == v.v("role") })
+            e.client.setTeamMember(v.v("org"), v.v("team"), v.v("account"), e.passkey, role = TeamRole.entries.firstOrNull { it.wire == v.v("role") })
         },
         op("removeTeamMember", "Organizations", "removeTeamMember", "Remove a member from a team", org, team, account) { e, v ->
-            e.client.removeTeamMember(v.v("org"), v.v("team"), v.v("account"))
+            e.client.removeTeamMember(v.v("org"), v.v("team"), v.v("account"), e.passkey)
         },
         op("upgradeRun", "Organizations", "upgradeRun", "An organization-wide upgrade run", org, OpField.line("run", "Run id")) { e, v -> e.client.upgradeRun(v.v("org"), v.v("run")) },
     )

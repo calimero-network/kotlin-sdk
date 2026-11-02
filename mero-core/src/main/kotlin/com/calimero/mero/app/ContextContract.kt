@@ -67,6 +67,16 @@ class SignedOutException(
     val method: String,
 ) : IllegalStateException("$method needs a signed-in account")
 
+/**
+ * A [CalimeroAppBackend] method that needs a passkey step-up (`412 CONFIRM_REQUIRED`: members,
+ * invites, leaving) was called while the backend had no passkey to approve it with (mero-compose:
+ * `MeroAppSession.passkey` unset). Nothing was sent. (Swift `PasskeyRequired`.)
+ */
+class PasskeyRequired(
+    /** The method that was called. */
+    val method: String,
+) : IllegalStateException("$method needs a passkey approval; give the backend a passkey")
+
 /** 0.x name of [SignedOutException]. */
 @Deprecated("No relays on Calimero 1.0", ReplaceWith("SignedOutException"))
 typealias NoRelayException = SignedOutException

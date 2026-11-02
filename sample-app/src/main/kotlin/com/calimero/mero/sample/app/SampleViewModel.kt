@@ -10,6 +10,7 @@ import androidx.lifecycle.viewModelScope
 import com.calimero.mero.CalimeroClient
 import com.calimero.mero.CalimeroClientOptions
 import com.calimero.mero.CloudPolicy
+import com.calimero.mero.PasskeyProvider
 import com.calimero.mero.SoftPasskey
 import com.calimero.mero.app.MeroAppBackend
 import com.calimero.mero.compose.MeroAppSession
@@ -78,6 +79,31 @@ class SampleViewModel(
 
     private var started = false
 
+    /** The Activity's passkey (Credential Manager), while one is on screen: [attach]. */
+    private var activityPasskey: PasskeyProvider? = null
+
+    /** The software passkey kept on the device for the development node in use; null on a real cluster. */
+    val devPasskey: PasskeyProvider?
+        get() = if (mode == SignInMode.DEV) store.value(KEY_DEV_PASSKEY + nodeUrl)?.let { runCatching { SoftPasskey.restore(it) }.getOrNull() } else null
+
+    /**
+     * The Activity on screen, or null once it is gone: its passkey approves the account's step-ups
+     * (invites, member changes, leaving) on a real cluster. Held only while it lives.
+     */
+    fun attach(activity: Context?) {
+        activityPasskey =
+            activity?.let {
+                com.calimero.mero.compose
+                    .PlatformPasskey(it)
+            }
+        approve()
+    }
+
+    /** Hand the session the passkey that approves its step-ups. */
+    private fun approve() {
+        session?.passkey = devPasskey ?: activityPasskey
+    }
+
     /** Restore the last session (or start the demo when [demo]). */
     fun start(demo: Boolean) {
         if (started) return
@@ -136,6 +162,7 @@ class SampleViewModel(
             s.signUp(passkey, name.ifBlank { "android" })
             store.setValue(KEY_DEV_PASSKEY + url, passkey.export())
         }
+        approve()
     }
 
     /** The in-memory demo: no network, no passkey. */
@@ -194,6 +221,7 @@ class SampleViewModel(
             )
         val s = MeroAppSession(client, ChatService.PACKAGE_NAME, CONSENT_CALLBACK, store, scope = viewModelScope)
         session = s
+        approve()
         viewModelScope.launch { s.backend.collectLatest { backend = it } }
         return s
     }
