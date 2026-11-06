@@ -113,12 +113,18 @@ data class UpgradeRun(
     val finished: Boolean = false,
 )
 
-/** One of an app's blobs: [blobId] base58 (what apps print), [id] hex. */
+/**
+ * One of an app's blobs: [blobId] base58 (what apps print), [id] hex. A component app's sealed file
+ * ([CalimeroClient.uploadFile]) has [sealed] set and [sha256], the plaintext's SHA-256 (hex): shown
+ * only to the app's owner and its organization's members.
+ */
 @Serializable
 data class BlobInfo(
     val blobId: String,
     val id: String = "",
     val size: Long = 0,
+    val sealed: Boolean = false,
+    val sha256: String? = null,
 )
 
 /** One device present in an app (`publishPresence`); [state] hex, null once retracted. */
@@ -168,6 +174,8 @@ data class OrgInfo(
     val publishes: List<String>,
     /** Null unless a deadline stopped new work: approve its `release` (or newer) to lift it. */
     val newWorkStopped: NewWorkStopped?,
+    /** The recovery key and any recovery under way; null while the organization has none. */
+    val recovery: OrgRecovery? = null,
 )
 
 /** A team of an organization (`GET /orgs/{org}/teams/{team}`, or one of [OrgInfo.teams]). */
@@ -211,6 +219,13 @@ data class AccountInfo(
     val via: String,
     /** The passkey (device) this session was opened with. */
     val passkeyId: String?,
+    /**
+     * The package the session is bound to: opened on its frontend or on an origin its manager
+     * registered ([CalimeroClient.packageOrigins]). Null for an unbound session.
+     */
+    val app: String? = null,
+    /** The registered web origin the session was opened on, when the node recorded one. */
+    val origin: String? = null,
 )
 
 /** An API key the account made (never the key itself). */
@@ -223,6 +238,20 @@ data class ApiKeyInfo(
     val readOnly: Boolean = false,
     val allowConfirm: Boolean = false,
     val expiresAt: Long = 0,
+    /** Set for an upgrade key: the one app it upgrades, its package and that package's pinned signer. */
+    val upgrades: UpgradeKeyScope? = null,
+)
+
+/**
+ * An upgrade key's scope ([ApiKeyOptions.upgrades]): the one [app] it upgrades, to signed releases
+ * of [package] (default: the package the app runs). [signer] (the package's pinned signer,
+ * `did:key`) is the node's answer in [ApiKeyInfo]; never sent.
+ */
+@Serializable
+data class UpgradeKeyScope(
+    val app: String,
+    val `package`: String? = null,
+    val signer: String? = null,
 )
 
 /** What `createApiKey` takes. */
@@ -234,6 +263,12 @@ data class ApiKeyOptions(
     val readOnly: Boolean? = null,
     val allowConfirm: Boolean? = null,
     val ttlSecs: Long? = null,
+    /**
+     * Makes an upgrade key, for CI: it upgrades that one app to signed releases of its package with
+     * [CalimeroClient.upgradeApp] and no passkey, and every other request with it is refused
+     * `403 UPGRADE_KEY_ONLY`. It takes no other scope field ([label] and [ttlSecs] aside).
+     */
+    val upgrades: UpgradeKeyScope? = null,
 )
 
 /** A new API key: [key] is shown once. */

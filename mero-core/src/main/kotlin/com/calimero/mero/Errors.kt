@@ -5,6 +5,7 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.doubleOrNull
+import kotlinx.serialization.json.longOrNull
 
 /*
  * What the cloud node's refusals mean to a caller (mero-js `cloud-v2/errors.ts`).
@@ -133,6 +134,107 @@ class ConsentStale(
 ) : CalimeroError(409, "CONSENT_STALE", message, details)
 
 /**
+ * `403 ORIGIN_NOT_REGISTERED`: a sign-up or sign-in named a web origin ([SignInOptions.origin])
+ * the cluster does not know: neither one of its own nor one a package's manager registered
+ * ([CalimeroClient.addPackageOrigin]). [origin] is the origin asked for and [package] the package
+ * it was expected to be registered for, when known (`""` otherwise).
+ */
+class OriginNotRegistered(
+    message: String,
+    details: JsonObject = JsonObject(emptyMap()),
+) : CalimeroError(403, "ORIGIN_NOT_REGISTERED", message, details) {
+    val origin: String = details.string("origin").orEmpty()
+    val `package`: String = details.string("package").orEmpty()
+}
+
+/**
+ * `400 BAD_ORIGIN` or `400 BAD_RP_ID`: the node does not take the origin a package's manager tried
+ * to register (a bare web origin, `scheme://host[:port]`), or the relying-party id given for it
+ * (which must fit the origin's host). [code] says which.
+ */
+class BadOrigin(
+    code: String,
+    message: String,
+    details: JsonObject = JsonObject(emptyMap()),
+) : CalimeroError(400, code, message, details)
+
+/** `409 ORIGIN_TAKEN`: the origin is registered already (for this package or another), or is one of the cluster's own. */
+class OriginTaken(
+    message: String,
+    details: JsonObject = JsonObject(emptyMap()),
+) : CalimeroError(409, "ORIGIN_TAKEN", message, details)
+
+/**
+ * `429 QUOTA_EXCEEDED`: the caller holds as many of something as it may (registered origins, a
+ * component app's blobs, an organization's sealed-file bytes, ...).
+ */
+class QuotaExceeded(
+    message: String,
+    details: JsonObject = JsonObject(emptyMap()),
+) : CalimeroError(429, "QUOTA_EXCEEDED", message, details)
+
+/** Why a sign-up was refused ([SignUpRefused.reason]), read from what the node said. */
+enum class SignUpRefusal(
+    /** mero-js's name for it (`invite-only`, ...). */
+    val wire: String,
+) {
+    /** The cluster takes new accounts with an invite only. */
+    InviteOnly("invite-only"),
+
+    /** Only a cluster sign-up invite (the operator's or the owner's) admits. */
+    Closed("closed"),
+
+    /** The invite is not one the cluster knows (mistyped, revoked, or used up). */
+    UnknownInvite("unknown-invite"),
+
+    /** The invite is past its expiry, or has no use left. */
+    ExpiredInvite("expired-invite"),
+
+    /** The organization the invite was for was deleted. */
+    OrgGone("org-gone"),
+
+    /** Anything else the node said. */
+    Other("other"),
+    ;
+
+    internal companion object {
+        fun of(message: String): SignUpRefusal =
+            when {
+                "invite only" in message -> InviteOnly
+                "pre-authorized" in message || "sign-up invite" in message -> Closed
+                "unknown invite" in message -> UnknownInvite
+                "invite has expired" in message -> ExpiredInvite
+                "organization is gone" in message -> OrgGone
+                else -> Other
+            }
+    }
+}
+
+/**
+ * `403 SIGN_UP_REFUSED`: the cluster's sign-up policy ([CalimeroClient.signUpPolicy]) does not
+ * take this sign-up, or the invite is unknown, expired or used. Answered by `register/begin`
+ * before any passkey is made, and by `register/finish` before its challenge is spent. [reason]
+ * says why, so a screen can say "invite only" instead of the node's sentence.
+ */
+class SignUpRefused(
+    message: String,
+    details: JsonObject = JsonObject(emptyMap()),
+) : CalimeroError(403, "SIGN_UP_REFUSED", message, details) {
+    val reason: SignUpRefusal = SignUpRefusal.of(message)
+}
+
+/**
+ * `409 RECOVERY_NOT_READY`: an organization's recovery may finish only once its 72-hour delay has
+ * passed. [readyAt] (Unix seconds) is when it may; `0` when the node did not say.
+ */
+class RecoveryNotReady(
+    message: String,
+    details: JsonObject = JsonObject(emptyMap()),
+) : CalimeroError(409, "RECOVERY_NOT_READY", message, details) {
+    val readyAt: Long = (details["readyAt"] as? JsonPrimitive)?.longOrNull ?: 0
+}
+
+/**
  * `422 APP_ERROR`: the app refused the call. [appCode] is the app's declared error (`Taken`,
  * `Forbidden`, ...) and [fields] its named fields. The call was logged, so its idempotency key is
  * spent.
@@ -218,6 +320,12 @@ fun errorFrom(
         "409 IDEMPOTENCY_MISMATCH" -> IdempotencyMismatch(message, details)
         "409 RELEASE_DEADLINE" -> ReleaseDeadlineError(message, details)
         "409 CONSENT_STALE" -> ConsentStale(message, details)
+        "403 ORIGIN_NOT_REGISTERED" -> OriginNotRegistered(message, details)
+        "400 BAD_ORIGIN", "400 BAD_RP_ID" -> BadOrigin(code, message, details)
+        "409 ORIGIN_TAKEN" -> OriginTaken(message, details)
+        "429 QUOTA_EXCEEDED" -> QuotaExceeded(message, details)
+        "403 SIGN_UP_REFUSED" -> SignUpRefused(message, details)
+        "409 RECOVERY_NOT_READY" -> RecoveryNotReady(message, details)
         "412 CONFIRM_REQUIRED" -> ConfirmRequired(message, details)
         "413 ARGS_TOO_LARGE" -> ArgsTooLarge(message, details)
         "422 APP_ERROR" -> AppError(message, details)

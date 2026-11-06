@@ -3,6 +3,7 @@ package com.calimero.mero.tee
 import com.calimero.mero.ApiKeyOptions
 import com.calimero.mero.AppError
 import com.calimero.mero.AppSource
+import com.calimero.mero.BadOrigin
 import com.calimero.mero.CalimeroClient
 import com.calimero.mero.CalimeroClientOptions
 import com.calimero.mero.CalimeroConnectOptions
@@ -23,24 +24,38 @@ import com.calimero.mero.MOCK_QUOTE_HEADER
 import com.calimero.mero.NotLeader
 import com.calimero.mero.OpenConsentOptions
 import com.calimero.mero.OrgRole
+import com.calimero.mero.OriginNotRegistered
+import com.calimero.mero.OriginTaken
 import com.calimero.mero.PasskeyCancelled
+import com.calimero.mero.QuotaExceeded
+import com.calimero.mero.RecoveryNotReady
+import com.calimero.mero.SignInOptions
+import com.calimero.mero.SignUpOptions
+import com.calimero.mero.SignUpRefusal
+import com.calimero.mero.SignUpRefused
 import com.calimero.mero.SoftPasskey
 import com.calimero.mero.TeamRole
 import com.calimero.mero.UnavailableError
+import com.calimero.mero.UpgradeKeyScope
 import com.calimero.mero.WrongNode
 import com.calimero.mero.app.CalimeroAppBackend
 import com.calimero.mero.app.OrgInvitation
 import com.calimero.mero.app.PasskeyRequired
 import com.calimero.mero.confirmationCode
 import com.calimero.mero.consentReturn
+import com.calimero.mero.crypto.Ed25519
 import com.calimero.mero.crypto.Hex
 import com.calimero.mero.crypto.base64
 import com.calimero.mero.crypto.concat
 import com.calimero.mero.errorFrom
 import com.calimero.mero.freshCollateral
 import com.calimero.mero.fromB64url
+import com.calimero.mero.newRecoverySeed
 import com.calimero.mero.orderNodes
 import com.calimero.mero.pageDeployment
+import com.calimero.mero.parseRecoverySeed
+import com.calimero.mero.recoveryPublicKey
+import com.calimero.mero.recoverySeedText
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.flow.take
@@ -49,6 +64,7 @@ import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
@@ -668,6 +684,187 @@ class CalimeroClientTest {
             assertEquals("d1", sent(cluster, 9)["deployment"]!!.jsonPrimitive.content)
             assertEquals("d1", pageDeployment("https://chat.example/1.0.0/?deployment=d1"))
             assertNull(pageDeployment("https://chat.example/1.0.0/"))
+        }
+
+    // ---------------------------------------------------------------- core rc.8–rc.10 (mero-js #326–#331)
+
+    @Test
+    fun `signs up with an invite and answers the sign-up's own passkey proof`() =
+        runBlocking {
+            val passkey = SoftPasskey("localhost", "http://localhost:3000")
+            val cluster =
+                Cluster({ head, body ->
+                    when (path(head)) {
+                        "/sign-up" -> json(200, """{"policy":"invite","orgInvites":true,"signUpInvites":true,"inviteRequired":true}""")
+                        "/auth/passkey/register/begin" -> json(200, """{"challengeId":"r1","options":{"challenge":"AAAA","rp":{"id":"localhost"}}}""")
+                        else -> stepUp("""{"accountId":"acc-9","sessionToken":"v2.s.sig","expiresAt":1,"refreshToken":"rt_9"}""")(head, body)
+                    }
+                })
+            val client = cluster.client()
+            val policy = client.signUpPolicy()
+            assertEquals("invite", policy.policy)
+            assertTrue(policy.inviteRequired)
+            val session = client.signUp(passkey, "ada", SignUpOptions(invite = "inv_1"))
+            assertEquals("acc-9", session.accountId)
+            assertEquals("v2.s.sig", client.session?.sessionToken)
+            assertEquals("inv_1", sent(cluster, 1)["invite"]!!.jsonPrimitive.content)
+            assertNull(sent(cluster, 1)["origin"])
+            // The first finish is answered 412; its retry carries the new passkey's assertion, the
+            // registration and the invite again.
+            val retry = sent(cluster, 3)
+            assertEquals("c1", retry["confirm"]!!.jsonObject["challengeId"]!!.jsonPrimitive.content)
+            assertEquals(
+                passkey.id,
+                retry["confirm"]!!
+                    .jsonObject["assertion"]!!
+                    .jsonObject["credentialId"]!!
+                    .jsonPrimitive.content,
+            )
+            assertTrue(retry.containsKey("registration"))
+            assertEquals("inv_1", retry["invite"]!!.jsonPrimitive.content)
+        }
+
+    @Test
+    fun `types sign-up refusals and names the origin a sign-in was refused for`() =
+        runBlocking {
+            val refusal = { message: String -> errorFrom(403, Json.parseToJsonElement("""{"error":"SIGN_UP_REFUSED","message":"$message"}""")) as SignUpRefused }
+            assertEquals(SignUpRefusal.InviteOnly, refusal("sign-up refused: this cluster takes new accounts by invite only").reason)
+            assertEquals(SignUpRefusal.Closed, refusal("sign-up refused: this cluster takes only accounts its operator or owner pre-authorized with a sign-up invite").reason)
+            assertEquals(SignUpRefusal.UnknownInvite, refusal("sign-up refused: unknown invite").reason)
+            assertEquals(SignUpRefusal.ExpiredInvite, refusal("sign-up refused: the invite has expired").reason)
+            assertEquals(SignUpRefusal.OrgGone, refusal("sign-up refused: the invite's organization is gone").reason)
+            assertEquals(SignUpRefusal.Other, refusal("no").reason)
+            assertTrue(errorFrom(429, Json.parseToJsonElement("""{"error":"QUOTA_EXCEEDED"}""")) is QuotaExceeded)
+            assertTrue(errorFrom(409, Json.parseToJsonElement("""{"error":"ORIGIN_TAKEN"}""")) is OriginTaken)
+            assertEquals("BAD_RP_ID", (errorFrom(400, Json.parseToJsonElement("""{"error":"BAD_RP_ID"}""")) as BadOrigin).code)
+            assertEquals(5L, (errorFrom(409, Json.parseToJsonElement("""{"error":"RECOVERY_NOT_READY","details":{"readyAt":5}}""")) as RecoveryNotReady).readyAt)
+
+            val cluster =
+                Cluster({ head, body ->
+                    if (body.contains("evil")) {
+                        refused(403, "ORIGIN_NOT_REGISTERED")
+                    } else if (path(head) == "/auth/passkey/login/begin") {
+                        json(200, """{"challengeId":"l1","options":{"challenge":"AQID","rpId":"chat.example"}}""")
+                    } else {
+                        json(200, """{"accountId":"acc-1","sessionToken":"v2.t.sig","refreshToken":"rt"}""")
+                    }
+                })
+            val client = cluster.client()
+            try {
+                client.signIn(softPasskey(), SignInOptions(origin = "https://evil.example"))
+                fail("expected OriginNotRegistered")
+            } catch (e: OriginNotRegistered) {
+                assertEquals("https://evil.example", e.origin)
+            }
+            val passkey = SoftPasskey("chat.example", "https://chat.example").also { it.create(buildJsonObject { put("challenge", "AAAA") }) }
+            client.signIn(passkey, SignInOptions(origin = "https://chat.example"))
+            assertEquals("https://chat.example", sent(cluster, 1)["origin"]!!.jsonPrimitive.content)
+        }
+
+    @Test
+    fun `revokes API keys with the passkey and makes upgrade keys`() =
+        runBlocking {
+            val passkey = softPasskey()
+            val cluster = Cluster(stepUp("""{"keyId":"k1","key":"cal_x"}"""))
+            val client = cluster.client()
+            client.revokeApiKey("k 1", passkey)
+            assertEquals("/auth/apikeys/k%201", path(cluster.nodes[0].requests[1].first))
+            assertEquals(
+                "DELETE",
+                cluster.nodes[0]
+                    .requests[1]
+                    .first["method"]!!
+                    .jsonPrimitive.content,
+            )
+            assertTrue(sent(cluster, 1).containsKey("confirm"))
+            client.createApiKey(ApiKeyOptions(label = "ci", upgrades = UpgradeKeyScope("app-1")), passkey)
+            val upgrades = sent(cluster, 2)["upgrades"]!!.jsonObject
+            assertEquals(setOf("app"), upgrades.keys)
+            assertEquals("app-1", upgrades["app"]!!.jsonPrimitive.content)
+        }
+
+    @Test
+    fun `registers package origins with the manager's passkey`() =
+        runBlocking {
+            val passkey = softPasskey()
+            val cluster =
+                Cluster({ head, body ->
+                    when (head["method"]!!.jsonPrimitive.content) {
+                        "GET" -> json(200, """{"package":"com.x","origins":[{"origin":"https://x.example","rpId":"x.example","addedBy":"acc-1","addedAt":"2026-11-05T10:00:00Z"}]}""")
+                        "POST" -> stepUp("""{"package":"com.x","origin":"https://x.example","rpId":"x.example","addedBy":"acc-1","addedAt":"2026-11-05T10:00:00Z"}""")(head, body)
+                        else -> stepUp("""{"package":"com.x","origin":"https://x.example","removed":true}""")(head, body)
+                    }
+                })
+            val client = cluster.client()
+            assertEquals("x.example", client.packageOrigins("com.x").single().rpId)
+            assertEquals("/package-origins/com.x", path(cluster.nodes[0].requests[0].first))
+            assertEquals("2026-11-05T10:00:00Z", client.addPackageOrigin("com.x", "https://x.example", passkey, rpId = "x.example").addedAt)
+            assertEquals("x.example", sent(cluster, 2)["rpId"]!!.jsonPrimitive.content)
+            assertTrue(client.removePackageOrigin("com.x", "https://x.example", passkey).removed)
+            assertEquals("https://x.example", sent(cluster, 4)["origin"]!!.jsonPrimitive.content)
+        }
+
+    @Test
+    fun `recovers an organization with a seed that signs here, as core's recovery does`() =
+        runBlocking {
+            val seed = ByteArray(32) { it.toByte() }
+            val text = recoverySeedText(seed)
+            assertEquals("00010203-04050607-08090a0b-0c0d0e0f-10111213-14151617-18191a1b-1c1d1e1f", text)
+            assertTrue(parseRecoverySeed(text.uppercase().replace("-", " ")).contentEquals(seed))
+            assertEquals(32, fromB64url(recoveryPublicKey(seed)).size)
+            assertEquals(32, newRecoverySeed().size)
+
+            val passkey = softPasskey()
+            val cluster =
+                Cluster({ head, body ->
+                    when (path(head)) {
+                        "/auth/me" -> json(200, """{"accountId":"acc-2","name":"b","app":"com.x","origin":"https://x.example"}""")
+                        "/orgs/o1/recovery/start" -> json(200, """{"startedAt":10,"readyAt":20}""")
+                        "/orgs/o1" -> json(200, """{"orgId":"o1","name":"Acme","recovery":{"publicKey":"pk","setAt":3,"pending":{"account":"acc-2","startedAt":10,"readyAt":20}}}""")
+                        "/orgs" -> json(200, """{"orgId":"o1"}""")
+                        else -> stepUp("""{"org":"o1","previousOwners":["acc-1"]}""")(head, body)
+                    }
+                })
+            val client = cluster.client()
+            assertEquals("o1", client.createOrg("Acme", recoveryKey = recoveryPublicKey(seed)))
+            assertEquals(recoveryPublicKey(seed), sent(cluster, 0)["recoveryKey"]!!.jsonPrimitive.content)
+            assertEquals(20L, client.startRecovery("o1", seed).readyAt)
+            val start = sent(cluster, 2)
+            val nonce = start["nonce"]!!.jsonPrimitive.content
+            assertTrue(
+                Ed25519.verify(
+                    fromB64url(recoveryPublicKey(seed)),
+                    fromB64url(start["signature"]!!.jsonPrimitive.content),
+                    "calimero.org-recovery.v1\u0000o1\u0000acc-2\u0000$nonce".encodeToByteArray(),
+                ),
+            )
+            assertEquals(
+                "acc-2",
+                client
+                    .getOrg("o1")
+                    .recovery
+                    ?.pending
+                    ?.account,
+            )
+            assertEquals(listOf("acc-1"), client.finishRecovery("o1", passkey).previousOwners)
+            client.setRecoveryKey("o1", null, passkey)
+            assertEquals(JsonNull, sent(cluster, 7)["publicKey"])
+            client.cancelRecovery("o1", passkey)
+            assertEquals("/orgs/o1/recovery/cancel", path(cluster.nodes[0].requests[9].first))
+            val me = client.me()
+            assertEquals("com.x", me.app)
+            assertEquals("https://x.example", me.origin)
+        }
+
+    @Test
+    fun `uploads a sealed file and reads its plaintext hash`() =
+        runBlocking {
+            val cluster = Cluster({ _, _ -> json(200, """{"blobId":"B58","id":"ab","size":3,"sha256":"cafe","sealed":true,"index":4}""") })
+            val file = cluster.client().uploadFile("app-1", byteArrayOf(1, 2, 3))
+            assertTrue(file.sealed)
+            assertEquals("cafe", file.sha256)
+            assertEquals("/apps/app-1/blobs?sealed=true", path(cluster.nodes[0].requests[0].first))
+            assertEquals("application/octet-stream", header(cluster.nodes[0].requests[0].first, "content-type"))
         }
 
     @Test

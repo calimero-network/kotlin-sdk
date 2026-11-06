@@ -11,6 +11,10 @@ Calimero 1.0 has no username and password and no `/auth/token`. People sign in w
 `CalimeroClient.signUp(passkey, name)` and `signIn(passkey)` run the ceremony at
 `/auth/passkey/{register,login}/{begin,finish}`. Begin and finish go to the same node.
 
+A sign-up prompts twice: once to create the new passkey, once for that passkey to sign the account
+it creates. A registration carries no signature by the new key, so the cluster takes the account
+only with that second assertion (the node's `412 CONFIRM_REQUIRED`, which `signUp` answers).
+
 | Provider | Where |
 |---|---|
 | `PlatformPasskey(activity)` | mero-compose: Android's Credential Manager (Google Password Manager or another provider). |
@@ -71,4 +75,43 @@ themselves; `addPasskey(newPasskey, approver)` is approved by a passkey the acco
 ```kotlin
 client.useApiKey("cal_…")
 val created = client.createApiKey(ApiKeyOptions(label = "agent", apps = listOf(appId), readOnly = true), passkey)
+client.listApiKeys()                    // never the keys themselves
+client.revokeApiKey(keyId, passkey)     // approved with the passkey
 ```
+
+### Upgrade keys for CI
+
+An upgrade with a session needs a passkey every time, which a CI job does not have. An **upgrade
+key** is made once, with the passkey, for one app: it upgrades that app to signed releases of its
+package with no passkey, and the node refuses it everything else (`403 UPGRADE_KEY_ONLY`).
+
+```kotlin
+// Once, by the app's owner:
+val key = client.createApiKey(ApiKeyOptions(label = "ci", upgrades = UpgradeKeyScope(appId), ttlSecs = 90 * 86_400), passkey).key
+// In CI, after publishing 1.4.0:
+ci.useApiKey(key)
+ci.upgradeApp(appId, AppUpgradeTarget(version = "1.4.0"))
+```
+
+## Sign-up policy and invites
+
+A cluster takes new accounts from anyone (`open`), with an invite (`invite`: an organization's or a
+cluster sign-up invite), or with a sign-up invite only (`closed`). Read it without a session, before
+any passkey prompt, and sign up with the invite; the new account joins the invite's organization:
+
+```kotlin
+val policy = client.signUpPolicy()     // policy, inviteRequired, …
+client.signUp(passkey, "bob", SignUpOptions(invite = token))
+```
+
+A sign-up the policy does not take, or an unknown, expired or used invite, is `SignUpRefused` with a
+`reason`, raised before any passkey is made.
+
+## Registered origins
+
+A package's manager can register a web origin of their own so that a frontend they host signs
+people in with passkeys for that origin (`addPackageOrigin(pkg, origin, passkey)`,
+`packageOrigins(pkg)`, `removePackageOrigin(pkg, origin, passkey)`). A client running there passes
+it, `signIn(passkey, SignInOptions(origin = "https://chat.example"))`, and the session is bound to
+the package (`me().app`, `me().origin`). A native app leaves `origin` null and signs in on the
+cluster's own relying party.

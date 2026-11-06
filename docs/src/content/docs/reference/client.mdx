@@ -19,15 +19,16 @@ step-ups: they take a `passkey` and answer the node's `412 CONFIRM_REQUIRED` wit
 | Group | Methods |
 |---|---|
 | Session | `connect`, `useApiKey`, `useSession`, `session`, `nodeUrl`, `nodes`, `onSessionChange`, `forget` |
-| Identity | `signUp`, `signIn`, `refresh`, `signOut`, `signOutEverywhere`, `me`, `addPasskey`, `removePasskey`, `labelPasskey`, `usage`, `attestation` |
-| API keys | `listApiKeys`, `createApiKey`, `revokeApiKey` |
+| Identity | `signUp(passkey, name, SignUpOptions(origin, invite))`, `signUpPolicy`, `signIn(passkey, SignInOptions(origin))`, `refresh`, `signOut`, `signOutEverywhere`, `me`, `addPasskey`, `removePasskey`, `labelPasskey`, `usage`, `attestation` |
+| API keys | `listApiKeys`, `createApiKey` (`ApiKeyOptions.upgrades` makes an upgrade key), `revokeApiKey(keyId, passkey)` |
+| Package origins | `packageOrigins(pkg)`, `addPackageOrigin(pkg, origin, passkey, rpId?)`, `removePackageOrigin(pkg, origin, passkey)` |
 | Packages | `uploadBundle`, `uploadPackage`, `installPackage`, `packages`, `` `package` ``, `uninstallPackage` |
 | App instances | `listApps`, `getApp`, `createApp` (from a bundle, a package, or a deployment's offer), `deleteApp`, `setAccess`, `setAppMetadata`, `appStorage`, `appAbi`, `appXcalls`, `transferApp`, `upgradeApp` |
 | Calls | `call`, `callConfirmed`, `view`, `events` |
-| Blobs | `uploadBlob(app, data, contentType)`, `downloadBlob`, `downloadBlobGranted(app, id, grant)`, `blobContent` (bytes and content type), `listBlobs`, `blobInfo`, `deleteBlob` |
+| Blobs | `uploadBlob(app, data, contentType)`, `downloadBlob`, `downloadBlobGranted(app, id, grant)`, `blobContent` (bytes and content type), `listBlobs`, `blobInfo`, `deleteBlob`, `uploadFile(app, data)` (a component app's sealed file: `sealed`, plaintext `sha256`) |
 | Presence | `publishPresence`, `presence`, `presenceStream` |
 | Aliases | `setAlias`, `aliases`, `alias`, `deleteAlias` |
-| Organizations | `createOrg`, `getOrg`, `deleteOrg`, `setOrgMetadata`, `setMember`, `removeMember`, `setMemberMetadata`, `setCapabilities`, `invite`, `redeemInvite` |
+| Organizations | `createOrg(name, recoveryKey?)`, `getOrg`, `setRecoveryKey`, `startRecovery`, `cancelRecovery`, `finishRecovery`, `deleteOrg`, `setOrgMetadata`, `setMember`, `removeMember`, `setMemberMetadata`, `setCapabilities`, `invite`, `redeemInvite` |
 | Teams | `createTeam`, `getTeam`, `updateTeam`, `deleteTeam`, `setTeamMember`, `removeTeamMember` |
 | Upgrades | `upgradeOrg`, `upgradeRun`, `retryUpgradeRun`, `upgradePublished` |
 | Approvals | `approveRelease`, `approveOutbound`, `appsReport`, `appsReportAll`, `releaseRules`, `pendingApprovals`, `requestConsent`, `openConsentPage` (with `OpenConsentOptions(navigate, confirm)`; a code that is not `confirmationCode(requestId)` throws `CONSENT_CODE_MISMATCH`, `checkConsentCode`), `consentResult`, `waitForConsent`, `publisherBinding`, `bindPublisher` |
@@ -40,7 +41,8 @@ Helpers beside it: `errorFrom`, `fetchAttestedKey`, `claimedRelease`, `pendingAp
 `releaseConsent`, `withdrawConsent`, `upgradeConsent`, `consentReturn`, `stalledBy`,
 `compareVersions`, `publisherBindingMessage`, `OrgCapabilities`, `b64url` / `fromB64url`,
 `readDirectory` / `orderNodes` / `DEFAULT_DIRECTORY`, `deployerKey`, `frontendManifest`,
-`pageDeployment`, `freshCollateral`.
+`pageDeployment`, `freshCollateral`, and the recovery seed's `newRecoverySeed`, `recoverySeedText`,
+`parseRecoverySeed`, `recoveryPublicKey`, `recoveryMessage`, `signRecovery`.
 
 Where Kotlin differs from mero-js in shape only: `AbortSignal` → cancel the coroutine (and
 `events` is a `Flow`); option objects → named parameters; `'unknown' | false` → `Committed`;
