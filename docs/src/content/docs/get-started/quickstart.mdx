@@ -20,8 +20,10 @@ dependencies {
 ## 2. A local cluster
 
 ```bash
-# in calimero-network/core
+# in calimero-network/core, on Linux:
 cargo run -p merod -- local    # three nodes on 127.0.0.1:2501-2503, --dev, mock attestation
+# on a Mac (merod 1.0 is Linux only), in a kotlin-sdk checkout, with Docker:
+scripts/dev-cluster.sh up
 ```
 
 From the Android emulator the host is `10.0.2.2`, so the node is `http://10.0.2.2:2501`.
