@@ -15,12 +15,39 @@ val info = client.getOrg(org)                                           // membe
 val me = client.me()                                                    // the account's orgs
 ```
 
+## Recovery
+
+An owner who loses every passkey gets the organization back with its recovery seed. The seed never
+leaves the client: the node stores only its public key and checks a signature the seed makes for
+the recovering account.
+
+```kotlin
+val seed = newRecoverySeed()
+showToOwner(recoverySeedText(seed))                                    // 64 hex digits; keep it offline
+val org = client.createOrg("Acme", recoveryKey = recoveryPublicKey(seed))
+// later, or for an organization created without one (the owner, with a passkey):
+client.setRecoveryKey(org, recoveryPublicKey(newRecoverySeed()), passkey)
+
+// Every passkey lost: sign up again with a new passkey, then
+val (_, readyAt) = fresh.startRecovery(org, parseRecoverySeed(written))
+// 72 hours later (the owner may cancelRecovery meanwhile; every member sees getOrg(org).recovery?.pending)
+fresh.finishRecovery(org, newPasskey)                                  // this account owns it; the old owner leaves
+```
+
+Before `readyAt`, `finishRecovery` throws `RecoveryNotReady`. Rotating the key (`setRecoveryKey`)
+cancels a recovery under way, and the old seed is refused from then on.
+
 ## Invites
 
 ```kotlin
 val token = client.invite(org, OrgRole.Member, passkey, teams = listOf(team))   // "inv_…", one use, 7 days
 client.redeemInvite(token)                                              // no approval: the redeemer joins at once
 ```
+
+Someone without an account yet signs up with the invite and joins in the same step:
+`client.signUp(passkey, "bob", SignUpOptions(invite = token))`. On a cluster whose sign-up policy is
+`invite` (`client.signUpPolicy()`, no session needed) that is the only way in; a refused one is
+`SignUpRefused` with a `reason`.
 
 Apps pass invites around as an `OrgInvitation`; in a link it is
 `base58(deflate({"invitation": "inv_…", "namespaceId": "<orgId>", "contextId"?, "name"?}))` in the

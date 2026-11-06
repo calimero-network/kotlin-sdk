@@ -57,7 +57,7 @@ private val identityOps =
         op("createApiKey", "Account", "createApiKey", "Create an API key (shown once)", OpField.line("label", "Label"), OpField.line("ttl", "TTL (seconds)", "3600")) { e, v ->
             e.client.createApiKey(ApiKeyOptions(label = v.opt("label"), ttlSecs = v.opt("ttl")?.toLong()), e.passkey).toString()
         },
-        op("revokeApiKey", "Account", "revokeApiKey", "Revoke an API key", OpField.line("key", "Key id")) { e, v -> e.client.revokeApiKey(v.v("key")) },
+        op("revokeApiKey", "Account", "revokeApiKey", "Revoke an API key (passkey)", OpField.line("key", "Key id")) { e, v -> e.client.revokeApiKey(v.v("key"), e.passkey) },
         op("signOutEverywhere", "Account", "signOutEverywhere", "End every session of the account") { e, _ -> e.client.signOutEverywhere() },
     )
 

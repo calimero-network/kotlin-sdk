@@ -64,6 +64,15 @@ EXCLUDED=(
   withdrawApp        # ditto
   deploymentOrgs     # ditto
   checkConsentCode   # run by openConsentPage / ConsentLauncher
+  signUpPolicy       # core rc.9/rc.10 routes, kept out of the sample as in the Swift sample
+  uploadFile         # ditto
+  packageOrigins     # ditto (a package manager's, for a web frontend)
+  addPackageOrigin   # ditto
+  removePackageOrigin # ditto
+  setRecoveryKey     # ditto (an organization owner's recovery seed)
+  startRecovery      # ditto
+  cancelRecovery     # ditto
+  finishRecovery     # ditto
 )
 
 methods() {

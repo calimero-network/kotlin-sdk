@@ -443,34 +443,64 @@ class CalimeroClient(
 
     // ---------------------------------------------------------------- identity
 
-    /** Create an account with a new passkey, and sign in. */
+    /**
+     * Create an account with a new passkey, and sign in. The node then asks the new passkey to sign
+     * the account it creates (`412 CONFIRM_REQUIRED`, answered here), so a sign-up prompts twice:
+     * create, then sign.
+     *
+     * [SignUpOptions.invite] goes on both halves and on the retry; a sign-up the cluster's policy
+     * refuses ([signUpPolicy]), or an unknown, expired or used invite, is [SignUpRefused], from
+     * `begin`, before any passkey is made. [SignUpOptions.origin] names a registered web origin:
+     * the passkey is made for its relying party and the session is bound to its package; an
+     * unregistered one is [OriginNotRegistered].
+     */
     suspend fun signUp(
         passkey: PasskeyProvider,
         name: String,
+        options: SignUpOptions = SignUpOptions(),
     ): CalimeroSession {
-        val begin = post("auth/passkey/register/begin", buildJsonObject { put("name", name) }) as JsonObject
-        val registration = passkey.create(begin["options"] as? JsonObject ?: JsonObject(emptyMap()))
-        val session =
-            typed(
-                CalimeroSession.serializer(),
-                "POST",
-                "auth/passkey/register/finish",
-                jsonBody(
-                    buildJsonObject {
-                        put("challengeId", begin.string("challengeId").orEmpty())
-                        put("registration", wire.encodeToJsonElement(registration))
-                    },
-                ),
+        val begin =
+            begin(
+                "auth/passkey/register/begin",
+                buildJsonObject {
+                    put("name", name)
+                    options.origin?.let { put("origin", it) }
+                    options.invite?.let { put("invite", it) }
+                },
+                options.origin,
             )
+        val registration = passkey.create(begin["options"] as? JsonObject ?: JsonObject(emptyMap()))
+        val finished =
+            postConfirmed(
+                "auth/passkey/register/finish",
+                buildJsonObject {
+                    put("challengeId", begin.string("challengeId").orEmpty())
+                    put("registration", wire.encodeToJsonElement(registration))
+                    options.invite?.let { put("invite", it) }
+                },
+                passkey,
+            )
+        val session = wire.decodeFromJsonElement(CalimeroSession.serializer(), finished)
         takeSession(session)
         return session
     }
 
-    /** Sign in with an existing passkey. */
-    suspend fun signIn(passkey: PasskeyProvider): CalimeroSession {
-        val begin = post("auth/passkey/login/begin") as JsonObject
+    /** Who may create an account on the cluster (`GET /sign-up`); needs no session. */
+    suspend fun signUpPolicy(): SignUpPolicy = typed(SignUpPolicy.serializer(), "GET", "sign-up")
+
+    /**
+     * Sign in with an existing passkey. With [SignInOptions.origin] (a registered web origin) the
+     * assertion is made for that origin's relying-party id, as the node answers it, and the session
+     * is bound to the origin's package; an unregistered one is [OriginNotRegistered].
+     */
+    suspend fun signIn(
+        passkey: PasskeyProvider,
+        options: SignInOptions = SignInOptions(),
+    ): CalimeroSession {
+        val begin = begin("auth/passkey/login/begin", options.origin?.let { o -> buildJsonObject { put("origin", o) } }, options.origin)
         val opts = begin["options"] as? JsonObject ?: JsonObject(emptyMap())
-        val assertion = passkey.get(fromB64url(opts.string("challenge").orEmpty()), opts.string("rpId").orEmpty())
+        val rpId = opts.string("rpId") ?: (opts["rp"] as? JsonObject).string("id")
+        val assertion = passkey.get(fromB64url(opts.string("challenge").orEmpty()), rpId.orEmpty())
         val session =
             typed(
                 CalimeroSession.serializer(),
@@ -486,6 +516,19 @@ class CalimeroClient(
         takeSession(session)
         return session
     }
+
+    /** POST a ceremony's `begin`, naming [origin] in an [OriginNotRegistered] the node left it out of. */
+    private suspend fun begin(
+        path: String,
+        body: JsonObject?,
+        origin: String?,
+    ): JsonObject =
+        try {
+            post(path, body ?: JsonObject(emptyMap())) as JsonObject
+        } catch (e: OriginNotRegistered) {
+            if (e.origin.isNotEmpty() || origin == null) throw e
+            throw OriginNotRegistered(e.nodeMessage, JsonObject(e.details + ("origin" to JsonPrimitive(origin))))
+        }
 
     /**
      * Swap the refresh token for a new session, on whichever node the client uses: any node of the
@@ -553,6 +596,8 @@ class CalimeroClient(
             orgs = (o["orgs"] as? JsonArray)?.let { wire.decodeFromJsonElement(ListSerializer(OrgMembership.serializer()), it) }.orEmpty(),
             via = o.string("via").orEmpty(),
             passkeyId = o.string("passkeyId"),
+            app = o.string("app"),
+            origin = o.string("origin"),
         )
     }
 
@@ -613,14 +658,20 @@ class CalimeroClient(
     /** The account's API keys (never the keys themselves). */
     suspend fun listApiKeys(): List<ApiKeyInfo> = listOf("keys", ApiKeyInfo.serializer(), get("auth/apikeys"))
 
-    suspend fun revokeApiKey(keyId: String) {
-        delete("auth/apikeys/${seg(keyId)}")
+    /** Revoke one of the account's API keys, approved with its [passkey] (`412 CONFIRM_REQUIRED`). */
+    suspend fun revokeApiKey(
+        keyId: String,
+        passkey: PasskeyProvider,
+    ) {
+        deleteConfirmed("auth/apikeys/${seg(keyId)}", passkey)
     }
 
     /**
      * Create an API key for an agent or server, approved with the account's [passkey]
      * (`412 CONFIRM_REQUIRED`); needs a passkey session (an API key is refused `403`). The key is
-     * returned once.
+     * returned once. [ApiKeyOptions.upgrades] makes an upgrade key for CI: it upgrades that one app
+     * with [upgradeApp] (no passkey; a `version` of its package) and is refused everything else
+     * (`403 UPGRADE_KEY_ONLY`).
      */
     suspend fun createApiKey(
         options: ApiKeyOptions,
@@ -643,6 +694,18 @@ class CalimeroClient(
         data: ByteArray,
         contentType: String = OCTET_STREAM,
     ): BlobInfo = wire.decodeFromJsonElement(BlobInfo.serializer(), json("POST", "apps/${seg(app)}/blobs", Body(data, contentType)))
+
+    /**
+     * Upload a sealed file for component app [app] (`POST /apps/{app}/blobs?sealed=true`): sealed
+     * under a key of its own that only the app's code reads, so it is never downloaded or granted.
+     * Its owner and its organization's members only (`403` otherwise). Answers the file's ids with
+     * the plaintext's size and [BlobInfo.sha256]. Held for an hour unless the app stores a
+     * `BlobRef` to it. Past the organization's file quota: [QuotaExceeded].
+     */
+    suspend fun uploadFile(
+        app: String,
+        data: ByteArray,
+    ): BlobInfo = wire.decodeFromJsonElement(BlobInfo.serializer(), json("POST", "apps/${seg(app)}/blobs?sealed=true", Body(data, OCTET_STREAM)))
 
     /** One of [app]'s blobs, by id (base58 or hex). */
     suspend fun downloadBlob(
@@ -1013,8 +1076,81 @@ class CalimeroClient(
 
     // ---------------------------------------------------------------- organizations
 
-    /** Create an organization; answers its id. */
-    suspend fun createOrg(name: String): String = (post("orgs", buildJsonObject { put("name", name) }) as JsonObject).string("orgId").orEmpty()
+    /**
+     * Create an organization; answers its id. [recoveryKey] (from [recoveryPublicKey]) lets whoever
+     * holds its seed recover the organization if its owner loses every passkey; keep the seed
+     * offline ([recoverySeedText]).
+     */
+    suspend fun createOrg(
+        name: String,
+        recoveryKey: String? = null,
+    ): String =
+        (
+            post(
+                "orgs",
+                buildJsonObject {
+                    put("name", name)
+                    recoveryKey?.let { put("recoveryKey", it) }
+                },
+            ) as JsonObject
+        ).string("orgId").orEmpty()
+
+    /**
+     * Set or rotate ([publicKey], from [recoveryPublicKey]) or remove (`null`) [org]'s recovery key:
+     * its owner only, approved with [passkey]. A recovery under way is cancelled, and the old seed's
+     * signatures are refused from then on.
+     */
+    suspend fun setRecoveryKey(
+        org: String,
+        publicKey: String?,
+        passkey: PasskeyProvider,
+    ) {
+        postConfirmed("orgs/${seg(org)}/recovery", buildJsonObject { put("publicKey", publicKey) }, passkey)
+    }
+
+    /**
+     * Start handing [org] to the signed-in account with the recovery [seed], which signs here and
+     * never leaves this process. Finish with [finishRecovery] once [RecoveryTimes.readyAt] has
+     * passed; until then the owner may [cancelRecovery]. A wrong seed (or no organization, or none
+     * set) is `403 WRONG_RECOVERY_KEY`.
+     */
+    suspend fun startRecovery(
+        org: String,
+        seed: ByteArray,
+    ): RecoveryTimes {
+        val account = me().accountId
+        val nonce = b64url(randomBytes(16))
+        val signature = signRecovery(seed, org, account, nonce)
+        return typed(
+            RecoveryTimes.serializer(),
+            "POST",
+            "orgs/${seg(org)}/recovery/start",
+            jsonBody(
+                buildJsonObject {
+                    put("nonce", nonce)
+                    put("signature", signature)
+                },
+            ),
+        )
+    }
+
+    /** Cancel the recovery under way: [org]'s owner, approved with [passkey]. */
+    suspend fun cancelRecovery(
+        org: String,
+        passkey: PasskeyProvider,
+    ) {
+        postConfirmed("orgs/${seg(org)}/recovery/cancel", JsonObject(emptyMap()), passkey)
+    }
+
+    /**
+     * Finish a recovery this account started, once its delay passed ([RecoveryNotReady] before),
+     * approved with this account's [passkey]. The account becomes the owner; the previous owners
+     * leave the organization.
+     */
+    suspend fun finishRecovery(
+        org: String,
+        passkey: PasskeyProvider,
+    ): RecoveryFinished = wire.decodeFromJsonElement(RecoveryFinished.serializer(), postConfirmed("orgs/${seg(org)}/recovery/finish", JsonObject(emptyMap()), passkey))
 
     /** The organization, with the teams this caller reaches or manages. */
     suspend fun getOrg(org: String): OrgInfo = orgInfo(get("orgs/${seg(org)}") as JsonObject)
@@ -1411,6 +1547,52 @@ class CalimeroClient(
     /** Redeem an invite token (no approval): the account joins its organization. Answers `{ org }`. */
     suspend fun redeemInvite(token: String): JsonObject = post("invites/${seg(token)}/redeem") as JsonObject
 
+    // ---------------------------------------------------------------- package origins
+
+    /**
+     * The web origins [pkg]'s managers registered so a frontend they host themselves can sign people
+     * in with passkeys ([SignInOptions.origin]). [NotFound] for an unknown package; `403` to anyone
+     * not managing it.
+     */
+    suspend fun packageOrigins(pkg: String): List<PackageOrigin> = listOf("origins", PackageOrigin.serializer(), get("package-origins/${seg(pkg)}"))
+
+    /**
+     * Register [origin] (`scheme://host[:port]`) for [pkg], approved with [passkey]. [rpId] defaults
+     * to the node's choice for the origin (its host). Refusals: [BadOrigin] (`BAD_ORIGIN`,
+     * `BAD_RP_ID`), [OriginTaken], [QuotaExceeded].
+     */
+    suspend fun addPackageOrigin(
+        pkg: String,
+        origin: String,
+        passkey: PasskeyProvider,
+        rpId: String? = null,
+    ): PackageOriginAdded =
+        wire.decodeFromJsonElement(
+            PackageOriginAdded.serializer(),
+            postConfirmed(
+                "package-origins/${seg(pkg)}",
+                buildJsonObject {
+                    put("origin", origin)
+                    rpId?.let { put("rpId", it) }
+                },
+                passkey,
+            ),
+        )
+
+    /**
+     * Remove [origin] from [pkg], approved with [passkey]. Sessions opened there stop working
+     * (`401`). [NotFound] if it was not registered.
+     */
+    suspend fun removePackageOrigin(
+        pkg: String,
+        origin: String,
+        passkey: PasskeyProvider,
+    ): PackageOriginRemoved =
+        wire.decodeFromJsonElement(
+            PackageOriginRemoved.serializer(),
+            deleteConfirmed("package-origins/${seg(pkg)}", passkey, buildJsonObject { put("origin", origin) }),
+        )
+
     // ---------------------------------------------------------------- deployers
 
     /**
@@ -1551,6 +1733,7 @@ class CalimeroClient(
             releaseApprovers = (o["releaseApprovers"] as? JsonArray)?.mapNotNull { (it as? JsonPrimitive)?.content }.orEmpty(),
             publishes = (o["publishes"] as? JsonArray)?.mapNotNull { (it as? JsonPrimitive)?.content }.orEmpty(),
             newWorkStopped = (o["newWorkStopped"] as? JsonObject)?.let { wire.decodeFromJsonElement(NewWorkStopped.serializer(), it) },
+            recovery = (o["recovery"] as? JsonObject)?.let { wire.decodeFromJsonElement(OrgRecovery.serializer(), it) },
         )
     }
 
