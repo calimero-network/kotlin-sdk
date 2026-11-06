@@ -790,15 +790,15 @@ class CalimeroClientTest {
             val cluster =
                 Cluster({ head, body ->
                     when (head["method"]!!.jsonPrimitive.content) {
-                        "GET" -> json(200, """{"package":"com.x","origins":[{"origin":"https://x.example","rpId":"x.example","addedBy":"acc-1","addedAt":7}]}""")
-                        "POST" -> stepUp("""{"package":"com.x","origin":"https://x.example","rpId":"x.example","addedBy":"acc-1","addedAt":7}""")(head, body)
+                        "GET" -> json(200, """{"package":"com.x","origins":[{"origin":"https://x.example","rpId":"x.example","addedBy":"acc-1","addedAt":"2026-11-05T10:00:00Z"}]}""")
+                        "POST" -> stepUp("""{"package":"com.x","origin":"https://x.example","rpId":"x.example","addedBy":"acc-1","addedAt":"2026-11-05T10:00:00Z"}""")(head, body)
                         else -> stepUp("""{"package":"com.x","origin":"https://x.example","removed":true}""")(head, body)
                     }
                 })
             val client = cluster.client()
             assertEquals("x.example", client.packageOrigins("com.x").single().rpId)
             assertEquals("/package-origins/com.x", path(cluster.nodes[0].requests[0].first))
-            assertEquals(7L, client.addPackageOrigin("com.x", "https://x.example", passkey, rpId = "x.example").addedAt)
+            assertEquals("2026-11-05T10:00:00Z", client.addPackageOrigin("com.x", "https://x.example", passkey, rpId = "x.example").addedAt)
             assertEquals("x.example", sent(cluster, 2)["rpId"]!!.jsonPrimitive.content)
             assertTrue(client.removePackageOrigin("com.x", "https://x.example", passkey).removed)
             assertEquals("https://x.example", sent(cluster, 4)["origin"]!!.jsonPrimitive.content)

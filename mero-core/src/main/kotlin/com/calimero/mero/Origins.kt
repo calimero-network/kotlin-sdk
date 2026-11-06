@@ -49,8 +49,8 @@ data class PackageOrigin(
     val rpId: String = "",
     /** The account that registered it. */
     val addedBy: String = "",
-    /** When (Unix seconds). */
-    val addedAt: Long = 0,
+    /** When, RFC 3339 (as core writes it). */
+    val addedAt: String = "",
 )
 
 /** What registering an origin answers. */
@@ -60,7 +60,7 @@ data class PackageOriginAdded(
     val origin: String,
     val rpId: String = "",
     val addedBy: String = "",
-    val addedAt: Long = 0,
+    val addedAt: String = "",
 )
 
 /** What removing an origin answers. */
