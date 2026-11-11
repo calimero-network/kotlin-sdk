@@ -29,10 +29,12 @@ import kotlinx.serialization.SerialName
 import kotlinx.serialization.Contextual
 
 /**
- * Other properties than those listed may be present: the ones listed are those clients rely on.
+ * 
  *
  * @param `package` 
  * @param version 
+ * @param signerId 
+ * @param services 
  */
 @Serializable
 
@@ -42,7 +44,13 @@ data class OpsPackageUpload200Response (
     val `package`: kotlin.String,
 
     @SerialName(value = "version")
-    val version: kotlin.String
+    val version: kotlin.String,
+
+    @SerialName(value = "signerId")
+    val signerId: kotlin.String,
+
+    @SerialName(value = "services")
+    val services: kotlin.collections.Map<kotlin.String, kotlin.String>
 
 ) {
 

@@ -23,6 +23,7 @@
 
 package com.calimero.mero.api.models
 
+import com.calimero.mero.api.models.OriginsList200ResponseOriginsInner
 
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.SerialName
@@ -42,7 +43,7 @@ data class OriginsList200Response (
     val `package`: kotlin.String,
 
     @SerialName(value = "origins")
-    val origins: kotlin.collections.List<@Contextual kotlinx.serialization.json.JsonElement?>
+    val origins: kotlin.collections.List<OriginsList200ResponseOriginsInner>
 
 ) {
 

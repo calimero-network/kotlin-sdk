@@ -822,7 +822,7 @@ open class AppsApi(basePath: kotlin.String = defaultBasePath, client: Call.Facto
     /**
      * POST /apps/{app}/move
      * Move an app to another organization
-     * Its data where it is; its files, runs and quotas go to the target, &#x60;org&#x60; or app-team access becomes the target&#39;s app team of its package. &#x60;bringMembers&#x60; adds the source&#39;s members who reach it, capped at &#x60;member&#x60;.  **Who:** an account holder (a passkey session not bound to an app&#39;s frontend). **Step-up:** answers &#x60;412 CONFIRM_REQUIRED&#x60; first; send the same request again with &#x60;confirm&#x60;, a passkey assertion over &#x60;details.challenge&#x60;.
+     * Its data where it is; its files, runs and quotas go to the target, &#x60;org&#x60; or app-team access becomes the target&#39;s app team of its package. &#x60;bringMembers&#x60; adds the source&#39;s members who reach it, capped at &#x60;member&#x60;. &#x60;from&#x60; is the organization it left, &#x60;null&#x60; for an app of the caller&#39;s own; &#x60;added&#x60; the accounts brought; &#x60;revokedInvites&#x60; how many invites to its old team were withdrawn.  **Who:** an account holder (a passkey session not bound to an app&#39;s frontend). **Step-up:** answers &#x60;412 CONFIRM_REQUIRED&#x60; first; send the same request again with &#x60;confirm&#x60;, a passkey assertion over &#x60;details.challenge&#x60;.
      * @param app 
      * @param appMoveRequest 
      * @return AppMove200Response
@@ -855,7 +855,7 @@ open class AppsApi(basePath: kotlin.String = defaultBasePath, client: Call.Facto
     /**
      * POST /apps/{app}/move
      * Move an app to another organization
-     * Its data where it is; its files, runs and quotas go to the target, &#x60;org&#x60; or app-team access becomes the target&#39;s app team of its package. &#x60;bringMembers&#x60; adds the source&#39;s members who reach it, capped at &#x60;member&#x60;.  **Who:** an account holder (a passkey session not bound to an app&#39;s frontend). **Step-up:** answers &#x60;412 CONFIRM_REQUIRED&#x60; first; send the same request again with &#x60;confirm&#x60;, a passkey assertion over &#x60;details.challenge&#x60;.
+     * Its data where it is; its files, runs and quotas go to the target, &#x60;org&#x60; or app-team access becomes the target&#39;s app team of its package. &#x60;bringMembers&#x60; adds the source&#39;s members who reach it, capped at &#x60;member&#x60;. &#x60;from&#x60; is the organization it left, &#x60;null&#x60; for an app of the caller&#39;s own; &#x60;added&#x60; the accounts brought; &#x60;revokedInvites&#x60; how many invites to its old team were withdrawn.  **Who:** an account holder (a passkey session not bound to an app&#39;s frontend). **Step-up:** answers &#x60;412 CONFIRM_REQUIRED&#x60; first; send the same request again with &#x60;confirm&#x60;, a passkey assertion over &#x60;details.challenge&#x60;.
      * @param app 
      * @param appMoveRequest 
      * @return ApiResponse<AppMove200Response?>
@@ -2361,7 +2361,7 @@ open class AppsApi(basePath: kotlin.String = defaultBasePath, client: Call.Facto
     /**
      * GET /apps/{app}/presence
      * Who is present
-     * **Who:** whoever the app&#39;s access admits (a public app: anyone).
+     * One entry per present device (a session&#39;s passkey, or an API key): its account, device and state (hex).  **Who:** whoever the app&#39;s access admits (a public app: anyone).
      * @param app 
      * @return PresenceGet200Response
      * @throws IllegalStateException If the request is not correctly configured
@@ -2393,7 +2393,7 @@ open class AppsApi(basePath: kotlin.String = defaultBasePath, client: Call.Facto
     /**
      * GET /apps/{app}/presence
      * Who is present
-     * **Who:** whoever the app&#39;s access admits (a public app: anyone).
+     * One entry per present device (a session&#39;s passkey, or an API key): its account, device and state (hex).  **Who:** whoever the app&#39;s access admits (a public app: anyone).
      * @param app 
      * @return ApiResponse<PresenceGet200Response?>
      * @throws IllegalStateException If the request is not correctly configured

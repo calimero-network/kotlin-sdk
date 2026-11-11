@@ -31,18 +31,18 @@ import kotlinx.serialization.Contextual
 /**
  * 
  *
- * @param prefixes 
- * @param reviewed 
+ * @param app 
+ * @param version 
  */
 @Serializable
 
-data class OrgOutboundApprovalsValue (
+data class DeploymentOrgs200ResponseOrgsInnerAppsInner (
 
-    @SerialName(value = "prefixes")
-    val prefixes: kotlin.collections.List<kotlin.String>,
+    @SerialName(value = "app")
+    val app: kotlin.String,
 
-    @SerialName(value = "reviewed")
-    val reviewed: kotlin.collections.List<kotlin.String>
+    @SerialName(value = "version")
+    val version: kotlin.String
 
 ) {
 

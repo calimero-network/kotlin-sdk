@@ -47,7 +47,7 @@ data class AppMove200Response (
     val appId: kotlin.String,
 
     @SerialName(value = "from")
-    val from: kotlin.String,
+    val from: kotlin.String?,
 
     @SerialName(value = "org")
     val org: kotlin.String,
@@ -58,11 +58,11 @@ data class AppMove200Response (
     @SerialName(value = "created")
     val created: kotlin.Boolean,
 
-    @Contextual @SerialName(value = "added")
-    val added: kotlinx.serialization.json.JsonElement?,
+    @SerialName(value = "added")
+    val added: kotlin.collections.List<kotlin.String>,
 
-    @Contextual @SerialName(value = "revokedInvites")
-    val revokedInvites: kotlinx.serialization.json.JsonElement?
+    @SerialName(value = "revokedInvites")
+    val revokedInvites: kotlin.Long
 
 ) {
 

@@ -23,6 +23,7 @@
 
 package com.calimero.mero.api.models
 
+import com.calimero.mero.api.models.OrgMembers200ResponseMembersInnerPasskeys
 import com.calimero.mero.api.models.OrgRole
 
 import kotlinx.serialization.Serializable
@@ -49,16 +50,16 @@ data class OrgMembers200ResponseMembersInner (
     val account: kotlin.String,
 
     @SerialName(value = "name")
-    val name: kotlin.String,
+    val name: kotlin.String?,
 
     @Contextual @SerialName(value = "role")
     val role: OrgRole,
 
-    @Contextual @SerialName(value = "teams")
-    val teams: kotlinx.serialization.json.JsonElement?,
+    @SerialName(value = "teams")
+    val teams: kotlin.collections.List<kotlin.String>,
 
-    @Contextual @SerialName(value = "passkeys")
-    val passkeys: kotlinx.serialization.json.JsonElement?,
+    @SerialName(value = "passkeys")
+    val passkeys: OrgMembers200ResponseMembersInnerPasskeys,
 
     @SerialName(value = "recoveryCode")
     val recoveryCode: kotlin.Boolean,

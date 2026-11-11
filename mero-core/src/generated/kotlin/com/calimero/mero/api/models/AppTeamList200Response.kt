@@ -23,6 +23,7 @@
 
 package com.calimero.mero.api.models
 
+import com.calimero.mero.api.models.AppTeamList200ResponseAppTeamsInner
 
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.SerialName
@@ -42,7 +43,7 @@ data class AppTeamList200Response (
     val mode: AppTeamList200Response.Mode,
 
     @SerialName(value = "appTeams")
-    val appTeams: kotlin.collections.List<@Contextual kotlinx.serialization.json.JsonElement?>
+    val appTeams: kotlin.collections.List<AppTeamList200ResponseAppTeamsInner>
 
 ) {
 

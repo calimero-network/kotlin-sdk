@@ -23,6 +23,7 @@
 
 package com.calimero.mero.api.models
 
+import com.calimero.mero.api.models.Governance
 
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.SerialName
@@ -50,8 +51,8 @@ data class OpsStatus200Response (
     @Contextual @SerialName(value = "system")
     val system: kotlinx.serialization.json.JsonElement?,
 
-    @Contextual @SerialName(value = "governance")
-    val governance: kotlinx.serialization.json.JsonElement?,
+    @SerialName(value = "governance")
+    val governance: Governance,
 
     @Contextual @SerialName(value = "groups")
     val groups: kotlinx.serialization.json.JsonElement?,

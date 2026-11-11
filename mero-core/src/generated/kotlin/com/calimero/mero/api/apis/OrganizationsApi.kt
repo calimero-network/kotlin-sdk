@@ -28,11 +28,13 @@ import okhttp3.Call
 import okhttp3.HttpUrl
 
 import com.calimero.mero.api.models.AppTeamList200Response
+import com.calimero.mero.api.models.AppTeamsScope200Response
 import com.calimero.mero.api.models.AppTeamsScopeRequest
 import com.calimero.mero.api.models.ConfirmOnly
 import com.calimero.mero.api.models.Error
 import com.calimero.mero.api.models.InviteCreate200Response
 import com.calimero.mero.api.models.InviteCreateRequest
+import com.calimero.mero.api.models.InviteList200Response
 import com.calimero.mero.api.models.InviteRedeem200Response
 import com.calimero.mero.api.models.MemberMetadataRequest
 import com.calimero.mero.api.models.MemberRemoveTeamsRequest
@@ -174,7 +176,7 @@ open class OrganizationsApi(basePath: kotlin.String = defaultBasePath, client: C
      * The owner or an admin; &#x60;keep&#x60; names who stays when a team closes. &#x60;412&#x60; first.  **Who:** a passkey session (an API key is refused). **Step-up:** answers &#x60;412 CONFIRM_REQUIRED&#x60; first; send the same request again with &#x60;confirm&#x60;, a passkey assertion over &#x60;details.challenge&#x60;.
      * @param org 
      * @param appTeamsScopeRequest 
-     * @return kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement>
+     * @return AppTeamsScope200Response
      * @throws IllegalStateException If the request is not correctly configured
      * @throws IOException Rethrows the OkHttp execute method exception
      * @throws UnsupportedOperationException If the API returns an informational or redirection response
@@ -183,11 +185,11 @@ open class OrganizationsApi(basePath: kotlin.String = defaultBasePath, client: C
      */
     @Suppress("UNCHECKED_CAST")
     @Throws(IllegalStateException::class, IOException::class, UnsupportedOperationException::class, ClientException::class, ServerException::class)
-    suspend fun appTeamsScope(org: kotlin.String, appTeamsScopeRequest: AppTeamsScopeRequest) : kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement> = withContext(Dispatchers.IO) {
+    suspend fun appTeamsScope(org: kotlin.String, appTeamsScopeRequest: AppTeamsScopeRequest) : AppTeamsScope200Response = withContext(Dispatchers.IO) {
         val localVarResponse = appTeamsScopeWithHttpInfo(org = org, appTeamsScopeRequest = appTeamsScopeRequest)
 
         return@withContext when (localVarResponse.responseType) {
-            ResponseType.Success -> (localVarResponse as Success<*>).data as kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement>
+            ResponseType.Success -> (localVarResponse as Success<*>).data as AppTeamsScope200Response
             ResponseType.Informational -> throw UnsupportedOperationException("Client does not support Informational responses.")
             ResponseType.Redirection -> throw UnsupportedOperationException("Client does not support Redirection responses.")
             ResponseType.ClientError -> {
@@ -207,16 +209,16 @@ open class OrganizationsApi(basePath: kotlin.String = defaultBasePath, client: C
      * The owner or an admin; &#x60;keep&#x60; names who stays when a team closes. &#x60;412&#x60; first.  **Who:** a passkey session (an API key is refused). **Step-up:** answers &#x60;412 CONFIRM_REQUIRED&#x60; first; send the same request again with &#x60;confirm&#x60;, a passkey assertion over &#x60;details.challenge&#x60;.
      * @param org 
      * @param appTeamsScopeRequest 
-     * @return ApiResponse<kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement>?>
+     * @return ApiResponse<AppTeamsScope200Response?>
      * @throws IllegalStateException If the request is not correctly configured
      * @throws IOException Rethrows the OkHttp execute method exception
      */
     @Suppress("UNCHECKED_CAST")
     @Throws(IllegalStateException::class, IOException::class)
-    suspend fun appTeamsScopeWithHttpInfo(org: kotlin.String, appTeamsScopeRequest: AppTeamsScopeRequest) : ApiResponse<kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement>?> = withContext(Dispatchers.IO) {
+    suspend fun appTeamsScopeWithHttpInfo(org: kotlin.String, appTeamsScopeRequest: AppTeamsScopeRequest) : ApiResponse<AppTeamsScope200Response?> = withContext(Dispatchers.IO) {
         val localVariableConfig = appTeamsScopeRequestConfig(org = org, appTeamsScopeRequest = appTeamsScopeRequest)
 
-        return@withContext request<AppTeamsScopeRequest, kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement>>(
+        return@withContext request<AppTeamsScopeRequest, AppTeamsScope200Response>(
             localVariableConfig
         )
     }
@@ -325,9 +327,9 @@ open class OrganizationsApi(basePath: kotlin.String = defaultBasePath, client: C
     /**
      * GET /orgs/{org}/invites
      * The organization&#39;s invites
-     * Their keys and terms, never a token.  **Who:** a passkey session (an API key is refused).
+     * Their keys and terms, never a token: &#x60;expiresAt&#x60; Unix seconds; &#x60;createdBy&#x60; and &#x60;createdAt&#x60; are &#x60;null&#x60; on an invite from before they were kept.  **Who:** a passkey session (an API key is refused).
      * @param org 
-     * @return kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement>
+     * @return InviteList200Response
      * @throws IllegalStateException If the request is not correctly configured
      * @throws IOException Rethrows the OkHttp execute method exception
      * @throws UnsupportedOperationException If the API returns an informational or redirection response
@@ -336,11 +338,11 @@ open class OrganizationsApi(basePath: kotlin.String = defaultBasePath, client: C
      */
     @Suppress("UNCHECKED_CAST")
     @Throws(IllegalStateException::class, IOException::class, UnsupportedOperationException::class, ClientException::class, ServerException::class)
-    suspend fun inviteList(org: kotlin.String) : kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement> = withContext(Dispatchers.IO) {
+    suspend fun inviteList(org: kotlin.String) : InviteList200Response = withContext(Dispatchers.IO) {
         val localVarResponse = inviteListWithHttpInfo(org = org)
 
         return@withContext when (localVarResponse.responseType) {
-            ResponseType.Success -> (localVarResponse as Success<*>).data as kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement>
+            ResponseType.Success -> (localVarResponse as Success<*>).data as InviteList200Response
             ResponseType.Informational -> throw UnsupportedOperationException("Client does not support Informational responses.")
             ResponseType.Redirection -> throw UnsupportedOperationException("Client does not support Redirection responses.")
             ResponseType.ClientError -> {
@@ -357,18 +359,18 @@ open class OrganizationsApi(basePath: kotlin.String = defaultBasePath, client: C
     /**
      * GET /orgs/{org}/invites
      * The organization&#39;s invites
-     * Their keys and terms, never a token.  **Who:** a passkey session (an API key is refused).
+     * Their keys and terms, never a token: &#x60;expiresAt&#x60; Unix seconds; &#x60;createdBy&#x60; and &#x60;createdAt&#x60; are &#x60;null&#x60; on an invite from before they were kept.  **Who:** a passkey session (an API key is refused).
      * @param org 
-     * @return ApiResponse<kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement>?>
+     * @return ApiResponse<InviteList200Response?>
      * @throws IllegalStateException If the request is not correctly configured
      * @throws IOException Rethrows the OkHttp execute method exception
      */
     @Suppress("UNCHECKED_CAST")
     @Throws(IllegalStateException::class, IOException::class)
-    suspend fun inviteListWithHttpInfo(org: kotlin.String) : ApiResponse<kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement>?> = withContext(Dispatchers.IO) {
+    suspend fun inviteListWithHttpInfo(org: kotlin.String) : ApiResponse<InviteList200Response?> = withContext(Dispatchers.IO) {
         val localVariableConfig = inviteListRequestConfig(org = org)
 
-        return@withContext request<Unit, kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement>>(
+        return@withContext request<Unit, InviteList200Response>(
             localVariableConfig
         )
     }

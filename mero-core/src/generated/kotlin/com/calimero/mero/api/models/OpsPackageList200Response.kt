@@ -23,6 +23,7 @@
 
 package com.calimero.mero.api.models
 
+import com.calimero.mero.api.models.Package
 
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.SerialName
@@ -38,7 +39,7 @@ import kotlinx.serialization.Contextual
 data class OpsPackageList200Response (
 
     @SerialName(value = "packages")
-    val packages: kotlin.collections.List<@Contextual kotlinx.serialization.json.JsonElement?>
+    val packages: kotlin.collections.List<Package>
 
 ) {
 

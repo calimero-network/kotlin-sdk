@@ -51,11 +51,11 @@ class PublicFacade internal constructor(
         api(null, null, emptySet()).publicApi.health()
 
     /**
-     * A signing key's organization
+     * Whether a signing key is bound
      *
-     * The organization a package signing key (`did:key`) is bound to, if any.
+     * Whether a package signing key (`did:key`) is bound to an organization on this cluster (`bound`, never which), and its binding generation (`0`: never bound).
      *
-     * **Who:** anyone.
+     * **Who:** signed in (a session or an API key).
      *
      * `GET /publishers/{signer}` (`publisher_binding`).
      *
@@ -63,13 +63,13 @@ class PublicFacade internal constructor(
      */
     suspend fun publisherBinding(
         signer: kotlin.String,
-    ): kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement> =
+    ): PublisherBinding200Response =
         api(null, null, emptySet()).publicApi.publisherBinding(signer = signer)
 
     /**
      * The cluster's releases
      *
-     * The mero-tee releases the cluster's nodes run and the deadlines set on them.
+     * The cluster's governance and the deadlines set on mero-tee releases, oldest release first: after `after` (RFC 3339; `afterSecs` Unix seconds) a scope that has not approved that release (or a newer one) starts no new work.
      *
      * **Who:** anyone.
      *
@@ -77,6 +77,6 @@ class PublicFacade internal constructor(
      *
      * @throws com.calimero.mero.CalimeroError the node's refusal, typed by [com.calimero.mero.errorFrom].
      */
-    suspend fun releasesPublic(): kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement> =
+    suspend fun releasesPublic(): ReleasesPublic200Response =
         api(null, null, emptySet()).publicApi.releasesPublic()
 }

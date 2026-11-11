@@ -23,6 +23,10 @@
 
 package com.calimero.mero.api.models
 
+import com.calimero.mero.api.models.AppScope
+import com.calimero.mero.api.models.ClusterRelease
+import com.calimero.mero.api.models.Governance
+import com.calimero.mero.api.models.ReportApp
 
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.SerialName
@@ -42,20 +46,20 @@ import kotlinx.serialization.Contextual
 
 data class AccountApps200Response (
 
-    @Contextual @SerialName(value = "scope")
-    val scope: kotlinx.serialization.json.JsonElement?,
+    @SerialName(value = "scope")
+    val scope: AppScope,
 
-    @Contextual @SerialName(value = "governance")
-    val governance: kotlinx.serialization.json.JsonElement?,
+    @SerialName(value = "governance")
+    val governance: Governance,
 
-    @Contextual @SerialName(value = "approvedReleases")
-    val approvedReleases: kotlinx.serialization.json.JsonElement?,
+    @SerialName(value = "approvedReleases")
+    val approvedReleases: kotlin.collections.List<kotlin.String>?,
 
-    @Contextual @SerialName(value = "clusterReleases")
-    val clusterReleases: kotlinx.serialization.json.JsonElement?,
+    @SerialName(value = "clusterReleases")
+    val clusterReleases: kotlin.collections.List<ClusterRelease>,
 
     @SerialName(value = "apps")
-    val apps: kotlin.collections.List<@Contextual kotlinx.serialization.json.JsonElement?>,
+    val apps: kotlin.collections.List<ReportApp>,
 
     @SerialName(value = "next")
     val next: kotlin.String?

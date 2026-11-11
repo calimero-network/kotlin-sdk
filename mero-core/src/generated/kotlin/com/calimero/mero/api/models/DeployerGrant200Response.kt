@@ -23,6 +23,7 @@
 
 package com.calimero.mero.api.models
 
+import com.calimero.mero.api.models.DeployerGrant
 
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.SerialName
@@ -45,8 +46,8 @@ data class DeployerGrant200Response (
     @SerialName(value = "deployer")
     val deployer: com.calimero.mero.Deployer,
 
-    @Contextual @SerialName(value = "grant")
-    val grant: kotlinx.serialization.json.JsonElement?
+    @SerialName(value = "grant")
+    val grant: DeployerGrant
 
 ) {
 

@@ -40,13 +40,15 @@ class DeploymentsFacade internal constructor(
     /**
      * The deployers
      *
+     * The operator, or the cluster's owner: the deployments and deployers governance, the owner (`null` until named), and every grant (`until` RFC 3339 and `untilSecs`, `null` for none; `grantedAt` RFC 3339; `deployer` `null` for a key it cannot read).
+     *
      * **Who:** an account holder (a passkey session not bound to an app's frontend).
      *
      * `GET /deployers` (`deployer_list`).
      *
      * @throws com.calimero.mero.CalimeroError the node's refusal, typed by [com.calimero.mero.errorFrom].
      */
-    suspend fun deployerList(): kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement> =
+    suspend fun deployerList(): DeployerList200Response =
         api(null, null, emptySet()).signUpAndDeployments.deployerList()
 
     /**
@@ -69,7 +71,7 @@ class DeploymentsFacade internal constructor(
     /**
      * Create a deployment
      *
-     * A named set of releases an owner (an account or organization) offers for others to instantiate.
+     * A named set of releases an owner (an account or organization) offers for others to instantiate. Answers its id, the record as made (no apps yet) and its frontend host (`null` on a node with no apps domain).
      *
      * **Who:** an account holder (a passkey session not bound to an app's frontend). **Step-up:** answers `412 CONFIRM_REQUIRED` first; send the same request again with `confirm`, a passkey assertion over `details.challenge`.
      *
@@ -156,6 +158,8 @@ class DeploymentsFacade internal constructor(
     /**
      * The organizations a deployment serves
      *
+     * For its managers: each organization with instances from it, its name (`null` when unknown), member counts (`activeMembers30d`: active in the last 30 days), its instances and the releases they run, and when its first was created (RFC 3339); instances outside an organization are only counted (`outsideOrgs`). Never who the members are.
+     *
      * **Who:** signed in (a session or an API key).
      *
      * `GET /deployments/{id}/orgs` (`deployment_orgs`).
@@ -164,7 +168,7 @@ class DeploymentsFacade internal constructor(
      */
     suspend fun orgs(
         id: kotlin.String,
-    ): kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement?> =
+    ): DeploymentOrgs200Response =
         api(null, null, emptySet()).signUpAndDeployments.deploymentOrgs(id = id)
 
     /**
@@ -212,7 +216,7 @@ class DeploymentsFacade internal constructor(
      *
      * @throws com.calimero.mero.CalimeroError the node's refusal, typed by [com.calimero.mero.errorFrom].
      */
-    suspend fun signUpInviteList(): kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement> =
+    suspend fun signUpInviteList(): SignUpInviteList200Response =
         api(null, null, emptySet()).signUpAndDeployments.signUpInviteList()
 
     /**

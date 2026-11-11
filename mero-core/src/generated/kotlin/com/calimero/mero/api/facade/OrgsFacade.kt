@@ -51,7 +51,7 @@ class OrgsFacade internal constructor(
         apps: kotlin.collections.List<AppTeamsScopeRequestAppsInner>? = null,
         shared: kotlin.Boolean? = null,
         passkey: PasskeyProvider? = null,
-    ): kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement> =
+    ): AppTeamsScope200Response =
         api(passkey, null, emptySet()).organizations.appTeamsScope(org = org, appTeamsScopeRequest = AppTeamsScopeRequest(apps = apps, shared = shared))
 
     /**
@@ -81,7 +81,7 @@ class OrgsFacade internal constructor(
     /**
      * The organization's invites
      *
-     * Their keys and terms, never a token.
+     * Their keys and terms, never a token: `expiresAt` Unix seconds; `createdBy` and `createdAt` are `null` on an invite from before they were kept.
      *
      * **Who:** a passkey session (an API key is refused).
      *
@@ -91,7 +91,7 @@ class OrgsFacade internal constructor(
      */
     suspend fun inviteList(
         org: kotlin.String,
-    ): kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement> =
+    ): InviteList200Response =
         api(null, null, emptySet()).organizations.inviteList(org = org)
 
     /**

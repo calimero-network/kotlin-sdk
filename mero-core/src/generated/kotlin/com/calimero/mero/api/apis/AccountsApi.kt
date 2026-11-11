@@ -30,6 +30,7 @@ import okhttp3.HttpUrl
 import com.calimero.mero.api.models.AccountApps200Response
 import com.calimero.mero.api.models.AccountOutboundApprovalRequest
 import com.calimero.mero.api.models.AccountProofProveRequest
+import com.calimero.mero.api.models.AccountRecoveryBeginRequest
 import com.calimero.mero.api.models.AccountRecoveryFinishRequest
 import com.calimero.mero.api.models.AccountRecoveryStart200Response
 import com.calimero.mero.api.models.AccountRecoveryStartRequest
@@ -323,7 +324,7 @@ open class AccountsApi(basePath: kotlin.String = defaultBasePath, client: Call.F
      * POST /auth/recovery/begin
      * Start an account recovery
      * Signed out, with the recovery code: creation options for the passkey that will replace the lost ones.  **Who:** anyone.
-     * @param recoveryCreate200Response 
+     * @param accountRecoveryBeginRequest 
      * @return RegisterBegin200Response
      * @throws IllegalStateException If the request is not correctly configured
      * @throws IOException Rethrows the OkHttp execute method exception
@@ -333,8 +334,8 @@ open class AccountsApi(basePath: kotlin.String = defaultBasePath, client: Call.F
      */
     @Suppress("UNCHECKED_CAST")
     @Throws(IllegalStateException::class, IOException::class, UnsupportedOperationException::class, ClientException::class, ServerException::class)
-    suspend fun accountRecoveryBegin(recoveryCreate200Response: RecoveryCreate200Response) : RegisterBegin200Response = withContext(Dispatchers.IO) {
-        val localVarResponse = accountRecoveryBeginWithHttpInfo(recoveryCreate200Response = recoveryCreate200Response)
+    suspend fun accountRecoveryBegin(accountRecoveryBeginRequest: AccountRecoveryBeginRequest) : RegisterBegin200Response = withContext(Dispatchers.IO) {
+        val localVarResponse = accountRecoveryBeginWithHttpInfo(accountRecoveryBeginRequest = accountRecoveryBeginRequest)
 
         return@withContext when (localVarResponse.responseType) {
             ResponseType.Success -> (localVarResponse as Success<*>).data as RegisterBegin200Response
@@ -355,17 +356,17 @@ open class AccountsApi(basePath: kotlin.String = defaultBasePath, client: Call.F
      * POST /auth/recovery/begin
      * Start an account recovery
      * Signed out, with the recovery code: creation options for the passkey that will replace the lost ones.  **Who:** anyone.
-     * @param recoveryCreate200Response 
+     * @param accountRecoveryBeginRequest 
      * @return ApiResponse<RegisterBegin200Response?>
      * @throws IllegalStateException If the request is not correctly configured
      * @throws IOException Rethrows the OkHttp execute method exception
      */
     @Suppress("UNCHECKED_CAST")
     @Throws(IllegalStateException::class, IOException::class)
-    suspend fun accountRecoveryBeginWithHttpInfo(recoveryCreate200Response: RecoveryCreate200Response) : ApiResponse<RegisterBegin200Response?> = withContext(Dispatchers.IO) {
-        val localVariableConfig = accountRecoveryBeginRequestConfig(recoveryCreate200Response = recoveryCreate200Response)
+    suspend fun accountRecoveryBeginWithHttpInfo(accountRecoveryBeginRequest: AccountRecoveryBeginRequest) : ApiResponse<RegisterBegin200Response?> = withContext(Dispatchers.IO) {
+        val localVariableConfig = accountRecoveryBeginRequestConfig(accountRecoveryBeginRequest = accountRecoveryBeginRequest)
 
-        return@withContext request<RecoveryCreate200Response, RegisterBegin200Response>(
+        return@withContext request<AccountRecoveryBeginRequest, RegisterBegin200Response>(
             localVariableConfig
         )
     }
@@ -373,11 +374,11 @@ open class AccountsApi(basePath: kotlin.String = defaultBasePath, client: Call.F
     /**
      * To obtain the request config of the operation accountRecoveryBegin
      *
-     * @param recoveryCreate200Response 
+     * @param accountRecoveryBeginRequest 
      * @return RequestConfig
      */
-    fun accountRecoveryBeginRequestConfig(recoveryCreate200Response: RecoveryCreate200Response) : RequestConfig<RecoveryCreate200Response> {
-        val localVariableBody = recoveryCreate200Response
+    fun accountRecoveryBeginRequestConfig(accountRecoveryBeginRequest: AccountRecoveryBeginRequest) : RequestConfig<AccountRecoveryBeginRequest> {
+        val localVariableBody = accountRecoveryBeginRequest
         val localVariableQuery: MultiValueMap = mutableMapOf()
         val localVariableHeaders: MutableMap<String, String> = mutableMapOf()
         localVariableHeaders["Content-Type"] = "application/json"
@@ -2383,7 +2384,7 @@ open class AccountsApi(basePath: kotlin.String = defaultBasePath, client: Call.F
     /**
      * GET /auth/sessions
      * The account&#39;s live sessions
-     * Latest active first, at most 256.  **Who:** an account holder (a passkey session not bound to an app&#39;s frontend).
+     * Latest active first, at most 256. &#x60;openedAt&#x60; (Unix seconds) is &#x60;null&#x60; for a session opened before the node kept it.  **Who:** an account holder (a passkey session not bound to an app&#39;s frontend).
      * @return SessionsList200Response
      * @throws IllegalStateException If the request is not correctly configured
      * @throws IOException Rethrows the OkHttp execute method exception
@@ -2414,7 +2415,7 @@ open class AccountsApi(basePath: kotlin.String = defaultBasePath, client: Call.F
     /**
      * GET /auth/sessions
      * The account&#39;s live sessions
-     * Latest active first, at most 256.  **Who:** an account holder (a passkey session not bound to an app&#39;s frontend).
+     * Latest active first, at most 256. &#x60;openedAt&#x60; (Unix seconds) is &#x60;null&#x60; for a session opened before the node kept it.  **Who:** an account holder (a passkey session not bound to an app&#39;s frontend).
      * @return ApiResponse<SessionsList200Response?>
      * @throws IllegalStateException If the request is not correctly configured
      * @throws IOException Rethrows the OkHttp execute method exception

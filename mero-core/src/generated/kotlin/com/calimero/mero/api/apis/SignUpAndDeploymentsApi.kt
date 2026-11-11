@@ -30,6 +30,7 @@ import okhttp3.HttpUrl
 import com.calimero.mero.api.models.ConfirmOnly
 import com.calimero.mero.api.models.DeployerGrant200Response
 import com.calimero.mero.api.models.DeployerGrantRequest
+import com.calimero.mero.api.models.DeployerList200Response
 import com.calimero.mero.api.models.DeployerRevoke200Response
 import com.calimero.mero.api.models.DeploymentCreate200Response
 import com.calimero.mero.api.models.DeploymentCreateRequest
@@ -38,9 +39,11 @@ import com.calimero.mero.api.models.DeploymentGet200Response
 import com.calimero.mero.api.models.DeploymentList200Response
 import com.calimero.mero.api.models.DeploymentOffer200Response
 import com.calimero.mero.api.models.DeploymentOfferRequest
+import com.calimero.mero.api.models.DeploymentOrgs200Response
 import com.calimero.mero.api.models.Error
 import com.calimero.mero.api.models.SignUpInviteCreate200Response
 import com.calimero.mero.api.models.SignUpInviteCreateRequest
+import com.calimero.mero.api.models.SignUpInviteList200Response
 import com.calimero.mero.api.models.SignUpPublic200Response
 import com.calimero.mero.api.models.SignUpSetRequest
 
@@ -149,8 +152,8 @@ open class SignUpAndDeploymentsApi(basePath: kotlin.String = defaultBasePath, cl
     /**
      * GET /deployers
      * The deployers
-     * **Who:** an account holder (a passkey session not bound to an app&#39;s frontend).
-     * @return kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement>
+     * The operator, or the cluster&#39;s owner: the deployments and deployers governance, the owner (&#x60;null&#x60; until named), and every grant (&#x60;until&#x60; RFC 3339 and &#x60;untilSecs&#x60;, &#x60;null&#x60; for none; &#x60;grantedAt&#x60; RFC 3339; &#x60;deployer&#x60; &#x60;null&#x60; for a key it cannot read).  **Who:** an account holder (a passkey session not bound to an app&#39;s frontend).
+     * @return DeployerList200Response
      * @throws IllegalStateException If the request is not correctly configured
      * @throws IOException Rethrows the OkHttp execute method exception
      * @throws UnsupportedOperationException If the API returns an informational or redirection response
@@ -159,11 +162,11 @@ open class SignUpAndDeploymentsApi(basePath: kotlin.String = defaultBasePath, cl
      */
     @Suppress("UNCHECKED_CAST")
     @Throws(IllegalStateException::class, IOException::class, UnsupportedOperationException::class, ClientException::class, ServerException::class)
-    suspend fun deployerList() : kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement> = withContext(Dispatchers.IO) {
+    suspend fun deployerList() : DeployerList200Response = withContext(Dispatchers.IO) {
         val localVarResponse = deployerListWithHttpInfo()
 
         return@withContext when (localVarResponse.responseType) {
-            ResponseType.Success -> (localVarResponse as Success<*>).data as kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement>
+            ResponseType.Success -> (localVarResponse as Success<*>).data as DeployerList200Response
             ResponseType.Informational -> throw UnsupportedOperationException("Client does not support Informational responses.")
             ResponseType.Redirection -> throw UnsupportedOperationException("Client does not support Redirection responses.")
             ResponseType.ClientError -> {
@@ -180,17 +183,17 @@ open class SignUpAndDeploymentsApi(basePath: kotlin.String = defaultBasePath, cl
     /**
      * GET /deployers
      * The deployers
-     * **Who:** an account holder (a passkey session not bound to an app&#39;s frontend).
-     * @return ApiResponse<kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement>?>
+     * The operator, or the cluster&#39;s owner: the deployments and deployers governance, the owner (&#x60;null&#x60; until named), and every grant (&#x60;until&#x60; RFC 3339 and &#x60;untilSecs&#x60;, &#x60;null&#x60; for none; &#x60;grantedAt&#x60; RFC 3339; &#x60;deployer&#x60; &#x60;null&#x60; for a key it cannot read).  **Who:** an account holder (a passkey session not bound to an app&#39;s frontend).
+     * @return ApiResponse<DeployerList200Response?>
      * @throws IllegalStateException If the request is not correctly configured
      * @throws IOException Rethrows the OkHttp execute method exception
      */
     @Suppress("UNCHECKED_CAST")
     @Throws(IllegalStateException::class, IOException::class)
-    suspend fun deployerListWithHttpInfo() : ApiResponse<kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement>?> = withContext(Dispatchers.IO) {
+    suspend fun deployerListWithHttpInfo() : ApiResponse<DeployerList200Response?> = withContext(Dispatchers.IO) {
         val localVariableConfig = deployerListRequestConfig()
 
-        return@withContext request<Unit, kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement>>(
+        return@withContext request<Unit, DeployerList200Response>(
             localVariableConfig
         )
     }
@@ -296,7 +299,7 @@ open class SignUpAndDeploymentsApi(basePath: kotlin.String = defaultBasePath, cl
     /**
      * POST /deployments
      * Create a deployment
-     * A named set of releases an owner (an account or organization) offers for others to instantiate.  **Who:** an account holder (a passkey session not bound to an app&#39;s frontend). **Step-up:** answers &#x60;412 CONFIRM_REQUIRED&#x60; first; send the same request again with &#x60;confirm&#x60;, a passkey assertion over &#x60;details.challenge&#x60;.
+     * A named set of releases an owner (an account or organization) offers for others to instantiate. Answers its id, the record as made (no apps yet) and its frontend host (&#x60;null&#x60; on a node with no apps domain).  **Who:** an account holder (a passkey session not bound to an app&#39;s frontend). **Step-up:** answers &#x60;412 CONFIRM_REQUIRED&#x60; first; send the same request again with &#x60;confirm&#x60;, a passkey assertion over &#x60;details.challenge&#x60;.
      * @param deploymentCreateRequest 
      * @return DeploymentCreate200Response
      * @throws IllegalStateException If the request is not correctly configured
@@ -328,7 +331,7 @@ open class SignUpAndDeploymentsApi(basePath: kotlin.String = defaultBasePath, cl
     /**
      * POST /deployments
      * Create a deployment
-     * A named set of releases an owner (an account or organization) offers for others to instantiate.  **Who:** an account holder (a passkey session not bound to an app&#39;s frontend). **Step-up:** answers &#x60;412 CONFIRM_REQUIRED&#x60; first; send the same request again with &#x60;confirm&#x60;, a passkey assertion over &#x60;details.challenge&#x60;.
+     * A named set of releases an owner (an account or organization) offers for others to instantiate. Answers its id, the record as made (no apps yet) and its frontend host (&#x60;null&#x60; on a node with no apps domain).  **Who:** an account holder (a passkey session not bound to an app&#39;s frontend). **Step-up:** answers &#x60;412 CONFIRM_REQUIRED&#x60; first; send the same request again with &#x60;confirm&#x60;, a passkey assertion over &#x60;details.challenge&#x60;.
      * @param deploymentCreateRequest 
      * @return ApiResponse<DeploymentCreate200Response?>
      * @throws IllegalStateException If the request is not correctly configured
@@ -667,9 +670,9 @@ open class SignUpAndDeploymentsApi(basePath: kotlin.String = defaultBasePath, cl
     /**
      * GET /deployments/{id}/orgs
      * The organizations a deployment serves
-     * **Who:** signed in (a session or an API key).
+     * For its managers: each organization with instances from it, its name (&#x60;null&#x60; when unknown), member counts (&#x60;activeMembers30d&#x60;: active in the last 30 days), its instances and the releases they run, and when its first was created (RFC 3339); instances outside an organization are only counted (&#x60;outsideOrgs&#x60;). Never who the members are.  **Who:** signed in (a session or an API key).
      * @param id 
-     * @return kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement?>
+     * @return DeploymentOrgs200Response
      * @throws IllegalStateException If the request is not correctly configured
      * @throws IOException Rethrows the OkHttp execute method exception
      * @throws UnsupportedOperationException If the API returns an informational or redirection response
@@ -678,11 +681,11 @@ open class SignUpAndDeploymentsApi(basePath: kotlin.String = defaultBasePath, cl
      */
     @Suppress("UNCHECKED_CAST")
     @Throws(IllegalStateException::class, IOException::class, UnsupportedOperationException::class, ClientException::class, ServerException::class)
-    suspend fun deploymentOrgs(id: kotlin.String) : kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement?> = withContext(Dispatchers.IO) {
+    suspend fun deploymentOrgs(id: kotlin.String) : DeploymentOrgs200Response = withContext(Dispatchers.IO) {
         val localVarResponse = deploymentOrgsWithHttpInfo(id = id)
 
         return@withContext when (localVarResponse.responseType) {
-            ResponseType.Success -> (localVarResponse as Success<*>).data as kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement?>
+            ResponseType.Success -> (localVarResponse as Success<*>).data as DeploymentOrgs200Response
             ResponseType.Informational -> throw UnsupportedOperationException("Client does not support Informational responses.")
             ResponseType.Redirection -> throw UnsupportedOperationException("Client does not support Redirection responses.")
             ResponseType.ClientError -> {
@@ -699,18 +702,18 @@ open class SignUpAndDeploymentsApi(basePath: kotlin.String = defaultBasePath, cl
     /**
      * GET /deployments/{id}/orgs
      * The organizations a deployment serves
-     * **Who:** signed in (a session or an API key).
+     * For its managers: each organization with instances from it, its name (&#x60;null&#x60; when unknown), member counts (&#x60;activeMembers30d&#x60;: active in the last 30 days), its instances and the releases they run, and when its first was created (RFC 3339); instances outside an organization are only counted (&#x60;outsideOrgs&#x60;). Never who the members are.  **Who:** signed in (a session or an API key).
      * @param id 
-     * @return ApiResponse<kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement?>?>
+     * @return ApiResponse<DeploymentOrgs200Response?>
      * @throws IllegalStateException If the request is not correctly configured
      * @throws IOException Rethrows the OkHttp execute method exception
      */
     @Suppress("UNCHECKED_CAST")
     @Throws(IllegalStateException::class, IOException::class)
-    suspend fun deploymentOrgsWithHttpInfo(id: kotlin.String) : ApiResponse<kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement?>?> = withContext(Dispatchers.IO) {
+    suspend fun deploymentOrgsWithHttpInfo(id: kotlin.String) : ApiResponse<DeploymentOrgs200Response?> = withContext(Dispatchers.IO) {
         val localVariableConfig = deploymentOrgsRequestConfig(id = id)
 
-        return@withContext request<Unit, kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement?>>(
+        return@withContext request<Unit, DeploymentOrgs200Response>(
             localVariableConfig
         )
     }
@@ -895,7 +898,7 @@ open class SignUpAndDeploymentsApi(basePath: kotlin.String = defaultBasePath, cl
      * GET /sign-up/invites
      * Cluster sign-up invites
      * **Who:** an account holder (a passkey session not bound to an app&#39;s frontend).
-     * @return kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement>
+     * @return SignUpInviteList200Response
      * @throws IllegalStateException If the request is not correctly configured
      * @throws IOException Rethrows the OkHttp execute method exception
      * @throws UnsupportedOperationException If the API returns an informational or redirection response
@@ -904,11 +907,11 @@ open class SignUpAndDeploymentsApi(basePath: kotlin.String = defaultBasePath, cl
      */
     @Suppress("UNCHECKED_CAST")
     @Throws(IllegalStateException::class, IOException::class, UnsupportedOperationException::class, ClientException::class, ServerException::class)
-    suspend fun signUpInviteList() : kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement> = withContext(Dispatchers.IO) {
+    suspend fun signUpInviteList() : SignUpInviteList200Response = withContext(Dispatchers.IO) {
         val localVarResponse = signUpInviteListWithHttpInfo()
 
         return@withContext when (localVarResponse.responseType) {
-            ResponseType.Success -> (localVarResponse as Success<*>).data as kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement>
+            ResponseType.Success -> (localVarResponse as Success<*>).data as SignUpInviteList200Response
             ResponseType.Informational -> throw UnsupportedOperationException("Client does not support Informational responses.")
             ResponseType.Redirection -> throw UnsupportedOperationException("Client does not support Redirection responses.")
             ResponseType.ClientError -> {
@@ -926,16 +929,16 @@ open class SignUpAndDeploymentsApi(basePath: kotlin.String = defaultBasePath, cl
      * GET /sign-up/invites
      * Cluster sign-up invites
      * **Who:** an account holder (a passkey session not bound to an app&#39;s frontend).
-     * @return ApiResponse<kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement>?>
+     * @return ApiResponse<SignUpInviteList200Response?>
      * @throws IllegalStateException If the request is not correctly configured
      * @throws IOException Rethrows the OkHttp execute method exception
      */
     @Suppress("UNCHECKED_CAST")
     @Throws(IllegalStateException::class, IOException::class)
-    suspend fun signUpInviteListWithHttpInfo() : ApiResponse<kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement>?> = withContext(Dispatchers.IO) {
+    suspend fun signUpInviteListWithHttpInfo() : ApiResponse<SignUpInviteList200Response?> = withContext(Dispatchers.IO) {
         val localVariableConfig = signUpInviteListRequestConfig()
 
-        return@withContext request<Unit, kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement>>(
+        return@withContext request<Unit, SignUpInviteList200Response>(
             localVariableConfig
         )
     }

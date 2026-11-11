@@ -41,8 +41,8 @@ data class OpsOrgs200ResponseOrgsInner (
     @SerialName(value = "org")
     val org: kotlin.String,
 
-    @Contextual @SerialName(value = "approvedReleases")
-    val approvedReleases: kotlinx.serialization.json.JsonElement?
+    @SerialName(value = "approvedReleases")
+    val approvedReleases: kotlin.collections.List<kotlin.String>?
 
 ) {
 

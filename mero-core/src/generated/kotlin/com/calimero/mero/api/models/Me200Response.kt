@@ -25,6 +25,8 @@ package com.calimero.mero.api.models
 
 import com.calimero.mero.api.models.Me200ResponseOrgsInner
 import com.calimero.mero.api.models.Me200ResponsePasskeysInner
+import com.calimero.mero.api.models.Me200ResponseRecoveryPending
+import com.calimero.mero.api.models.OutboundApproval
 
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.SerialName
@@ -68,11 +70,11 @@ data class Me200Response (
     @SerialName(value = "passkeyId")
     val passkeyId: kotlin.String?,
 
-    @Contextual @SerialName(value = "approvedReleases")
-    val approvedReleases: kotlinx.serialization.json.JsonElement?,
+    @SerialName(value = "approvedReleases")
+    val approvedReleases: kotlin.collections.List<kotlin.String>,
 
     @Contextual @SerialName(value = "outboundApprovals")
-    val outboundApprovals: kotlinx.serialization.json.JsonElement?,
+    val outboundApprovals: kotlin.collections.Map<kotlin.String, OutboundApproval>,
 
     @SerialName(value = "app")
     val app: kotlin.String? = null,
@@ -80,11 +82,11 @@ data class Me200Response (
     @SerialName(value = "origin")
     val origin: kotlin.String? = null,
 
-    @Contextual @SerialName(value = "recoveryCode")
-    val recoveryCode: kotlinx.serialization.json.JsonElement? = null,
+    @SerialName(value = "recoveryCode")
+    val recoveryCode: kotlin.Boolean? = null,
 
-    @Contextual @SerialName(value = "recoveryPending")
-    val recoveryPending: kotlinx.serialization.json.JsonElement? = null
+    @SerialName(value = "recoveryPending")
+    val recoveryPending: Me200ResponseRecoveryPending? = null
 
 ) {
 

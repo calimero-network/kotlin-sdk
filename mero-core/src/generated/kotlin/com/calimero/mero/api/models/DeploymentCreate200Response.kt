@@ -23,19 +23,28 @@
 
 package com.calimero.mero.api.models
 
+import com.calimero.mero.api.models.DeploymentRecord
 
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Contextual
 
 /**
- * Other properties than those listed may be present: the ones listed are those clients rely on.
+ * 
  *
+ * @param id 
+ * @param deployment 
  * @param host 
  */
 @Serializable
 
 data class DeploymentCreate200Response (
+
+    @SerialName(value = "id")
+    val id: kotlin.String,
+
+    @SerialName(value = "deployment")
+    val deployment: DeploymentRecord,
 
     @SerialName(value = "host")
     val host: kotlin.String?

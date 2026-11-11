@@ -23,6 +23,7 @@
 
 package com.calimero.mero.api.models
 
+import com.calimero.mero.api.models.Governance
 import com.calimero.mero.api.models.OpsOrgs200ResponseOrgsInner
 
 import kotlinx.serialization.Serializable
@@ -44,8 +45,8 @@ data class OpsOrgs200Response (
     @SerialName(value = "fresh")
     val fresh: kotlin.Boolean,
 
-    @Contextual @SerialName(value = "governance")
-    val governance: kotlinx.serialization.json.JsonElement?,
+    @SerialName(value = "governance")
+    val governance: Governance,
 
     @SerialName(value = "orgs")
     val orgs: kotlin.collections.List<OpsOrgs200ResponseOrgsInner>,

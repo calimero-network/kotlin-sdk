@@ -23,6 +23,7 @@
 
 package com.calimero.mero.api.models
 
+import com.calimero.mero.api.models.PresenceGet200ResponsePresentInner
 
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.SerialName
@@ -38,7 +39,7 @@ import kotlinx.serialization.Contextual
 data class PresenceGet200Response (
 
     @SerialName(value = "present")
-    val present: kotlin.collections.List<@Contextual kotlinx.serialization.json.JsonElement?>
+    val present: kotlin.collections.List<PresenceGet200ResponsePresentInner>
 
 ) {
 

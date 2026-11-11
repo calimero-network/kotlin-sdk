@@ -4,8 +4,8 @@
 
 ### The API client is generated from core's OpenAPI document (mero-core)
 
-- `openapi/openapi.json` vendors core's node API (`docs/public/openapi.json`, commit in
-  `openapi/SOURCE`); `scripts/refresh-openapi.sh [ref]` refreshes it and regenerates,
+- `openapi/openapi.json` vendors core's node API (`docs/public/openapi.json` on core's master,
+  commit in `openapi/SOURCE`); `scripts/refresh-openapi.sh [ref]` refreshes it and regenerates,
   `--check` (CI) fails on a stale or hand-edited client. See `openapi/README.md`.
 - **Facade**: `client.orgs`, `client.apps`, `client.accounts`, `client.packages`, `client.deployments`,
   `client.consent`, `client.cluster`, `client.ops`: one suspend method per operation, the body's fields

@@ -36,8 +36,8 @@ val checkSpec =
         }
     }
 
-// What the generator reads: the vendored document less one construct it renders as Kotlin that
-// does not compile (see prepare-spec.py).
+// What the generator reads: the vendored document with its `oneOf` request body named as a
+// component, so schemaMappings can map it (see prepare-spec.py).
 val prepared = layout.buildDirectory.file("openapi-prepared.json")
 val prepareSpec =
     tasks.register<Exec>("prepareSpec") {

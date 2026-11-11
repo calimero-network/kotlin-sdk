@@ -84,7 +84,7 @@ class AuthFacade internal constructor(
     suspend fun accountRecoveryBegin(
         code: kotlin.String,
     ): RegisterBegin200Response =
-        api(null, null, emptySet()).accounts.accountRecoveryBegin(recoveryCreate200Response = RecoveryCreate200Response(code = code))
+        api(null, null, emptySet()).accounts.accountRecoveryBegin(accountRecoveryBeginRequest = AccountRecoveryBeginRequest(code = code))
 
     /**
      * Cancel an account recovery
@@ -531,7 +531,7 @@ class AuthFacade internal constructor(
     /**
      * The account's live sessions
      *
-     * Latest active first, at most 256.
+     * Latest active first, at most 256. `openedAt` (Unix seconds) is `null` for a session opened before the node kept it.
      *
      * **Who:** an account holder (a passkey session not bound to an app's frontend).
      *
