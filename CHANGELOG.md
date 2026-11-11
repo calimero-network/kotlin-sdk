@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.4.0
 
 ### The API client is generated from core's OpenAPI document (mero-core)
 
