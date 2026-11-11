@@ -2150,7 +2150,7 @@ class CalimeroClient(
      */
     @Deprecated(
         "Use the generated facade: deployments.create",
-        ReplaceWith("deployments.create(name = name, owner = owner, passkey = passkey)[\"id\"]"),
+        ReplaceWith("deployments.create(name = name, owner = owner, passkey = passkey).id"),
     )
     suspend fun createDeployment(
         name: String,
