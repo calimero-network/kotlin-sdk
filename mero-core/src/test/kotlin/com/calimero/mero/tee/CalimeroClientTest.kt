@@ -876,9 +876,8 @@ class CalimeroClientTest {
                     ?.account,
             )
             assertEquals(JsonArray(listOf(JsonPrimitive("acc-1"))), client.orgs.recoveryFinish(org = "o1", passkey = passkey).previousOwners)
-            // No key removes it: the generated request leaves the null out (the spec does not require the field).
-            client.orgs.recoverySet(org = "o1", publicKey = null, passkey = passkey)
-            assertTrue((sent(cluster, 7)["publicKey"] ?: JsonNull) == JsonNull)
+            client.orgs.recoverySet(org = "o1", publicKey = Explicit(null), passkey = passkey)
+            assertEquals(JsonNull, sent(cluster, 7)["publicKey"])
             client.orgs.recoveryCancel(org = "o1", passkey = passkey)
             assertEquals("/orgs/o1/recovery/cancel", path(cluster.nodes[0].requests[9].first))
             val me = client.auth.me()
