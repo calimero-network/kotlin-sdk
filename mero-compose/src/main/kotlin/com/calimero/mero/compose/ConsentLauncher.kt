@@ -15,7 +15,7 @@ import com.calimero.mero.OpenConsentOptions
  * there, never in the app: the app asks ([CalimeroClient.requestConsent]), the page decides, and
  * sends the person back to the request's `returnTo` with `?request_id=…&result=…`, which the app
  * hands to [MeroAppSession.handle] (or reads with [com.calimero.mero.consentReturn]) and confirms
- * with [CalimeroClient.consentResult]. (Swift `ConsentLauncher`.)
+ * with `client.consent.pageResult` ([ConsentResult.from]). (Swift `ConsentLauncher`.)
  */
 object ConsentLauncher {
     /** Open [url] in a Custom Tab. */

@@ -1,8 +1,6 @@
 package com.calimero.mero.tee
 
-import com.calimero.mero.ApiKeyOptions
 import com.calimero.mero.AppError
-import com.calimero.mero.AppSource
 import com.calimero.mero.BadOrigin
 import com.calimero.mero.CalimeroClient
 import com.calimero.mero.CalimeroClientOptions
@@ -17,6 +15,7 @@ import com.calimero.mero.ConfirmRequired
 import com.calimero.mero.ConsentRequest
 import com.calimero.mero.ConsentScope
 import com.calimero.mero.Deployer
+import com.calimero.mero.DeployersInfo
 import com.calimero.mero.DirectoryError
 import com.calimero.mero.DirectoryFailure
 import com.calimero.mero.DirectoryNode
@@ -25,7 +24,6 @@ import com.calimero.mero.MOCK_QUOTE_HEADER
 import com.calimero.mero.NotFound
 import com.calimero.mero.NotLeader
 import com.calimero.mero.OpenConsentOptions
-import com.calimero.mero.OrgRole
 import com.calimero.mero.OriginNotRegistered
 import com.calimero.mero.OriginTaken
 import com.calimero.mero.PasskeyCancelled
@@ -36,10 +34,10 @@ import com.calimero.mero.SignUpOptions
 import com.calimero.mero.SignUpRefusal
 import com.calimero.mero.SignUpRefused
 import com.calimero.mero.SoftPasskey
-import com.calimero.mero.TeamRole
 import com.calimero.mero.UnavailableError
-import com.calimero.mero.UpgradeKeyScope
 import com.calimero.mero.WrongNode
+import com.calimero.mero.api.models.ApikeyCreateRequestUpgrades
+import com.calimero.mero.api.models.SignUp
 import com.calimero.mero.app.CalimeroAppBackend
 import com.calimero.mero.app.OrgInvitation
 import com.calimero.mero.app.PasskeyRequired
@@ -86,6 +84,7 @@ import java.security.Signature
 import java.security.spec.X509EncodedKeySpec
 import java.util.concurrent.atomic.AtomicInteger
 import com.calimero.mero.api.models.OrgRole as ApiOrgRole
+import com.calimero.mero.api.models.TeamRole as ApiTeamRole
 
 /**
  * [CalimeroClient] against stand-in cloud nodes, through the real sealed channel and a mock
@@ -296,7 +295,7 @@ class CalimeroClientTest {
 
             val follower = Cluster({ _, _ -> refused(421, "NOT_LEADER", """{"leaderUrl":"https://leader.example"}""") }, { _, _ -> json(200, "{}") })
             try {
-                follower.client().get("ops/status")
+                follower.client().ops.status()
                 fail("expected NotLeader")
             } catch (e: NotLeader) {
                 assertEquals("https://leader.example", e.leaderUrl)
@@ -318,7 +317,7 @@ class CalimeroClientTest {
                     }
                 })
             val client = cluster.client()
-            client.deleteOrg("org-1", passkey)
+            client.orgs.delete(org = "org-1", passkey = passkey)
             val confirm = Json.parseToJsonElement(cluster.nodes[0].requests[1].second).jsonObject["confirm"]!!.jsonObject
             assertEquals("c1", confirm["challengeId"]!!.jsonPrimitive.content)
             val assertion = confirm["assertion"]!!.jsonObject
@@ -333,7 +332,7 @@ class CalimeroClientTest {
                     ) = throw PasskeyCancelled()
                 }
             try {
-                client.deleteOrg("org-1", declining)
+                client.orgs.delete(org = "org-1", passkey = declining)
                 fail("expected ConfirmCancelled")
             } catch (_: ConfirmCancelled) {
             }
@@ -587,12 +586,12 @@ class CalimeroClientTest {
             val passkey = softPasskey()
             val cluster = Cluster(stepUp("""{"token":"inv_1","keyId":"k1","key":"cal_x"}"""))
             val client = cluster.client()
-            assertEquals("inv_1", client.invite("org-1", OrgRole.Member, passkey, teams = listOf("t1")))
+            assertEquals("inv_1", client.orgs.inviteCreate(org = "org-1", role = ApiOrgRole.MEMBER, teams = listOf("t1"), passkey = passkey).token)
             assertEquals("/orgs/org-1/invites", path(cluster.nodes[0].requests[1].first))
             assertEquals("c1", sent(cluster, 1)["confirm"]!!.jsonObject["challengeId"]!!.jsonPrimitive.content)
             assertEquals("member", sent(cluster, 1)["role"]!!.jsonPrimitive.content)
 
-            client.removeMember("org-1", "acc-2", passkey)
+            client.orgs.removeMember(org = "org-1", account = "acc-2", passkey = passkey)
             assertEquals(
                 "DELETE",
                 cluster.nodes[0]
@@ -601,8 +600,8 @@ class CalimeroClientTest {
                     .jsonPrimitive.content,
             )
             assertTrue(sent(cluster, 3).containsKey("confirm"))
-            assertEquals("cal_x", client.createApiKey(ApiKeyOptions(label = "ci"), passkey).key)
-            client.setTeamMember("org-1", "t1", "acc-2", passkey, role = TeamRole.Lead)
+            assertEquals("cal_x", client.auth.apikeyCreate(label = "ci", passkey = passkey).key)
+            client.orgs.teamSetMember(org = "org-1", team = "t1", account = "acc-2", role = ApiTeamRole.LEAD, passkey = passkey)
             assertEquals("lead", sent(cluster, 7)["role"]!!.jsonPrimitive.content)
 
             // The app layer without a passkey: nothing is sent.
@@ -647,7 +646,7 @@ class CalimeroClientTest {
             assertEquals("image/png", content.contentType)
             assertEquals("png", content.data.decodeToString())
             assertEquals("/apps/app-1/blobs/B58?grant=g%2B1%2F2", path(cluster.nodes[0].requests[2].first))
-            assertEquals("png", client.downloadBlobGranted("app-1", "B58", "g").decodeToString())
+            assertEquals("png", client.apps.blobDownload(app = "app-1", id = "B58", grant = "g").decodeToString())
         }
 
     @Test
@@ -666,25 +665,32 @@ class CalimeroClientTest {
                             } else {
                                 stepUp("""{"key":"org:o1","deployer":{"org":"o1"},"grant":{}}""")(head, body)
                             }
-                        "/apps" -> json(200, """{"appId":"a1"}""")
+                        "/apps" -> json(200, """{"appId":"a1","contextId":"c1","group":1,"replicas":[0]}""")
+                        "/deployers/org%3Ao1" -> stepUp("""{"key":"org:o1"}""")(head, body)
                         else -> stepUp("""{"id":"d2"}""")(head, body)
                     }
                 })
             val client = cluster.client()
+            // `appXcalls` stays hand-written: the spec types `pending` as an array, the node answers a count.
             val xcalls = client.appXcalls("app-1")
             assertEquals(2L, xcalls.pending)
             assertEquals("ping", xcalls.deadLetters.single().method)
-            assertEquals("Acme", client.deployment("d1").owner?.name)
-            val info = client.deployers()
+            assertEquals("Acme", (client.deployments.get(id = "d1")["owner"] as JsonObject)["name"]!!.jsonPrimitive.content)
+            val info = Json { ignoreUnknownKeys = true }.decodeFromJsonElement(DeployersInfo.serializer(), JsonObject(client.deployments.deployerList().mapValues { it.value ?: JsonNull }))
             assertEquals(Deployer.Org("o1"), info.grants.single().deployer)
             assertEquals(Deployer.Account("acc-1"), info.owner)
-            assertEquals("org:o1", client.grantDeployer(Deployer.Org("o1"), passkey).key)
+            assertEquals("org:o1", client.deployments.deployerGrant(deployer = Deployer.Org("o1"), passkey = passkey).key)
             assertEquals("o1", sent(cluster, 4)["deployer"]!!.jsonObject["org"]!!.jsonPrimitive.content)
-            assertEquals("d2", client.createDeployment("Chat", Deployer.Account("acc-1"), passkey))
+            assertEquals(
+                "d2",
+                client.deployments
+                    .create(name = "Chat", owner = Deployer.Account("acc-1"), passkey = passkey)["id"]!!
+                    .jsonPrimitive.content,
+            )
             assertEquals("acc-1", sent(cluster, 6)["owner"]!!.jsonObject["account"]!!.jsonPrimitive.content)
-            client.revokeDeployer(Deployer.Org("o1"), passkey)
+            client.deployments.deployerRevoke(key = Deployer.Org("o1").key, passkey = passkey)
             assertEquals("/deployers/org%3Ao1", path(cluster.nodes[0].requests[8].first))
-            assertEquals("a1", client.createApp("chat", AppSource.Package("com.calimero.chat", deployment = "d1")))
+            assertEquals("a1", client.apps.create(name = "chat", `package` = "com.calimero.chat", deployment = "d1").appId)
             assertEquals("d1", sent(cluster, 9)["deployment"]!!.jsonPrimitive.content)
             assertEquals("d1", pageDeployment("https://chat.example/1.0.0/?deployment=d1"))
             assertNull(pageDeployment("https://chat.example/1.0.0/"))
@@ -699,14 +705,14 @@ class CalimeroClientTest {
             val cluster =
                 Cluster({ head, body ->
                     when (path(head)) {
-                        "/sign-up" -> json(200, """{"policy":"invite","orgInvites":true,"signUpInvites":true,"inviteRequired":true}""")
+                        "/sign-up" -> json(200, """{"policy":"invite","orgInvites":true,"signUpInvites":true,"inviteRequired":true,"cluster":"eu-shared-1","passkeyTag":"t"}""")
                         "/auth/passkey/register/begin" -> json(200, """{"challengeId":"r1","options":{"challenge":"AAAA","rp":{"id":"localhost"}}}""")
                         else -> stepUp("""{"accountId":"acc-9","sessionToken":"v2.s.sig","expiresAt":1,"refreshToken":"rt_9"}""")(head, body)
                     }
                 })
             val client = cluster.client()
-            val policy = client.signUpPolicy()
-            assertEquals("invite", policy.policy)
+            val policy = client.deployments.signUpPublic()
+            assertEquals(SignUp.INVITE, policy.policy)
             assertTrue(policy.inviteRequired)
             val session = client.signUp(passkey, "ada", SignUpOptions(invite = "inv_1"))
             assertEquals("acc-9", session.accountId)
@@ -771,7 +777,7 @@ class CalimeroClientTest {
             val passkey = softPasskey()
             val cluster = Cluster(stepUp("""{"keyId":"k1","key":"cal_x"}"""))
             val client = cluster.client()
-            client.revokeApiKey("k 1", passkey)
+            client.auth.apikeyRevoke(key = "k 1", passkey = passkey)
             assertEquals("/auth/apikeys/k%201", path(cluster.nodes[0].requests[1].first))
             assertEquals(
                 "DELETE",
@@ -781,7 +787,7 @@ class CalimeroClientTest {
                     .jsonPrimitive.content,
             )
             assertTrue(sent(cluster, 1).containsKey("confirm"))
-            client.createApiKey(ApiKeyOptions(label = "ci", upgrades = UpgradeKeyScope("app-1")), passkey)
+            client.auth.apikeyCreate(label = "ci", upgrades = ApikeyCreateRequestUpgrades(app = "app-1"), passkey = passkey)
             val upgrades = sent(cluster, 2)["upgrades"]!!.jsonObject
             assertEquals(setOf("app"), upgrades.keys)
             assertEquals("app-1", upgrades["app"]!!.jsonPrimitive.content)
@@ -800,11 +806,29 @@ class CalimeroClientTest {
                     }
                 })
             val client = cluster.client()
-            assertEquals("x.example", client.packageOrigins("com.x").single().rpId)
+            assertEquals(
+                "x.example",
+                (
+                    client.packages
+                        .originsList(`package` = "com.x")
+                        .origins
+                        .single() as JsonObject
+                )["rpId"]!!.jsonPrimitive.content,
+            )
             assertEquals("/package-origins/com.x", path(cluster.nodes[0].requests[0].first))
-            assertEquals("2026-11-05T10:00:00Z", client.addPackageOrigin("com.x", "https://x.example", passkey, rpId = "x.example").addedAt)
+            assertEquals(
+                "2026-11-05T10:00:00Z",
+                client.packages
+                    .originsAdd(`package` = "com.x", origin = "https://x.example", rpId = "x.example", passkey = passkey)["addedAt"]!!
+                    .jsonPrimitive.content,
+            )
             assertEquals("x.example", sent(cluster, 2)["rpId"]!!.jsonPrimitive.content)
-            assertTrue(client.removePackageOrigin("com.x", "https://x.example", passkey).removed)
+            assertTrue(
+                client.packages
+                    .originsRemove(`package` = "com.x", origin = "https://x.example", passkey = passkey)["removed"]!!
+                    .jsonPrimitive.content
+                    .toBoolean(),
+            )
             assertEquals("https://x.example", sent(cluster, 4)["origin"]!!.jsonPrimitive.content)
         }
 
@@ -822,7 +846,7 @@ class CalimeroClientTest {
             val cluster =
                 Cluster({ head, body ->
                     when (path(head)) {
-                        "/auth/me" -> json(200, """{"accountId":"acc-2","name":"b","app":"com.x","origin":"https://x.example"}""")
+                        "/auth/me" -> json(200, """{"accountId":"acc-2","name":"b","passkeys":[],"orgs":[],"via":"session","passkeyId":null,"app":"com.x","origin":"https://x.example"}""")
                         "/orgs/o1/recovery/start" -> json(200, """{"startedAt":10,"readyAt":20}""")
                         "/orgs/o1" -> json(200, """{"orgId":"o1","name":"Acme","recovery":{"publicKey":"pk","setAt":3,"pending":{"account":"acc-2","startedAt":10,"readyAt":20}}}""")
                         "/orgs" -> json(200, """{"orgId":"o1"}""")
@@ -830,7 +854,7 @@ class CalimeroClientTest {
                     }
                 })
             val client = cluster.client()
-            assertEquals("o1", client.createOrg("Acme", recoveryKey = recoveryPublicKey(seed)))
+            assertEquals("o1", client.orgs.create(name = "Acme", recoveryKey = recoveryPublicKey(seed)).orgId)
             assertEquals(recoveryPublicKey(seed), sent(cluster, 0)["recoveryKey"]!!.jsonPrimitive.content)
             assertEquals(20L, client.startRecovery("o1", seed).readyAt)
             val start = sent(cluster, 2)
@@ -850,12 +874,13 @@ class CalimeroClientTest {
                     ?.pending
                     ?.account,
             )
-            assertEquals(listOf("acc-1"), client.finishRecovery("o1", passkey).previousOwners)
-            client.setRecoveryKey("o1", null, passkey)
-            assertEquals(JsonNull, sent(cluster, 7)["publicKey"])
-            client.cancelRecovery("o1", passkey)
+            assertEquals(JsonArray(listOf(JsonPrimitive("acc-1"))), client.orgs.recoveryFinish(org = "o1", passkey = passkey).previousOwners)
+            // No key removes it: the generated request leaves the null out (the spec does not require the field).
+            client.orgs.recoverySet(org = "o1", publicKey = null, passkey = passkey)
+            assertTrue((sent(cluster, 7)["publicKey"] ?: JsonNull) == JsonNull)
+            client.orgs.recoveryCancel(org = "o1", passkey = passkey)
             assertEquals("/orgs/o1/recovery/cancel", path(cluster.nodes[0].requests[9].first))
-            val me = client.me()
+            val me = client.auth.me()
             assertEquals("com.x", me.app)
             assertEquals("https://x.example", me.origin)
         }

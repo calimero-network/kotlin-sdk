@@ -12,40 +12,9 @@ import com.calimero.mero.api.facade.Routes
 import com.calimero.mero.api.infrastructure.RequestConfig
 import com.calimero.mero.api.infrastructure.RequestMethod
 import com.calimero.mero.api.infrastructure.Serializer
-import com.calimero.mero.api.models.AccountOutboundApprovalRequest
-import com.calimero.mero.api.models.AccountReleaseApprovalRequest
-import com.calimero.mero.api.models.AliasSetRequest
-import com.calimero.mero.api.models.ApikeyCreateRequest
-import com.calimero.mero.api.models.ApikeyRevokeRequest
-import com.calimero.mero.api.models.AppAccessRequest
 import com.calimero.mero.api.models.AppCreateRequest
-import com.calimero.mero.api.models.AppMetadataRequest
-import com.calimero.mero.api.models.AppTransferRequest
-import com.calimero.mero.api.models.DeployerGrantRequest
-import com.calimero.mero.api.models.DeploymentCreateRequest
-import com.calimero.mero.api.models.DeploymentOfferRequest
 import com.calimero.mero.api.models.IntentsRequest
-import com.calimero.mero.api.models.InviteCreateRequest
-import com.calimero.mero.api.models.MemberMetadataRequest
-import com.calimero.mero.api.models.OpsReleaseDeadlineRequest
-import com.calimero.mero.api.models.OrgCapabilitiesRequest
-import com.calimero.mero.api.models.OrgCreateRequest
-import com.calimero.mero.api.models.OrgOutboundApprovalRequest
-import com.calimero.mero.api.models.OrgReleaseApprovalRequest
-import com.calimero.mero.api.models.OrgSetMemberRequest
-import com.calimero.mero.api.models.OrgUpgradeRetryRequest
-import com.calimero.mero.api.models.OriginsAddRequest
-import com.calimero.mero.api.models.OriginsRemoveRequest
-import com.calimero.mero.api.models.PackageInstallRequest
-import com.calimero.mero.api.models.PasskeyLabelRequest
-import com.calimero.mero.api.models.PasskeyRemoveRequest
-import com.calimero.mero.api.models.PresencePublishRequest
-import com.calimero.mero.api.models.PublisherUpgradeRequest
-import com.calimero.mero.api.models.RecoverySetRequest
 import com.calimero.mero.api.models.RecoveryStartRequest
-import com.calimero.mero.api.models.TeamCreateRequest
-import com.calimero.mero.api.models.TeamSetMemberRequest
-import com.calimero.mero.api.models.TeamUpdateRequest
 import com.calimero.mero.api.models.ViewsRequest
 import com.calimero.mero.crypto.DeviceSigner
 import com.calimero.mero.crypto.Hex
@@ -73,7 +42,6 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.DeserializationStrategy
 import kotlinx.serialization.builtins.ListSerializer
-import kotlinx.serialization.builtins.MapSerializer
 import kotlinx.serialization.builtins.serializer
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
@@ -96,11 +64,7 @@ import okio.Buffer
 import okio.BufferedSource
 import java.io.IOException
 import java.net.URLEncoder
-import java.time.Instant
 import java.util.concurrent.TimeUnit
-import com.calimero.mero.api.models.OrgRole as ApiOrgRole
-import com.calimero.mero.api.models.TeamJoin as ApiTeamJoin
-import com.calimero.mero.api.models.TeamRole as ApiTeamRole
 
 /** How a [CalimeroClient] reaches and trusts a cluster (mero-js `CalimeroClientOptions`). */
 data class CalimeroClientOptions(
@@ -668,33 +632,20 @@ class CalimeroClient(
         body: Body,
     ): JsonElement = parse(dispatch(method, configPath(config), body, stepUp(StepUp())))
 
-    /** A generated request model from the JSON a hand-written options type encodes to. */
-    private inline fun <reified T> model(json: JsonElement): T = Serializer.kotlinxSerializationJson.decodeFromJsonElement(json)
-
-    private fun OrgRole.api(): ApiOrgRole = checkNotNull(ApiOrgRole.decode(wire))
-
-    private fun TeamRole.api(): ApiTeamRole = checkNotNull(ApiTeamRole.decode(wire))
-
-    private fun TeamJoin.api(): ApiTeamJoin = checkNotNull(ApiTeamJoin.decode(wire))
-
     /** POST [body] to [path] (relative to the node, no leading slash) and answer the JSON. */
-    @Deprecated("Raw request plumbing: use the facade's method for the route (client.orgs, client.apps, ...)")
-    suspend fun post(
+    private suspend fun post(
         path: String,
         body: JsonElement = JsonObject(emptyMap()),
     ): JsonElement = json("POST", path, jsonBody(body))
 
-    @Deprecated("Raw request plumbing: use the facade's method for the route (client.orgs, client.apps, ...)")
-    suspend fun get(path: String): JsonElement = json("GET", path)
+    private suspend fun get(path: String): JsonElement = json("GET", path)
 
-    @Deprecated("Raw request plumbing: use the facade's method for the route (client.orgs, client.apps, ...)")
-    suspend fun put(
+    private suspend fun put(
         path: String,
         body: JsonElement = JsonObject(emptyMap()),
     ): JsonElement = json("PUT", path, jsonBody(body))
 
-    @Deprecated("Raw request plumbing: use the facade's method for the route (client.orgs, client.apps, ...)")
-    suspend fun delete(
+    private suspend fun delete(
         path: String,
         body: JsonElement? = null,
     ): JsonElement = json("DELETE", path, body?.let(::jsonBody))
@@ -742,13 +693,6 @@ class CalimeroClient(
         takeSession(session)
         return session
     }
-
-    /** Who may create an account on the cluster (`GET /sign-up`); needs no session. */
-    @Deprecated(
-        "Use the generated facade: deployments.signUpPublic",
-        ReplaceWith("deployments.signUpPublic()"),
-    )
-    suspend fun signUpPolicy(): SignUpPolicy = wire.decodeFromJsonElement(SignUpPolicy.serializer(), raw(defaultApi.signUpAndDeployments.signUpPublicRequestConfig()))
 
     /**
      * Sign in with an existing passkey. With [SignInOptions.origin] (a registered web origin) the
@@ -848,11 +792,7 @@ class CalimeroClient(
     fun forget() = dropSession()
 
     /** The signed-in account: its passkeys, its organizations. */
-    @Deprecated(
-        "Use the generated facade: auth.me",
-        ReplaceWith("auth.me()"),
-    )
-    suspend fun me(): AccountInfo {
+    internal suspend fun me(): AccountInfo {
         val o = raw(defaultApi.accounts.meRequestConfig()) as JsonObject
         return AccountInfo(
             raw = o,
@@ -890,37 +830,6 @@ class CalimeroClient(
         return done.string("credentialId").orEmpty()
     }
 
-    /** Remove one of the account's passkeys (not the last), approved with [passkey] (one it has). */
-    @Deprecated(
-        "Use the generated facade: auth.passkeyRemove",
-        ReplaceWith("auth.passkeyRemove(cred = credentialId, passkey = passkey)"),
-    )
-    suspend fun removePasskey(
-        credentialId: String,
-        passkey: PasskeyProvider,
-    ) {
-        raw(defaultApi.accounts.passkeyRemoveRequestConfig(credentialId, PasskeyRemoveRequest()), passkey)
-    }
-
-    /** Name one of the account's passkeys (a device label); `""` clears the name. */
-    @Deprecated(
-        "Use the generated facade: auth.passkeyLabel",
-        ReplaceWith("auth.passkeyLabel(cred = credentialId, label = label)"),
-    )
-    suspend fun labelPasskey(
-        credentialId: String,
-        label: String,
-    ) {
-        raw(defaultApi.accounts.passkeyLabelRequestConfig(credentialId, PasskeyLabelRequest(label = label)))
-    }
-
-    /** What this account uses (apps, bundle bytes, API keys, owned orgs), with the cluster's quotas. */
-    @Deprecated(
-        "Use the generated facade: auth.usage",
-        ReplaceWith("auth.usage()"),
-    )
-    suspend fun usage(): JsonObject = raw(defaultApi.accounts.usageRequestConfig()) as JsonObject
-
     /**
      * The node's attestation document, unverified: for display only. Every request this client
      * sends is sealed to a key it verified itself first.
@@ -933,53 +842,7 @@ class CalimeroClient(
             wire.decodeFromString(AttestationDoc.serializer(), response.body)
         }
 
-    /** The account's API keys (never the keys themselves). */
-    @Deprecated(
-        "Use the generated facade: auth.apikeyList",
-        ReplaceWith("auth.apikeyList().propertyKeys"),
-    )
-    suspend fun listApiKeys(): List<ApiKeyInfo> = listOf("keys", ApiKeyInfo.serializer(), raw(defaultApi.accounts.apikeyListRequestConfig()))
-
-    /** Revoke one of the account's API keys, approved with its [passkey] (`412 CONFIRM_REQUIRED`). */
-    @Deprecated(
-        "Use the generated facade: auth.apikeyRevoke",
-        ReplaceWith("auth.apikeyRevoke(key = keyId, passkey = passkey)"),
-    )
-    suspend fun revokeApiKey(
-        keyId: String,
-        passkey: PasskeyProvider,
-    ) {
-        raw(defaultApi.accounts.apikeyRevokeRequestConfig(keyId, ApikeyRevokeRequest()), passkey)
-    }
-
-    /**
-     * Create an API key for an agent or server, approved with the account's [passkey]
-     * (`412 CONFIRM_REQUIRED`); needs a passkey session (an API key is refused `403`). The key is
-     * returned once. [ApiKeyOptions.upgrades] makes an upgrade key for CI: it upgrades that one app
-     * with [upgradeApp] (no passkey; a `version` of its package) and is refused everything else
-     * (`403 UPGRADE_KEY_ONLY`).
-     */
-    @Deprecated(
-        "Use the generated facade: auth.apikeyCreate",
-        ReplaceWith("auth.apikeyCreate(label = options.label, apps = options.apps, methods = options.methods, readOnly = options.readOnly, passkey = passkey)"),
-    )
-    suspend fun createApiKey(
-        options: ApiKeyOptions,
-        passkey: PasskeyProvider,
-    ): ApiKeyCreated {
-        val request = model<ApikeyCreateRequest>(wire.encodeToJsonElement(options))
-        return wire.decodeFromJsonElement(ApiKeyCreated.serializer(), raw(defaultApi.accounts.apikeyCreateRequestConfig(request), passkey))
-    }
-
     // ---------------------------------------------------------------- apps
-
-    /** Upload a raw WASM bundle (development clusters only); answers its hash. */
-    @Deprecated(
-        "Use the generated facade: packages.bundlePut",
-        ReplaceWith("packages.bundlePut(body = wasm).hash"),
-    )
-    suspend fun uploadBundle(wasm: ByteArray): String =
-        (binary("POST", defaultApi.packages.bundlePutRequestConfig(NO_BYTES), Body(wasm, "application/wasm")) as JsonObject).string("hash").orEmpty()
 
     /**
      * Upload a blob for [app]: `blobId` is base58 (what apps print), `id` hex. [contentType]
@@ -1007,33 +870,17 @@ class CalimeroClient(
         data: ByteArray,
     ): BlobInfo = wire.decodeFromJsonElement(BlobInfo.serializer(), binary("POST", defaultApi.apps.blobUploadRequestConfig(app, NO_BYTES, true), Body(data, OCTET_STREAM)))
 
-    /** One of [app]'s blobs, by id (base58 or hex). */
-    @Deprecated(
-        "Use the generated facade: apps.blobDownload",
-        ReplaceWith("apps.blobDownload(app = app, id = id)"),
-    )
-    suspend fun downloadBlob(
-        app: String,
-        id: String,
-    ): ByteArray = blobContent(app, id).data
-
     /**
-     * Download a component app's blob with a grant one of its runs handed out (`BlobRef::grant`,
-     * up to 24 h). No session needed: the grant is the permission. A bad or expired grant answers
-     * [NotFound], as a missing blob.
+     * A component app's xcalls: how many messages wait in its outbox, and the dead letters (never
+     * delivered), newest last. Its owner's or an org admin's (`403` to anyone else);
+     * `409 NOT_SUPPORTED` for an app on the wasmer runtime, whose xcalls are follow-ups.
+     *
+     * Not deprecated: the spec types `pending` as an array, the node answers a count (see openapi/README.md).
      */
-    @Deprecated(
-        "Use the generated facade: apps.blobDownload",
-        ReplaceWith("apps.blobDownload(app = app, id = id, grant = grant)"),
-    )
-    suspend fun downloadBlobGranted(
-        app: String,
-        id: String,
-        grant: String,
-    ): ByteArray = blobContent(app, id, grant).data
+    suspend fun appXcalls(app: String): AppXcalls = wire.decodeFromJsonElement(AppXcalls.serializer(), raw(defaultApi.apps.appXcallsRequestConfig(app)))
 
     /**
-     * [downloadBlob] (or, with [grant], [downloadBlobGranted]) with the content type the node
+     * A blob of [app] (with [grant], one a run handed out: no session needed) with the content type the node
      * serves it as: the uploader's, for a component app; `application/octet-stream` otherwise.
      */
     suspend fun blobContent(
@@ -1047,207 +894,16 @@ class CalimeroClient(
         }
     }
 
-    /** [app]'s blobs. */
-    @Deprecated(
-        "Use the generated facade: apps.blobList",
-        ReplaceWith("apps.blobList(app = app).blobs"),
-    )
-    suspend fun listBlobs(app: String): List<BlobInfo> = listOf("blobs", BlobInfo.serializer(), raw(defaultApi.apps.blobListRequestConfig(app)))
-
-    /** One of [app]'s blobs' id and size; [NotFound] if the app has no such blob. */
-    @Deprecated(
-        "Use the generated facade: apps.blobInfo",
-        ReplaceWith("apps.blobInfo(app = app, id = id)"),
-    )
-    suspend fun blobInfo(
-        app: String,
-        id: String,
-    ): BlobInfo = wire.decodeFromJsonElement(BlobInfo.serializer(), raw(defaultApi.apps.blobInfoRequestConfig(app, id)))
-
-    /** Delete one of [app]'s blobs (its owner, or an admin of its organization). */
-    @Deprecated(
-        "Use the generated facade: apps.blobDelete",
-        ReplaceWith("apps.blobDelete(app = app, id = id)"),
-    )
-    suspend fun deleteBlob(
-        app: String,
-        id: String,
-    ) {
-        raw(defaultApi.apps.blobDeleteRequestConfig(app, id))
-    }
-
     // ---------------------------------------------------------------- packages
-
-    /** Install a signed `.mpk` package file (development clusters only, else `403 UPLOADS_DISABLED`). */
-    @Deprecated(
-        "Use the generated facade: packages.upload",
-        ReplaceWith("packages.upload(body = mpk)"),
-    )
-    suspend fun uploadPackage(mpk: ByteArray): PackageInstalled =
-        wire.decodeFromJsonElement(PackageInstalled.serializer(), binary("POST", defaultApi.packages.packageUploadRequestConfig(NO_BYTES), Body(mpk, OCTET_STREAM)))
-
-    /** Install `pkg@version` from the cluster's registry; every node that runs it verifies it. */
-    @Deprecated(
-        "Use the generated facade: packages.install",
-        ReplaceWith("packages.install(`package` = pkg, version = version)"),
-    )
-    suspend fun installPackage(
-        pkg: String,
-        version: String,
-    ): PackageInstalled =
-        wire.decodeFromJsonElement(
-            PackageInstalled.serializer(),
-            raw(defaultApi.packages.packageInstallRequestConfig(PackageInstallRequest(`package` = pkg, version = version))),
-        )
-
-    /** Installed packages and their versions. */
-    @Deprecated(
-        "Use the generated facade: packages.list",
-        ReplaceWith("packages.list().packages"),
-    )
-    suspend fun packages(): List<PackageInfo> = listOf("packages", PackageInfo.serializer(), raw(defaultApi.packages.packageListRequestConfig()))
-
-    /** One installed package and its versions. */
-    @Deprecated(
-        "Use the generated facade: packages.get",
-        ReplaceWith("packages.get(`package` = pkg)"),
-    )
-    suspend fun `package`(pkg: String): PackageInfo = wire.decodeFromJsonElement(PackageInfo.serializer(), raw(defaultApi.packages.packageGetRequestConfig(pkg)))
-
-    /** Uninstall one version, or the whole package. Refused while an app runs it. */
-    @Deprecated(
-        "Use the generated facade: packages.uninstall. With a version: packages.versionUninstall",
-        ReplaceWith("packages.uninstall(`package` = pkg)"),
-    )
-    suspend fun uninstallPackage(
-        pkg: String,
-        version: String? = null,
-    ): JsonElement =
-        if (version == null) {
-            raw(defaultApi.packages.packageUninstallRequestConfig(pkg))
-        } else {
-            raw(defaultApi.packages.packageVersionUninstallRequestConfig(pkg, version))
-        }
 
     // ---------------------------------------------------------------- app instances
 
-    /** Apps this caller reaches, optionally only those of one package or bundle. */
-    @Deprecated(
-        "Use the generated facade: apps.list",
-        ReplaceWith("apps.list(`package` = pkg, bundle = bundle).apps"),
-    )
-    suspend fun listApps(
-        pkg: String? = null,
-        bundle: String? = null,
-    ): List<AppInfo> = listOf("apps", AppInfo.serializer(), raw(defaultApi.apps.appListRequestConfig(pkg, bundle)))
-
-    /** One app instance: its record (`name`, `owner`, `org`, `access`, `metadata`, ...). */
-    @Deprecated(
-        "Use the generated facade: apps.get",
-        ReplaceWith("apps.get(app = app)"),
-    )
-    suspend fun getApp(app: String): JsonObject = raw(defaultApi.apps.appGetRequestConfig(app)) as JsonObject
-
-    /** Delete an app instance (its owner, or an admin of its organization). */
-    @Deprecated(
-        "Use the generated facade: apps.delete",
-        ReplaceWith("apps.delete(app = app)"),
-    )
-    suspend fun deleteApp(app: String) {
-        raw(defaultApi.apps.appDeleteRequestConfig(app))
-    }
-
-    /** Who may reach the app. */
-    @Deprecated(
-        "Use the generated facade: apps.access",
-        ReplaceWith("apps.access(app = app, access = access)"),
-    )
-    suspend fun setAccess(
-        app: String,
-        access: AppAccess,
-    ) {
-        raw(defaultApi.apps.appAccessRequestConfig(app, AppAccessRequest(access = access)))
-    }
-
-    /** Set the app instance's metadata (its owner, or an admin of its organization); at most 16 KiB. */
-    @Deprecated(
-        "Use the generated facade: apps.metadata",
-        ReplaceWith("apps.metadata(app = app, metadata = metadata)"),
-    )
-    suspend fun setAppMetadata(
-        app: String,
-        metadata: JsonElement,
-    ) {
-        raw(defaultApi.apps.appMetadataRequestConfig(app, AppMetadataRequest(metadata = metadata)))
-    }
-
-    /**
-     * A component app's xcalls: how many messages wait in its outbox, and the dead letters (never
-     * delivered), newest last. Its owner's or an org admin's (`403` to anyone else);
-     * `409 NOT_SUPPORTED` for an app on the wasmer runtime, whose xcalls are follow-ups.
-     *
-     * Not deprecated: the spec types `pending` as an array, the node answers a count (see openapi/README.md).
-     */
-    suspend fun appXcalls(app: String): AppXcalls = wire.decodeFromJsonElement(AppXcalls.serializer(), raw(defaultApi.apps.appXcallsRequestConfig(app)))
-
-    /** What the app's storage holds: `{ keys, bytes, blobs, blobBytes }`. */
-    @Deprecated(
-        "Use the generated facade: apps.storage",
-        ReplaceWith("apps.storage(app = app)"),
-    )
-    suspend fun appStorage(app: String): JsonObject = raw(defaultApi.apps.appStorageRequestConfig(app)) as JsonObject
-
-    /** The ABI the app's bundle embeds: `{ bundle, abi }`. */
-    @Deprecated(
-        "Use the generated facade: apps.abi",
-        ReplaceWith("apps.abi(app = app)"),
-    )
-    suspend fun appAbi(app: String): JsonObject = raw(defaultApi.apps.appAbiRequestConfig(app)) as JsonObject
-
-    /** Hand the app to another account. The owner approves with [passkey]. */
-    @Deprecated(
-        "Use the generated facade: apps.transfer",
-        ReplaceWith("apps.transfer(app = app, to = to, passkey = passkey)"),
-    )
-    suspend fun transferApp(
-        app: String,
-        to: String,
-        passkey: PasskeyProvider,
-    ) {
-        raw(defaultApi.apps.appTransferRequestConfig(app, AppTransferRequest(to = to)), passkey)
-    }
-
-    /**
-     * Move an app to another release of its package, another package, or a bundle hash, running
-     * its migration. Where owners hold app upgrades, the node asks for the approval of whoever the
-     * package's manifest names (`412 CONFIRM_REQUIRED`), which [passkey] gives. Refused (`403`) to
-     * a session opened on an app's frontend: ask with [requestConsent] instead.
-     */
-    @Deprecated(
-        "Use the generated facade: apps.upgrade",
-        ReplaceWith("apps.upgrade(app = app, bundle = target.bundle, `package` = target.`package`, version = target.version, service = target.service, migrate = target.migrate, passkey = passkey)"),
-    )
-    suspend fun upgradeApp(
-        app: String,
-        target: AppUpgradeTarget,
-        passkey: PasskeyProvider? = null,
-    ): JsonObject = raw(defaultApi.apps.appUpgradeRequestConfig(app, model(wire.encodeToJsonElement(target))), passkey) as JsonObject
-
     /** POST [body] to [path], answering a `412 CONFIRM_REQUIRED` with [passkey]'s assertion over the node's challenge. */
-    @Deprecated("Raw request plumbing: use the facade's method for the route (client.orgs, client.apps, ...), which answers 412 itself")
-    suspend fun postConfirmed(
+    private suspend fun postConfirmed(
         path: String,
         body: JsonObject,
         passkey: PasskeyProvider,
     ): JsonElement = confirmed(body, passkey) { json("POST", path, jsonBody(it)) }
-
-    /** [postConfirmed] for a DELETE (deleting an organization). */
-    @Deprecated("Raw request plumbing: use the facade's method for the route (client.orgs, client.apps, ...), which answers 412 itself")
-    suspend fun deleteConfirmed(
-        path: String,
-        passkey: PasskeyProvider,
-        body: JsonObject = JsonObject(emptyMap()),
-    ): JsonElement = confirmed(body, passkey) { json("DELETE", path, jsonBody(it)) }
 
     private suspend fun confirmed(
         body: JsonObject,
@@ -1263,18 +919,17 @@ class CalimeroClient(
         return send(JsonObject(body + ("confirm" to assertionFor(passkey, challenge))))
     }
 
+    /** One app instance: its record (`name`, `owner`, `org`, `access`, `metadata`, ...). */
+    internal suspend fun getApp(app: String): JsonObject = raw(defaultApi.apps.appGetRequestConfig(app)) as JsonObject
+
     /**
      * Create an app instance from a bundle hash, or from a package release (installed from the
      * registry first if the cluster lacks it), or from what a deployment offers
      * ([AppSource.Package.deployment]). Answers its app id. A failed init throws code
      * `INIT_FAILED`.
      */
-    @Deprecated(
-        "Use the generated facade: apps.create, with bundle, or package, version, service and deployment, from source. The spec has no confirmMethods",
-        ReplaceWith("apps.create(name = name, org = org, access = access, initArgs = initArgs, metadata = metadata).appId"),
-    )
     @Suppress("LongParameterList")
-    suspend fun createApp(
+    internal suspend fun createApp(
         name: String,
         source: AppSource,
         org: String? = null,
@@ -1308,11 +963,7 @@ class CalimeroClient(
      * Call a method. A retry with the same [idempotencyKey] is answered once. Without one, the
      * client makes one, so its own retries of a 503 share it.
      */
-    @Deprecated(
-        "Use the generated facade: apps.intents",
-        ReplaceWith("apps.intents(app = app, method = method, args = args, idempotencyKey = idempotencyKey)"),
-    )
-    suspend fun call(
+    internal suspend fun call(
         app: String,
         method: String,
         args: JsonElement = JsonObject(emptyMap()),
@@ -1322,33 +973,8 @@ class CalimeroClient(
         return wire.decodeFromJsonElement(CallResult.serializer(), raw(defaultApi.apps.intentsRequestConfig(app, request)))
     }
 
-    /**
-     * Call a method that needs the account holder's approval: the node returns a challenge over
-     * this exact call, which [passkey] signs. A declined prompt throws [ConfirmCancelled].
-     */
-    @Deprecated(
-        "Use the generated facade: apps.intents",
-        ReplaceWith("apps.intents(app = app, method = method, args = args, idempotencyKey = idempotencyKey, passkey = passkey)"),
-    )
-    suspend fun callConfirmed(
-        app: String,
-        method: String,
-        args: JsonElement,
-        passkey: PasskeyProvider,
-        idempotencyKey: String? = null,
-    ): CallResult {
-        // The confirmed attempt goes out exactly once ([dispatch]): its challenge is single-use, so a
-        // resend would be refused on the challenge, not answered from the key.
-        val request = IntentsRequest(method = method, args = args, idempotencyKey = idempotencyKey ?: newIdempotencyKey())
-        return wire.decodeFromJsonElement(CallResult.serializer(), raw(defaultApi.apps.intentsRequestConfig(app, request), passkey))
-    }
-
     /** Run a read-only method: strong by default, or [stale] from any replica. */
-    @Deprecated(
-        "Use the generated facade: apps.views",
-        ReplaceWith("apps.views(app = app, method = method, args = args, consistency = if (stale) ViewsRequest.Consistency.STALE else ViewsRequest.Consistency.STRONG, minIndex = minIndex)"),
-    )
-    suspend fun view(
+    internal suspend fun view(
         app: String,
         method: String,
         args: JsonElement = JsonObject(emptyMap()),
@@ -1384,108 +1010,12 @@ class CalimeroClient(
 
     // ---------------------------------------------------------------- presence
 
-    /**
-     * Publish this device's presence in [app]: [state] (at most 4 KiB) or null to retract it. The
-     * newest [seq] wins; send the same seq and state again as a heartbeat, since an entry not
-     * refreshed within 7 s is gone.
-     */
-    @Deprecated(
-        "Use the generated facade: apps.presencePublish",
-        ReplaceWith("apps.presencePublish(app = app, seq = seq, state = state?.let(Hex::encode))"),
-    )
-    suspend fun publishPresence(
-        app: String,
-        seq: Long,
-        state: ByteArray?,
-    ) {
-        // A null state retracts the entry and is sent as `null`, which the generated request leaves out.
-        val extra = if (state == null) buildJsonObject { put("state", JsonNull) } else null
-        raw(defaultApi.apps.presencePublishRequestConfig(app, PresencePublishRequest(seq = seq, state = state?.let(Hex::encode))), extra = extra)
-    }
-
-    /** Who is present in [app] now. */
-    @Deprecated(
-        "Use the generated facade: apps.presenceGet",
-        ReplaceWith("apps.presenceGet(app = app).present"),
-    )
-    suspend fun presence(app: String): List<PresenceEntry> = listOf("present", PresenceEntry.serializer(), raw(defaultApi.apps.presenceGetRequestConfig(app)))
-
     /** Presence as a stream: a `snapshot` event (the entries present), then a `presence` event per change. */
     fun presenceStream(app: String): Flow<CloudEvent> = stream("apps/${seg(app)}/presence/stream")
 
     // ---------------------------------------------------------------- aliases
 
-    /** Name an app for this account. */
-    @Deprecated(
-        "Use the generated facade: auth.aliasSet",
-        ReplaceWith("auth.aliasSet(alias = alias, app = app)"),
-    )
-    suspend fun setAlias(
-        alias: String,
-        app: String,
-    ) {
-        raw(defaultApi.accounts.aliasSetRequestConfig(alias, AliasSetRequest(app = app)))
-    }
-
-    /** This account's aliases, alias -> app id. */
-    @Deprecated(
-        "Use the generated facade: auth.aliasList",
-        ReplaceWith("auth.aliasList().aliases"),
-    )
-    suspend fun aliases(): Map<String, String> =
-        ((raw(defaultApi.accounts.aliasListRequestConfig()) as JsonObject)["aliases"] as? JsonObject)
-            ?.let { wire.decodeFromJsonElement(MapSerializer(String.serializer(), String.serializer()), it) }
-            .orEmpty()
-
-    /** The app an alias names. */
-    @Deprecated(
-        "Use the generated facade: auth.aliasGet",
-        ReplaceWith("auth.aliasGet(alias = alias).appId"),
-    )
-    suspend fun alias(alias: String): String = (raw(defaultApi.accounts.aliasGetRequestConfig(alias)) as JsonObject).string("appId").orEmpty()
-
-    @Deprecated(
-        "Use the generated facade: auth.aliasDelete",
-        ReplaceWith("auth.aliasDelete(alias = alias)"),
-    )
-    suspend fun deleteAlias(alias: String) {
-        raw(defaultApi.accounts.aliasDeleteRequestConfig(alias))
-    }
-
     // ---------------------------------------------------------------- organizations
-
-    /**
-     * Create an organization; answers its id. [recoveryKey] (from [recoveryPublicKey]) lets whoever
-     * holds its seed recover the organization if its owner loses every passkey; keep the seed
-     * offline ([recoverySeedText]).
-     */
-    @Deprecated(
-        "Use the generated facade: orgs.create",
-        ReplaceWith("orgs.create(name = name, recoveryKey = recoveryKey).orgId"),
-    )
-    suspend fun createOrg(
-        name: String,
-        recoveryKey: String? = null,
-    ): String = (raw(defaultApi.organizations.orgCreateRequestConfig(OrgCreateRequest(name = name, recoveryKey = recoveryKey))) as JsonObject).string("orgId").orEmpty()
-
-    /**
-     * Set or rotate ([publicKey], from [recoveryPublicKey]) or remove (`null`) [org]'s recovery key:
-     * its owner only, approved with [passkey]. A recovery under way is cancelled, and the old seed's
-     * signatures are refused from then on.
-     */
-    @Deprecated(
-        "Use the generated facade: orgs.recoverySet. A null publicKey must go as null, which the generated request leaves out",
-        ReplaceWith("orgs.recoverySet(org = org, publicKey = publicKey, passkey = passkey)"),
-    )
-    suspend fun setRecoveryKey(
-        org: String,
-        publicKey: String?,
-        passkey: PasskeyProvider,
-    ) {
-        // Null removes the key and is sent as `null`, which the generated request leaves out.
-        val extra = if (publicKey == null) buildJsonObject { put("publicKey", JsonNull) } else null
-        raw(defaultApi.organizations.recoverySetRequestConfig(org, RecoverySetRequest(publicKey = publicKey)), passkey, extra)
-    }
 
     /**
      * Start handing [org] to the signed-in account with the recovery [seed], which signs here and
@@ -1504,171 +1034,13 @@ class CalimeroClient(
         return wire.decodeFromJsonElement(RecoveryTimes.serializer(), raw(defaultApi.organizations.recoveryStartRequestConfig(org, request)))
     }
 
-    /** Cancel the recovery under way: [org]'s owner, approved with [passkey]. */
-    @Deprecated(
-        "Use the generated facade: orgs.recoveryCancel",
-        ReplaceWith("orgs.recoveryCancel(org = org, passkey = passkey)"),
-    )
-    suspend fun cancelRecovery(
-        org: String,
-        passkey: PasskeyProvider,
-    ) {
-        raw(defaultApi.organizations.recoveryCancelRequestConfig(org, PasskeyRemoveRequest()), passkey)
-    }
-
-    /**
-     * Finish a recovery this account started, once its delay passed ([RecoveryNotReady] before),
-     * approved with this account's [passkey]. The account becomes the owner; the previous owners
-     * leave the organization.
-     */
-    @Deprecated(
-        "Use the generated facade: orgs.recoveryFinish",
-        ReplaceWith("orgs.recoveryFinish(org = org, passkey = passkey)"),
-    )
-    suspend fun finishRecovery(
-        org: String,
-        passkey: PasskeyProvider,
-    ): RecoveryFinished =
-        wire.decodeFromJsonElement(RecoveryFinished.serializer(), raw(defaultApi.organizations.recoveryFinishRequestConfig(org, PasskeyRemoveRequest()), passkey))
-
     /** The organization, with the teams this caller reaches or manages. */
-    @Deprecated(
-        "Use the generated facade: orgs.get",
-        ReplaceWith("orgs.get(org = org)"),
-    )
-    suspend fun getOrg(org: String): OrgInfo = orgInfo(raw(defaultApi.organizations.orgGetRequestConfig(org)) as JsonObject)
-
-    /** Delete an organization with its teams, invites and apps (its owner only, approved with [passkey]). */
-    @Deprecated(
-        "Use the generated facade: orgs.delete",
-        ReplaceWith("orgs.delete(org = org, passkey = passkey)"),
-    )
-    suspend fun deleteOrg(
-        org: String,
-        passkey: PasskeyProvider,
-    ) {
-        raw(defaultApi.organizations.orgDeleteRequestConfig(org, PasskeyRemoveRequest()), passkey)
-    }
-
-    /** Set the organization's metadata (an admin, or a holder of `MANAGE_METADATA`); at most 16 KiB. */
-    @Deprecated(
-        "Use the generated facade: orgs.metadata",
-        ReplaceWith("orgs.metadata(org = org, metadata = metadata)"),
-    )
-    suspend fun setOrgMetadata(
-        org: String,
-        metadata: JsonElement,
-    ) {
-        raw(defaultApi.organizations.orgMetadataRequestConfig(org, MemberMetadataRequest(metadata = metadata)))
-    }
-
-    /** Set a member's metadata (theirs, or an admin's); [JsonNull] clears it. */
-    @Deprecated(
-        "Use the generated facade: orgs.memberMetadata",
-        ReplaceWith("orgs.memberMetadata(org = org, account = account, metadata = metadata)"),
-    )
-    suspend fun setMemberMetadata(
-        org: String,
-        account: String,
-        metadata: JsonElement,
-    ) {
-        raw(defaultApi.organizations.memberMetadataRequestConfig(org, account, MemberMetadataRequest(metadata = metadata)))
-    }
-
-    /** Upgrade every app of [org] that runs `target.package` to `target.version`, approved with [passkey]. */
-    @Deprecated(
-        "Use the generated facade: orgs.upgrade",
-        ReplaceWith("orgs.upgrade(org = org, `package` = target.`package`, version = target.version, team = target.team, cascade = target.cascade, migrate = target.migrate, passkey = passkey)"),
-    )
-    suspend fun upgradeOrg(
-        org: String,
-        target: OrgUpgradeTarget,
-        passkey: PasskeyProvider,
-    ): UpgradeRun =
-        wire.decodeFromJsonElement(
-            UpgradeRun.serializer(),
-            raw(defaultApi.organizations.orgUpgradeRequestConfig(org, model(wire.encodeToJsonElement(target))), passkey),
-        )
-
-    /** An organization-wide upgrade run: its apps, those done and those that failed. */
-    @Deprecated(
-        "Use the generated facade: orgs.upgradeStatus",
-        ReplaceWith("orgs.upgradeStatus(org = org, run = run)"),
-    )
-    suspend fun upgradeRun(
-        org: String,
-        run: String,
-    ): UpgradeRun = wire.decodeFromJsonElement(UpgradeRun.serializer(), raw(defaultApi.organizations.orgUpgradeStatusRequestConfig(org, run)))
-
-    /** Run the apps that failed in [run] again, as a new run, approved with [passkey]. */
-    @Deprecated(
-        "Use the generated facade: orgs.upgradeRetry",
-        ReplaceWith("orgs.upgradeRetry(org = org, run = run, passkey = passkey)"),
-    )
-    suspend fun retryUpgradeRun(
-        org: String,
-        run: String,
-        passkey: PasskeyProvider,
-    ): UpgradeRun =
-        wire.decodeFromJsonElement(UpgradeRun.serializer(), raw(defaultApi.organizations.orgUpgradeRetryRequestConfig(org, run, OrgUpgradeRetryRequest()), passkey))
-
-    /**
-     * Approve a mero-tee release to hold the apps of [org], or of this account outside any
-     * organization ([org] null); [approved] false withdraws it. Refused (`403`) to a session
-     * opened on an app's frontend: ask with [requestConsent] instead.
-     */
-    @Deprecated(
-        "Use the generated facade: orgs.releaseApproval. With no org: auth.accountReleaseApproval",
-        ReplaceWith("orgs.releaseApproval(org = org, version = version, approved = approved, passkey = passkey)"),
-    )
-    suspend fun approveRelease(
-        org: String?,
-        version: String,
-        passkey: PasskeyProvider,
-        approved: Boolean = true,
-    ): JsonObject =
-        (
-            if (org == null) {
-                raw(defaultApi.accounts.accountReleaseApprovalRequestConfig(AccountReleaseApprovalRequest(version = version, approved = approved)), passkey)
-            } else {
-                raw(defaultApi.organizations.orgReleaseApprovalRequestConfig(org, OrgReleaseApprovalRequest(version = version, approved = approved)), passkey)
-            }
-        ) as JsonObject
-
-    /**
-     * Approve the URL prefixes apps from [pkg]'s publisher may call out to, for [org]'s apps or this
-     * account's own ([org] null). [prefixes] null approves every prefix the package's latest
-     * release declares; [replace] sets exactly [prefixes].
-     */
-    @Deprecated(
-        "Use the generated facade: orgs.outboundApproval. With no org: auth.accountOutboundApproval",
-        ReplaceWith("orgs.outboundApproval(org = org, `package` = pkg, prefixes = prefixes?.let { OutboundSelection.Prefixes(it) } ?: OutboundSelection.Manifest, replace = replace, passkey = passkey)"),
-    )
-    suspend fun approveOutbound(
-        org: String?,
-        pkg: String,
-        passkey: PasskeyProvider,
-        prefixes: List<String>? = null,
-        replace: Boolean = false,
-    ): JsonObject {
-        val selection = prefixes?.let { OutboundSelection.Prefixes(it) } ?: OutboundSelection.Manifest
-        val answer =
-            if (org == null) {
-                raw(defaultApi.accounts.accountOutboundApprovalRequestConfig(AccountOutboundApprovalRequest(`package` = pkg, prefixes = selection, replace = replace)), passkey)
-            } else {
-                raw(defaultApi.organizations.orgOutboundApprovalRequestConfig(org, OrgOutboundApprovalRequest(`package` = pkg, prefixes = selection, replace = replace)), passkey)
-            }
-        return answer as JsonObject
-    }
+    internal suspend fun getOrg(org: String): OrgInfo = orgInfo(raw(defaultApi.organizations.orgGetRequestConfig(org)) as JsonObject)
 
     // ---------------------------------------------------------------- approvals
 
     /** One page of the report of a scope's apps: an organization's, or ([org] null) the account's own. */
-    @Deprecated(
-        "Use the generated facade: orgs.apps. With no org: auth.accountApps",
-        ReplaceWith("orgs.apps(org = org, after = page.after, limit = page.limit?.toLong())"),
-    )
-    suspend fun appsReport(
+    internal suspend fun appsReport(
         org: String?,
         page: PageOptions = PageOptions(),
     ): AppsReport {
@@ -1693,11 +1065,7 @@ class CalimeroClient(
     }
 
     /** `GET /releases`: the cluster's governance and every release deadline. Public. */
-    @Deprecated(
-        "Use the generated facade: public.releasesPublic",
-        ReplaceWith("public.releasesPublic()"),
-    )
-    suspend fun releaseRules(): ReleaseRules = wire.decodeFromJsonElement(ReleaseRules.serializer(), raw(defaultApi.publicApi.releasesPublicRequestConfig()))
+    internal suspend fun releaseRules(): ReleaseRules = wire.decodeFromJsonElement(ReleaseRules.serializer(), raw(defaultApi.publicApi.releasesPublicRequestConfig()))
 
     /** What waits for a decision in a scope ([org], or the account's own apps with null). */
     suspend fun pendingApprovals(org: String? = null): PendingApprovals = pendingApprovalsFrom(appsReportAll(org), releaseRules())
@@ -1742,11 +1110,7 @@ class CalimeroClient(
     }
 
     /** The decision on a consent request (any node answers, for the account that asked). */
-    @Deprecated(
-        "Use the generated facade: consent.pageResult",
-        ReplaceWith("consent.pageResult(request = requestId)"),
-    )
-    suspend fun consentResult(requestId: String): ConsentResult =
+    internal suspend fun consentResult(requestId: String): ConsentResult =
         wire.decodeFromJsonElement(ConsentResult.serializer(), raw(defaultApi.consent.consentPageResultRequestConfig(requestId)))
 
     /**
@@ -1766,457 +1130,15 @@ class CalimeroClient(
         }
     }
 
-    /** `GET /publishers/{signerId}`: the cluster name and binding generation a key signs to bind it next. */
-    @Deprecated(
-        "Use the generated facade: public.publisherBinding",
-        ReplaceWith("public.publisherBinding(signer = signerId)"),
-    )
-    suspend fun publisherBinding(signerId: String): PublisherBindingInfo =
-        wire.decodeFromJsonElement(PublisherBindingInfo.serializer(), raw(defaultApi.publicApi.publisherBindingRequestConfig(signerId)))
-
-    /** Bind a package signing key to [org] as its publisher, approved with [passkey]. */
-    @Deprecated(
-        "Use the generated facade: orgs.publisher",
-        ReplaceWith("orgs.publisher(org = org, signerId = proof.signerId, publicKey = proof.publicKey, signature = proof.signature, passkey = passkey)"),
-    )
-    suspend fun bindPublisher(
-        org: String,
-        proof: PublisherProof,
-        passkey: PasskeyProvider,
-    ): JsonObject = raw(defaultApi.organizations.orgPublisherRequestConfig(org, model(wire.encodeToJsonElement(proof))), passkey) as JsonObject
-
-    /** Upgrade every instance of [pkg] whose release declares `upgrades: publisher`, as its publisher [org]. */
-    @Deprecated(
-        "Use the generated facade: orgs.publisherUpgrade",
-        ReplaceWith("orgs.publisherUpgrade(org = org, `package` = pkg, version = version, migrate = migrate, passkey = passkey)"),
-    )
-    suspend fun upgradePublished(
-        org: String,
-        pkg: String,
-        version: String,
-        passkey: PasskeyProvider,
-        migrate: String? = null,
-    ): UpgradeRun =
-        wire.decodeFromJsonElement(
-            UpgradeRun.serializer(),
-            raw(defaultApi.organizations.publisherUpgradeRequestConfig(org, pkg, PublisherUpgradeRequest(version = version, migrate = migrate)), passkey),
-        )
-
     // ---------------------------------------------------------------- operator
-
-    /** `GET /ops/apps`: what every app runs, without names or accounts. Operator token ([useApiKey]). */
-    @Deprecated(
-        "Use the generated facade: ops.apps",
-        ReplaceWith("ops.apps(after = page.after, limit = page.limit?.toLong())"),
-    )
-    suspend fun opsApps(page: PageOptions = PageOptions()): OpsAppsReport {
-        pageQuery(page)
-        return wire.decodeFromJsonElement(OpsAppsReport.serializer(), raw(defaultApi.ops.opsAppsRequestConfig(page.after, page.limit?.toLong())))
-    }
-
-    /** `GET /ops/orgs`: each organization's approved releases. Operator token. */
-    @Deprecated(
-        "Use the generated facade: ops.orgs",
-        ReplaceWith("ops.orgs(after = page.after, limit = page.limit?.toLong())"),
-    )
-    suspend fun opsOrgs(page: PageOptions = PageOptions()): OpsOrgsReport {
-        pageQuery(page)
-        return wire.decodeFromJsonElement(OpsOrgsReport.serializer(), raw(defaultApi.ops.opsOrgsRequestConfig(page.after, page.limit?.toLong())))
-    }
-
-    /** Announce when work on images older than [version] ends. Operator token. */
-    @Deprecated(
-        "Use the generated facade: ops.releaseDeadline",
-        ReplaceWith("ops.releaseDeadline(version = version, after = after.toString())"),
-    )
-    suspend fun setReleaseDeadline(
-        version: String,
-        after: Instant,
-    ) {
-        raw(defaultApi.ops.opsReleaseDeadlineRequestConfig(version, OpsReleaseDeadlineRequest(after = after.toString())))
-    }
-
-    /** Lift a release's deadline. Operator token. */
-    @Deprecated(
-        "Use the generated facade: ops.releaseDeadlineLift",
-        ReplaceWith("ops.releaseDeadlineLift(version = version)"),
-    )
-    suspend fun liftReleaseDeadline(version: String) {
-        raw(defaultApi.ops.opsReleaseDeadlineLiftRequestConfig(version, null))
-    }
 
     // ---------------------------------------------------------------- members and teams
 
-    /** Add a member, or change their role, approved with the caller's [passkey]. */
-    @Deprecated(
-        "Use the generated facade: orgs.setMember",
-        ReplaceWith("orgs.setMember(org = org, account = account, role = role.api(), passkey = passkey)"),
-    )
-    suspend fun setMember(
-        org: String,
-        account: String,
-        role: OrgRole,
-        passkey: PasskeyProvider,
-    ) {
-        raw(defaultApi.organizations.orgSetMemberRequestConfig(org, OrgSetMemberRequest(account = account, role = role.api())), passkey)
-    }
-
-    /** Remove a member, or leave ([account] the caller's own), approved with the caller's [passkey]. */
-    @Deprecated(
-        "Use the generated facade: orgs.removeMember",
-        ReplaceWith("orgs.removeMember(org = org, account = account, passkey = passkey)"),
-    )
-    suspend fun removeMember(
-        org: String,
-        account: String,
-        passkey: PasskeyProvider,
-    ): JsonElement = raw(defaultApi.organizations.orgRemoveMemberRequestConfig(org, account, PasskeyRemoveRequest()), passkey)
-
-    /**
-     * Set capability bits ([OrgCapabilities]): for a member ([account]), for a member of one team
-     * ([account] and [team]), or the organization's default (neither). Approved with the caller's
-     * [passkey].
-     */
-    @Deprecated(
-        "Use the generated facade: orgs.capabilities",
-        ReplaceWith("orgs.capabilities(org = org, capabilities = capabilities.toLong(), account = account, team = team, passkey = passkey)"),
-    )
-    suspend fun setCapabilities(
-        org: String,
-        capabilities: Int,
-        passkey: PasskeyProvider,
-        account: String? = null,
-        team: String? = null,
-    ) {
-        val request = OrgCapabilitiesRequest(capabilities = capabilities.toLong(), account = account, team = team)
-        raw(defaultApi.organizations.orgCapabilitiesRequestConfig(org, request), passkey)
-    }
-
-    /** Create a team; answers its id. */
-    @Deprecated(
-        "Use the generated facade: orgs.teamCreate",
-        ReplaceWith("orgs.teamCreate(org = org, name = name, join = join.api(), parent = parent).teamId"),
-    )
-    suspend fun createTeam(
-        org: String,
-        name: String,
-        join: TeamJoin,
-        parent: String? = null,
-    ): String {
-        val request = TeamCreateRequest(name = name, join = join.api(), parent = parent)
-        return (raw(defaultApi.organizations.teamCreateRequestConfig(org, request)) as JsonObject).string("teamId").orEmpty()
-    }
-
-    @Deprecated(
-        "Use the generated facade: orgs.teamGet",
-        ReplaceWith("orgs.teamGet(org = org, team = team)"),
-    )
-    suspend fun getTeam(
-        org: String,
-        team: String,
-    ): TeamInfo = wire.decodeFromJsonElement(TeamInfo.serializer(), raw(defaultApi.organizations.teamGetRequestConfig(org, team)))
-
-    /**
-     * Rename, change who may join, set the team's metadata, or move it: [parent] moves it under
-     * another team, [toTop] to the top; neither leaves it.
-     */
-    @Deprecated(
-        "Use the generated facade: orgs.teamUpdate. Moving to the top (parent null) is not expressible: the generated request leaves a null out",
-        ReplaceWith("orgs.teamUpdate(org = org, team = team, name = name, join = join?.api(), parent = parent, metadata = metadata)"),
-    )
-    @Suppress("LongParameterList")
-    suspend fun updateTeam(
-        org: String,
-        team: String,
-        name: String? = null,
-        join: TeamJoin? = null,
-        parent: String? = null,
-        toTop: Boolean = false,
-        metadata: JsonElement? = null,
-    ) {
-        val request = TeamUpdateRequest(name = name, join = join?.api(), parent = if (toTop) null else parent, metadata = metadata)
-        // To the top is `"parent": null`, which the generated request leaves out.
-        val extra = if (toTop) buildJsonObject { put("parent", JsonNull) } else null
-        raw(defaultApi.organizations.teamUpdateRequestConfig(org, team, request), extra = extra)
-    }
-
-    /** Delete a team, the teams below it and their apps. */
-    @Deprecated(
-        "Use the generated facade: orgs.teamDelete",
-        ReplaceWith("orgs.teamDelete(org = org, team = team)"),
-    )
-    suspend fun deleteTeam(
-        org: String,
-        team: String,
-    ) {
-        raw(defaultApi.organizations.teamDeleteRequestConfig(org, team, null))
-    }
-
-    /** Add a member to a team, or change their row: role, lead, capability bits. Approved with the caller's [passkey]. */
-    @Deprecated(
-        "Use the generated facade: orgs.teamSetMember",
-        ReplaceWith("orgs.teamSetMember(org = org, team = team, account = account, lead = lead, role = role?.api(), capabilities = capabilities?.toLong(), passkey = passkey)"),
-    )
-    @Suppress("LongParameterList")
-    suspend fun setTeamMember(
-        org: String,
-        team: String,
-        account: String,
-        passkey: PasskeyProvider,
-        role: TeamRole? = null,
-        lead: Boolean? = null,
-        capabilities: Int? = null,
-    ) {
-        val request = TeamSetMemberRequest(account = account, lead = lead, role = role?.api(), capabilities = capabilities?.toLong())
-        raw(defaultApi.organizations.teamSetMemberRequestConfig(org, team, request), passkey)
-    }
-
-    /** Remove a member from a team, approved with the caller's [passkey]. */
-    @Deprecated(
-        "Use the generated facade: orgs.teamRemoveMember",
-        ReplaceWith("orgs.teamRemoveMember(org = org, team = team, account = account, passkey = passkey)"),
-    )
-    suspend fun removeTeamMember(
-        org: String,
-        team: String,
-        account: String,
-        passkey: PasskeyProvider,
-    ) {
-        raw(defaultApi.organizations.teamRemoveMemberRequestConfig(org, team, account, PasskeyRemoveRequest()), passkey)
-    }
-
-    /**
-     * Make an invite token (`inv_…`) into [org] with [role], into [teams], approved with the
-     * caller's [passkey]; one use and 7 days unless said otherwise. [redeemInvite] takes it (no
-     * approval there).
-     */
-    @Deprecated(
-        "Use the generated facade: orgs.inviteCreate",
-        ReplaceWith("orgs.inviteCreate(org = org, role = role.api(), teams = teams, ttlSecs = ttlSecs, uses = uses?.toLong(), passkey = passkey).token"),
-    )
-    @Suppress("LongParameterList")
-    suspend fun invite(
-        org: String,
-        role: OrgRole,
-        passkey: PasskeyProvider,
-        teams: List<String> = emptyList(),
-        ttlSecs: Long? = null,
-        uses: Int? = null,
-    ): String {
-        require(role != OrgRole.Owner) { "an invite cannot make an owner" }
-        val request = InviteCreateRequest(role = role.api(), teams = teams, ttlSecs = ttlSecs, uses = uses?.toLong())
-        return (raw(defaultApi.organizations.inviteCreateRequestConfig(org, request), passkey) as JsonObject).string("token").orEmpty()
-    }
-
-    /** Redeem an invite token (no approval): the account joins its organization. Answers `{ org }`. */
-    @Deprecated(
-        "Use the generated facade: orgs.inviteRedeem",
-        ReplaceWith("orgs.inviteRedeem(token = token)"),
-    )
-    suspend fun redeemInvite(token: String): JsonObject = raw(defaultApi.organizations.inviteRedeemRequestConfig(token)) as JsonObject
-
     // ---------------------------------------------------------------- package origins
-
-    /**
-     * The web origins [pkg]'s managers registered so a frontend they host themselves can sign people
-     * in with passkeys ([SignInOptions.origin]). [NotFound] for an unknown package; `403` to anyone
-     * not managing it.
-     */
-    @Deprecated(
-        "Use the generated facade: packages.originsList",
-        ReplaceWith("packages.originsList(`package` = pkg).origins"),
-    )
-    suspend fun packageOrigins(pkg: String): List<PackageOrigin> = listOf("origins", PackageOrigin.serializer(), raw(defaultApi.packages.originsListRequestConfig(pkg)))
-
-    /**
-     * Register [origin] (`scheme://host[:port]`) for [pkg], approved with [passkey]. [rpId] defaults
-     * to the node's choice for the origin (its host). Refusals: [BadOrigin] (`BAD_ORIGIN`,
-     * `BAD_RP_ID`), [OriginTaken], [QuotaExceeded].
-     */
-    @Deprecated(
-        "Use the generated facade: packages.originsAdd",
-        ReplaceWith("packages.originsAdd(`package` = pkg, origin = origin, rpId = rpId, passkey = passkey)"),
-    )
-    suspend fun addPackageOrigin(
-        pkg: String,
-        origin: String,
-        passkey: PasskeyProvider,
-        rpId: String? = null,
-    ): PackageOriginAdded =
-        wire.decodeFromJsonElement(
-            PackageOriginAdded.serializer(),
-            raw(defaultApi.packages.originsAddRequestConfig(pkg, OriginsAddRequest(origin = origin, rpId = rpId)), passkey),
-        )
-
-    /**
-     * Remove [origin] from [pkg], approved with [passkey]. Sessions opened there stop working
-     * (`401`). [NotFound] if it was not registered.
-     */
-    @Deprecated(
-        "Use the generated facade: packages.originsRemove",
-        ReplaceWith("packages.originsRemove(`package` = pkg, origin = origin, passkey = passkey)"),
-    )
-    suspend fun removePackageOrigin(
-        pkg: String,
-        origin: String,
-        passkey: PasskeyProvider,
-    ): PackageOriginRemoved =
-        wire.decodeFromJsonElement(
-            PackageOriginRemoved.serializer(),
-            raw(defaultApi.packages.originsRemoveRequestConfig(pkg, OriginsRemoveRequest(origin = origin)), passkey),
-        )
 
     // ---------------------------------------------------------------- deployers
 
-    /**
-     * Let an account or organization install apps where the cluster's deployments are `granted`,
-     * until [until] (null: the grant does not end). The cluster's owner grants it, approved with
-     * [passkey], where governance says `deployers: owner`; elsewhere the operator grants with its
-     * key, and this is refused `403`.
-     */
-    @Deprecated(
-        "Use the generated facade: deployments.deployerGrant",
-        ReplaceWith("deployments.deployerGrant(deployer = deployer, until = until?.toString(), passkey = passkey)"),
-    )
-    suspend fun grantDeployer(
-        deployer: Deployer,
-        passkey: PasskeyProvider,
-        until: Instant? = null,
-    ): DeployerGranted {
-        val request = DeployerGrantRequest(deployer = deployer, until = until?.toString())
-        return wire.decodeFromJsonElement(DeployerGranted.serializer(), raw(defaultApi.signUpAndDeployments.deployerGrantRequestConfig(request), passkey))
-    }
-
-    /**
-     * Who may install apps on the cluster: its deployments rule, who grants deployers, its owner
-     * and every grant. For the cluster's owner, or the operator (its token, [useApiKey]).
-     */
-    @Deprecated(
-        "Use the generated facade: deployments.deployerList",
-        ReplaceWith("deployments.deployerList()"),
-    )
-    suspend fun deployers(): DeployersInfo = wire.decodeFromJsonElement(DeployersInfo.serializer(), raw(defaultApi.signUpAndDeployments.deployerListRequestConfig()))
-
-    /**
-     * End a deployer's grant, as the cluster's owner, approved with [passkey]. Apps it installed,
-     * and the apps running them, stay.
-     */
-    @Deprecated(
-        "Use the generated facade: deployments.deployerRevoke",
-        ReplaceWith("deployments.deployerRevoke(key = deployer.key, passkey = passkey)"),
-    )
-    suspend fun revokeDeployer(
-        deployer: Deployer,
-        passkey: PasskeyProvider,
-    ) {
-        raw(defaultApi.signUpAndDeployments.deployerRevokeRequestConfig(deployer.key, PasskeyRemoveRequest()), passkey)
-    }
-
-    /** [revokeDeployer] by the grant's key (`account:{id}` or `org:{id}`). */
-    @Deprecated(
-        "Use the generated facade: deployments.deployerRevoke",
-        ReplaceWith("deployments.deployerRevoke(key = key, passkey = passkey)"),
-    )
-    suspend fun revokeDeployer(
-        key: String,
-        passkey: PasskeyProvider,
-    ) {
-        raw(defaultApi.signUpAndDeployments.deployerRevokeRequestConfig(key, PasskeyRemoveRequest()), passkey)
-    }
-
     // ---------------------------------------------------------------- deployments
-
-    /**
-     * Create a deployment: [owner]'s (the caller's own account, or an organization where it holds
-     * `MANAGE_APPLICATION` org-wide) list of the apps it offers, named [name] (1 to 64 characters,
-     * one line) for customers. Approved with [passkey]; where deployments are `granted` the caller
-     * needs a deployer grant. Answers the deployment's id.
-     */
-    @Deprecated(
-        "Use the generated facade: deployments.create",
-        ReplaceWith("deployments.create(name = name, owner = owner, passkey = passkey)[\"id\"]"),
-    )
-    suspend fun createDeployment(
-        name: String,
-        owner: Deployer,
-        passkey: PasskeyProvider,
-    ): String {
-        val request = DeploymentCreateRequest(name = name, owner = owner)
-        return (raw(defaultApi.signUpAndDeployments.deploymentCreateRequestConfig(request), passkey) as JsonObject).string("id").orEmpty()
-    }
-
-    /** The deployments the caller manages: its account's, and its organizations' where it holds `MANAGE_APPLICATION`. */
-    @Deprecated(
-        "Use the generated facade: deployments.list",
-        ReplaceWith("deployments.list().deployments"),
-    )
-    suspend fun deployments(): List<DeploymentInfo> = listOf("deployments", DeploymentInfo.serializer(), raw(defaultApi.signUpAndDeployments.deploymentListRequestConfig()))
-
-    /** A deployment as anyone may read it: its name, its owner's kind and name, and the apps it offers. Public. */
-    @Deprecated(
-        "Use the generated facade: deployments.get",
-        ReplaceWith("deployments.get(id = id)"),
-    )
-    suspend fun deployment(id: String): PublicDeployment =
-        wire.decodeFromJsonElement(PublicDeployment.serializer(), raw(defaultApi.signUpAndDeployments.deploymentGetRequestConfig(id)))
-
-    /** Delete a deployment that offers nothing and has no instances, approved with [passkey]. */
-    @Deprecated(
-        "Use the generated facade: deployments.delete",
-        ReplaceWith("deployments.delete(id = id, passkey = passkey)"),
-    )
-    suspend fun deleteDeployment(
-        id: String,
-        passkey: PasskeyProvider,
-    ) {
-        raw(defaultApi.signUpAndDeployments.deploymentDeleteRequestConfig(id, PasskeyRemoveRequest()), passkey)
-    }
-
-    /**
-     * Offer `pkg@version` (installed, and seen by the caller) as [app] (1 to 64 letters, digits,
-     * `.`, `_`, `-`) in deployment [id], or move an offered app to another release of its package.
-     * Approved with [passkey].
-     */
-    @Deprecated(
-        "Use the generated facade: deployments.offer",
-        ReplaceWith("deployments.offer(id = id, app = app, `package` = pkg, version = version, passkey = passkey)"),
-    )
-    @Suppress("LongParameterList")
-    suspend fun offerApp(
-        id: String,
-        app: String,
-        pkg: String,
-        version: String,
-        passkey: PasskeyProvider,
-    ): DeploymentOffered {
-        val request = DeploymentOfferRequest(app = app, `package` = pkg, version = version)
-        return wire.decodeFromJsonElement(DeploymentOffered.serializer(), raw(defaultApi.signUpAndDeployments.deploymentOfferRequestConfig(id, request), passkey))
-    }
-
-    /** Withdraw [app] from deployment [id], approved with [passkey]; refused while an instance created from the deployment still runs it. */
-    @Deprecated(
-        "Use the generated facade: deployments.withdraw",
-        ReplaceWith("deployments.withdraw(id = id, app = app, passkey = passkey)"),
-    )
-    suspend fun withdrawApp(
-        id: String,
-        app: String,
-        passkey: PasskeyProvider,
-    ) {
-        raw(defaultApi.signUpAndDeployments.deploymentWithdrawRequestConfig(id, app, PasskeyRemoveRequest()), passkey)
-    }
-
-    /**
-     * The organizations with instances created from deployment [id], for its managers: each one's
-     * id, name, instance count, apps and releases, and first instance. Never members, teams or app
-     * data.
-     */
-    @Deprecated(
-        "Use the generated facade: deployments.orgs",
-        ReplaceWith("deployments.orgs(id = id)"),
-    )
-    suspend fun deploymentOrgs(id: String): DeploymentOrgs =
-        wire.decodeFromJsonElement(DeploymentOrgs.serializer(), raw(defaultApi.signUpAndDeployments.deploymentOrgsRequestConfig(id)))
 
     // ---------------------------------------------------------------- helpers
 

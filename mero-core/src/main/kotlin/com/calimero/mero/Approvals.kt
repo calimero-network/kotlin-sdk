@@ -379,6 +379,12 @@ data class ConsentResult(
 ) {
     val isPending: Boolean get() = status == "pending"
     val isApproved: Boolean get() = status == "approved"
+
+    companion object {
+        /** The facade's answer (`client.consent.pageResult(request = id)`) as a [ConsentResult]. */
+        fun from(answer: Map<String, JsonElement?>): ConsentResult =
+            CalimeroClient.wire.decodeFromJsonElement(serializer(), JsonObject(answer.mapValues { it.value ?: JsonNull }))
+    }
 }
 
 /** What the consent page put on `returnTo` when it sent the person back. */
