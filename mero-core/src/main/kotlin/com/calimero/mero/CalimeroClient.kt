@@ -549,14 +549,20 @@ class CalimeroClient(
         stepUp: StepUp,
     ): Response {
         val bytes = request.body?.let { b -> Buffer().also { b.writeTo(it) }.readByteArray() }
-        val type = request.body?.contentType()?.let { "${it.type}/${it.subtype}" }
+        val path = relativePath(request.url)
+        val route = path.substringBefore('?')
+        val binary =
+            Routes.binaryBody.entries
+                .firstOrNull { it.key.matches(request.method, route) }
+                ?.value
+        val type = binary ?: request.body?.contentType()?.let { "${it.type}/${it.subtype}" }
         var body = if (bytes == null || (bytes.isEmpty() && type == null)) null else Body(bytes, type ?: OCTET_STREAM)
         if (stepUp.nulls.isNotEmpty()) {
             // The generated request leaves every null out; these the caller set to `null` ([Explicit]).
             val json = body?.let { parseOrNull(it.bytes.decodeToString()) as? JsonObject } ?: JsonObject(emptyMap())
             body = jsonBody(JsonObject(json + stepUp.nulls.filterNot(json::containsKey).associateWith { JsonNull }))
         }
-        return dispatch(request.method, relativePath(request.url), body, stepUp)
+        return dispatch(request.method, path, body, stepUp)
     }
 
     /**
