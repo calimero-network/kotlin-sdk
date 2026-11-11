@@ -36,7 +36,8 @@ scripts/refresh-openapi.sh --check   # regenerate from the vendored document; fa
 and the workflow opens or refreshes one pull request on `chore/core-openapi` titled
 `chore(api): sync with core <sha>`. Its body lists the facade methods added, removed or changed
 (`codegen/facade-diff.py`); a removed or changed one needs a major version. It uses the GitHub App
-behind `vars.GH_APP_ID` / `secrets.GH_APP_PRIVATE_KEY`, which must be installed on this repository.
+whose credentials the org shares as `vars.ACTIONS_APP_ID` / `secrets.ACTIONS_APP_PRIVATE_KEY`
+(both must be shared with this repository); the app must be installed on this repository.
 
 ## Where the document and the generated client still need help
 
