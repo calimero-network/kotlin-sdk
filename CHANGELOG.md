@@ -2,6 +2,15 @@
 
 ## 0.4.0
 
+### Releases are cut on merge (CI)
+
+- `.github/workflows/release-on-merge.yml` runs semantic-release (`.releaserc.json`, as in mero-js)
+  on every push to `main`: the conventional commits since the last `v*` tag decide the version, it
+  pushes the tag `vX.Y.Z` with a GitHub App token and creates the GitHub Release, and the tag runs
+  `release.yml`. No manual tag.
+- Maven Central publishes automatically (`publishingType = "AUTOMATIC"`), with no click in the Portal.
+  A Central version can never be replaced. See PUBLISHING.md.
+
 ### The API client is generated from core's OpenAPI document (mero-core)
 
 - `openapi/openapi.json` vendors core's node API (`docs/public/openapi.json` on core's master,
