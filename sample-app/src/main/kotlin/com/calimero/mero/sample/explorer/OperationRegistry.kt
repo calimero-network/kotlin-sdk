@@ -54,9 +54,16 @@ private val identityOps =
         },
         op("removePasskey", "Account", "auth.passkeyRemove", "Remove one of the account's passkeys", OpField.line("id", "Credential id")) { e, v -> e.client.auth.passkeyRemove(cred = v.v("id"), passkey = e.passkey) },
         op("attestation", "Account", "attestation", "The node's attestation document (display only)") { e, _ -> e.client.attestation().toString() },
-        op("listApiKeys", "Account", "auth.apikeyList", "The account's API keys") { e, _ -> e.client.auth.apikeyList().propertyKeys.joinToString("\n") },
+        op("listApiKeys", "Account", "auth.apikeyList", "The account's API keys") { e, _ ->
+            e.client.auth
+                .apikeyList()
+                .propertyKeys
+                .joinToString("\n")
+        },
         op("createApiKey", "Account", "auth.apikeyCreate", "Create an API key (shown once)", OpField.line("label", "Label"), OpField.line("ttl", "TTL (seconds)", "3600")) { e, v ->
-            e.client.auth.apikeyCreate(label = v.opt("label"), ttlSecs = v.opt("ttl")?.toLong(), passkey = e.passkey).toString()
+            e.client.auth
+                .apikeyCreate(label = v.opt("label"), ttlSecs = v.opt("ttl")?.toLong(), passkey = e.passkey)
+                .toString()
         },
         op("revokeApiKey", "Account", "auth.apikeyRevoke", "Revoke an API key (passkey)", OpField.line("key", "Key id")) { e, v -> e.client.auth.apikeyRevoke(key = v.v("key"), passkey = e.passkey) },
         op("signOutEverywhere", "Account", "signOutEverywhere", "End every session of the account") { e, _ -> e.client.signOutEverywhere() },
@@ -64,19 +71,32 @@ private val identityOps =
 
 private val appOps =
     listOf(
-        op("listApps", "Apps", "apps.list", "Apps this account reaches", OpField.line("package", "Package (optional)")) { e, v -> e.client.apps.list(`package` = v.opt("package")).apps.joinToString("\n") },
+        op("listApps", "Apps", "apps.list", "Apps this account reaches", OpField.line("package", "Package (optional)")) { e, v ->
+            e.client.apps
+                .list(`package` = v.opt("package"))
+                .apps
+                .joinToString("\n")
+        },
         op("getApp", "Apps", "apps.get", "One app instance's record", app) { e, v -> e.client.apps.get(app = v.v("app")) },
         op("createApp", "Apps", "apps.create", "Create an app instance from a package release", OpField.line("name", "Name"), OpField.line("package", "Package", "com.calimero.chat"), OpField.line("version", "Version (optional)"), OpField.line("org", "Organization (optional)"), OpField.json("initArgs", "init arguments (JSON)")) { e, v ->
-            e.client.apps.create(name = v.v("name"), `package` = v.v("package"), version = v.opt("version"), org = v.opt("org"), initArgs = json(v.v("initArgs"))).appId
+            e.client.apps
+                .create(name = v.v("name"), `package` = v.v("package"), version = v.opt("version"), org = v.opt("org"), initArgs = json(v.v("initArgs")))
+                .appId
         },
         op("call", "Apps", "apps.intents", "POST /apps/{app}/intents: call a method", app, OpField.line("method", "Method"), args) { e, v ->
-            e.client.apps.intents(app = v.v("app"), method = v.v("method"), args = json(v.v("args"))).toString()
+            e.client.apps
+                .intents(app = v.v("app"), method = v.v("method"), args = json(v.v("args")))
+                .toString()
         },
         op("callConfirmed", "Apps", "apps.intents", "Call a method that needs the passkey", app, OpField.line("method", "Method"), args) { e, v ->
-            e.client.apps.intents(app = v.v("app"), method = v.v("method"), args = json(v.v("args")), passkey = e.passkey).toString()
+            e.client.apps
+                .intents(app = v.v("app"), method = v.v("method"), args = json(v.v("args")), passkey = e.passkey)
+                .toString()
         },
         op("view", "Apps", "apps.views", "POST /apps/{app}/views: run a read", app, OpField.line("method", "Method"), args) { e, v ->
-            e.client.apps.views(app = v.v("app"), method = v.v("method"), args = json(v.v("args"))).toString()
+            e.client.apps
+                .views(app = v.v("app"), method = v.v("method"), args = json(v.v("args")))
+                .toString()
         },
         op("deleteApp", "Apps", "apps.delete", "Delete an app instance", app) { e, v -> e.client.apps.delete(app = v.v("app")) },
         op("setAccess", "Apps", "apps.access", "Who may reach the app: owner, org, public or a team", app, OpField.line("team", "Team id (blank: org)")) { e, v ->
@@ -89,24 +109,51 @@ private val appOps =
             e.client.apps.upgrade(app = v.v("app"), version = v.v("version"), passkey = e.passkey)
         },
         op("transferApp", "Apps", "apps.transfer", "Hand the app to another account", app, OpField.line("to", "Account id")) { e, v -> e.client.apps.transfer(app = v.v("app"), to = v.v("to"), passkey = e.passkey) },
-        op("presence", "Apps", "apps.presenceGet", "Who is present in the app now", app) { e, v -> e.client.apps.presenceGet(app = v.v("app")).present.joinToString("\n") },
+        op("presence", "Apps", "apps.presenceGet", "Who is present in the app now", app) { e, v ->
+            e.client.apps
+                .presenceGet(app = v.v("app"))
+                .present
+                .joinToString("\n")
+        },
         op("publishPresence", "Apps", "apps.presencePublish", "Publish this device's presence", app, OpField.line("seq", "Sequence", "1"), OpField.line("state", "State (text)")) { e, v ->
             e.client.apps.presencePublish(app = v.v("app"), seq = v.v("seq").toLongOrNull() ?: 1, state = v.opt("state")?.encodeToByteArray()?.let { Explicit(hex(it)) })
         },
-        op("listBlobs", "Apps", "apps.blobList", "The app's blobs", app) { e, v -> e.client.apps.blobList(app = v.v("app")).blobs.joinToString("\n") },
+        op("listBlobs", "Apps", "apps.blobList", "The app's blobs", app) { e, v ->
+            e.client.apps
+                .blobList(app = v.v("app"))
+                .blobs
+                .joinToString("\n")
+        },
         op("uploadBlob", "Apps", "uploadBlob", "Upload text as a blob", app, OpField.line("text", "Text")) { e, v -> e.client.uploadBlob(v.v("app"), v.v("text").encodeToByteArray()) },
-        op("downloadBlob", "Apps", "apps.blobDownload", "Download a blob", app, OpField.line("id", "Blob id")) { e, v -> e.client.apps.blobDownload(app = v.v("app"), id = v.v("id")).decodeToString() },
+        op("downloadBlob", "Apps", "apps.blobDownload", "Download a blob", app, OpField.line("id", "Blob id")) { e, v ->
+            e.client.apps
+                .blobDownload(app = v.v("app"), id = v.v("id"))
+                .decodeToString()
+        },
         op("blobInfo", "Apps", "apps.blobInfo", "A blob's id and size", app, OpField.line("id", "Blob id")) { e, v -> e.client.apps.blobInfo(app = v.v("app"), id = v.v("id")) },
         op("deleteBlob", "Apps", "apps.blobDelete", "Delete a blob", app, OpField.line("id", "Blob id")) { e, v -> e.client.apps.blobDelete(app = v.v("app"), id = v.v("id")) },
-        op("aliases", "Apps", "auth.aliasList", "This account's aliases") { e, _ -> e.client.auth.aliasList().aliases },
+        op("aliases", "Apps", "auth.aliasList", "This account's aliases") { e, _ ->
+            e.client.auth
+                .aliasList()
+                .aliases
+        },
         op("setAlias", "Apps", "auth.aliasSet", "Name an app", OpField.line("alias", "Alias"), app) { e, v -> e.client.auth.aliasSet(alias = v.v("alias"), app = v.v("app")) },
-        op("alias", "Apps", "auth.aliasGet", "The app an alias names", OpField.line("alias", "Alias")) { e, v -> e.client.auth.aliasGet(alias = v.v("alias")).appId },
+        op("alias", "Apps", "auth.aliasGet", "The app an alias names", OpField.line("alias", "Alias")) { e, v ->
+            e.client.auth
+                .aliasGet(alias = v.v("alias"))
+                .appId
+        },
         op("deleteAlias", "Apps", "auth.aliasDelete", "Forget an alias", OpField.line("alias", "Alias")) { e, v -> e.client.auth.aliasDelete(alias = v.v("alias")) },
     )
 
 private val packageOps =
     listOf(
-        op("packages", "Packages", "packages.list", "Installed packages") { e, _ -> e.client.packages.list().packages.joinToString("\n") },
+        op("packages", "Packages", "packages.list", "Installed packages") { e, _ ->
+            e.client.packages
+                .list()
+                .packages
+                .joinToString("\n")
+        },
         op("package", "Packages", "packages.get", "One installed package", OpField.line("package", "Package")) { e, v -> e.client.packages.get(`package` = v.v("package")) },
         op("installPackage", "Packages", "packages.install", "Install a release from the registry", OpField.line("package", "Package"), OpField.line("version", "Version")) { e, v ->
             e.client.packages.install(`package` = v.v("package"), version = v.v("version"))
@@ -118,7 +165,11 @@ private val packageOps =
 
 private val orgOps =
     listOf(
-        op("createOrg", "Organizations", "orgs.create", "Create an organization", OpField.line("name", "Name")) { e, v -> e.client.orgs.create(name = v.v("name")).orgId },
+        op("createOrg", "Organizations", "orgs.create", "Create an organization", OpField.line("name", "Name")) { e, v ->
+            e.client.orgs
+                .create(name = v.v("name"))
+                .orgId
+        },
         op("getOrg", "Organizations", "orgs.get", "An organization: members, teams, metadata", org) { e, v -> e.client.orgs.get(org = v.v("org")) },
         op("deleteOrg", "Organizations", "orgs.delete", "Delete an organization (passkey)", org) { e, v -> e.client.orgs.delete(org = v.v("org"), passkey = e.passkey) },
         op("setOrgMetadata", "Organizations", "orgs.metadata", "Set the organization's metadata", org, OpField.json("metadata", "Metadata (JSON)")) { e, v -> e.client.orgs.metadata(org = v.v("org"), metadata = json(v.v("metadata"))) },
@@ -133,11 +184,15 @@ private val orgOps =
             e.client.orgs.capabilities(org = v.v("org"), capabilities = v.v("caps").toLong(), account = v.opt("account"), passkey = e.passkey)
         },
         op("invite", "Organizations", "orgs.inviteCreate", "Mint an invite token", org, OpField.line("role", "Role", "member")) { e, v ->
-            e.client.orgs.inviteCreate(org = v.v("org"), role = checkNotNull(OrgRole.decode(v.v("role"))), teams = emptyList(), passkey = e.passkey).token
+            e.client.orgs
+                .inviteCreate(org = v.v("org"), role = checkNotNull(OrgRole.decode(v.v("role"))), teams = emptyList(), passkey = e.passkey)
+                .token
         },
         op("redeemInvite", "Organizations", "orgs.inviteRedeem", "Redeem an invite token", OpField.line("token", "Token", "inv_…")) { e, v -> e.client.orgs.inviteRedeem(token = v.v("token")) },
         op("createTeam", "Organizations", "orgs.teamCreate", "Create a team", org, OpField.line("name", "Name"), OpField.line("join", "Join (everyone|invite)", "everyone")) { e, v ->
-            e.client.orgs.teamCreate(org = v.v("org"), name = v.v("name"), join = if (v.v("join") == "invite") TeamJoin.INVITE else TeamJoin.EVERYONE).teamId
+            e.client.orgs
+                .teamCreate(org = v.v("org"), name = v.v("name"), join = if (v.v("join") == "invite") TeamJoin.INVITE else TeamJoin.EVERYONE)
+                .teamId
         },
         op("getTeam", "Organizations", "orgs.teamGet", "A team", org, team) { e, v -> e.client.orgs.teamGet(org = v.v("org"), team = v.v("team")) },
         op("updateTeam", "Organizations", "orgs.teamUpdate", "Rename a team", org, team, OpField.line("name", "Name")) { e, v -> e.client.orgs.teamUpdate(org = v.v("org"), team = v.v("team"), name = v.opt("name")) },

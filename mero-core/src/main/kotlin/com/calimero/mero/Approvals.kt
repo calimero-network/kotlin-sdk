@@ -1,5 +1,6 @@
 package com.calimero.mero
 
+import com.calimero.mero.api.models.ConsentPageResult200Response
 import com.calimero.mero.tee.compareReleaseVersions
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.JsonElement
@@ -386,8 +387,8 @@ data class ConsentResult(
 
     companion object {
         /** The facade's answer (`client.consent.pageResult(request = id)`) as a [ConsentResult]. */
-        fun from(answer: Map<String, JsonElement?>): ConsentResult =
-            CalimeroClient.wire.decodeFromJsonElement(serializer(), JsonObject(answer.mapValues { it.value ?: JsonNull }))
+        fun from(answer: ConsentPageResult200Response): ConsentResult =
+            ConsentResult(answer.requestId, answer.kind.value, answer.status.value, answer.decidedAt)
     }
 }
 
