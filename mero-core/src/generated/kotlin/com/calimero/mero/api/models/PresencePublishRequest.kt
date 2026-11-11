@@ -39,7 +39,7 @@ import kotlinx.serialization.Contextual
 data class PresencePublishRequest (
 
     @SerialName(value = "seq")
-    val seq: kotlin.Long?,
+    val seq: kotlin.Long,
 
     @SerialName(value = "state")
     val state: kotlin.String? = null

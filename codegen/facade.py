@@ -9,7 +9,9 @@ Run by `./gradlew -p codegen generateMeroClient` after OpenAPI Generator, never 
 flattened into named parameters, answering the generated success model. A body's `confirm` and
 `operatorProof` are never parameters: the transport answers `412 CONFIRM_REQUIRED` and
 `428 OPERATOR_SIGNATURE_REQUIRED` itself, with the client's passkey and operator signer, or the
-`passkey` / `operator` a method that may need them takes.
+`passkey` / `operator` a method that may need them takes. A body field whose `null` the spec gives
+a meaning (`type: [T, "null"]`) is an `Explicit<T>?`: left out when null, sent (as `null` too)
+when given.
 
 It reads the generator's own output for the names it chose (methods, parameters, body models),
 so the facade cannot drift from the client it calls; the spec gives the groups, the routes, the
@@ -187,6 +189,21 @@ internal object Routes {{
     open(os.path.join(out_dir, "Routes.kt"), "w").write(text)
 
 
+def nullable(schema):
+    t = schema.get("type")
+    branches = schema.get("anyOf", []) + schema.get("oneOf", [])
+    return (isinstance(t, list) and "null" in t) or any(b.get("type") == "null" for b in branches)
+
+
+def meaningful_nulls(spec, op):
+    """The body fields whose `null` the spec gives a meaning (`type: [T, "null"]`): sent as `null`
+    when the caller says so, left out when the caller says nothing."""
+    schema = op.get("requestBody", {}).get("content", {}).get("application/json", {}).get("schema", {})
+    if "$ref" in schema:
+        schema = spec["components"]["schemas"][schema["$ref"].split("/")[-1]]
+    return {k for k, v in schema.get("properties", {}).items() if nullable(v)}
+
+
 def main():
     spec_path, root = sys.argv[1], sys.argv[2]
     spec = json.load(open(spec_path))
@@ -233,13 +250,21 @@ def main():
             proves = op.get("x-calimero-operator") is True or "428" in responses
 
             required, optional, call_args, taken = [], [], [], set()
+            explicit = meaningful_nulls(spec, op)
+            null_checks = []
             body_expr = None
             for p in sig["params"]:
                 fields = read_model(models, p["type"].rstrip("?").strip())
                 if fields is None:
-                    (optional if p["default"] else required).append(f"{ident(p['name'])}: {p['type']}" + (f" = {p['default']}" if p["default"] else ""))
-                    taken.add(p["name"].strip("`"))
-                    call_args.append(f"{ident(p['name'])} = {ident(p['name'])}")
+                    # A body the spec maps to a hand-written type is named after it, not its package
+                    # (`comCalimeroMeroConsentRequest` -> `consentRequest`).
+                    local = p["name"].strip("`")
+                    if local.startswith("comCalimeroMero"):
+                        local = local[len("comCalimeroMero"):]
+                        local = local[:1].lower() + local[1:]
+                    (optional if p["default"] else required).append(f"{ident(local)}: {p['type']}" + (f" = {p['default']}" if p["default"] else ""))
+                    taken.add(local)
+                    call_args.append(f"{ident(p['name'])} = {ident(local)}")
                     continue
                 model = p["type"].rstrip("?").strip()
                 ctor = []
@@ -250,13 +275,20 @@ def main():
                     if pname in taken:
                         pname = "body" + pname[0].upper() + pname[1:]
                     taken.add(pname)
+                    if f["wire"] in explicit:
+                        # Absent (null), a value, or `Explicit(null)`: the field sent as `null`.
+                        inner = f["type"].rstrip("?").strip()
+                        optional.append(f"{ident(pname)}: com.calimero.mero.Explicit<{inner}>? = null")
+                        ctor.append(f"{ident(f['name'])} = {ident(pname)}?.value")
+                        null_checks.append(f'"{f["wire"]}".takeIf {{ {ident(pname)} != null && {ident(pname)}.value == null }}')
+                        continue
                     decl = f"{ident(pname)}: {f['type']}"
                     if f["default"]:
                         optional.append(f"{decl} = {f['default']}")
                     else:
                         required.append(decl)
                     ctor.append(f"{ident(f['name'])} = {ident(pname)}")
-                if p["default"] and not ctor:
+                if p["default"] and not ctor and not null_checks:
                     body_expr = None  # nothing but what the transport adds: send no body
                     continue
                 body_expr = f"{model}({', '.join(ctor)})"
@@ -273,7 +305,8 @@ def main():
             extra.append("")
             extra.append("@throws com.calimero.mero.CalimeroError the node's refusal, typed by [com.calimero.mero.errorFrom].")
             params = required + optional
-            stepup = f"{'passkey' if confirms else 'null'}, {'operator' if proves else 'null'}"
+            nulls = f"setOfNotNull({', '.join(null_checks)})" if null_checks else "emptySet()"
+            stepup = f"{'passkey' if confirms else 'null'}, {'operator' if proves else 'null'}, {nulls}"
             sig_text = ",\n".join(f"        {x}" for x in params)
             head = f"    suspend fun {ident(short)}(\n{sig_text},\n    )" if params else f"    suspend fun {ident(short)}()"
             call = f"api({stepup}).{api_prop}.{gen}({', '.join(call_args)})"
@@ -296,7 +329,7 @@ import com.calimero.mero.crypto.DeviceSigner
  * [com.calimero.mero.CalimeroError] it means.
  */
 class {cls} internal constructor(
-    private val api: (PasskeyProvider?, DeviceSigner?) -> MeroApi,
+    private val api: (PasskeyProvider?, DeviceSigner?, Set<String>) -> MeroApi,
 ) {{
 {chr(10).join(methods)}}}
 """

@@ -50,7 +50,7 @@ data class ConsentPageCreate200Response (
     val code: kotlin.String,
 
     @SerialName(value = "expiresAt")
-    val expiresAt: kotlin.Long?
+    val expiresAt: kotlin.Long
 
 ) {
 

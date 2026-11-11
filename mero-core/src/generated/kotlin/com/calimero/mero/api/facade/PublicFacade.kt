@@ -15,7 +15,7 @@ import com.calimero.mero.crypto.DeviceSigner
  * [com.calimero.mero.CalimeroError] it means.
  */
 class PublicFacade internal constructor(
-    private val api: (PasskeyProvider?, DeviceSigner?) -> MeroApi,
+    private val api: (PasskeyProvider?, DeviceSigner?, Set<String>) -> MeroApi,
 ) {
     /**
      * The node's attestation
@@ -34,7 +34,7 @@ class PublicFacade internal constructor(
         appHash: kotlin.String? = null,
         purpose: com.calimero.mero.api.apis.PublicApi.PurposeAttestation? = null,
     ): AttestationDoc =
-        api(null, null).publicApi.attestation(nonce = nonce, app = app, appHash = appHash, purpose = purpose)
+        api(null, null, emptySet()).publicApi.attestation(nonce = nonce, app = app, appHash = appHash, purpose = purpose)
 
     /**
      * Node health
@@ -48,7 +48,7 @@ class PublicFacade internal constructor(
      * @throws com.calimero.mero.CalimeroError the node's refusal, typed by [com.calimero.mero.errorFrom].
      */
     suspend fun health(): Health200Response =
-        api(null, null).publicApi.health()
+        api(null, null, emptySet()).publicApi.health()
 
     /**
      * A signing key's organization
@@ -63,8 +63,8 @@ class PublicFacade internal constructor(
      */
     suspend fun publisherBinding(
         signer: kotlin.String,
-    ): kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement?> =
-        api(null, null).publicApi.publisherBinding(signer = signer)
+    ): kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement> =
+        api(null, null, emptySet()).publicApi.publisherBinding(signer = signer)
 
     /**
      * The cluster's releases
@@ -77,6 +77,6 @@ class PublicFacade internal constructor(
      *
      * @throws com.calimero.mero.CalimeroError the node's refusal, typed by [com.calimero.mero.errorFrom].
      */
-    suspend fun releasesPublic(): kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement?> =
-        api(null, null).publicApi.releasesPublic()
+    suspend fun releasesPublic(): kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement> =
+        api(null, null, emptySet()).publicApi.releasesPublic()
 }

@@ -39,10 +39,10 @@ import kotlinx.serialization.Contextual
  * @param orgs 
  * @param via 
  * @param passkeyId 
- * @param app 
- * @param origin 
  * @param approvedReleases 
  * @param outboundApprovals 
+ * @param app 
+ * @param origin 
  * @param recoveryCode 
  * @param recoveryPending 
  */
@@ -68,23 +68,23 @@ data class Me200Response (
     @SerialName(value = "passkeyId")
     val passkeyId: kotlin.String?,
 
-    @SerialName(value = "app")
-    val app: kotlin.String?,
-
-    @SerialName(value = "origin")
-    val origin: kotlin.String?,
-
     @Contextual @SerialName(value = "approvedReleases")
     val approvedReleases: kotlinx.serialization.json.JsonElement?,
 
     @Contextual @SerialName(value = "outboundApprovals")
     val outboundApprovals: kotlinx.serialization.json.JsonElement?,
 
+    @SerialName(value = "app")
+    val app: kotlin.String? = null,
+
+    @SerialName(value = "origin")
+    val origin: kotlin.String? = null,
+
     @Contextual @SerialName(value = "recoveryCode")
-    val recoveryCode: kotlinx.serialization.json.JsonElement?,
+    val recoveryCode: kotlinx.serialization.json.JsonElement? = null,
 
     @Contextual @SerialName(value = "recoveryPending")
-    val recoveryPending: kotlinx.serialization.json.JsonElement?
+    val recoveryPending: kotlinx.serialization.json.JsonElement? = null
 
 ) {
 

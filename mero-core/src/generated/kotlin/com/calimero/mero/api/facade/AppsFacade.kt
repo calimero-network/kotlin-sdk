@@ -15,7 +15,7 @@ import com.calimero.mero.crypto.DeviceSigner
  * [com.calimero.mero.CalimeroError] it means.
  */
 class AppsFacade internal constructor(
-    private val api: (PasskeyProvider?, DeviceSigner?) -> MeroApi,
+    private val api: (PasskeyProvider?, DeviceSigner?, Set<String>) -> MeroApi,
 ) {
     /**
      * An app's ABI
@@ -31,7 +31,7 @@ class AppsFacade internal constructor(
     suspend fun abi(
         app: kotlin.String,
     ): AppAbi200Response =
-        api(null, null).apps.appAbi(app = app)
+        api(null, null, emptySet()).apps.appAbi(app = app)
 
     /**
      * Set who may reach an app
@@ -46,7 +46,7 @@ class AppsFacade internal constructor(
         app: kotlin.String,
         access: com.calimero.mero.AppAccess,
     ): kotlinx.serialization.json.JsonObject =
-        api(null, null).apps.appAccess(app = app, appAccessRequest = AppAccessRequest(access = access))
+        api(null, null, emptySet()).apps.appAccess(app = app, appAccessRequest = AppAccessRequest(access = access))
 
     /**
      * Every replica's receipt-key attestation
@@ -66,7 +66,7 @@ class AppsFacade internal constructor(
         appHash: kotlin.String? = null,
         purpose: com.calimero.mero.api.apis.AppsApi.PurposeAppAttestation? = null,
     ): AppAttestation200Response =
-        api(null, null).apps.appAttestation(app = app, nonce = nonce, app2 = app2, appHash = appHash, purpose = purpose)
+        api(null, null, emptySet()).apps.appAttestation(app = app, nonce = nonce, app2 = app2, appHash = appHash, purpose = purpose)
 
     /**
      * Create an app instance
@@ -91,7 +91,7 @@ class AppsFacade internal constructor(
         metadata: kotlinx.serialization.json.JsonElement? = null,
         deployment: kotlin.String? = null,
     ): AppCreate200Response =
-        api(null, null).apps.appCreate(appCreateRequest = AppCreateRequest(name = name, bundle = bundle, `package` = `package`, version = version, service = service, org = org, access = access, initArgs = initArgs, metadata = metadata, deployment = deployment))
+        api(null, null, emptySet()).apps.appCreate(appCreateRequest = AppCreateRequest(name = name, bundle = bundle, `package` = `package`, version = version, service = service, org = org, access = access, initArgs = initArgs, metadata = metadata, deployment = deployment))
 
     /**
      * Delete an app
@@ -107,7 +107,7 @@ class AppsFacade internal constructor(
     suspend fun delete(
         app: kotlin.String,
     ): AppDelete200Response =
-        api(null, null).apps.appDelete(app = app)
+        api(null, null, emptySet()).apps.appDelete(app = app)
 
     /**
      * One app
@@ -123,7 +123,7 @@ class AppsFacade internal constructor(
     suspend fun get(
         app: kotlin.String,
     ): App =
-        api(null, null).apps.appGet(app = app)
+        api(null, null, emptySet()).apps.appGet(app = app)
 
     /**
      * Apps the caller reaches
@@ -140,7 +140,7 @@ class AppsFacade internal constructor(
         `package`: kotlin.String? = null,
         bundle: kotlin.String? = null,
     ): AppList200Response =
-        api(null, null).apps.appList(`package` = `package`, bundle = bundle)
+        api(null, null, emptySet()).apps.appList(`package` = `package`, bundle = bundle)
 
     /**
      * Set an app's metadata
@@ -157,14 +157,14 @@ class AppsFacade internal constructor(
         app: kotlin.String,
         metadata: kotlinx.serialization.json.JsonElement?,
     ): kotlinx.serialization.json.JsonObject =
-        api(null, null).apps.appMetadata(app = app, appMetadataRequest = AppMetadataRequest(metadata = metadata))
+        api(null, null, emptySet()).apps.appMetadata(app = app, appMetadataRequest = AppMetadataRequest(metadata = metadata))
 
     /**
      * Call a method by its path
      *
      * The body of `/intents` or `/views` without `method`, which the path names, as the app's OpenAPI document lists it: a view the running bundle's ABI declares (without `confirm`) is answered as `/views`, anything else as `/intents`, with that route's gate, step-up and limits. Retry-safe as a view always, as a call with `idempotencyKey`.
      *
-     * **Who:** whoever the app's access admits (a public app: anyone).
+     * **Who:** whoever the app's access admits (a public app: anyone). **Step-up:** when the method is a `confirm` method of the app's ABI, answers `412 CONFIRM_REQUIRED` first; send the same request again with `confirm`, a passkey assertion over `details.challenge`.
      *
      * `POST /apps/{app}/methods/{method}` (`app_method`).
      *
@@ -181,7 +181,7 @@ class AppsFacade internal constructor(
         minIndex: kotlin.Long? = null,
         passkey: PasskeyProvider? = null,
     ): AppMethod200Response =
-        api(passkey, null).apps.appMethod(app = app, method = method, appMethodRequest = AppMethodRequest(args = args, idempotencyKey = idempotencyKey, consistency = consistency, minIndex = minIndex))
+        api(passkey, null, emptySet()).apps.appMethod(app = app, method = method, appMethodRequest = AppMethodRequest(args = args, idempotencyKey = idempotencyKey, consistency = consistency, minIndex = minIndex))
 
     /**
      * Move an app to another organization
@@ -202,7 +202,7 @@ class AppsFacade internal constructor(
         bringMembers: kotlin.Boolean? = null,
         passkey: PasskeyProvider? = null,
     ): AppMove200Response =
-        api(passkey, null).apps.appMove(app = app, appMoveRequest = AppMoveRequest(toOrg = toOrg, bringMembers = bringMembers))
+        api(passkey, null, emptySet()).apps.appMove(app = app, appMoveRequest = AppMoveRequest(toOrg = toOrg, bringMembers = bringMembers))
 
     /**
      * An app's OpenAPI document
@@ -217,8 +217,8 @@ class AppsFacade internal constructor(
      */
     suspend fun openapi(
         app: kotlin.String,
-    ): kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement?> =
-        api(null, null).apps.appOpenapi(app = app)
+    ): kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement> =
+        api(null, null, emptySet()).apps.appOpenapi(app = app)
 
     /**
      * One compute run
@@ -234,8 +234,8 @@ class AppsFacade internal constructor(
     suspend fun run(
         app: kotlin.String,
         run: kotlin.String,
-    ): kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement?> =
-        api(null, null).apps.appRun(app = app, run = run)
+    ): kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement> =
+        api(null, null, emptySet()).apps.appRun(app = app, run = run)
 
     /**
      * An app's compute runs
@@ -250,8 +250,8 @@ class AppsFacade internal constructor(
         app: kotlin.String,
         limit: kotlin.String? = null,
         before: kotlin.String? = null,
-    ): kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement?> =
-        api(null, null).apps.appRuns(app = app, limit = limit, before = before)
+    ): kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement> =
+        api(null, null, emptySet()).apps.appRuns(app = app, limit = limit, before = before)
 
     /**
      * What an app stores
@@ -267,7 +267,7 @@ class AppsFacade internal constructor(
     suspend fun storage(
         app: kotlin.String,
     ): AppStorage200Response =
-        api(null, null).apps.appStorage(app = app)
+        api(null, null, emptySet()).apps.appStorage(app = app)
 
     /**
      * Hand an app to another account
@@ -286,8 +286,8 @@ class AppsFacade internal constructor(
         app: kotlin.String,
         to: kotlin.String,
         passkey: PasskeyProvider? = null,
-    ): kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement?> =
-        api(passkey, null).apps.appTransfer(app = app, appTransferRequest = AppTransferRequest(to = to))
+    ): kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement> =
+        api(passkey, null, emptySet()).apps.appTransfer(app = app, appTransferRequest = AppTransferRequest(to = to))
 
     /**
      * Upgrade an app instance
@@ -311,7 +311,7 @@ class AppsFacade internal constructor(
         migrate: kotlin.String? = null,
         passkey: PasskeyProvider? = null,
     ): AppUpgrade200Response =
-        api(passkey, null).apps.appUpgrade(app = app, appUpgradeRequest = AppUpgradeRequest(bundle = bundle, `package` = `package`, version = version, service = service, migrate = migrate))
+        api(passkey, null, emptySet()).apps.appUpgrade(app = app, appUpgradeRequest = AppUpgradeRequest(bundle = bundle, `package` = `package`, version = version, service = service, migrate = migrate))
 
     /**
      * An app's runs per day
@@ -327,12 +327,12 @@ class AppsFacade internal constructor(
     suspend fun usage(
         app: kotlin.String,
     ): AppUsage200Response =
-        api(null, null).apps.appUsage(app = app)
+        api(null, null, emptySet()).apps.appUsage(app = app)
 
     /**
      * An app's cross-app calls
      *
-     * The owner or an organization admin: calls waiting for delivery and dead letters.
+     * The owner or an organization admin: how many calls wait in its outbox for delivery (`pending`, a count), and its dead letters, oldest first (`atMs`: the entry time it was dead-lettered at, Unix milliseconds).
      *
      * **Who:** signed in (a session or an API key).
      *
@@ -343,7 +343,7 @@ class AppsFacade internal constructor(
     suspend fun xcalls(
         app: kotlin.String,
     ): AppXcalls200Response =
-        api(null, null).apps.appXcalls(app = app)
+        api(null, null, emptySet()).apps.appXcalls(app = app)
 
     /**
      * Forget a blob
@@ -360,7 +360,7 @@ class AppsFacade internal constructor(
         app: kotlin.String,
         id: kotlin.String,
     ): BlobDelete200Response =
-        api(null, null).apps.blobDelete(app = app, id = id)
+        api(null, null, emptySet()).apps.blobDelete(app = app, id = id)
 
     /**
      * Download a blob
@@ -378,7 +378,7 @@ class AppsFacade internal constructor(
         id: kotlin.String,
         grant: kotlin.String? = null,
     ): kotlin.ByteArray =
-        api(null, null).apps.blobDownload(app = app, id = id, grant = grant)
+        api(null, null, emptySet()).apps.blobDownload(app = app, id = id, grant = grant)
 
     /**
      * A blob's size
@@ -393,7 +393,7 @@ class AppsFacade internal constructor(
         app: kotlin.String,
         id: kotlin.String,
     ): BlobInfo200Response =
-        api(null, null).apps.blobInfo(app = app, id = id)
+        api(null, null, emptySet()).apps.blobInfo(app = app, id = id)
 
     /**
      * List an app's blobs
@@ -409,7 +409,7 @@ class AppsFacade internal constructor(
     suspend fun blobList(
         app: kotlin.String,
     ): BlobList200Response =
-        api(null, null).apps.blobList(app = app)
+        api(null, null, emptySet()).apps.blobList(app = app)
 
     /**
      * Invalidate a blob's grants
@@ -426,12 +426,12 @@ class AppsFacade internal constructor(
         app: kotlin.String,
         id: kotlin.String,
     ): BlobDelete200Response =
-        api(null, null).apps.blobRevoke(app = app, id = id)
+        api(null, null, emptySet()).apps.blobRevoke(app = app, id = id)
 
     /**
      * Upload a blob
      *
-     * A plain blob (`sealed=true` is refused: sealed files go through `/files`).
+     * A plain blob, stored with the request's `Content-Type` (default `application/octet-stream`), which a component app's download answers with. Any `sealed` parameter, `true` or `false`, is refused `400 USE_FILES_API`: sealed files go through `/files`.
      *
      * **Who:** whoever the app's access admits (a public app: anyone).
      *
@@ -444,7 +444,7 @@ class AppsFacade internal constructor(
         body: kotlin.ByteArray,
         sealed: kotlin.Boolean? = null,
     ): BlobUpload200Response =
-        api(null, null).apps.blobUpload(app = app, body = body, sealed = sealed)
+        api(null, null, emptySet()).apps.blobUpload(app = app, body = body, sealed = sealed)
 
     /**
      * An app's events as server-sent events
@@ -461,7 +461,7 @@ class AppsFacade internal constructor(
         app: kotlin.String,
         from: kotlin.Long? = null,
     ): kotlin.String =
-        api(null, null).apps.events(app = app, from = from)
+        api(null, null, emptySet()).apps.events(app = app, from = from)
 
     /**
      * One sealed file
@@ -478,7 +478,7 @@ class AppsFacade internal constructor(
         app: kotlin.String,
         id: kotlin.String,
     ): FileInfo200Response =
-        api(null, null).apps.fileInfo(app = app, id = id)
+        api(null, null, emptySet()).apps.fileInfo(app = app, id = id)
 
     /**
      * List an app's sealed files
@@ -492,7 +492,7 @@ class AppsFacade internal constructor(
     suspend fun filesList(
         app: kotlin.String,
     ): FilesList200Response =
-        api(null, null).apps.filesList(app = app)
+        api(null, null, emptySet()).apps.filesList(app = app)
 
     /**
      * Upload a sealed file
@@ -509,14 +509,14 @@ class AppsFacade internal constructor(
         app: kotlin.String,
         body: kotlin.ByteArray,
     ): FilesUpload200Response =
-        api(null, null).apps.filesUpload(app = app, body = body)
+        api(null, null, emptySet()).apps.filesUpload(app = app, body = body)
 
     /**
      * Call a method
      *
      * A logged call: the result, the events of the call the caller receives, and the answering node's receipt. A `confirm` method answers `412` first. An app error is `422 APP_ERROR` with `details { index, code, fields }`; a trap `422 TRAP`.
      *
-     * **Who:** whoever the app's access admits (a public app: anyone).
+     * **Who:** whoever the app's access admits (a public app: anyone). **Step-up:** when the method is a `confirm` method of the app's ABI, answers `412 CONFIRM_REQUIRED` first; send the same request again with `confirm`, a passkey assertion over `details.challenge`.
      *
      * `POST /apps/{app}/intents` (`intents`).
      *
@@ -531,7 +531,7 @@ class AppsFacade internal constructor(
         idempotencyKey: kotlin.String? = null,
         passkey: PasskeyProvider? = null,
     ): Intents200Response =
-        api(passkey, null).apps.intents(app = app, intentsRequest = IntentsRequest(method = method, args = args, idempotencyKey = idempotencyKey))
+        api(passkey, null, emptySet()).apps.intents(app = app, intentsRequest = IntentsRequest(method = method, args = args, idempotencyKey = idempotencyKey))
 
     /**
      * Who is present
@@ -545,12 +545,12 @@ class AppsFacade internal constructor(
     suspend fun presenceGet(
         app: kotlin.String,
     ): PresenceGet200Response =
-        api(null, null).apps.presenceGet(app = app)
+        api(null, null, emptySet()).apps.presenceGet(app = app)
 
     /**
      * Publish presence
      *
-     * The caller's presence state, in sequence; not logged.
+     * The caller's presence state (hex), in sequence; not logged. A `null` (or absent) `state` retracts it.
      *
      * **Who:** whoever the app's access admits (a public app: anyone).
      *
@@ -560,10 +560,10 @@ class AppsFacade internal constructor(
      */
     suspend fun presencePublish(
         app: kotlin.String,
-        seq: kotlin.Long?,
-        state: kotlin.String? = null,
+        seq: kotlin.Long,
+        state: com.calimero.mero.Explicit<kotlin.String>? = null,
     ): kotlinx.serialization.json.JsonObject =
-        api(null, null).apps.presencePublish(app = app, presencePublishRequest = PresencePublishRequest(seq = seq, state = state))
+        api(null, null, setOfNotNull("state".takeIf { state != null && state.value == null })).apps.presencePublish(app = app, presencePublishRequest = PresencePublishRequest(seq = seq, state = state?.value))
 
     /**
      * Presence as server-sent events
@@ -577,7 +577,7 @@ class AppsFacade internal constructor(
     suspend fun presenceStream(
         app: kotlin.String,
     ): kotlin.String =
-        api(null, null).apps.presenceStream(app = app)
+        api(null, null, emptySet()).apps.presenceStream(app = app)
 
     /**
      * Abort an upload
@@ -592,7 +592,7 @@ class AppsFacade internal constructor(
         app: kotlin.String,
         upload: kotlin.String,
     ): kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement?> =
-        api(null, null).apps.uploadAbort(app = app, upload = upload)
+        api(null, null, emptySet()).apps.uploadAbort(app = app, upload = upload)
 
     /**
      * Begin a file upload
@@ -607,9 +607,9 @@ class AppsFacade internal constructor(
      */
     suspend fun uploadBegin(
         app: kotlin.String,
-        propertySize: kotlin.Long?,
+        propertySize: kotlin.Long,
     ): UploadBegin200Response =
-        api(null, null).apps.uploadBegin(app = app, uploadBeginRequest = UploadBeginRequest(propertySize = propertySize))
+        api(null, null, emptySet()).apps.uploadBegin(app = app, uploadBeginRequest = UploadBeginRequest(propertySize = propertySize))
 
     /**
      * Commit an upload
@@ -626,7 +626,7 @@ class AppsFacade internal constructor(
         app: kotlin.String,
         upload: kotlin.String,
     ): UploadComplete200Response =
-        api(null, null).apps.uploadComplete(app = app, upload = upload)
+        api(null, null, emptySet()).apps.uploadComplete(app = app, upload = upload)
 
     /**
      * Send one part
@@ -645,7 +645,7 @@ class AppsFacade internal constructor(
         k: kotlin.String,
         body: kotlin.ByteArray,
     ): UploadPart200Response =
-        api(null, null).apps.uploadPart(app = app, upload = upload, k = k, body = body)
+        api(null, null, emptySet()).apps.uploadPart(app = app, upload = upload, k = k, body = body)
 
     /**
      * Where an upload is
@@ -660,7 +660,7 @@ class AppsFacade internal constructor(
         app: kotlin.String,
         upload: kotlin.String,
     ): UploadStatus200Response =
-        api(null, null).apps.uploadStatus(app = app, upload = upload)
+        api(null, null, emptySet()).apps.uploadStatus(app = app, upload = upload)
 
     /**
      * Read with a view method
@@ -680,5 +680,5 @@ class AppsFacade internal constructor(
         consistency: ViewsRequest.Consistency? = null,
         minIndex: kotlin.Long? = null,
     ): Views200Response =
-        api(null, null).apps.views(app = app, viewsRequest = ViewsRequest(method = method, args = args, consistency = consistency, minIndex = minIndex))
+        api(null, null, emptySet()).apps.views(app = app, viewsRequest = ViewsRequest(method = method, args = args, consistency = consistency, minIndex = minIndex))
 }

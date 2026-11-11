@@ -46,7 +46,7 @@ data class Health200Response (
     val ok: kotlin.Boolean,
 
     @SerialName(value = "node")
-    val node: kotlin.Long?,
+    val node: kotlin.Long,
 
     @SerialName(value = "systemLeader")
     val systemLeader: kotlin.Long?,

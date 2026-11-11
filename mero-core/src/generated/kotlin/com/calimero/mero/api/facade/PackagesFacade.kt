@@ -15,7 +15,7 @@ import com.calimero.mero.crypto.DeviceSigner
  * [com.calimero.mero.CalimeroError] it means.
  */
 class PackagesFacade internal constructor(
-    private val api: (PasskeyProvider?, DeviceSigner?) -> MeroApi,
+    private val api: (PasskeyProvider?, DeviceSigner?, Set<String>) -> MeroApi,
 ) {
     /**
      * Upload a raw component
@@ -31,7 +31,7 @@ class PackagesFacade internal constructor(
     suspend fun bundlePut(
         body: kotlin.ByteArray,
     ): BundlePut200Response =
-        api(null, null).packages.bundlePut(body = body)
+        api(null, null, emptySet()).packages.bundlePut(body = body)
 
     /**
      * Register a frontend origin
@@ -52,8 +52,8 @@ class PackagesFacade internal constructor(
         rpId: kotlin.String? = null,
         served: kotlin.Boolean? = null,
         passkey: PasskeyProvider? = null,
-    ): kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement?> =
-        api(passkey, null).packages.originsAdd(`package` = `package`, originsAddRequest = OriginsAddRequest(origin = origin, rpId = rpId, served = served))
+    ): kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement> =
+        api(passkey, null, emptySet()).packages.originsAdd(`package` = `package`, originsAddRequest = OriginsAddRequest(origin = origin, rpId = rpId, served = served))
 
     /**
      * A package's frontend origins
@@ -69,7 +69,7 @@ class PackagesFacade internal constructor(
     suspend fun originsList(
         `package`: kotlin.String,
     ): OriginsList200Response =
-        api(null, null).packages.originsList(`package` = `package`)
+        api(null, null, emptySet()).packages.originsList(`package` = `package`)
 
     /**
      * Remove a frontend origin
@@ -86,8 +86,8 @@ class PackagesFacade internal constructor(
         `package`: kotlin.String,
         origin: kotlin.String,
         passkey: PasskeyProvider? = null,
-    ): kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement?> =
-        api(passkey, null).packages.originsRemove(`package` = `package`, originsRemoveRequest = OriginsRemoveRequest(origin = origin))
+    ): kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement> =
+        api(passkey, null, emptySet()).packages.originsRemove(`package` = `package`, originsRemoveRequest = OriginsRemoveRequest(origin = origin))
 
     /**
      * One package
@@ -102,8 +102,8 @@ class PackagesFacade internal constructor(
      */
     suspend fun get(
         `package`: kotlin.String,
-    ): kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement?> =
-        api(null, null).packages.packageGet(`package` = `package`)
+    ): Package =
+        api(null, null, emptySet()).packages.packageGet(`package` = `package`)
 
     /**
      * Install a release from the registry
@@ -118,7 +118,7 @@ class PackagesFacade internal constructor(
         `package`: kotlin.String,
         version: kotlin.String,
     ): OpsPackageInstall200Response =
-        api(null, null).packages.packageInstall(packageInstallRequest = PackageInstallRequest(`package` = `package`, version = version))
+        api(null, null, emptySet()).packages.packageInstall(packageInstallRequest = PackageInstallRequest(`package` = `package`, version = version))
 
     /**
      * Installed packages
@@ -132,7 +132,7 @@ class PackagesFacade internal constructor(
      * @throws com.calimero.mero.CalimeroError the node's refusal, typed by [com.calimero.mero.errorFrom].
      */
     suspend fun list(): PackageList200Response =
-        api(null, null).packages.packageList()
+        api(null, null, emptySet()).packages.packageList()
 
     /**
      * Uninstall a package
@@ -147,8 +147,8 @@ class PackagesFacade internal constructor(
      */
     suspend fun uninstall(
         `package`: kotlin.String,
-    ): kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement?> =
-        api(null, null).packages.packageUninstall(`package` = `package`)
+    ): kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement> =
+        api(null, null, emptySet()).packages.packageUninstall(`package` = `package`)
 
     /**
      * Upload a signed release
@@ -164,7 +164,7 @@ class PackagesFacade internal constructor(
     suspend fun upload(
         body: kotlin.ByteArray,
     ): OpsPackageInstall200Response =
-        api(null, null).packages.packageUpload(body = body)
+        api(null, null, emptySet()).packages.packageUpload(body = body)
 
     /**
      * Uninstall one version
@@ -178,6 +178,6 @@ class PackagesFacade internal constructor(
     suspend fun versionUninstall(
         `package`: kotlin.String,
         version: kotlin.String,
-    ): kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement?> =
-        api(null, null).packages.packageVersionUninstall(`package` = `package`, version = version)
+    ): kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement> =
+        api(null, null, emptySet()).packages.packageVersionUninstall(`package` = `package`, version = version)
 }

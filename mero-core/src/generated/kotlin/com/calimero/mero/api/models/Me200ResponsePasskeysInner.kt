@@ -45,16 +45,16 @@ data class Me200ResponsePasskeysInner (
     val id: kotlin.String,
 
     @SerialName(value = "signCount")
-    val signCount: kotlin.Long?,
+    val signCount: kotlin.Long,
 
     @SerialName(value = "label")
     val label: kotlin.String?,
 
     @SerialName(value = "addedAt")
-    val addedAt: kotlin.Long?,
+    val addedAt: kotlin.Long? = null,
 
     @SerialName(value = "lastSignInAt")
-    val lastSignInAt: kotlin.Long?
+    val lastSignInAt: kotlin.Long? = null
 
 ) {
 

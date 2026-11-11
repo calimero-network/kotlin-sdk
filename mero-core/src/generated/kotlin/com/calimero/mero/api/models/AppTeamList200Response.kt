@@ -38,14 +38,25 @@ import kotlinx.serialization.Contextual
 
 data class AppTeamList200Response (
 
-    @Contextual @SerialName(value = "mode")
-    val mode: kotlinx.serialization.json.JsonElement?,
+    @SerialName(value = "mode")
+    val mode: AppTeamList200Response.Mode,
 
     @SerialName(value = "appTeams")
     val appTeams: kotlin.collections.List<@Contextual kotlinx.serialization.json.JsonElement?>
 
 ) {
 
+    /**
+     * 
+     *
+     * Values: LEGACY,STANDALONE,SHARED
+     */
+    @Serializable
+    enum class Mode(val value: kotlin.String) {
+        @SerialName(value = "legacy") LEGACY("legacy"),
+        @SerialName(value = "standalone") STANDALONE("standalone"),
+        @SerialName(value = "shared") SHARED("shared");
+    }
 
 }
 

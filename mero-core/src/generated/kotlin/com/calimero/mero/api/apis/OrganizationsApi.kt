@@ -27,33 +27,22 @@ import java.io.IOException
 import okhttp3.Call
 import okhttp3.HttpUrl
 
-import com.calimero.mero.api.models.AppCreate401Response
-import com.calimero.mero.api.models.AppCreate421Response
-import com.calimero.mero.api.models.AppDelete403Response
-import com.calimero.mero.api.models.AppMethod412Response
 import com.calimero.mero.api.models.AppTeamList200Response
-import com.calimero.mero.api.models.AppTeamsScope400Response
 import com.calimero.mero.api.models.AppTeamsScopeRequest
-import com.calimero.mero.api.models.AppTransfer400Response
-import com.calimero.mero.api.models.BlobDownload404Response
-import com.calimero.mero.api.models.BlobUpload429Response
+import com.calimero.mero.api.models.ConfirmOnly
+import com.calimero.mero.api.models.Error
 import com.calimero.mero.api.models.InviteCreate200Response
 import com.calimero.mero.api.models.InviteCreateRequest
 import com.calimero.mero.api.models.InviteRedeem200Response
 import com.calimero.mero.api.models.MemberMetadataRequest
 import com.calimero.mero.api.models.MemberRemoveTeamsRequest
-import com.calimero.mero.api.models.MemberSetTeams400Response
 import com.calimero.mero.api.models.MemberSetTeamsRequest
-import com.calimero.mero.api.models.OpsRestore403Response
-import com.calimero.mero.api.models.OpsRestore428Response
-import com.calimero.mero.api.models.OpsSignUpInviteCreate400Response
-import com.calimero.mero.api.models.OrgAllApps409Response
+import com.calimero.mero.api.models.Org
 import com.calimero.mero.api.models.OrgAllAppsRequest
 import com.calimero.mero.api.models.OrgApps200Response
 import com.calimero.mero.api.models.OrgCapabilitiesRequest
 import com.calimero.mero.api.models.OrgCreate200Response
 import com.calimero.mero.api.models.OrgCreateRequest
-import com.calimero.mero.api.models.OrgGet200Response
 import com.calimero.mero.api.models.OrgMembers200Response
 import com.calimero.mero.api.models.OrgOutboundApprovalRequest
 import com.calimero.mero.api.models.OrgPublisher200Response
@@ -65,22 +54,17 @@ import com.calimero.mero.api.models.OrgSetMemberRequest
 import com.calimero.mero.api.models.OrgUpgradeRequest
 import com.calimero.mero.api.models.OrgUpgradeRetryRequest
 import com.calimero.mero.api.models.OrgUsage200Response
-import com.calimero.mero.api.models.PasskeyRemoveRequest
 import com.calimero.mero.api.models.PublisherUpgradeRequest
-import com.calimero.mero.api.models.RecoveryCreate400Response
 import com.calimero.mero.api.models.RecoveryFinish200Response
-import com.calimero.mero.api.models.RecoveryFinish409Response
-import com.calimero.mero.api.models.RecoverySet400Response
 import com.calimero.mero.api.models.RecoverySetRequest
 import com.calimero.mero.api.models.RecoveryStart200Response
-import com.calimero.mero.api.models.RecoveryStart403Response
-import com.calimero.mero.api.models.RecoveryStart409Response
 import com.calimero.mero.api.models.RecoveryStartRequest
 import com.calimero.mero.api.models.TeamCreate200Response
 import com.calimero.mero.api.models.TeamCreateRequest
 import com.calimero.mero.api.models.TeamDelete200Response
 import com.calimero.mero.api.models.TeamSetMemberRequest
 import com.calimero.mero.api.models.TeamUpdateRequest
+import com.calimero.mero.api.models.TeamView
 import com.calimero.mero.api.models.UpgradeRun
 
 import kotlinx.serialization.SerialName
@@ -190,7 +174,7 @@ open class OrganizationsApi(basePath: kotlin.String = defaultBasePath, client: C
      * The owner or an admin; &#x60;keep&#x60; names who stays when a team closes. &#x60;412&#x60; first.  **Who:** a passkey session (an API key is refused). **Step-up:** answers &#x60;412 CONFIRM_REQUIRED&#x60; first; send the same request again with &#x60;confirm&#x60;, a passkey assertion over &#x60;details.challenge&#x60;.
      * @param org 
      * @param appTeamsScopeRequest 
-     * @return kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement?>
+     * @return kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement>
      * @throws IllegalStateException If the request is not correctly configured
      * @throws IOException Rethrows the OkHttp execute method exception
      * @throws UnsupportedOperationException If the API returns an informational or redirection response
@@ -199,11 +183,11 @@ open class OrganizationsApi(basePath: kotlin.String = defaultBasePath, client: C
      */
     @Suppress("UNCHECKED_CAST")
     @Throws(IllegalStateException::class, IOException::class, UnsupportedOperationException::class, ClientException::class, ServerException::class)
-    suspend fun appTeamsScope(org: kotlin.String, appTeamsScopeRequest: AppTeamsScopeRequest) : kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement?> = withContext(Dispatchers.IO) {
+    suspend fun appTeamsScope(org: kotlin.String, appTeamsScopeRequest: AppTeamsScopeRequest) : kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement> = withContext(Dispatchers.IO) {
         val localVarResponse = appTeamsScopeWithHttpInfo(org = org, appTeamsScopeRequest = appTeamsScopeRequest)
 
         return@withContext when (localVarResponse.responseType) {
-            ResponseType.Success -> (localVarResponse as Success<*>).data as kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement?>
+            ResponseType.Success -> (localVarResponse as Success<*>).data as kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement>
             ResponseType.Informational -> throw UnsupportedOperationException("Client does not support Informational responses.")
             ResponseType.Redirection -> throw UnsupportedOperationException("Client does not support Redirection responses.")
             ResponseType.ClientError -> {
@@ -223,16 +207,16 @@ open class OrganizationsApi(basePath: kotlin.String = defaultBasePath, client: C
      * The owner or an admin; &#x60;keep&#x60; names who stays when a team closes. &#x60;412&#x60; first.  **Who:** a passkey session (an API key is refused). **Step-up:** answers &#x60;412 CONFIRM_REQUIRED&#x60; first; send the same request again with &#x60;confirm&#x60;, a passkey assertion over &#x60;details.challenge&#x60;.
      * @param org 
      * @param appTeamsScopeRequest 
-     * @return ApiResponse<kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement?>?>
+     * @return ApiResponse<kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement>?>
      * @throws IllegalStateException If the request is not correctly configured
      * @throws IOException Rethrows the OkHttp execute method exception
      */
     @Suppress("UNCHECKED_CAST")
     @Throws(IllegalStateException::class, IOException::class)
-    suspend fun appTeamsScopeWithHttpInfo(org: kotlin.String, appTeamsScopeRequest: AppTeamsScopeRequest) : ApiResponse<kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement?>?> = withContext(Dispatchers.IO) {
+    suspend fun appTeamsScopeWithHttpInfo(org: kotlin.String, appTeamsScopeRequest: AppTeamsScopeRequest) : ApiResponse<kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement>?> = withContext(Dispatchers.IO) {
         val localVariableConfig = appTeamsScopeRequestConfig(org = org, appTeamsScopeRequest = appTeamsScopeRequest)
 
-        return@withContext request<AppTeamsScopeRequest, kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement?>>(
+        return@withContext request<AppTeamsScopeRequest, kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement>>(
             localVariableConfig
         )
     }
@@ -343,7 +327,7 @@ open class OrganizationsApi(basePath: kotlin.String = defaultBasePath, client: C
      * The organization&#39;s invites
      * Their keys and terms, never a token.  **Who:** a passkey session (an API key is refused).
      * @param org 
-     * @return kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement?>
+     * @return kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement>
      * @throws IllegalStateException If the request is not correctly configured
      * @throws IOException Rethrows the OkHttp execute method exception
      * @throws UnsupportedOperationException If the API returns an informational or redirection response
@@ -352,11 +336,11 @@ open class OrganizationsApi(basePath: kotlin.String = defaultBasePath, client: C
      */
     @Suppress("UNCHECKED_CAST")
     @Throws(IllegalStateException::class, IOException::class, UnsupportedOperationException::class, ClientException::class, ServerException::class)
-    suspend fun inviteList(org: kotlin.String) : kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement?> = withContext(Dispatchers.IO) {
+    suspend fun inviteList(org: kotlin.String) : kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement> = withContext(Dispatchers.IO) {
         val localVarResponse = inviteListWithHttpInfo(org = org)
 
         return@withContext when (localVarResponse.responseType) {
-            ResponseType.Success -> (localVarResponse as Success<*>).data as kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement?>
+            ResponseType.Success -> (localVarResponse as Success<*>).data as kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement>
             ResponseType.Informational -> throw UnsupportedOperationException("Client does not support Informational responses.")
             ResponseType.Redirection -> throw UnsupportedOperationException("Client does not support Redirection responses.")
             ResponseType.ClientError -> {
@@ -375,16 +359,16 @@ open class OrganizationsApi(basePath: kotlin.String = defaultBasePath, client: C
      * The organization&#39;s invites
      * Their keys and terms, never a token.  **Who:** a passkey session (an API key is refused).
      * @param org 
-     * @return ApiResponse<kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement?>?>
+     * @return ApiResponse<kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement>?>
      * @throws IllegalStateException If the request is not correctly configured
      * @throws IOException Rethrows the OkHttp execute method exception
      */
     @Suppress("UNCHECKED_CAST")
     @Throws(IllegalStateException::class, IOException::class)
-    suspend fun inviteListWithHttpInfo(org: kotlin.String) : ApiResponse<kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement?>?> = withContext(Dispatchers.IO) {
+    suspend fun inviteListWithHttpInfo(org: kotlin.String) : ApiResponse<kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement>?> = withContext(Dispatchers.IO) {
         val localVariableConfig = inviteListRequestConfig(org = org)
 
-        return@withContext request<Unit, kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement?>>(
+        return@withContext request<Unit, kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement>>(
             localVariableConfig
         )
     }
@@ -490,7 +474,7 @@ open class OrganizationsApi(basePath: kotlin.String = defaultBasePath, client: C
      * **Who:** a passkey session (an API key is refused). **Step-up:** answers &#x60;412 CONFIRM_REQUIRED&#x60; first; send the same request again with &#x60;confirm&#x60;, a passkey assertion over &#x60;details.challenge&#x60;.
      * @param org 
      * @param key 
-     * @param passkeyRemoveRequest May be absent. (optional)
+     * @param confirmOnly May be absent. (optional)
      * @return kotlinx.serialization.json.JsonObject
      * @throws IllegalStateException If the request is not correctly configured
      * @throws IOException Rethrows the OkHttp execute method exception
@@ -500,8 +484,8 @@ open class OrganizationsApi(basePath: kotlin.String = defaultBasePath, client: C
      */
     @Suppress("UNCHECKED_CAST")
     @Throws(IllegalStateException::class, IOException::class, UnsupportedOperationException::class, ClientException::class, ServerException::class)
-    suspend fun inviteRevoke(org: kotlin.String, key: kotlin.String, passkeyRemoveRequest: PasskeyRemoveRequest? = null) : kotlinx.serialization.json.JsonObject = withContext(Dispatchers.IO) {
-        val localVarResponse = inviteRevokeWithHttpInfo(org = org, key = key, passkeyRemoveRequest = passkeyRemoveRequest)
+    suspend fun inviteRevoke(org: kotlin.String, key: kotlin.String, confirmOnly: ConfirmOnly? = null) : kotlinx.serialization.json.JsonObject = withContext(Dispatchers.IO) {
+        val localVarResponse = inviteRevokeWithHttpInfo(org = org, key = key, confirmOnly = confirmOnly)
 
         return@withContext when (localVarResponse.responseType) {
             ResponseType.Success -> (localVarResponse as Success<*>).data as kotlinx.serialization.json.JsonObject
@@ -524,17 +508,17 @@ open class OrganizationsApi(basePath: kotlin.String = defaultBasePath, client: C
      * **Who:** a passkey session (an API key is refused). **Step-up:** answers &#x60;412 CONFIRM_REQUIRED&#x60; first; send the same request again with &#x60;confirm&#x60;, a passkey assertion over &#x60;details.challenge&#x60;.
      * @param org 
      * @param key 
-     * @param passkeyRemoveRequest May be absent. (optional)
+     * @param confirmOnly May be absent. (optional)
      * @return ApiResponse<kotlinx.serialization.json.JsonObject?>
      * @throws IllegalStateException If the request is not correctly configured
      * @throws IOException Rethrows the OkHttp execute method exception
      */
     @Suppress("UNCHECKED_CAST")
     @Throws(IllegalStateException::class, IOException::class)
-    suspend fun inviteRevokeWithHttpInfo(org: kotlin.String, key: kotlin.String, passkeyRemoveRequest: PasskeyRemoveRequest?) : ApiResponse<kotlinx.serialization.json.JsonObject?> = withContext(Dispatchers.IO) {
-        val localVariableConfig = inviteRevokeRequestConfig(org = org, key = key, passkeyRemoveRequest = passkeyRemoveRequest)
+    suspend fun inviteRevokeWithHttpInfo(org: kotlin.String, key: kotlin.String, confirmOnly: ConfirmOnly?) : ApiResponse<kotlinx.serialization.json.JsonObject?> = withContext(Dispatchers.IO) {
+        val localVariableConfig = inviteRevokeRequestConfig(org = org, key = key, confirmOnly = confirmOnly)
 
-        return@withContext request<PasskeyRemoveRequest, kotlinx.serialization.json.JsonObject>(
+        return@withContext request<ConfirmOnly, kotlinx.serialization.json.JsonObject>(
             localVariableConfig
         )
     }
@@ -544,11 +528,11 @@ open class OrganizationsApi(basePath: kotlin.String = defaultBasePath, client: C
      *
      * @param org 
      * @param key 
-     * @param passkeyRemoveRequest May be absent. (optional)
+     * @param confirmOnly May be absent. (optional)
      * @return RequestConfig
      */
-    fun inviteRevokeRequestConfig(org: kotlin.String, key: kotlin.String, passkeyRemoveRequest: PasskeyRemoveRequest?) : RequestConfig<PasskeyRemoveRequest> {
-        val localVariableBody = passkeyRemoveRequest
+    fun inviteRevokeRequestConfig(org: kotlin.String, key: kotlin.String, confirmOnly: ConfirmOnly?) : RequestConfig<ConfirmOnly> {
+        val localVariableBody = confirmOnly
         val localVariableQuery: MultiValueMap = mutableMapOf()
         val localVariableHeaders: MutableMap<String, String> = mutableMapOf()
         localVariableHeaders["Content-Type"] = "application/json"
@@ -1124,8 +1108,8 @@ open class OrganizationsApi(basePath: kotlin.String = defaultBasePath, client: C
      * Delete an organization
      * With its teams, invites and apps; the owner.  **Who:** an account holder (a passkey session not bound to an app&#39;s frontend). **Step-up:** answers &#x60;412 CONFIRM_REQUIRED&#x60; first; send the same request again with &#x60;confirm&#x60;, a passkey assertion over &#x60;details.challenge&#x60;.
      * @param org 
-     * @param passkeyRemoveRequest May be absent. (optional)
-     * @return kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement?>
+     * @param confirmOnly May be absent. (optional)
+     * @return kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement>
      * @throws IllegalStateException If the request is not correctly configured
      * @throws IOException Rethrows the OkHttp execute method exception
      * @throws UnsupportedOperationException If the API returns an informational or redirection response
@@ -1134,11 +1118,11 @@ open class OrganizationsApi(basePath: kotlin.String = defaultBasePath, client: C
      */
     @Suppress("UNCHECKED_CAST")
     @Throws(IllegalStateException::class, IOException::class, UnsupportedOperationException::class, ClientException::class, ServerException::class)
-    suspend fun orgDelete(org: kotlin.String, passkeyRemoveRequest: PasskeyRemoveRequest? = null) : kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement?> = withContext(Dispatchers.IO) {
-        val localVarResponse = orgDeleteWithHttpInfo(org = org, passkeyRemoveRequest = passkeyRemoveRequest)
+    suspend fun orgDelete(org: kotlin.String, confirmOnly: ConfirmOnly? = null) : kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement> = withContext(Dispatchers.IO) {
+        val localVarResponse = orgDeleteWithHttpInfo(org = org, confirmOnly = confirmOnly)
 
         return@withContext when (localVarResponse.responseType) {
-            ResponseType.Success -> (localVarResponse as Success<*>).data as kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement?>
+            ResponseType.Success -> (localVarResponse as Success<*>).data as kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement>
             ResponseType.Informational -> throw UnsupportedOperationException("Client does not support Informational responses.")
             ResponseType.Redirection -> throw UnsupportedOperationException("Client does not support Redirection responses.")
             ResponseType.ClientError -> {
@@ -1157,17 +1141,17 @@ open class OrganizationsApi(basePath: kotlin.String = defaultBasePath, client: C
      * Delete an organization
      * With its teams, invites and apps; the owner.  **Who:** an account holder (a passkey session not bound to an app&#39;s frontend). **Step-up:** answers &#x60;412 CONFIRM_REQUIRED&#x60; first; send the same request again with &#x60;confirm&#x60;, a passkey assertion over &#x60;details.challenge&#x60;.
      * @param org 
-     * @param passkeyRemoveRequest May be absent. (optional)
-     * @return ApiResponse<kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement?>?>
+     * @param confirmOnly May be absent. (optional)
+     * @return ApiResponse<kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement>?>
      * @throws IllegalStateException If the request is not correctly configured
      * @throws IOException Rethrows the OkHttp execute method exception
      */
     @Suppress("UNCHECKED_CAST")
     @Throws(IllegalStateException::class, IOException::class)
-    suspend fun orgDeleteWithHttpInfo(org: kotlin.String, passkeyRemoveRequest: PasskeyRemoveRequest?) : ApiResponse<kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement?>?> = withContext(Dispatchers.IO) {
-        val localVariableConfig = orgDeleteRequestConfig(org = org, passkeyRemoveRequest = passkeyRemoveRequest)
+    suspend fun orgDeleteWithHttpInfo(org: kotlin.String, confirmOnly: ConfirmOnly?) : ApiResponse<kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement>?> = withContext(Dispatchers.IO) {
+        val localVariableConfig = orgDeleteRequestConfig(org = org, confirmOnly = confirmOnly)
 
-        return@withContext request<PasskeyRemoveRequest, kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement?>>(
+        return@withContext request<ConfirmOnly, kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement>>(
             localVariableConfig
         )
     }
@@ -1176,11 +1160,11 @@ open class OrganizationsApi(basePath: kotlin.String = defaultBasePath, client: C
      * To obtain the request config of the operation orgDelete
      *
      * @param org 
-     * @param passkeyRemoveRequest May be absent. (optional)
+     * @param confirmOnly May be absent. (optional)
      * @return RequestConfig
      */
-    fun orgDeleteRequestConfig(org: kotlin.String, passkeyRemoveRequest: PasskeyRemoveRequest?) : RequestConfig<PasskeyRemoveRequest> {
-        val localVariableBody = passkeyRemoveRequest
+    fun orgDeleteRequestConfig(org: kotlin.String, confirmOnly: ConfirmOnly?) : RequestConfig<ConfirmOnly> {
+        val localVariableBody = confirmOnly
         val localVariableQuery: MultiValueMap = mutableMapOf()
         val localVariableHeaders: MutableMap<String, String> = mutableMapOf()
         localVariableHeaders["Content-Type"] = "application/json"
@@ -1199,9 +1183,9 @@ open class OrganizationsApi(basePath: kotlin.String = defaultBasePath, client: C
     /**
      * GET /orgs/{org}
      * One organization
-     * Its members, teams (those the caller reaches or manages) and metadata.  **Who:** signed in (a session or an API key).
+     * As the directory records it, with only the teams the caller reaches or manages and the people they see; and its &#x60;mode&#x60; (from its app teams), the accounts that may approve its releases (&#x60;releaseApprovers&#x60;), the keys it publishes under (&#x60;publishes&#x60;), and &#x60;newWorkStopped&#x60;: the release whose passed deadline stops new work in it (&#x60;after&#x60;, RFC 3339), &#x60;null&#x60; when none does. Those four are absent from a node older than they are (1.0.0-rc.1 sends none of them).  **Who:** signed in (a session or an API key).
      * @param org 
-     * @return OrgGet200Response
+     * @return Org
      * @throws IllegalStateException If the request is not correctly configured
      * @throws IOException Rethrows the OkHttp execute method exception
      * @throws UnsupportedOperationException If the API returns an informational or redirection response
@@ -1210,11 +1194,11 @@ open class OrganizationsApi(basePath: kotlin.String = defaultBasePath, client: C
      */
     @Suppress("UNCHECKED_CAST")
     @Throws(IllegalStateException::class, IOException::class, UnsupportedOperationException::class, ClientException::class, ServerException::class)
-    suspend fun orgGet(org: kotlin.String) : OrgGet200Response = withContext(Dispatchers.IO) {
+    suspend fun orgGet(org: kotlin.String) : Org = withContext(Dispatchers.IO) {
         val localVarResponse = orgGetWithHttpInfo(org = org)
 
         return@withContext when (localVarResponse.responseType) {
-            ResponseType.Success -> (localVarResponse as Success<*>).data as OrgGet200Response
+            ResponseType.Success -> (localVarResponse as Success<*>).data as Org
             ResponseType.Informational -> throw UnsupportedOperationException("Client does not support Informational responses.")
             ResponseType.Redirection -> throw UnsupportedOperationException("Client does not support Redirection responses.")
             ResponseType.ClientError -> {
@@ -1231,18 +1215,18 @@ open class OrganizationsApi(basePath: kotlin.String = defaultBasePath, client: C
     /**
      * GET /orgs/{org}
      * One organization
-     * Its members, teams (those the caller reaches or manages) and metadata.  **Who:** signed in (a session or an API key).
+     * As the directory records it, with only the teams the caller reaches or manages and the people they see; and its &#x60;mode&#x60; (from its app teams), the accounts that may approve its releases (&#x60;releaseApprovers&#x60;), the keys it publishes under (&#x60;publishes&#x60;), and &#x60;newWorkStopped&#x60;: the release whose passed deadline stops new work in it (&#x60;after&#x60;, RFC 3339), &#x60;null&#x60; when none does. Those four are absent from a node older than they are (1.0.0-rc.1 sends none of them).  **Who:** signed in (a session or an API key).
      * @param org 
-     * @return ApiResponse<OrgGet200Response?>
+     * @return ApiResponse<Org?>
      * @throws IllegalStateException If the request is not correctly configured
      * @throws IOException Rethrows the OkHttp execute method exception
      */
     @Suppress("UNCHECKED_CAST")
     @Throws(IllegalStateException::class, IOException::class)
-    suspend fun orgGetWithHttpInfo(org: kotlin.String) : ApiResponse<OrgGet200Response?> = withContext(Dispatchers.IO) {
+    suspend fun orgGetWithHttpInfo(org: kotlin.String) : ApiResponse<Org?> = withContext(Dispatchers.IO) {
         val localVariableConfig = orgGetRequestConfig(org = org)
 
-        return@withContext request<Unit, OrgGet200Response>(
+        return@withContext request<Unit, Org>(
             localVariableConfig
         )
     }
@@ -1270,9 +1254,25 @@ open class OrganizationsApi(basePath: kotlin.String = defaultBasePath, client: C
     }
 
     /**
+     * enum for parameter detail
+     */
+     enum class DetailOrgMembers(val value: kotlin.String) {
+         @SerialName(value = "security") SECURITY("security");
+
+        /**
+         * Override [toString()] to avoid using the enum variable name as the value, and instead use
+         * the actual value defined in the API spec file.
+         *
+         * This solves a problem when the variable name and its value are different, and ensures that
+         * the client sends the correct enum values to the server always.
+         */
+        override fun toString(): kotlin.String = "$value"
+     }
+
+    /**
      * GET /orgs/{org}/members
      * Members&#39; lockout risk
-     * &#x60;detail&#x3D;security&#x60;, the owner or an admin: each member&#39;s passkeys (&#x60;1&#x60;, &#x60;2&#x60; or &#x60;\&quot;3+\&quot;&#x60;), recovery code, last active UTC day and sessions. &#x60;403&#x60; below admin, &#x60;404&#x60; outside the organization.  **Who:** an account holder (a passkey session not bound to an app&#39;s frontend).
+     * &#x60;detail&#x3D;security&#x60; (the only listing: without it, or with another value, &#x60;400 BAD_REQUEST&#x60;), the owner or an admin: each member&#39;s passkeys (&#x60;1&#x60;, &#x60;2&#x60; or &#x60;\&quot;3+\&quot;&#x60;), recovery code, last active UTC day and sessions. &#x60;403&#x60; below admin, &#x60;404&#x60; outside the organization.  **Who:** an account holder (a passkey session not bound to an app&#39;s frontend).
      * @param org 
      * @param detail  (optional)
      * @return OrgMembers200Response
@@ -1284,7 +1284,7 @@ open class OrganizationsApi(basePath: kotlin.String = defaultBasePath, client: C
      */
     @Suppress("UNCHECKED_CAST")
     @Throws(IllegalStateException::class, IOException::class, UnsupportedOperationException::class, ClientException::class, ServerException::class)
-    suspend fun orgMembers(org: kotlin.String, detail: kotlinx.serialization.json.JsonElement? = null) : OrgMembers200Response = withContext(Dispatchers.IO) {
+    suspend fun orgMembers(org: kotlin.String, detail: DetailOrgMembers? = null) : OrgMembers200Response = withContext(Dispatchers.IO) {
         val localVarResponse = orgMembersWithHttpInfo(org = org, detail = detail)
 
         return@withContext when (localVarResponse.responseType) {
@@ -1305,7 +1305,7 @@ open class OrganizationsApi(basePath: kotlin.String = defaultBasePath, client: C
     /**
      * GET /orgs/{org}/members
      * Members&#39; lockout risk
-     * &#x60;detail&#x3D;security&#x60;, the owner or an admin: each member&#39;s passkeys (&#x60;1&#x60;, &#x60;2&#x60; or &#x60;\&quot;3+\&quot;&#x60;), recovery code, last active UTC day and sessions. &#x60;403&#x60; below admin, &#x60;404&#x60; outside the organization.  **Who:** an account holder (a passkey session not bound to an app&#39;s frontend).
+     * &#x60;detail&#x3D;security&#x60; (the only listing: without it, or with another value, &#x60;400 BAD_REQUEST&#x60;), the owner or an admin: each member&#39;s passkeys (&#x60;1&#x60;, &#x60;2&#x60; or &#x60;\&quot;3+\&quot;&#x60;), recovery code, last active UTC day and sessions. &#x60;403&#x60; below admin, &#x60;404&#x60; outside the organization.  **Who:** an account holder (a passkey session not bound to an app&#39;s frontend).
      * @param org 
      * @param detail  (optional)
      * @return ApiResponse<OrgMembers200Response?>
@@ -1314,7 +1314,7 @@ open class OrganizationsApi(basePath: kotlin.String = defaultBasePath, client: C
      */
     @Suppress("UNCHECKED_CAST")
     @Throws(IllegalStateException::class, IOException::class)
-    suspend fun orgMembersWithHttpInfo(org: kotlin.String, detail: kotlinx.serialization.json.JsonElement?) : ApiResponse<OrgMembers200Response?> = withContext(Dispatchers.IO) {
+    suspend fun orgMembersWithHttpInfo(org: kotlin.String, detail: DetailOrgMembers?) : ApiResponse<OrgMembers200Response?> = withContext(Dispatchers.IO) {
         val localVariableConfig = orgMembersRequestConfig(org = org, detail = detail)
 
         return@withContext request<Unit, OrgMembers200Response>(
@@ -1329,12 +1329,12 @@ open class OrganizationsApi(basePath: kotlin.String = defaultBasePath, client: C
      * @param detail  (optional)
      * @return RequestConfig
      */
-    fun orgMembersRequestConfig(org: kotlin.String, detail: kotlinx.serialization.json.JsonElement?) : RequestConfig<Unit> {
+    fun orgMembersRequestConfig(org: kotlin.String, detail: DetailOrgMembers?) : RequestConfig<Unit> {
         val localVariableBody = null
         val localVariableQuery: MultiValueMap = mutableMapOf<kotlin.String, kotlin.collections.List<kotlin.String>>()
             .apply {
                 if (detail != null) {
-                    put("detail", listOf(detail.toString()))
+                    put("detail", listOf(detail.value))
                 }
             }
         val localVariableHeaders: MutableMap<String, String> = mutableMapOf()
@@ -1433,7 +1433,7 @@ open class OrganizationsApi(basePath: kotlin.String = defaultBasePath, client: C
      * The owner; &#x60;412&#x60; first.  **Who:** an account holder (a passkey session not bound to an app&#39;s frontend). **Step-up:** answers &#x60;412 CONFIRM_REQUIRED&#x60; first; send the same request again with &#x60;confirm&#x60;, a passkey assertion over &#x60;details.challenge&#x60;.
      * @param org 
      * @param orgOutboundApprovalRequest 
-     * @return kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement?>
+     * @return kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement>
      * @throws IllegalStateException If the request is not correctly configured
      * @throws IOException Rethrows the OkHttp execute method exception
      * @throws UnsupportedOperationException If the API returns an informational or redirection response
@@ -1442,11 +1442,11 @@ open class OrganizationsApi(basePath: kotlin.String = defaultBasePath, client: C
      */
     @Suppress("UNCHECKED_CAST")
     @Throws(IllegalStateException::class, IOException::class, UnsupportedOperationException::class, ClientException::class, ServerException::class)
-    suspend fun orgOutboundApproval(org: kotlin.String, orgOutboundApprovalRequest: OrgOutboundApprovalRequest) : kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement?> = withContext(Dispatchers.IO) {
+    suspend fun orgOutboundApproval(org: kotlin.String, orgOutboundApprovalRequest: OrgOutboundApprovalRequest) : kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement> = withContext(Dispatchers.IO) {
         val localVarResponse = orgOutboundApprovalWithHttpInfo(org = org, orgOutboundApprovalRequest = orgOutboundApprovalRequest)
 
         return@withContext when (localVarResponse.responseType) {
-            ResponseType.Success -> (localVarResponse as Success<*>).data as kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement?>
+            ResponseType.Success -> (localVarResponse as Success<*>).data as kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement>
             ResponseType.Informational -> throw UnsupportedOperationException("Client does not support Informational responses.")
             ResponseType.Redirection -> throw UnsupportedOperationException("Client does not support Redirection responses.")
             ResponseType.ClientError -> {
@@ -1466,16 +1466,16 @@ open class OrganizationsApi(basePath: kotlin.String = defaultBasePath, client: C
      * The owner; &#x60;412&#x60; first.  **Who:** an account holder (a passkey session not bound to an app&#39;s frontend). **Step-up:** answers &#x60;412 CONFIRM_REQUIRED&#x60; first; send the same request again with &#x60;confirm&#x60;, a passkey assertion over &#x60;details.challenge&#x60;.
      * @param org 
      * @param orgOutboundApprovalRequest 
-     * @return ApiResponse<kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement?>?>
+     * @return ApiResponse<kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement>?>
      * @throws IllegalStateException If the request is not correctly configured
      * @throws IOException Rethrows the OkHttp execute method exception
      */
     @Suppress("UNCHECKED_CAST")
     @Throws(IllegalStateException::class, IOException::class)
-    suspend fun orgOutboundApprovalWithHttpInfo(org: kotlin.String, orgOutboundApprovalRequest: OrgOutboundApprovalRequest) : ApiResponse<kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement?>?> = withContext(Dispatchers.IO) {
+    suspend fun orgOutboundApprovalWithHttpInfo(org: kotlin.String, orgOutboundApprovalRequest: OrgOutboundApprovalRequest) : ApiResponse<kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement>?> = withContext(Dispatchers.IO) {
         val localVariableConfig = orgOutboundApprovalRequestConfig(org = org, orgOutboundApprovalRequest = orgOutboundApprovalRequest)
 
-        return@withContext request<OrgOutboundApprovalRequest, kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement?>>(
+        return@withContext request<OrgOutboundApprovalRequest, kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement>>(
             localVariableConfig
         )
     }
@@ -1587,7 +1587,7 @@ open class OrganizationsApi(basePath: kotlin.String = defaultBasePath, client: C
      * The owner; &#x60;412&#x60; first.  **Who:** an account holder (a passkey session not bound to an app&#39;s frontend). **Step-up:** answers &#x60;412 CONFIRM_REQUIRED&#x60; first; send the same request again with &#x60;confirm&#x60;, a passkey assertion over &#x60;details.challenge&#x60;.
      * @param org 
      * @param orgReleaseApprovalRequest 
-     * @return kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement?>
+     * @return kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement>
      * @throws IllegalStateException If the request is not correctly configured
      * @throws IOException Rethrows the OkHttp execute method exception
      * @throws UnsupportedOperationException If the API returns an informational or redirection response
@@ -1596,11 +1596,11 @@ open class OrganizationsApi(basePath: kotlin.String = defaultBasePath, client: C
      */
     @Suppress("UNCHECKED_CAST")
     @Throws(IllegalStateException::class, IOException::class, UnsupportedOperationException::class, ClientException::class, ServerException::class)
-    suspend fun orgReleaseApproval(org: kotlin.String, orgReleaseApprovalRequest: OrgReleaseApprovalRequest) : kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement?> = withContext(Dispatchers.IO) {
+    suspend fun orgReleaseApproval(org: kotlin.String, orgReleaseApprovalRequest: OrgReleaseApprovalRequest) : kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement> = withContext(Dispatchers.IO) {
         val localVarResponse = orgReleaseApprovalWithHttpInfo(org = org, orgReleaseApprovalRequest = orgReleaseApprovalRequest)
 
         return@withContext when (localVarResponse.responseType) {
-            ResponseType.Success -> (localVarResponse as Success<*>).data as kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement?>
+            ResponseType.Success -> (localVarResponse as Success<*>).data as kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement>
             ResponseType.Informational -> throw UnsupportedOperationException("Client does not support Informational responses.")
             ResponseType.Redirection -> throw UnsupportedOperationException("Client does not support Redirection responses.")
             ResponseType.ClientError -> {
@@ -1620,16 +1620,16 @@ open class OrganizationsApi(basePath: kotlin.String = defaultBasePath, client: C
      * The owner; &#x60;412&#x60; first.  **Who:** an account holder (a passkey session not bound to an app&#39;s frontend). **Step-up:** answers &#x60;412 CONFIRM_REQUIRED&#x60; first; send the same request again with &#x60;confirm&#x60;, a passkey assertion over &#x60;details.challenge&#x60;.
      * @param org 
      * @param orgReleaseApprovalRequest 
-     * @return ApiResponse<kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement?>?>
+     * @return ApiResponse<kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement>?>
      * @throws IllegalStateException If the request is not correctly configured
      * @throws IOException Rethrows the OkHttp execute method exception
      */
     @Suppress("UNCHECKED_CAST")
     @Throws(IllegalStateException::class, IOException::class)
-    suspend fun orgReleaseApprovalWithHttpInfo(org: kotlin.String, orgReleaseApprovalRequest: OrgReleaseApprovalRequest) : ApiResponse<kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement?>?> = withContext(Dispatchers.IO) {
+    suspend fun orgReleaseApprovalWithHttpInfo(org: kotlin.String, orgReleaseApprovalRequest: OrgReleaseApprovalRequest) : ApiResponse<kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement>?> = withContext(Dispatchers.IO) {
         val localVariableConfig = orgReleaseApprovalRequestConfig(org = org, orgReleaseApprovalRequest = orgReleaseApprovalRequest)
 
-        return@withContext request<OrgReleaseApprovalRequest, kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement?>>(
+        return@withContext request<OrgReleaseApprovalRequest, kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement>>(
             localVariableConfig
         )
     }
@@ -1664,7 +1664,7 @@ open class OrganizationsApi(basePath: kotlin.String = defaultBasePath, client: C
      * &#x60;412&#x60; first; the retry&#39;s JSON body is &#x60;{ confirm }&#x60;.  **Who:** a passkey session (an API key is refused). **Step-up:** answers &#x60;412 CONFIRM_REQUIRED&#x60; first; send the same request again with &#x60;confirm&#x60;, a passkey assertion over &#x60;details.challenge&#x60;.
      * @param org 
      * @param account 
-     * @param passkeyRemoveRequest May be absent. (optional)
+     * @param confirmOnly May be absent. (optional)
      * @return kotlinx.serialization.json.JsonObject
      * @throws IllegalStateException If the request is not correctly configured
      * @throws IOException Rethrows the OkHttp execute method exception
@@ -1674,8 +1674,8 @@ open class OrganizationsApi(basePath: kotlin.String = defaultBasePath, client: C
      */
     @Suppress("UNCHECKED_CAST")
     @Throws(IllegalStateException::class, IOException::class, UnsupportedOperationException::class, ClientException::class, ServerException::class)
-    suspend fun orgRemoveMember(org: kotlin.String, account: kotlin.String, passkeyRemoveRequest: PasskeyRemoveRequest? = null) : kotlinx.serialization.json.JsonObject = withContext(Dispatchers.IO) {
-        val localVarResponse = orgRemoveMemberWithHttpInfo(org = org, account = account, passkeyRemoveRequest = passkeyRemoveRequest)
+    suspend fun orgRemoveMember(org: kotlin.String, account: kotlin.String, confirmOnly: ConfirmOnly? = null) : kotlinx.serialization.json.JsonObject = withContext(Dispatchers.IO) {
+        val localVarResponse = orgRemoveMemberWithHttpInfo(org = org, account = account, confirmOnly = confirmOnly)
 
         return@withContext when (localVarResponse.responseType) {
             ResponseType.Success -> (localVarResponse as Success<*>).data as kotlinx.serialization.json.JsonObject
@@ -1698,17 +1698,17 @@ open class OrganizationsApi(basePath: kotlin.String = defaultBasePath, client: C
      * &#x60;412&#x60; first; the retry&#39;s JSON body is &#x60;{ confirm }&#x60;.  **Who:** a passkey session (an API key is refused). **Step-up:** answers &#x60;412 CONFIRM_REQUIRED&#x60; first; send the same request again with &#x60;confirm&#x60;, a passkey assertion over &#x60;details.challenge&#x60;.
      * @param org 
      * @param account 
-     * @param passkeyRemoveRequest May be absent. (optional)
+     * @param confirmOnly May be absent. (optional)
      * @return ApiResponse<kotlinx.serialization.json.JsonObject?>
      * @throws IllegalStateException If the request is not correctly configured
      * @throws IOException Rethrows the OkHttp execute method exception
      */
     @Suppress("UNCHECKED_CAST")
     @Throws(IllegalStateException::class, IOException::class)
-    suspend fun orgRemoveMemberWithHttpInfo(org: kotlin.String, account: kotlin.String, passkeyRemoveRequest: PasskeyRemoveRequest?) : ApiResponse<kotlinx.serialization.json.JsonObject?> = withContext(Dispatchers.IO) {
-        val localVariableConfig = orgRemoveMemberRequestConfig(org = org, account = account, passkeyRemoveRequest = passkeyRemoveRequest)
+    suspend fun orgRemoveMemberWithHttpInfo(org: kotlin.String, account: kotlin.String, confirmOnly: ConfirmOnly?) : ApiResponse<kotlinx.serialization.json.JsonObject?> = withContext(Dispatchers.IO) {
+        val localVariableConfig = orgRemoveMemberRequestConfig(org = org, account = account, confirmOnly = confirmOnly)
 
-        return@withContext request<PasskeyRemoveRequest, kotlinx.serialization.json.JsonObject>(
+        return@withContext request<ConfirmOnly, kotlinx.serialization.json.JsonObject>(
             localVariableConfig
         )
     }
@@ -1718,11 +1718,11 @@ open class OrganizationsApi(basePath: kotlin.String = defaultBasePath, client: C
      *
      * @param org 
      * @param account 
-     * @param passkeyRemoveRequest May be absent. (optional)
+     * @param confirmOnly May be absent. (optional)
      * @return RequestConfig
      */
-    fun orgRemoveMemberRequestConfig(org: kotlin.String, account: kotlin.String, passkeyRemoveRequest: PasskeyRemoveRequest?) : RequestConfig<PasskeyRemoveRequest> {
-        val localVariableBody = passkeyRemoveRequest
+    fun orgRemoveMemberRequestConfig(org: kotlin.String, account: kotlin.String, confirmOnly: ConfirmOnly?) : RequestConfig<ConfirmOnly> {
+        val localVariableBody = confirmOnly
         val localVariableQuery: MultiValueMap = mutableMapOf()
         val localVariableHeaders: MutableMap<String, String> = mutableMapOf()
         localVariableHeaders["Content-Type"] = "application/json"
@@ -2283,7 +2283,7 @@ open class OrganizationsApi(basePath: kotlin.String = defaultBasePath, client: C
      * Cancel an organization recovery
      * The owner; &#x60;412&#x60; first.  **Who:** an account holder (a passkey session not bound to an app&#39;s frontend). **Step-up:** answers &#x60;412 CONFIRM_REQUIRED&#x60; first; send the same request again with &#x60;confirm&#x60;, a passkey assertion over &#x60;details.challenge&#x60;.
      * @param org 
-     * @param passkeyRemoveRequest May be absent. (optional)
+     * @param confirmOnly May be absent. (optional)
      * @return kotlinx.serialization.json.JsonObject
      * @throws IllegalStateException If the request is not correctly configured
      * @throws IOException Rethrows the OkHttp execute method exception
@@ -2293,8 +2293,8 @@ open class OrganizationsApi(basePath: kotlin.String = defaultBasePath, client: C
      */
     @Suppress("UNCHECKED_CAST")
     @Throws(IllegalStateException::class, IOException::class, UnsupportedOperationException::class, ClientException::class, ServerException::class)
-    suspend fun recoveryCancel(org: kotlin.String, passkeyRemoveRequest: PasskeyRemoveRequest? = null) : kotlinx.serialization.json.JsonObject = withContext(Dispatchers.IO) {
-        val localVarResponse = recoveryCancelWithHttpInfo(org = org, passkeyRemoveRequest = passkeyRemoveRequest)
+    suspend fun recoveryCancel(org: kotlin.String, confirmOnly: ConfirmOnly? = null) : kotlinx.serialization.json.JsonObject = withContext(Dispatchers.IO) {
+        val localVarResponse = recoveryCancelWithHttpInfo(org = org, confirmOnly = confirmOnly)
 
         return@withContext when (localVarResponse.responseType) {
             ResponseType.Success -> (localVarResponse as Success<*>).data as kotlinx.serialization.json.JsonObject
@@ -2316,17 +2316,17 @@ open class OrganizationsApi(basePath: kotlin.String = defaultBasePath, client: C
      * Cancel an organization recovery
      * The owner; &#x60;412&#x60; first.  **Who:** an account holder (a passkey session not bound to an app&#39;s frontend). **Step-up:** answers &#x60;412 CONFIRM_REQUIRED&#x60; first; send the same request again with &#x60;confirm&#x60;, a passkey assertion over &#x60;details.challenge&#x60;.
      * @param org 
-     * @param passkeyRemoveRequest May be absent. (optional)
+     * @param confirmOnly May be absent. (optional)
      * @return ApiResponse<kotlinx.serialization.json.JsonObject?>
      * @throws IllegalStateException If the request is not correctly configured
      * @throws IOException Rethrows the OkHttp execute method exception
      */
     @Suppress("UNCHECKED_CAST")
     @Throws(IllegalStateException::class, IOException::class)
-    suspend fun recoveryCancelWithHttpInfo(org: kotlin.String, passkeyRemoveRequest: PasskeyRemoveRequest?) : ApiResponse<kotlinx.serialization.json.JsonObject?> = withContext(Dispatchers.IO) {
-        val localVariableConfig = recoveryCancelRequestConfig(org = org, passkeyRemoveRequest = passkeyRemoveRequest)
+    suspend fun recoveryCancelWithHttpInfo(org: kotlin.String, confirmOnly: ConfirmOnly?) : ApiResponse<kotlinx.serialization.json.JsonObject?> = withContext(Dispatchers.IO) {
+        val localVariableConfig = recoveryCancelRequestConfig(org = org, confirmOnly = confirmOnly)
 
-        return@withContext request<PasskeyRemoveRequest, kotlinx.serialization.json.JsonObject>(
+        return@withContext request<ConfirmOnly, kotlinx.serialization.json.JsonObject>(
             localVariableConfig
         )
     }
@@ -2335,11 +2335,11 @@ open class OrganizationsApi(basePath: kotlin.String = defaultBasePath, client: C
      * To obtain the request config of the operation recoveryCancel
      *
      * @param org 
-     * @param passkeyRemoveRequest May be absent. (optional)
+     * @param confirmOnly May be absent. (optional)
      * @return RequestConfig
      */
-    fun recoveryCancelRequestConfig(org: kotlin.String, passkeyRemoveRequest: PasskeyRemoveRequest?) : RequestConfig<PasskeyRemoveRequest> {
-        val localVariableBody = passkeyRemoveRequest
+    fun recoveryCancelRequestConfig(org: kotlin.String, confirmOnly: ConfirmOnly?) : RequestConfig<ConfirmOnly> {
+        val localVariableBody = confirmOnly
         val localVariableQuery: MultiValueMap = mutableMapOf()
         val localVariableHeaders: MutableMap<String, String> = mutableMapOf()
         localVariableHeaders["Content-Type"] = "application/json"
@@ -2360,7 +2360,7 @@ open class OrganizationsApi(basePath: kotlin.String = defaultBasePath, client: C
      * Finish an organization recovery
      * The account that started it, once &#x60;readyAt&#x60; passed; &#x60;412&#x60; first.  **Who:** an account holder (a passkey session not bound to an app&#39;s frontend). **Step-up:** answers &#x60;412 CONFIRM_REQUIRED&#x60; first; send the same request again with &#x60;confirm&#x60;, a passkey assertion over &#x60;details.challenge&#x60;.
      * @param org 
-     * @param passkeyRemoveRequest May be absent. (optional)
+     * @param confirmOnly May be absent. (optional)
      * @return RecoveryFinish200Response
      * @throws IllegalStateException If the request is not correctly configured
      * @throws IOException Rethrows the OkHttp execute method exception
@@ -2370,8 +2370,8 @@ open class OrganizationsApi(basePath: kotlin.String = defaultBasePath, client: C
      */
     @Suppress("UNCHECKED_CAST")
     @Throws(IllegalStateException::class, IOException::class, UnsupportedOperationException::class, ClientException::class, ServerException::class)
-    suspend fun recoveryFinish(org: kotlin.String, passkeyRemoveRequest: PasskeyRemoveRequest? = null) : RecoveryFinish200Response = withContext(Dispatchers.IO) {
-        val localVarResponse = recoveryFinishWithHttpInfo(org = org, passkeyRemoveRequest = passkeyRemoveRequest)
+    suspend fun recoveryFinish(org: kotlin.String, confirmOnly: ConfirmOnly? = null) : RecoveryFinish200Response = withContext(Dispatchers.IO) {
+        val localVarResponse = recoveryFinishWithHttpInfo(org = org, confirmOnly = confirmOnly)
 
         return@withContext when (localVarResponse.responseType) {
             ResponseType.Success -> (localVarResponse as Success<*>).data as RecoveryFinish200Response
@@ -2393,17 +2393,17 @@ open class OrganizationsApi(basePath: kotlin.String = defaultBasePath, client: C
      * Finish an organization recovery
      * The account that started it, once &#x60;readyAt&#x60; passed; &#x60;412&#x60; first.  **Who:** an account holder (a passkey session not bound to an app&#39;s frontend). **Step-up:** answers &#x60;412 CONFIRM_REQUIRED&#x60; first; send the same request again with &#x60;confirm&#x60;, a passkey assertion over &#x60;details.challenge&#x60;.
      * @param org 
-     * @param passkeyRemoveRequest May be absent. (optional)
+     * @param confirmOnly May be absent. (optional)
      * @return ApiResponse<RecoveryFinish200Response?>
      * @throws IllegalStateException If the request is not correctly configured
      * @throws IOException Rethrows the OkHttp execute method exception
      */
     @Suppress("UNCHECKED_CAST")
     @Throws(IllegalStateException::class, IOException::class)
-    suspend fun recoveryFinishWithHttpInfo(org: kotlin.String, passkeyRemoveRequest: PasskeyRemoveRequest?) : ApiResponse<RecoveryFinish200Response?> = withContext(Dispatchers.IO) {
-        val localVariableConfig = recoveryFinishRequestConfig(org = org, passkeyRemoveRequest = passkeyRemoveRequest)
+    suspend fun recoveryFinishWithHttpInfo(org: kotlin.String, confirmOnly: ConfirmOnly?) : ApiResponse<RecoveryFinish200Response?> = withContext(Dispatchers.IO) {
+        val localVariableConfig = recoveryFinishRequestConfig(org = org, confirmOnly = confirmOnly)
 
-        return@withContext request<PasskeyRemoveRequest, RecoveryFinish200Response>(
+        return@withContext request<ConfirmOnly, RecoveryFinish200Response>(
             localVariableConfig
         )
     }
@@ -2412,11 +2412,11 @@ open class OrganizationsApi(basePath: kotlin.String = defaultBasePath, client: C
      * To obtain the request config of the operation recoveryFinish
      *
      * @param org 
-     * @param passkeyRemoveRequest May be absent. (optional)
+     * @param confirmOnly May be absent. (optional)
      * @return RequestConfig
      */
-    fun recoveryFinishRequestConfig(org: kotlin.String, passkeyRemoveRequest: PasskeyRemoveRequest?) : RequestConfig<PasskeyRemoveRequest> {
-        val localVariableBody = passkeyRemoveRequest
+    fun recoveryFinishRequestConfig(org: kotlin.String, confirmOnly: ConfirmOnly?) : RequestConfig<ConfirmOnly> {
+        val localVariableBody = confirmOnly
         val localVariableQuery: MultiValueMap = mutableMapOf()
         val localVariableHeaders: MutableMap<String, String> = mutableMapOf()
         localVariableHeaders["Content-Type"] = "application/json"
@@ -2435,7 +2435,7 @@ open class OrganizationsApi(basePath: kotlin.String = defaultBasePath, client: C
     /**
      * POST /orgs/{org}/recovery
      * Set the organization&#39;s recovery key
-     * Set, rotate or (&#x60;null&#x60;) remove it; the owner; cancels a recovery under way. &#x60;412&#x60; first.  **Who:** an account holder (a passkey session not bound to an app&#39;s frontend). **Step-up:** answers &#x60;412 CONFIRM_REQUIRED&#x60; first; send the same request again with &#x60;confirm&#x60;, a passkey assertion over &#x60;details.challenge&#x60;.
+     * Set or rotate it (&#x60;publicKey&#x60;: base64url Ed25519 public key), or remove it (&#x60;publicKey: null&#x60;; an absent &#x60;publicKey&#x60; removes it too); the owner; cancels a recovery under way. &#x60;412&#x60; first.  **Who:** an account holder (a passkey session not bound to an app&#39;s frontend). **Step-up:** answers &#x60;412 CONFIRM_REQUIRED&#x60; first; send the same request again with &#x60;confirm&#x60;, a passkey assertion over &#x60;details.challenge&#x60;.
      * @param org 
      * @param recoverySetRequest 
      * @return kotlinx.serialization.json.JsonObject
@@ -2468,7 +2468,7 @@ open class OrganizationsApi(basePath: kotlin.String = defaultBasePath, client: C
     /**
      * POST /orgs/{org}/recovery
      * Set the organization&#39;s recovery key
-     * Set, rotate or (&#x60;null&#x60;) remove it; the owner; cancels a recovery under way. &#x60;412&#x60; first.  **Who:** an account holder (a passkey session not bound to an app&#39;s frontend). **Step-up:** answers &#x60;412 CONFIRM_REQUIRED&#x60; first; send the same request again with &#x60;confirm&#x60;, a passkey assertion over &#x60;details.challenge&#x60;.
+     * Set or rotate it (&#x60;publicKey&#x60;: base64url Ed25519 public key), or remove it (&#x60;publicKey: null&#x60;; an absent &#x60;publicKey&#x60; removes it too); the owner; cancels a recovery under way. &#x60;412&#x60; first.  **Who:** an account holder (a passkey session not bound to an app&#39;s frontend). **Step-up:** answers &#x60;412 CONFIRM_REQUIRED&#x60; first; send the same request again with &#x60;confirm&#x60;, a passkey assertion over &#x60;details.challenge&#x60;.
      * @param org 
      * @param recoverySetRequest 
      * @return ApiResponse<kotlinx.serialization.json.JsonObject?>
@@ -2669,7 +2669,7 @@ open class OrganizationsApi(basePath: kotlin.String = defaultBasePath, client: C
      * With the teams and apps below it.  **Who:** a passkey session (an API key is refused). **Step-up:** answers &#x60;412 CONFIRM_REQUIRED&#x60; first; send the same request again with &#x60;confirm&#x60;, a passkey assertion over &#x60;details.challenge&#x60;.
      * @param org 
      * @param team 
-     * @param passkeyRemoveRequest May be absent. (optional)
+     * @param confirmOnly May be absent. (optional)
      * @return TeamDelete200Response
      * @throws IllegalStateException If the request is not correctly configured
      * @throws IOException Rethrows the OkHttp execute method exception
@@ -2679,8 +2679,8 @@ open class OrganizationsApi(basePath: kotlin.String = defaultBasePath, client: C
      */
     @Suppress("UNCHECKED_CAST")
     @Throws(IllegalStateException::class, IOException::class, UnsupportedOperationException::class, ClientException::class, ServerException::class)
-    suspend fun teamDelete(org: kotlin.String, team: kotlin.String, passkeyRemoveRequest: PasskeyRemoveRequest? = null) : TeamDelete200Response = withContext(Dispatchers.IO) {
-        val localVarResponse = teamDeleteWithHttpInfo(org = org, team = team, passkeyRemoveRequest = passkeyRemoveRequest)
+    suspend fun teamDelete(org: kotlin.String, team: kotlin.String, confirmOnly: ConfirmOnly? = null) : TeamDelete200Response = withContext(Dispatchers.IO) {
+        val localVarResponse = teamDeleteWithHttpInfo(org = org, team = team, confirmOnly = confirmOnly)
 
         return@withContext when (localVarResponse.responseType) {
             ResponseType.Success -> (localVarResponse as Success<*>).data as TeamDelete200Response
@@ -2703,17 +2703,17 @@ open class OrganizationsApi(basePath: kotlin.String = defaultBasePath, client: C
      * With the teams and apps below it.  **Who:** a passkey session (an API key is refused). **Step-up:** answers &#x60;412 CONFIRM_REQUIRED&#x60; first; send the same request again with &#x60;confirm&#x60;, a passkey assertion over &#x60;details.challenge&#x60;.
      * @param org 
      * @param team 
-     * @param passkeyRemoveRequest May be absent. (optional)
+     * @param confirmOnly May be absent. (optional)
      * @return ApiResponse<TeamDelete200Response?>
      * @throws IllegalStateException If the request is not correctly configured
      * @throws IOException Rethrows the OkHttp execute method exception
      */
     @Suppress("UNCHECKED_CAST")
     @Throws(IllegalStateException::class, IOException::class)
-    suspend fun teamDeleteWithHttpInfo(org: kotlin.String, team: kotlin.String, passkeyRemoveRequest: PasskeyRemoveRequest?) : ApiResponse<TeamDelete200Response?> = withContext(Dispatchers.IO) {
-        val localVariableConfig = teamDeleteRequestConfig(org = org, team = team, passkeyRemoveRequest = passkeyRemoveRequest)
+    suspend fun teamDeleteWithHttpInfo(org: kotlin.String, team: kotlin.String, confirmOnly: ConfirmOnly?) : ApiResponse<TeamDelete200Response?> = withContext(Dispatchers.IO) {
+        val localVariableConfig = teamDeleteRequestConfig(org = org, team = team, confirmOnly = confirmOnly)
 
-        return@withContext request<PasskeyRemoveRequest, TeamDelete200Response>(
+        return@withContext request<ConfirmOnly, TeamDelete200Response>(
             localVariableConfig
         )
     }
@@ -2723,11 +2723,11 @@ open class OrganizationsApi(basePath: kotlin.String = defaultBasePath, client: C
      *
      * @param org 
      * @param team 
-     * @param passkeyRemoveRequest May be absent. (optional)
+     * @param confirmOnly May be absent. (optional)
      * @return RequestConfig
      */
-    fun teamDeleteRequestConfig(org: kotlin.String, team: kotlin.String, passkeyRemoveRequest: PasskeyRemoveRequest?) : RequestConfig<PasskeyRemoveRequest> {
-        val localVariableBody = passkeyRemoveRequest
+    fun teamDeleteRequestConfig(org: kotlin.String, team: kotlin.String, confirmOnly: ConfirmOnly?) : RequestConfig<ConfirmOnly> {
+        val localVariableBody = confirmOnly
         val localVariableQuery: MultiValueMap = mutableMapOf()
         val localVariableHeaders: MutableMap<String, String> = mutableMapOf()
         localVariableHeaders["Content-Type"] = "application/json"
@@ -2749,7 +2749,7 @@ open class OrganizationsApi(basePath: kotlin.String = defaultBasePath, client: C
      * **Who:** signed in (a session or an API key).
      * @param org 
      * @param team 
-     * @return kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement?>
+     * @return TeamView
      * @throws IllegalStateException If the request is not correctly configured
      * @throws IOException Rethrows the OkHttp execute method exception
      * @throws UnsupportedOperationException If the API returns an informational or redirection response
@@ -2758,11 +2758,11 @@ open class OrganizationsApi(basePath: kotlin.String = defaultBasePath, client: C
      */
     @Suppress("UNCHECKED_CAST")
     @Throws(IllegalStateException::class, IOException::class, UnsupportedOperationException::class, ClientException::class, ServerException::class)
-    suspend fun teamGet(org: kotlin.String, team: kotlin.String) : kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement?> = withContext(Dispatchers.IO) {
+    suspend fun teamGet(org: kotlin.String, team: kotlin.String) : TeamView = withContext(Dispatchers.IO) {
         val localVarResponse = teamGetWithHttpInfo(org = org, team = team)
 
         return@withContext when (localVarResponse.responseType) {
-            ResponseType.Success -> (localVarResponse as Success<*>).data as kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement?>
+            ResponseType.Success -> (localVarResponse as Success<*>).data as TeamView
             ResponseType.Informational -> throw UnsupportedOperationException("Client does not support Informational responses.")
             ResponseType.Redirection -> throw UnsupportedOperationException("Client does not support Redirection responses.")
             ResponseType.ClientError -> {
@@ -2782,16 +2782,16 @@ open class OrganizationsApi(basePath: kotlin.String = defaultBasePath, client: C
      * **Who:** signed in (a session or an API key).
      * @param org 
      * @param team 
-     * @return ApiResponse<kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement?>?>
+     * @return ApiResponse<TeamView?>
      * @throws IllegalStateException If the request is not correctly configured
      * @throws IOException Rethrows the OkHttp execute method exception
      */
     @Suppress("UNCHECKED_CAST")
     @Throws(IllegalStateException::class, IOException::class)
-    suspend fun teamGetWithHttpInfo(org: kotlin.String, team: kotlin.String) : ApiResponse<kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement?>?> = withContext(Dispatchers.IO) {
+    suspend fun teamGetWithHttpInfo(org: kotlin.String, team: kotlin.String) : ApiResponse<TeamView?> = withContext(Dispatchers.IO) {
         val localVariableConfig = teamGetRequestConfig(org = org, team = team)
 
-        return@withContext request<Unit, kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement?>>(
+        return@withContext request<Unit, TeamView>(
             localVariableConfig
         )
     }
@@ -2826,7 +2826,7 @@ open class OrganizationsApi(basePath: kotlin.String = defaultBasePath, client: C
      * @param org 
      * @param team 
      * @param account 
-     * @param passkeyRemoveRequest May be absent. (optional)
+     * @param confirmOnly May be absent. (optional)
      * @return kotlinx.serialization.json.JsonObject
      * @throws IllegalStateException If the request is not correctly configured
      * @throws IOException Rethrows the OkHttp execute method exception
@@ -2836,8 +2836,8 @@ open class OrganizationsApi(basePath: kotlin.String = defaultBasePath, client: C
      */
     @Suppress("UNCHECKED_CAST")
     @Throws(IllegalStateException::class, IOException::class, UnsupportedOperationException::class, ClientException::class, ServerException::class)
-    suspend fun teamRemoveMember(org: kotlin.String, team: kotlin.String, account: kotlin.String, passkeyRemoveRequest: PasskeyRemoveRequest? = null) : kotlinx.serialization.json.JsonObject = withContext(Dispatchers.IO) {
-        val localVarResponse = teamRemoveMemberWithHttpInfo(org = org, team = team, account = account, passkeyRemoveRequest = passkeyRemoveRequest)
+    suspend fun teamRemoveMember(org: kotlin.String, team: kotlin.String, account: kotlin.String, confirmOnly: ConfirmOnly? = null) : kotlinx.serialization.json.JsonObject = withContext(Dispatchers.IO) {
+        val localVarResponse = teamRemoveMemberWithHttpInfo(org = org, team = team, account = account, confirmOnly = confirmOnly)
 
         return@withContext when (localVarResponse.responseType) {
             ResponseType.Success -> (localVarResponse as Success<*>).data as kotlinx.serialization.json.JsonObject
@@ -2861,17 +2861,17 @@ open class OrganizationsApi(basePath: kotlin.String = defaultBasePath, client: C
      * @param org 
      * @param team 
      * @param account 
-     * @param passkeyRemoveRequest May be absent. (optional)
+     * @param confirmOnly May be absent. (optional)
      * @return ApiResponse<kotlinx.serialization.json.JsonObject?>
      * @throws IllegalStateException If the request is not correctly configured
      * @throws IOException Rethrows the OkHttp execute method exception
      */
     @Suppress("UNCHECKED_CAST")
     @Throws(IllegalStateException::class, IOException::class)
-    suspend fun teamRemoveMemberWithHttpInfo(org: kotlin.String, team: kotlin.String, account: kotlin.String, passkeyRemoveRequest: PasskeyRemoveRequest?) : ApiResponse<kotlinx.serialization.json.JsonObject?> = withContext(Dispatchers.IO) {
-        val localVariableConfig = teamRemoveMemberRequestConfig(org = org, team = team, account = account, passkeyRemoveRequest = passkeyRemoveRequest)
+    suspend fun teamRemoveMemberWithHttpInfo(org: kotlin.String, team: kotlin.String, account: kotlin.String, confirmOnly: ConfirmOnly?) : ApiResponse<kotlinx.serialization.json.JsonObject?> = withContext(Dispatchers.IO) {
+        val localVariableConfig = teamRemoveMemberRequestConfig(org = org, team = team, account = account, confirmOnly = confirmOnly)
 
-        return@withContext request<PasskeyRemoveRequest, kotlinx.serialization.json.JsonObject>(
+        return@withContext request<ConfirmOnly, kotlinx.serialization.json.JsonObject>(
             localVariableConfig
         )
     }
@@ -2882,11 +2882,11 @@ open class OrganizationsApi(basePath: kotlin.String = defaultBasePath, client: C
      * @param org 
      * @param team 
      * @param account 
-     * @param passkeyRemoveRequest May be absent. (optional)
+     * @param confirmOnly May be absent. (optional)
      * @return RequestConfig
      */
-    fun teamRemoveMemberRequestConfig(org: kotlin.String, team: kotlin.String, account: kotlin.String, passkeyRemoveRequest: PasskeyRemoveRequest?) : RequestConfig<PasskeyRemoveRequest> {
-        val localVariableBody = passkeyRemoveRequest
+    fun teamRemoveMemberRequestConfig(org: kotlin.String, team: kotlin.String, account: kotlin.String, confirmOnly: ConfirmOnly?) : RequestConfig<ConfirmOnly> {
+        val localVariableBody = confirmOnly
         val localVariableQuery: MultiValueMap = mutableMapOf()
         val localVariableHeaders: MutableMap<String, String> = mutableMapOf()
         localVariableHeaders["Content-Type"] = "application/json"
@@ -2985,7 +2985,7 @@ open class OrganizationsApi(basePath: kotlin.String = defaultBasePath, client: C
     /**
      * POST /orgs/{org}/teams/{team}
      * Update a team
-     * Rename, open or restrict, move under another parent (&#x60;parent: null&#x60;: to the top), or set its metadata.  **Who:** a passkey session (an API key is refused).
+     * Rename, open or restrict, move under another parent, or set its metadata. &#x60;parent&#x60; absent leaves the team where it is; &#x60;parent: null&#x60; (an explicit null) moves it to the top; a team id moves it under that team.  **Who:** a passkey session (an API key is refused).
      * @param org 
      * @param team 
      * @param teamUpdateRequest 
@@ -3019,7 +3019,7 @@ open class OrganizationsApi(basePath: kotlin.String = defaultBasePath, client: C
     /**
      * POST /orgs/{org}/teams/{team}
      * Update a team
-     * Rename, open or restrict, move under another parent (&#x60;parent: null&#x60;: to the top), or set its metadata.  **Who:** a passkey session (an API key is refused).
+     * Rename, open or restrict, move under another parent, or set its metadata. &#x60;parent&#x60; absent leaves the team where it is; &#x60;parent: null&#x60; (an explicit null) moves it to the top; a team id moves it under that team.  **Who:** a passkey session (an API key is refused).
      * @param org 
      * @param team 
      * @param teamUpdateRequest 

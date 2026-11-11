@@ -10,17 +10,16 @@ import com.calimero.mero.api.facade.PackagesFacade
 import com.calimero.mero.api.facade.PublicFacade
 import com.calimero.mero.api.facade.Routes
 import com.calimero.mero.api.infrastructure.RequestConfig
-import com.calimero.mero.api.infrastructure.RequestMethod
 import com.calimero.mero.api.infrastructure.Serializer
 import com.calimero.mero.api.models.AccountOutboundApprovalRequest
 import com.calimero.mero.api.models.AccountReleaseApprovalRequest
 import com.calimero.mero.api.models.AliasSetRequest
 import com.calimero.mero.api.models.ApikeyCreateRequest
-import com.calimero.mero.api.models.ApikeyRevokeRequest
 import com.calimero.mero.api.models.AppAccessRequest
 import com.calimero.mero.api.models.AppCreateRequest
 import com.calimero.mero.api.models.AppMetadataRequest
 import com.calimero.mero.api.models.AppTransferRequest
+import com.calimero.mero.api.models.ConfirmOnly
 import com.calimero.mero.api.models.DeployerGrantRequest
 import com.calimero.mero.api.models.DeploymentCreateRequest
 import com.calimero.mero.api.models.DeploymentOfferRequest
@@ -38,7 +37,6 @@ import com.calimero.mero.api.models.OriginsAddRequest
 import com.calimero.mero.api.models.OriginsRemoveRequest
 import com.calimero.mero.api.models.PackageInstallRequest
 import com.calimero.mero.api.models.PasskeyLabelRequest
-import com.calimero.mero.api.models.PasskeyRemoveRequest
 import com.calimero.mero.api.models.PresencePublishRequest
 import com.calimero.mero.api.models.PublisherUpgradeRequest
 import com.calimero.mero.api.models.RecoverySetRequest
@@ -248,33 +246,40 @@ class CalimeroClient(
         operator: DeviceSigner? = null,
     ): MeroApi = if (passkey == null && operator == null) defaultApi else MeroApi(callFactory(StepUp(passkey, operator)))
 
+    /** The generated client for one facade call: its step-up overrides and the fields it sends as `null`. */
+    private fun facadeApi(
+        passkey: PasskeyProvider?,
+        operator: DeviceSigner?,
+        nulls: Set<String>,
+    ): MeroApi = if (nulls.isEmpty()) api(passkey, operator) else MeroApi(callFactory(StepUp(passkey, operator, nulls)))
+
     private fun callFactory(override: StepUp): MeroCallFactory = MeroCallFactory(scope) { send(it, stepUp(override)) }
 
-    private fun stepUp(override: StepUp): StepUp = StepUp(override.passkey ?: passkey, override.operator ?: operator)
+    private fun stepUp(override: StepUp): StepUp = StepUp(override.passkey ?: passkey, override.operator ?: operator, override.nulls)
 
     /** Core's account operations (`auth`): passkeys, sessions, API keys, aliases, recovery, usage. */
-    val auth: AuthFacade by lazy { AuthFacade(::api) }
+    val auth: AuthFacade by lazy { AuthFacade(::facadeApi) }
 
     /** Core's app operations: instances, calls and views, blobs, files, presence. */
-    val apps: AppsFacade by lazy { AppsFacade(::api) }
+    val apps: AppsFacade by lazy { AppsFacade(::facadeApi) }
 
     /** The node's consent page. */
-    val consent: ConsentFacade by lazy { ConsentFacade(::api) }
+    val consent: ConsentFacade by lazy { ConsentFacade(::facadeApi) }
 
     /** Operator routes (the ops token, [useApiKey]). */
-    val ops: OpsFacade by lazy { OpsFacade(::api) }
+    val ops: OpsFacade by lazy { OpsFacade(::facadeApi) }
 
     /** Organizations, members, teams, invites. */
-    val orgs: OrgsFacade by lazy { OrgsFacade(::api) }
+    val orgs: OrgsFacade by lazy { OrgsFacade(::facadeApi) }
 
     /** Packages and their web origins. */
-    val packages: PackagesFacade by lazy { PackagesFacade(::api) }
+    val packages: PackagesFacade by lazy { PackagesFacade(::facadeApi) }
 
     /** What any node answers anyone: health, attestation, releases, publisher bindings. */
-    val public: PublicFacade by lazy { PublicFacade(::api) }
+    val public: PublicFacade by lazy { PublicFacade(::facadeApi) }
 
     /** Sign-up policy and invites, deployers and deployments. */
-    val deployments: DeploymentsFacade by lazy { DeploymentsFacade(::api) }
+    val deployments: DeploymentsFacade by lazy { DeploymentsFacade(::facadeApi) }
 
     /** The sealed channel to [url], attested under the client's policy before its first request. */
     private fun channel(url: String): SealedTransport =
@@ -545,7 +550,12 @@ class CalimeroClient(
     ): Response {
         val bytes = request.body?.let { b -> Buffer().also { b.writeTo(it) }.readByteArray() }
         val type = request.body?.contentType()?.let { "${it.type}/${it.subtype}" }
-        val body = if (bytes == null || (bytes.isEmpty() && type == null)) null else Body(bytes, type ?: OCTET_STREAM)
+        var body = if (bytes == null || (bytes.isEmpty() && type == null)) null else Body(bytes, type ?: OCTET_STREAM)
+        if (stepUp.nulls.isNotEmpty()) {
+            // The generated request leaves every null out; these the caller set to `null` ([Explicit]).
+            val json = body?.let { parseOrNull(it.bytes.decodeToString()) as? JsonObject } ?: JsonObject(emptyMap())
+            body = jsonBody(JsonObject(json + stepUp.nulls.filterNot(json::containsKey).associateWith { JsonNull }))
+        }
         return dispatch(request.method, relativePath(request.url), body, stepUp)
     }
 
@@ -659,8 +669,8 @@ class CalimeroClient(
     }
 
     /**
-     * [config]'s route with [body] in place of the generated one: the binary uploads and the consent
-     * request, whose bodies the spec types as strings (see `openapi/README.md`).
+     * [config]'s route with [body] in place of the generated one: the binary uploads that keep the
+     * caller's content type, or the raw bytes, as they always sent them.
      */
     private suspend fun binary(
         method: String,
@@ -899,7 +909,7 @@ class CalimeroClient(
         credentialId: String,
         passkey: PasskeyProvider,
     ) {
-        raw(defaultApi.accounts.passkeyRemoveRequestConfig(credentialId, PasskeyRemoveRequest()), passkey)
+        raw(defaultApi.accounts.passkeyRemoveRequestConfig(credentialId, ConfirmOnly()), passkey)
     }
 
     /** Name one of the account's passkeys (a device label); `""` clears the name. */
@@ -949,7 +959,7 @@ class CalimeroClient(
         keyId: String,
         passkey: PasskeyProvider,
     ) {
-        raw(defaultApi.accounts.apikeyRevokeRequestConfig(keyId, ApikeyRevokeRequest()), passkey)
+        raw(defaultApi.accounts.apikeyRevokeRequestConfig(keyId, ConfirmOnly()), passkey)
     }
 
     /**
@@ -999,9 +1009,8 @@ class CalimeroClient(
      * Its owner and its organization's members only (`403` otherwise). Answers the file's ids with
      * the plaintext's size and [BlobInfo.sha256]. Held for an hour unless the app stores a
      * `BlobRef` to it. Past the organization's file quota: [QuotaExceeded].
-     *
-     * Not deprecated: the spec's answer has no `sha256` or `sealed` (see openapi/README.md).
      */
+    @Deprecated("Core refuses a sealed upload (`400`) since calimero-network/core#4937; upload with apps.blobUpload")
     suspend fun uploadFile(
         app: String,
         data: ByteArray,
@@ -1185,9 +1194,11 @@ class CalimeroClient(
      * A component app's xcalls: how many messages wait in its outbox, and the dead letters (never
      * delivered), newest last. Its owner's or an org admin's (`403` to anyone else);
      * `409 NOT_SUPPORTED` for an app on the wasmer runtime, whose xcalls are follow-ups.
-     *
-     * Not deprecated: the spec types `pending` as an array, the node answers a count (see openapi/README.md).
      */
+    @Deprecated(
+        "Use the generated facade: apps.xcalls",
+        ReplaceWith("apps.xcalls(app = app)"),
+    )
     suspend fun appXcalls(app: String): AppXcalls = wire.decodeFromJsonElement(AppXcalls.serializer(), raw(defaultApi.apps.appXcallsRequestConfig(app)))
 
     /** What the app's storage holds: `{ keys, bytes, blobs, blobBytes }`. */
@@ -1391,7 +1402,7 @@ class CalimeroClient(
      */
     @Deprecated(
         "Use the generated facade: apps.presencePublish",
-        ReplaceWith("apps.presencePublish(app = app, seq = seq, state = state?.let(Hex::encode))"),
+        ReplaceWith("apps.presencePublish(app = app, seq = seq, state = Explicit(state?.let(Hex::encode)))"),
     )
     suspend fun publishPresence(
         app: String,
@@ -1474,8 +1485,8 @@ class CalimeroClient(
      * signatures are refused from then on.
      */
     @Deprecated(
-        "Use the generated facade: orgs.recoverySet. A null publicKey must go as null, which the generated request leaves out",
-        ReplaceWith("orgs.recoverySet(org = org, publicKey = publicKey, passkey = passkey)"),
+        "Use the generated facade: orgs.recoverySet (Explicit(null) removes the key)",
+        ReplaceWith("orgs.recoverySet(org = org, publicKey = Explicit(publicKey), passkey = passkey)"),
     )
     suspend fun setRecoveryKey(
         org: String,
@@ -1513,7 +1524,7 @@ class CalimeroClient(
         org: String,
         passkey: PasskeyProvider,
     ) {
-        raw(defaultApi.organizations.recoveryCancelRequestConfig(org, PasskeyRemoveRequest()), passkey)
+        raw(defaultApi.organizations.recoveryCancelRequestConfig(org, ConfirmOnly()), passkey)
     }
 
     /**
@@ -1529,7 +1540,7 @@ class CalimeroClient(
         org: String,
         passkey: PasskeyProvider,
     ): RecoveryFinished =
-        wire.decodeFromJsonElement(RecoveryFinished.serializer(), raw(defaultApi.organizations.recoveryFinishRequestConfig(org, PasskeyRemoveRequest()), passkey))
+        wire.decodeFromJsonElement(RecoveryFinished.serializer(), raw(defaultApi.organizations.recoveryFinishRequestConfig(org, ConfirmOnly()), passkey))
 
     /** The organization, with the teams this caller reaches or manages. */
     @Deprecated(
@@ -1547,7 +1558,7 @@ class CalimeroClient(
         org: String,
         passkey: PasskeyProvider,
     ) {
-        raw(defaultApi.organizations.orgDeleteRequestConfig(org, PasskeyRemoveRequest()), passkey)
+        raw(defaultApi.organizations.orgDeleteRequestConfig(org, ConfirmOnly()), passkey)
     }
 
     /** Set the organization's metadata (an admin, or a holder of `MANAGE_METADATA`); at most 16 KiB. */
@@ -1709,13 +1720,12 @@ class CalimeroClient(
      * to `returnTo?request_id=…&result=approved|declined` ([consentReturn]), and [consentResult]
      * confirms the decision.
      */
+    @Deprecated(
+        "Use the generated facade: consent.pageCreate",
+        ReplaceWith("consent.pageCreate(consentRequest = request)"),
+    )
     suspend fun requestConsent(request: ConsentRequest): ConsentStarted =
-        // Not deprecated: the spec's body is a `oneOf` of three kinds without a discriminator mapping,
-        // which the generator flattens into one class (see openapi/README.md).
-        wire.decodeFromJsonElement(
-            ConsentStarted.serializer(),
-            binary("POST", RequestConfig<Unit>(RequestMethod.POST, "/consent/requests", requiresAuthentication = true), jsonBody(request.toJson())),
-        )
+        wire.decodeFromJsonElement(ConsentStarted.serializer(), raw(defaultApi.consent.consentPageCreateRequestConfig(request)))
 
     /** [requestConsent], then hand the consent page's URL to [navigate] (open it in a Custom Tab). */
     suspend fun openConsentPage(
@@ -1870,7 +1880,7 @@ class CalimeroClient(
         org: String,
         account: String,
         passkey: PasskeyProvider,
-    ): JsonElement = raw(defaultApi.organizations.orgRemoveMemberRequestConfig(org, account, PasskeyRemoveRequest()), passkey)
+    ): JsonElement = raw(defaultApi.organizations.orgRemoveMemberRequestConfig(org, account, ConfirmOnly()), passkey)
 
     /**
      * Set capability bits ([OrgCapabilities]): for a member ([account]), for a member of one team
@@ -1921,8 +1931,8 @@ class CalimeroClient(
      * another team, [toTop] to the top; neither leaves it.
      */
     @Deprecated(
-        "Use the generated facade: orgs.teamUpdate. Moving to the top (parent null) is not expressible: the generated request leaves a null out",
-        ReplaceWith("orgs.teamUpdate(org = org, team = team, name = name, join = join?.api(), parent = parent, metadata = metadata)"),
+        "Use the generated facade: orgs.teamUpdate (parent = Explicit(null) moves it to the top)",
+        ReplaceWith("orgs.teamUpdate(org = org, team = team, name = name, join = join?.api(), parent = if (toTop) Explicit(null) else parent?.let(::Explicit), metadata = metadata)"),
     )
     @Suppress("LongParameterList")
     suspend fun updateTeam(
@@ -1982,7 +1992,7 @@ class CalimeroClient(
         account: String,
         passkey: PasskeyProvider,
     ) {
-        raw(defaultApi.organizations.teamRemoveMemberRequestConfig(org, team, account, PasskeyRemoveRequest()), passkey)
+        raw(defaultApi.organizations.teamRemoveMemberRequestConfig(org, team, account, ConfirmOnly()), passkey)
     }
 
     /**
@@ -2109,7 +2119,7 @@ class CalimeroClient(
         deployer: Deployer,
         passkey: PasskeyProvider,
     ) {
-        raw(defaultApi.signUpAndDeployments.deployerRevokeRequestConfig(deployer.key, PasskeyRemoveRequest()), passkey)
+        raw(defaultApi.signUpAndDeployments.deployerRevokeRequestConfig(deployer.key, ConfirmOnly()), passkey)
     }
 
     /** [revokeDeployer] by the grant's key (`account:{id}` or `org:{id}`). */
@@ -2121,7 +2131,7 @@ class CalimeroClient(
         key: String,
         passkey: PasskeyProvider,
     ) {
-        raw(defaultApi.signUpAndDeployments.deployerRevokeRequestConfig(key, PasskeyRemoveRequest()), passkey)
+        raw(defaultApi.signUpAndDeployments.deployerRevokeRequestConfig(key, ConfirmOnly()), passkey)
     }
 
     // ---------------------------------------------------------------- deployments
@@ -2169,7 +2179,7 @@ class CalimeroClient(
         id: String,
         passkey: PasskeyProvider,
     ) {
-        raw(defaultApi.signUpAndDeployments.deploymentDeleteRequestConfig(id, PasskeyRemoveRequest()), passkey)
+        raw(defaultApi.signUpAndDeployments.deploymentDeleteRequestConfig(id, ConfirmOnly()), passkey)
     }
 
     /**
@@ -2203,7 +2213,7 @@ class CalimeroClient(
         app: String,
         passkey: PasskeyProvider,
     ) {
-        raw(defaultApi.signUpAndDeployments.deploymentWithdrawRequestConfig(id, app, PasskeyRemoveRequest()), passkey)
+        raw(defaultApi.signUpAndDeployments.deploymentWithdrawRequestConfig(id, app, ConfirmOnly()), passkey)
     }
 
     /**

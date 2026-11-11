@@ -44,7 +44,7 @@ import kotlinx.serialization.Contextual
 data class ActivityList200ResponseActivityInner (
 
     @SerialName(value = "at")
-    val at: kotlin.Long?,
+    val at: kotlin.Long,
 
     @SerialName(value = "passkey")
     val passkey: kotlin.String,

@@ -23,7 +23,7 @@
 
 package com.calimero.mero.api.models
 
-import com.calimero.mero.api.models.App
+import com.calimero.mero.api.models.AppEntry
 
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.SerialName
@@ -39,7 +39,7 @@ import kotlinx.serialization.Contextual
 data class AppList200Response (
 
     @SerialName(value = "apps")
-    val apps: kotlin.collections.List<App>
+    val apps: kotlin.collections.List<AppEntry>
 
 ) {
 

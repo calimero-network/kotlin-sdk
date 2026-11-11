@@ -29,13 +29,9 @@ import okhttp3.HttpUrl
 
 import com.calimero.mero.api.models.AccountApps200Response
 import com.calimero.mero.api.models.AccountOutboundApprovalRequest
-import com.calimero.mero.api.models.AccountProofProve400Response
 import com.calimero.mero.api.models.AccountProofProveRequest
-import com.calimero.mero.api.models.AccountRecoveryFinish409Response
 import com.calimero.mero.api.models.AccountRecoveryFinishRequest
 import com.calimero.mero.api.models.AccountRecoveryStart200Response
-import com.calimero.mero.api.models.AccountRecoveryStart400Response
-import com.calimero.mero.api.models.AccountRecoveryStart409Response
 import com.calimero.mero.api.models.AccountRecoveryStartRequest
 import com.calimero.mero.api.models.AccountReleaseApprovalRequest
 import com.calimero.mero.api.models.ActivityList200Response
@@ -43,39 +39,21 @@ import com.calimero.mero.api.models.AliasGet200Response
 import com.calimero.mero.api.models.AliasList200Response
 import com.calimero.mero.api.models.AliasSetRequest
 import com.calimero.mero.api.models.ApikeyCreate200Response
-import com.calimero.mero.api.models.ApikeyCreate400Response
 import com.calimero.mero.api.models.ApikeyCreateRequest
 import com.calimero.mero.api.models.ApikeyList200Response
-import com.calimero.mero.api.models.ApikeyRevokeRequest
-import com.calimero.mero.api.models.AppCreate401Response
-import com.calimero.mero.api.models.AppCreate421Response
-import com.calimero.mero.api.models.AppDelete403Response
-import com.calimero.mero.api.models.AppMethod412Response
-import com.calimero.mero.api.models.AppTransfer400Response
-import com.calimero.mero.api.models.BlobDownload404Response
-import com.calimero.mero.api.models.BlobDownload503Response
-import com.calimero.mero.api.models.BlobUpload429Response
+import com.calimero.mero.api.models.ConfirmOnly
+import com.calimero.mero.api.models.Error
 import com.calimero.mero.api.models.LoginBegin200Response
-import com.calimero.mero.api.models.LoginBegin429Response
 import com.calimero.mero.api.models.LoginBeginRequest
-import com.calimero.mero.api.models.LoginFinish400Response
-import com.calimero.mero.api.models.LoginFinish401Response
 import com.calimero.mero.api.models.LoginFinishRequest
 import com.calimero.mero.api.models.Me200Response
 import com.calimero.mero.api.models.PasskeyAddFinish200Response
-import com.calimero.mero.api.models.PasskeyAddFinish400Response
 import com.calimero.mero.api.models.PasskeyAddFinishRequest
 import com.calimero.mero.api.models.PasskeyLabelRequest
-import com.calimero.mero.api.models.PasskeyRemoveRequest
 import com.calimero.mero.api.models.RecoveryCreate200Response
-import com.calimero.mero.api.models.RecoveryCreate400Response
 import com.calimero.mero.api.models.RefreshRequest
 import com.calimero.mero.api.models.RegisterBegin200Response
-import com.calimero.mero.api.models.RegisterBegin403Response
 import com.calimero.mero.api.models.RegisterBeginRequest
-import com.calimero.mero.api.models.RegisterFinish400Response
-import com.calimero.mero.api.models.RegisterFinish401Response
-import com.calimero.mero.api.models.RegisterFinish403Response
 import com.calimero.mero.api.models.RegisterFinishRequest
 import com.calimero.mero.api.models.Session
 import com.calimero.mero.api.models.SessionsList200Response
@@ -198,7 +176,7 @@ open class AccountsApi(basePath: kotlin.String = defaultBasePath, client: Call.F
      * Approve outbound prefixes for the account&#39;s apps
      * **Who:** an account holder (a passkey session not bound to an app&#39;s frontend). **Step-up:** answers &#x60;412 CONFIRM_REQUIRED&#x60; first; send the same request again with &#x60;confirm&#x60;, a passkey assertion over &#x60;details.challenge&#x60;.
      * @param accountOutboundApprovalRequest 
-     * @return kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement?>
+     * @return kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement>
      * @throws IllegalStateException If the request is not correctly configured
      * @throws IOException Rethrows the OkHttp execute method exception
      * @throws UnsupportedOperationException If the API returns an informational or redirection response
@@ -207,11 +185,11 @@ open class AccountsApi(basePath: kotlin.String = defaultBasePath, client: Call.F
      */
     @Suppress("UNCHECKED_CAST")
     @Throws(IllegalStateException::class, IOException::class, UnsupportedOperationException::class, ClientException::class, ServerException::class)
-    suspend fun accountOutboundApproval(accountOutboundApprovalRequest: AccountOutboundApprovalRequest) : kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement?> = withContext(Dispatchers.IO) {
+    suspend fun accountOutboundApproval(accountOutboundApprovalRequest: AccountOutboundApprovalRequest) : kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement> = withContext(Dispatchers.IO) {
         val localVarResponse = accountOutboundApprovalWithHttpInfo(accountOutboundApprovalRequest = accountOutboundApprovalRequest)
 
         return@withContext when (localVarResponse.responseType) {
-            ResponseType.Success -> (localVarResponse as Success<*>).data as kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement?>
+            ResponseType.Success -> (localVarResponse as Success<*>).data as kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement>
             ResponseType.Informational -> throw UnsupportedOperationException("Client does not support Informational responses.")
             ResponseType.Redirection -> throw UnsupportedOperationException("Client does not support Redirection responses.")
             ResponseType.ClientError -> {
@@ -230,16 +208,16 @@ open class AccountsApi(basePath: kotlin.String = defaultBasePath, client: Call.F
      * Approve outbound prefixes for the account&#39;s apps
      * **Who:** an account holder (a passkey session not bound to an app&#39;s frontend). **Step-up:** answers &#x60;412 CONFIRM_REQUIRED&#x60; first; send the same request again with &#x60;confirm&#x60;, a passkey assertion over &#x60;details.challenge&#x60;.
      * @param accountOutboundApprovalRequest 
-     * @return ApiResponse<kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement?>?>
+     * @return ApiResponse<kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement>?>
      * @throws IllegalStateException If the request is not correctly configured
      * @throws IOException Rethrows the OkHttp execute method exception
      */
     @Suppress("UNCHECKED_CAST")
     @Throws(IllegalStateException::class, IOException::class)
-    suspend fun accountOutboundApprovalWithHttpInfo(accountOutboundApprovalRequest: AccountOutboundApprovalRequest) : ApiResponse<kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement?>?> = withContext(Dispatchers.IO) {
+    suspend fun accountOutboundApprovalWithHttpInfo(accountOutboundApprovalRequest: AccountOutboundApprovalRequest) : ApiResponse<kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement>?> = withContext(Dispatchers.IO) {
         val localVariableConfig = accountOutboundApprovalRequestConfig(accountOutboundApprovalRequest = accountOutboundApprovalRequest)
 
-        return@withContext request<AccountOutboundApprovalRequest, kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement?>>(
+        return@withContext request<AccountOutboundApprovalRequest, kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement>>(
             localVariableConfig
         )
     }
@@ -272,7 +250,7 @@ open class AccountsApi(basePath: kotlin.String = defaultBasePath, client: Call.F
      * Prove the account to another party
      * A statement signed with this node&#39;s receipt key that the caller&#39;s passkey session asked to bind &#x60;nonce&#x60; for &#x60;audience&#x60;.  **Who:** a passkey session (an API key is refused).
      * @param accountProofProveRequest 
-     * @return kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement?>
+     * @return kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement>
      * @throws IllegalStateException If the request is not correctly configured
      * @throws IOException Rethrows the OkHttp execute method exception
      * @throws UnsupportedOperationException If the API returns an informational or redirection response
@@ -281,11 +259,11 @@ open class AccountsApi(basePath: kotlin.String = defaultBasePath, client: Call.F
      */
     @Suppress("UNCHECKED_CAST")
     @Throws(IllegalStateException::class, IOException::class, UnsupportedOperationException::class, ClientException::class, ServerException::class)
-    suspend fun accountProofProve(accountProofProveRequest: AccountProofProveRequest) : kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement?> = withContext(Dispatchers.IO) {
+    suspend fun accountProofProve(accountProofProveRequest: AccountProofProveRequest) : kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement> = withContext(Dispatchers.IO) {
         val localVarResponse = accountProofProveWithHttpInfo(accountProofProveRequest = accountProofProveRequest)
 
         return@withContext when (localVarResponse.responseType) {
-            ResponseType.Success -> (localVarResponse as Success<*>).data as kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement?>
+            ResponseType.Success -> (localVarResponse as Success<*>).data as kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement>
             ResponseType.Informational -> throw UnsupportedOperationException("Client does not support Informational responses.")
             ResponseType.Redirection -> throw UnsupportedOperationException("Client does not support Redirection responses.")
             ResponseType.ClientError -> {
@@ -304,16 +282,16 @@ open class AccountsApi(basePath: kotlin.String = defaultBasePath, client: Call.F
      * Prove the account to another party
      * A statement signed with this node&#39;s receipt key that the caller&#39;s passkey session asked to bind &#x60;nonce&#x60; for &#x60;audience&#x60;.  **Who:** a passkey session (an API key is refused).
      * @param accountProofProveRequest 
-     * @return ApiResponse<kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement?>?>
+     * @return ApiResponse<kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement>?>
      * @throws IllegalStateException If the request is not correctly configured
      * @throws IOException Rethrows the OkHttp execute method exception
      */
     @Suppress("UNCHECKED_CAST")
     @Throws(IllegalStateException::class, IOException::class)
-    suspend fun accountProofProveWithHttpInfo(accountProofProveRequest: AccountProofProveRequest) : ApiResponse<kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement?>?> = withContext(Dispatchers.IO) {
+    suspend fun accountProofProveWithHttpInfo(accountProofProveRequest: AccountProofProveRequest) : ApiResponse<kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement>?> = withContext(Dispatchers.IO) {
         val localVariableConfig = accountProofProveRequestConfig(accountProofProveRequest = accountProofProveRequest)
 
-        return@withContext request<AccountProofProveRequest, kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement?>>(
+        return@withContext request<AccountProofProveRequest, kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement>>(
             localVariableConfig
         )
     }
@@ -419,7 +397,7 @@ open class AccountsApi(basePath: kotlin.String = defaultBasePath, client: Call.F
      * POST /auth/recovery/cancel
      * Cancel an account recovery
      * With a passkey the account has; &#x60;412&#x60; first.  **Who:** an account holder (a passkey session not bound to an app&#39;s frontend). **Step-up:** answers &#x60;412 CONFIRM_REQUIRED&#x60; first; send the same request again with &#x60;confirm&#x60;, a passkey assertion over &#x60;details.challenge&#x60;.
-     * @param passkeyRemoveRequest May be absent. (optional)
+     * @param confirmOnly May be absent. (optional)
      * @return kotlinx.serialization.json.JsonObject
      * @throws IllegalStateException If the request is not correctly configured
      * @throws IOException Rethrows the OkHttp execute method exception
@@ -429,8 +407,8 @@ open class AccountsApi(basePath: kotlin.String = defaultBasePath, client: Call.F
      */
     @Suppress("UNCHECKED_CAST")
     @Throws(IllegalStateException::class, IOException::class, UnsupportedOperationException::class, ClientException::class, ServerException::class)
-    suspend fun accountRecoveryCancel(passkeyRemoveRequest: PasskeyRemoveRequest? = null) : kotlinx.serialization.json.JsonObject = withContext(Dispatchers.IO) {
-        val localVarResponse = accountRecoveryCancelWithHttpInfo(passkeyRemoveRequest = passkeyRemoveRequest)
+    suspend fun accountRecoveryCancel(confirmOnly: ConfirmOnly? = null) : kotlinx.serialization.json.JsonObject = withContext(Dispatchers.IO) {
+        val localVarResponse = accountRecoveryCancelWithHttpInfo(confirmOnly = confirmOnly)
 
         return@withContext when (localVarResponse.responseType) {
             ResponseType.Success -> (localVarResponse as Success<*>).data as kotlinx.serialization.json.JsonObject
@@ -451,17 +429,17 @@ open class AccountsApi(basePath: kotlin.String = defaultBasePath, client: Call.F
      * POST /auth/recovery/cancel
      * Cancel an account recovery
      * With a passkey the account has; &#x60;412&#x60; first.  **Who:** an account holder (a passkey session not bound to an app&#39;s frontend). **Step-up:** answers &#x60;412 CONFIRM_REQUIRED&#x60; first; send the same request again with &#x60;confirm&#x60;, a passkey assertion over &#x60;details.challenge&#x60;.
-     * @param passkeyRemoveRequest May be absent. (optional)
+     * @param confirmOnly May be absent. (optional)
      * @return ApiResponse<kotlinx.serialization.json.JsonObject?>
      * @throws IllegalStateException If the request is not correctly configured
      * @throws IOException Rethrows the OkHttp execute method exception
      */
     @Suppress("UNCHECKED_CAST")
     @Throws(IllegalStateException::class, IOException::class)
-    suspend fun accountRecoveryCancelWithHttpInfo(passkeyRemoveRequest: PasskeyRemoveRequest?) : ApiResponse<kotlinx.serialization.json.JsonObject?> = withContext(Dispatchers.IO) {
-        val localVariableConfig = accountRecoveryCancelRequestConfig(passkeyRemoveRequest = passkeyRemoveRequest)
+    suspend fun accountRecoveryCancelWithHttpInfo(confirmOnly: ConfirmOnly?) : ApiResponse<kotlinx.serialization.json.JsonObject?> = withContext(Dispatchers.IO) {
+        val localVariableConfig = accountRecoveryCancelRequestConfig(confirmOnly = confirmOnly)
 
-        return@withContext request<PasskeyRemoveRequest, kotlinx.serialization.json.JsonObject>(
+        return@withContext request<ConfirmOnly, kotlinx.serialization.json.JsonObject>(
             localVariableConfig
         )
     }
@@ -469,11 +447,11 @@ open class AccountsApi(basePath: kotlin.String = defaultBasePath, client: Call.F
     /**
      * To obtain the request config of the operation accountRecoveryCancel
      *
-     * @param passkeyRemoveRequest May be absent. (optional)
+     * @param confirmOnly May be absent. (optional)
      * @return RequestConfig
      */
-    fun accountRecoveryCancelRequestConfig(passkeyRemoveRequest: PasskeyRemoveRequest?) : RequestConfig<PasskeyRemoveRequest> {
-        val localVariableBody = passkeyRemoveRequest
+    fun accountRecoveryCancelRequestConfig(confirmOnly: ConfirmOnly?) : RequestConfig<ConfirmOnly> {
+        val localVariableBody = confirmOnly
         val localVariableQuery: MultiValueMap = mutableMapOf()
         val localVariableHeaders: MutableMap<String, String> = mutableMapOf()
         localVariableHeaders["Content-Type"] = "application/json"
@@ -642,7 +620,7 @@ open class AccountsApi(basePath: kotlin.String = defaultBasePath, client: Call.F
      * Approve a mero-tee release for the account&#39;s apps
      * Where the owner holds release approvals; &#x60;412&#x60; first.  **Who:** an account holder (a passkey session not bound to an app&#39;s frontend). **Step-up:** answers &#x60;412 CONFIRM_REQUIRED&#x60; first; send the same request again with &#x60;confirm&#x60;, a passkey assertion over &#x60;details.challenge&#x60;.
      * @param accountReleaseApprovalRequest 
-     * @return kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement?>
+     * @return kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement>
      * @throws IllegalStateException If the request is not correctly configured
      * @throws IOException Rethrows the OkHttp execute method exception
      * @throws UnsupportedOperationException If the API returns an informational or redirection response
@@ -651,11 +629,11 @@ open class AccountsApi(basePath: kotlin.String = defaultBasePath, client: Call.F
      */
     @Suppress("UNCHECKED_CAST")
     @Throws(IllegalStateException::class, IOException::class, UnsupportedOperationException::class, ClientException::class, ServerException::class)
-    suspend fun accountReleaseApproval(accountReleaseApprovalRequest: AccountReleaseApprovalRequest) : kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement?> = withContext(Dispatchers.IO) {
+    suspend fun accountReleaseApproval(accountReleaseApprovalRequest: AccountReleaseApprovalRequest) : kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement> = withContext(Dispatchers.IO) {
         val localVarResponse = accountReleaseApprovalWithHttpInfo(accountReleaseApprovalRequest = accountReleaseApprovalRequest)
 
         return@withContext when (localVarResponse.responseType) {
-            ResponseType.Success -> (localVarResponse as Success<*>).data as kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement?>
+            ResponseType.Success -> (localVarResponse as Success<*>).data as kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement>
             ResponseType.Informational -> throw UnsupportedOperationException("Client does not support Informational responses.")
             ResponseType.Redirection -> throw UnsupportedOperationException("Client does not support Redirection responses.")
             ResponseType.ClientError -> {
@@ -674,16 +652,16 @@ open class AccountsApi(basePath: kotlin.String = defaultBasePath, client: Call.F
      * Approve a mero-tee release for the account&#39;s apps
      * Where the owner holds release approvals; &#x60;412&#x60; first.  **Who:** an account holder (a passkey session not bound to an app&#39;s frontend). **Step-up:** answers &#x60;412 CONFIRM_REQUIRED&#x60; first; send the same request again with &#x60;confirm&#x60;, a passkey assertion over &#x60;details.challenge&#x60;.
      * @param accountReleaseApprovalRequest 
-     * @return ApiResponse<kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement?>?>
+     * @return ApiResponse<kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement>?>
      * @throws IllegalStateException If the request is not correctly configured
      * @throws IOException Rethrows the OkHttp execute method exception
      */
     @Suppress("UNCHECKED_CAST")
     @Throws(IllegalStateException::class, IOException::class)
-    suspend fun accountReleaseApprovalWithHttpInfo(accountReleaseApprovalRequest: AccountReleaseApprovalRequest) : ApiResponse<kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement?>?> = withContext(Dispatchers.IO) {
+    suspend fun accountReleaseApprovalWithHttpInfo(accountReleaseApprovalRequest: AccountReleaseApprovalRequest) : ApiResponse<kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement>?> = withContext(Dispatchers.IO) {
         val localVariableConfig = accountReleaseApprovalRequestConfig(accountReleaseApprovalRequest = accountReleaseApprovalRequest)
 
-        return@withContext request<AccountReleaseApprovalRequest, kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement?>>(
+        return@withContext request<AccountReleaseApprovalRequest, kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement>>(
             localVariableConfig
         )
     }
@@ -1231,7 +1209,7 @@ open class AccountsApi(basePath: kotlin.String = defaultBasePath, client: Call.F
      * Revoke an API key
      * **Who:** an account holder (a passkey session not bound to an app&#39;s frontend). **Step-up:** answers &#x60;412 CONFIRM_REQUIRED&#x60; first; send the same request again with &#x60;confirm&#x60;, a passkey assertion over &#x60;details.challenge&#x60;.
      * @param key 
-     * @param apikeyRevokeRequest May be absent. (optional)
+     * @param confirmOnly May be absent. (optional)
      * @return kotlinx.serialization.json.JsonObject
      * @throws IllegalStateException If the request is not correctly configured
      * @throws IOException Rethrows the OkHttp execute method exception
@@ -1241,8 +1219,8 @@ open class AccountsApi(basePath: kotlin.String = defaultBasePath, client: Call.F
      */
     @Suppress("UNCHECKED_CAST")
     @Throws(IllegalStateException::class, IOException::class, UnsupportedOperationException::class, ClientException::class, ServerException::class)
-    suspend fun apikeyRevoke(key: kotlin.String, apikeyRevokeRequest: ApikeyRevokeRequest? = null) : kotlinx.serialization.json.JsonObject = withContext(Dispatchers.IO) {
-        val localVarResponse = apikeyRevokeWithHttpInfo(key = key, apikeyRevokeRequest = apikeyRevokeRequest)
+    suspend fun apikeyRevoke(key: kotlin.String, confirmOnly: ConfirmOnly? = null) : kotlinx.serialization.json.JsonObject = withContext(Dispatchers.IO) {
+        val localVarResponse = apikeyRevokeWithHttpInfo(key = key, confirmOnly = confirmOnly)
 
         return@withContext when (localVarResponse.responseType) {
             ResponseType.Success -> (localVarResponse as Success<*>).data as kotlinx.serialization.json.JsonObject
@@ -1264,17 +1242,17 @@ open class AccountsApi(basePath: kotlin.String = defaultBasePath, client: Call.F
      * Revoke an API key
      * **Who:** an account holder (a passkey session not bound to an app&#39;s frontend). **Step-up:** answers &#x60;412 CONFIRM_REQUIRED&#x60; first; send the same request again with &#x60;confirm&#x60;, a passkey assertion over &#x60;details.challenge&#x60;.
      * @param key 
-     * @param apikeyRevokeRequest May be absent. (optional)
+     * @param confirmOnly May be absent. (optional)
      * @return ApiResponse<kotlinx.serialization.json.JsonObject?>
      * @throws IllegalStateException If the request is not correctly configured
      * @throws IOException Rethrows the OkHttp execute method exception
      */
     @Suppress("UNCHECKED_CAST")
     @Throws(IllegalStateException::class, IOException::class)
-    suspend fun apikeyRevokeWithHttpInfo(key: kotlin.String, apikeyRevokeRequest: ApikeyRevokeRequest?) : ApiResponse<kotlinx.serialization.json.JsonObject?> = withContext(Dispatchers.IO) {
-        val localVariableConfig = apikeyRevokeRequestConfig(key = key, apikeyRevokeRequest = apikeyRevokeRequest)
+    suspend fun apikeyRevokeWithHttpInfo(key: kotlin.String, confirmOnly: ConfirmOnly?) : ApiResponse<kotlinx.serialization.json.JsonObject?> = withContext(Dispatchers.IO) {
+        val localVariableConfig = apikeyRevokeRequestConfig(key = key, confirmOnly = confirmOnly)
 
-        return@withContext request<ApikeyRevokeRequest, kotlinx.serialization.json.JsonObject>(
+        return@withContext request<ConfirmOnly, kotlinx.serialization.json.JsonObject>(
             localVariableConfig
         )
     }
@@ -1283,11 +1261,11 @@ open class AccountsApi(basePath: kotlin.String = defaultBasePath, client: Call.F
      * To obtain the request config of the operation apikeyRevoke
      *
      * @param key 
-     * @param apikeyRevokeRequest May be absent. (optional)
+     * @param confirmOnly May be absent. (optional)
      * @return RequestConfig
      */
-    fun apikeyRevokeRequestConfig(key: kotlin.String, apikeyRevokeRequest: ApikeyRevokeRequest?) : RequestConfig<ApikeyRevokeRequest> {
-        val localVariableBody = apikeyRevokeRequest
+    fun apikeyRevokeRequestConfig(key: kotlin.String, confirmOnly: ConfirmOnly?) : RequestConfig<ConfirmOnly> {
+        val localVariableBody = confirmOnly
         val localVariableQuery: MultiValueMap = mutableMapOf()
         val localVariableHeaders: MutableMap<String, String> = mutableMapOf()
         localVariableHeaders["Content-Type"] = "application/json"
@@ -1525,7 +1503,7 @@ open class AccountsApi(basePath: kotlin.String = defaultBasePath, client: Call.F
      * POST /auth/logout-all
      * End every session of the account
      * **Who:** an account holder (a passkey session not bound to an app&#39;s frontend).
-     * @return kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement?>
+     * @return kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement>
      * @throws IllegalStateException If the request is not correctly configured
      * @throws IOException Rethrows the OkHttp execute method exception
      * @throws UnsupportedOperationException If the API returns an informational or redirection response
@@ -1534,11 +1512,11 @@ open class AccountsApi(basePath: kotlin.String = defaultBasePath, client: Call.F
      */
     @Suppress("UNCHECKED_CAST")
     @Throws(IllegalStateException::class, IOException::class, UnsupportedOperationException::class, ClientException::class, ServerException::class)
-    suspend fun logoutAll() : kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement?> = withContext(Dispatchers.IO) {
+    suspend fun logoutAll() : kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement> = withContext(Dispatchers.IO) {
         val localVarResponse = logoutAllWithHttpInfo()
 
         return@withContext when (localVarResponse.responseType) {
-            ResponseType.Success -> (localVarResponse as Success<*>).data as kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement?>
+            ResponseType.Success -> (localVarResponse as Success<*>).data as kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement>
             ResponseType.Informational -> throw UnsupportedOperationException("Client does not support Informational responses.")
             ResponseType.Redirection -> throw UnsupportedOperationException("Client does not support Redirection responses.")
             ResponseType.ClientError -> {
@@ -1556,16 +1534,16 @@ open class AccountsApi(basePath: kotlin.String = defaultBasePath, client: Call.F
      * POST /auth/logout-all
      * End every session of the account
      * **Who:** an account holder (a passkey session not bound to an app&#39;s frontend).
-     * @return ApiResponse<kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement?>?>
+     * @return ApiResponse<kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement>?>
      * @throws IllegalStateException If the request is not correctly configured
      * @throws IOException Rethrows the OkHttp execute method exception
      */
     @Suppress("UNCHECKED_CAST")
     @Throws(IllegalStateException::class, IOException::class)
-    suspend fun logoutAllWithHttpInfo() : ApiResponse<kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement?>?> = withContext(Dispatchers.IO) {
+    suspend fun logoutAllWithHttpInfo() : ApiResponse<kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement>?> = withContext(Dispatchers.IO) {
         val localVariableConfig = logoutAllRequestConfig()
 
-        return@withContext request<Unit, kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement?>>(
+        return@withContext request<Unit, kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement>>(
             localVariableConfig
         )
     }
@@ -1887,7 +1865,7 @@ open class AccountsApi(basePath: kotlin.String = defaultBasePath, client: Call.F
      * Remove a passkey
      * Its sessions end. &#x60;412&#x60; first; the retry&#39;s JSON body is &#x60;{ confirm }&#x60;.  **Who:** an account holder (a passkey session not bound to an app&#39;s frontend). **Step-up:** answers &#x60;412 CONFIRM_REQUIRED&#x60; first; send the same request again with &#x60;confirm&#x60;, a passkey assertion over &#x60;details.challenge&#x60;.
      * @param cred 
-     * @param passkeyRemoveRequest May be absent. (optional)
+     * @param confirmOnly May be absent. (optional)
      * @return kotlinx.serialization.json.JsonObject
      * @throws IllegalStateException If the request is not correctly configured
      * @throws IOException Rethrows the OkHttp execute method exception
@@ -1897,8 +1875,8 @@ open class AccountsApi(basePath: kotlin.String = defaultBasePath, client: Call.F
      */
     @Suppress("UNCHECKED_CAST")
     @Throws(IllegalStateException::class, IOException::class, UnsupportedOperationException::class, ClientException::class, ServerException::class)
-    suspend fun passkeyRemove(cred: kotlin.String, passkeyRemoveRequest: PasskeyRemoveRequest? = null) : kotlinx.serialization.json.JsonObject = withContext(Dispatchers.IO) {
-        val localVarResponse = passkeyRemoveWithHttpInfo(cred = cred, passkeyRemoveRequest = passkeyRemoveRequest)
+    suspend fun passkeyRemove(cred: kotlin.String, confirmOnly: ConfirmOnly? = null) : kotlinx.serialization.json.JsonObject = withContext(Dispatchers.IO) {
+        val localVarResponse = passkeyRemoveWithHttpInfo(cred = cred, confirmOnly = confirmOnly)
 
         return@withContext when (localVarResponse.responseType) {
             ResponseType.Success -> (localVarResponse as Success<*>).data as kotlinx.serialization.json.JsonObject
@@ -1920,17 +1898,17 @@ open class AccountsApi(basePath: kotlin.String = defaultBasePath, client: Call.F
      * Remove a passkey
      * Its sessions end. &#x60;412&#x60; first; the retry&#39;s JSON body is &#x60;{ confirm }&#x60;.  **Who:** an account holder (a passkey session not bound to an app&#39;s frontend). **Step-up:** answers &#x60;412 CONFIRM_REQUIRED&#x60; first; send the same request again with &#x60;confirm&#x60;, a passkey assertion over &#x60;details.challenge&#x60;.
      * @param cred 
-     * @param passkeyRemoveRequest May be absent. (optional)
+     * @param confirmOnly May be absent. (optional)
      * @return ApiResponse<kotlinx.serialization.json.JsonObject?>
      * @throws IllegalStateException If the request is not correctly configured
      * @throws IOException Rethrows the OkHttp execute method exception
      */
     @Suppress("UNCHECKED_CAST")
     @Throws(IllegalStateException::class, IOException::class)
-    suspend fun passkeyRemoveWithHttpInfo(cred: kotlin.String, passkeyRemoveRequest: PasskeyRemoveRequest?) : ApiResponse<kotlinx.serialization.json.JsonObject?> = withContext(Dispatchers.IO) {
-        val localVariableConfig = passkeyRemoveRequestConfig(cred = cred, passkeyRemoveRequest = passkeyRemoveRequest)
+    suspend fun passkeyRemoveWithHttpInfo(cred: kotlin.String, confirmOnly: ConfirmOnly?) : ApiResponse<kotlinx.serialization.json.JsonObject?> = withContext(Dispatchers.IO) {
+        val localVariableConfig = passkeyRemoveRequestConfig(cred = cred, confirmOnly = confirmOnly)
 
-        return@withContext request<PasskeyRemoveRequest, kotlinx.serialization.json.JsonObject>(
+        return@withContext request<ConfirmOnly, kotlinx.serialization.json.JsonObject>(
             localVariableConfig
         )
     }
@@ -1939,11 +1917,11 @@ open class AccountsApi(basePath: kotlin.String = defaultBasePath, client: Call.F
      * To obtain the request config of the operation passkeyRemove
      *
      * @param cred 
-     * @param passkeyRemoveRequest May be absent. (optional)
+     * @param confirmOnly May be absent. (optional)
      * @return RequestConfig
      */
-    fun passkeyRemoveRequestConfig(cred: kotlin.String, passkeyRemoveRequest: PasskeyRemoveRequest?) : RequestConfig<PasskeyRemoveRequest> {
-        val localVariableBody = passkeyRemoveRequest
+    fun passkeyRemoveRequestConfig(cred: kotlin.String, confirmOnly: ConfirmOnly?) : RequestConfig<ConfirmOnly> {
+        val localVariableBody = confirmOnly
         val localVariableQuery: MultiValueMap = mutableMapOf()
         val localVariableHeaders: MutableMap<String, String> = mutableMapOf()
         localVariableHeaders["Content-Type"] = "application/json"
@@ -1963,7 +1941,7 @@ open class AccountsApi(basePath: kotlin.String = defaultBasePath, client: Call.F
      * POST /auth/recovery
      * Make a recovery code
      * Shown once, replacing any; &#x60;412&#x60; first.  **Who:** an account holder (a passkey session not bound to an app&#39;s frontend). **Step-up:** answers &#x60;412 CONFIRM_REQUIRED&#x60; first; send the same request again with &#x60;confirm&#x60;, a passkey assertion over &#x60;details.challenge&#x60;.
-     * @param passkeyRemoveRequest May be absent. (optional)
+     * @param confirmOnly May be absent. (optional)
      * @return RecoveryCreate200Response
      * @throws IllegalStateException If the request is not correctly configured
      * @throws IOException Rethrows the OkHttp execute method exception
@@ -1973,8 +1951,8 @@ open class AccountsApi(basePath: kotlin.String = defaultBasePath, client: Call.F
      */
     @Suppress("UNCHECKED_CAST")
     @Throws(IllegalStateException::class, IOException::class, UnsupportedOperationException::class, ClientException::class, ServerException::class)
-    suspend fun recoveryCreate(passkeyRemoveRequest: PasskeyRemoveRequest? = null) : RecoveryCreate200Response = withContext(Dispatchers.IO) {
-        val localVarResponse = recoveryCreateWithHttpInfo(passkeyRemoveRequest = passkeyRemoveRequest)
+    suspend fun recoveryCreate(confirmOnly: ConfirmOnly? = null) : RecoveryCreate200Response = withContext(Dispatchers.IO) {
+        val localVarResponse = recoveryCreateWithHttpInfo(confirmOnly = confirmOnly)
 
         return@withContext when (localVarResponse.responseType) {
             ResponseType.Success -> (localVarResponse as Success<*>).data as RecoveryCreate200Response
@@ -1995,17 +1973,17 @@ open class AccountsApi(basePath: kotlin.String = defaultBasePath, client: Call.F
      * POST /auth/recovery
      * Make a recovery code
      * Shown once, replacing any; &#x60;412&#x60; first.  **Who:** an account holder (a passkey session not bound to an app&#39;s frontend). **Step-up:** answers &#x60;412 CONFIRM_REQUIRED&#x60; first; send the same request again with &#x60;confirm&#x60;, a passkey assertion over &#x60;details.challenge&#x60;.
-     * @param passkeyRemoveRequest May be absent. (optional)
+     * @param confirmOnly May be absent. (optional)
      * @return ApiResponse<RecoveryCreate200Response?>
      * @throws IllegalStateException If the request is not correctly configured
      * @throws IOException Rethrows the OkHttp execute method exception
      */
     @Suppress("UNCHECKED_CAST")
     @Throws(IllegalStateException::class, IOException::class)
-    suspend fun recoveryCreateWithHttpInfo(passkeyRemoveRequest: PasskeyRemoveRequest?) : ApiResponse<RecoveryCreate200Response?> = withContext(Dispatchers.IO) {
-        val localVariableConfig = recoveryCreateRequestConfig(passkeyRemoveRequest = passkeyRemoveRequest)
+    suspend fun recoveryCreateWithHttpInfo(confirmOnly: ConfirmOnly?) : ApiResponse<RecoveryCreate200Response?> = withContext(Dispatchers.IO) {
+        val localVariableConfig = recoveryCreateRequestConfig(confirmOnly = confirmOnly)
 
-        return@withContext request<PasskeyRemoveRequest, RecoveryCreate200Response>(
+        return@withContext request<ConfirmOnly, RecoveryCreate200Response>(
             localVariableConfig
         )
     }
@@ -2013,11 +1991,11 @@ open class AccountsApi(basePath: kotlin.String = defaultBasePath, client: Call.F
     /**
      * To obtain the request config of the operation recoveryCreate
      *
-     * @param passkeyRemoveRequest May be absent. (optional)
+     * @param confirmOnly May be absent. (optional)
      * @return RequestConfig
      */
-    fun recoveryCreateRequestConfig(passkeyRemoveRequest: PasskeyRemoveRequest?) : RequestConfig<PasskeyRemoveRequest> {
-        val localVariableBody = passkeyRemoveRequest
+    fun recoveryCreateRequestConfig(confirmOnly: ConfirmOnly?) : RequestConfig<ConfirmOnly> {
+        val localVariableBody = confirmOnly
         val localVariableQuery: MultiValueMap = mutableMapOf()
         val localVariableHeaders: MutableMap<String, String> = mutableMapOf()
         localVariableHeaders["Content-Type"] = "application/json"
@@ -2037,7 +2015,7 @@ open class AccountsApi(basePath: kotlin.String = defaultBasePath, client: Call.F
      * DELETE /auth/recovery
      * Remove the recovery code
      * **Who:** an account holder (a passkey session not bound to an app&#39;s frontend). **Step-up:** answers &#x60;412 CONFIRM_REQUIRED&#x60; first; send the same request again with &#x60;confirm&#x60;, a passkey assertion over &#x60;details.challenge&#x60;.
-     * @param passkeyRemoveRequest May be absent. (optional)
+     * @param confirmOnly May be absent. (optional)
      * @return kotlinx.serialization.json.JsonObject
      * @throws IllegalStateException If the request is not correctly configured
      * @throws IOException Rethrows the OkHttp execute method exception
@@ -2047,8 +2025,8 @@ open class AccountsApi(basePath: kotlin.String = defaultBasePath, client: Call.F
      */
     @Suppress("UNCHECKED_CAST")
     @Throws(IllegalStateException::class, IOException::class, UnsupportedOperationException::class, ClientException::class, ServerException::class)
-    suspend fun recoveryRemove(passkeyRemoveRequest: PasskeyRemoveRequest? = null) : kotlinx.serialization.json.JsonObject = withContext(Dispatchers.IO) {
-        val localVarResponse = recoveryRemoveWithHttpInfo(passkeyRemoveRequest = passkeyRemoveRequest)
+    suspend fun recoveryRemove(confirmOnly: ConfirmOnly? = null) : kotlinx.serialization.json.JsonObject = withContext(Dispatchers.IO) {
+        val localVarResponse = recoveryRemoveWithHttpInfo(confirmOnly = confirmOnly)
 
         return@withContext when (localVarResponse.responseType) {
             ResponseType.Success -> (localVarResponse as Success<*>).data as kotlinx.serialization.json.JsonObject
@@ -2069,17 +2047,17 @@ open class AccountsApi(basePath: kotlin.String = defaultBasePath, client: Call.F
      * DELETE /auth/recovery
      * Remove the recovery code
      * **Who:** an account holder (a passkey session not bound to an app&#39;s frontend). **Step-up:** answers &#x60;412 CONFIRM_REQUIRED&#x60; first; send the same request again with &#x60;confirm&#x60;, a passkey assertion over &#x60;details.challenge&#x60;.
-     * @param passkeyRemoveRequest May be absent. (optional)
+     * @param confirmOnly May be absent. (optional)
      * @return ApiResponse<kotlinx.serialization.json.JsonObject?>
      * @throws IllegalStateException If the request is not correctly configured
      * @throws IOException Rethrows the OkHttp execute method exception
      */
     @Suppress("UNCHECKED_CAST")
     @Throws(IllegalStateException::class, IOException::class)
-    suspend fun recoveryRemoveWithHttpInfo(passkeyRemoveRequest: PasskeyRemoveRequest?) : ApiResponse<kotlinx.serialization.json.JsonObject?> = withContext(Dispatchers.IO) {
-        val localVariableConfig = recoveryRemoveRequestConfig(passkeyRemoveRequest = passkeyRemoveRequest)
+    suspend fun recoveryRemoveWithHttpInfo(confirmOnly: ConfirmOnly?) : ApiResponse<kotlinx.serialization.json.JsonObject?> = withContext(Dispatchers.IO) {
+        val localVariableConfig = recoveryRemoveRequestConfig(confirmOnly = confirmOnly)
 
-        return@withContext request<PasskeyRemoveRequest, kotlinx.serialization.json.JsonObject>(
+        return@withContext request<ConfirmOnly, kotlinx.serialization.json.JsonObject>(
             localVariableConfig
         )
     }
@@ -2087,11 +2065,11 @@ open class AccountsApi(basePath: kotlin.String = defaultBasePath, client: Call.F
     /**
      * To obtain the request config of the operation recoveryRemove
      *
-     * @param passkeyRemoveRequest May be absent. (optional)
+     * @param confirmOnly May be absent. (optional)
      * @return RequestConfig
      */
-    fun recoveryRemoveRequestConfig(passkeyRemoveRequest: PasskeyRemoveRequest?) : RequestConfig<PasskeyRemoveRequest> {
-        val localVariableBody = passkeyRemoveRequest
+    fun recoveryRemoveRequestConfig(confirmOnly: ConfirmOnly?) : RequestConfig<ConfirmOnly> {
+        val localVariableBody = confirmOnly
         val localVariableQuery: MultiValueMap = mutableMapOf()
         val localVariableHeaders: MutableMap<String, String> = mutableMapOf()
         localVariableHeaders["Content-Type"] = "application/json"

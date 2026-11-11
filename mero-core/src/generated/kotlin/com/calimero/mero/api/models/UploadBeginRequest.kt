@@ -38,7 +38,7 @@ import kotlinx.serialization.Contextual
 data class UploadBeginRequest (
 
     @SerialName(value = "size")
-    val propertySize: kotlin.Long?
+    val propertySize: kotlin.Long
 
 ) {
 

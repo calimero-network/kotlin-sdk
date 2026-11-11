@@ -46,7 +46,7 @@ data class BlobList200ResponseBlobsInner (
     val id: kotlin.String,
 
     @SerialName(value = "size")
-    val propertySize: kotlin.Long?
+    val propertySize: kotlin.Long
 
 ) {
 

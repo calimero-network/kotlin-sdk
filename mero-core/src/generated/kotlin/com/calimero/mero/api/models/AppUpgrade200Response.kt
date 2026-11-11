@@ -41,7 +41,7 @@ import kotlinx.serialization.Contextual
 data class AppUpgrade200Response (
 
     @SerialName(value = "index")
-    val index: kotlin.Long?,
+    val index: kotlin.Long,
 
     @SerialName(value = "status")
     val status: kotlin.String,

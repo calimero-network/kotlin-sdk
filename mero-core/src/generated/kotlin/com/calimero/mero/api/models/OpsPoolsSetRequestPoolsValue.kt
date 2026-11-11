@@ -39,10 +39,10 @@ import kotlinx.serialization.Contextual
 data class OpsPoolsSetRequestPoolsValue (
 
     @SerialName(value = "runsPerNode")
-    val runsPerNode: kotlin.Long?,
+    val runsPerNode: kotlin.Long,
 
     @SerialName(value = "maxMemoryMib")
-    val maxMemoryMib: kotlin.Long?
+    val maxMemoryMib: kotlin.Long
 
 ) {
 

@@ -27,15 +27,9 @@ import java.io.IOException
 import okhttp3.Call
 import okhttp3.HttpUrl
 
-import com.calimero.mero.api.models.AppCreate401Response
-import com.calimero.mero.api.models.AppCreate421Response
-import com.calimero.mero.api.models.AppDelete403Response
-import com.calimero.mero.api.models.BlobDownload404Response
-import com.calimero.mero.api.models.BlobDownload503Response
 import com.calimero.mero.api.models.ConsentPageCreate200Response
-import com.calimero.mero.api.models.ConsentPageCreate400Response
-import com.calimero.mero.api.models.ConsentPageCreateRequest
-import com.calimero.mero.api.models.FilesUpload413Response
+import com.calimero.mero.api.models.ConsentPageResult200Response
+import com.calimero.mero.api.models.Error
 
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
@@ -69,7 +63,7 @@ open class ConsentApi(basePath: kotlin.String = defaultBasePath, client: Call.Fa
      * POST /consent/requests
      * Ask the account&#39;s owner to approve
      * From an app&#39;s frontend: a release approval, an upgrade of its instance, or outbound prefixes, approved on the node&#39;s own consent page (&#x60;url&#x60;), which takes the passkey. 64 KiB at most.  **Who:** a passkey session (an API key is refused).
-     * @param consentPageCreateRequest 
+     * @param comCalimeroMeroConsentRequest 
      * @return ConsentPageCreate200Response
      * @throws IllegalStateException If the request is not correctly configured
      * @throws IOException Rethrows the OkHttp execute method exception
@@ -79,8 +73,8 @@ open class ConsentApi(basePath: kotlin.String = defaultBasePath, client: Call.Fa
      */
     @Suppress("UNCHECKED_CAST")
     @Throws(IllegalStateException::class, IOException::class, UnsupportedOperationException::class, ClientException::class, ServerException::class)
-    suspend fun consentPageCreate(consentPageCreateRequest: ConsentPageCreateRequest) : ConsentPageCreate200Response = withContext(Dispatchers.IO) {
-        val localVarResponse = consentPageCreateWithHttpInfo(consentPageCreateRequest = consentPageCreateRequest)
+    suspend fun consentPageCreate(comCalimeroMeroConsentRequest: com.calimero.mero.ConsentRequest) : ConsentPageCreate200Response = withContext(Dispatchers.IO) {
+        val localVarResponse = consentPageCreateWithHttpInfo(comCalimeroMeroConsentRequest = comCalimeroMeroConsentRequest)
 
         return@withContext when (localVarResponse.responseType) {
             ResponseType.Success -> (localVarResponse as Success<*>).data as ConsentPageCreate200Response
@@ -101,17 +95,17 @@ open class ConsentApi(basePath: kotlin.String = defaultBasePath, client: Call.Fa
      * POST /consent/requests
      * Ask the account&#39;s owner to approve
      * From an app&#39;s frontend: a release approval, an upgrade of its instance, or outbound prefixes, approved on the node&#39;s own consent page (&#x60;url&#x60;), which takes the passkey. 64 KiB at most.  **Who:** a passkey session (an API key is refused).
-     * @param consentPageCreateRequest 
+     * @param comCalimeroMeroConsentRequest 
      * @return ApiResponse<ConsentPageCreate200Response?>
      * @throws IllegalStateException If the request is not correctly configured
      * @throws IOException Rethrows the OkHttp execute method exception
      */
     @Suppress("UNCHECKED_CAST")
     @Throws(IllegalStateException::class, IOException::class)
-    suspend fun consentPageCreateWithHttpInfo(consentPageCreateRequest: ConsentPageCreateRequest) : ApiResponse<ConsentPageCreate200Response?> = withContext(Dispatchers.IO) {
-        val localVariableConfig = consentPageCreateRequestConfig(consentPageCreateRequest = consentPageCreateRequest)
+    suspend fun consentPageCreateWithHttpInfo(comCalimeroMeroConsentRequest: com.calimero.mero.ConsentRequest) : ApiResponse<ConsentPageCreate200Response?> = withContext(Dispatchers.IO) {
+        val localVariableConfig = consentPageCreateRequestConfig(comCalimeroMeroConsentRequest = comCalimeroMeroConsentRequest)
 
-        return@withContext request<ConsentPageCreateRequest, ConsentPageCreate200Response>(
+        return@withContext request<com.calimero.mero.ConsentRequest, ConsentPageCreate200Response>(
             localVariableConfig
         )
     }
@@ -119,11 +113,11 @@ open class ConsentApi(basePath: kotlin.String = defaultBasePath, client: Call.Fa
     /**
      * To obtain the request config of the operation consentPageCreate
      *
-     * @param consentPageCreateRequest 
+     * @param comCalimeroMeroConsentRequest 
      * @return RequestConfig
      */
-    fun consentPageCreateRequestConfig(consentPageCreateRequest: ConsentPageCreateRequest) : RequestConfig<ConsentPageCreateRequest> {
-        val localVariableBody = consentPageCreateRequest
+    fun consentPageCreateRequestConfig(comCalimeroMeroConsentRequest: com.calimero.mero.ConsentRequest) : RequestConfig<com.calimero.mero.ConsentRequest> {
+        val localVariableBody = comCalimeroMeroConsentRequest
         val localVariableQuery: MultiValueMap = mutableMapOf()
         val localVariableHeaders: MutableMap<String, String> = mutableMapOf()
         localVariableHeaders["Content-Type"] = "application/json"
@@ -142,9 +136,9 @@ open class ConsentApi(basePath: kotlin.String = defaultBasePath, client: Call.Fa
     /**
      * GET /consent/{request}/result
      * What became of a consent request
-     * **Who:** a passkey session (an API key is refused).
+     * &#x60;decidedAt&#x60; (Unix seconds) is &#x60;null&#x60; while it is pending.  **Who:** a passkey session (an API key is refused).
      * @param request 
-     * @return kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement?>
+     * @return ConsentPageResult200Response
      * @throws IllegalStateException If the request is not correctly configured
      * @throws IOException Rethrows the OkHttp execute method exception
      * @throws UnsupportedOperationException If the API returns an informational or redirection response
@@ -153,11 +147,11 @@ open class ConsentApi(basePath: kotlin.String = defaultBasePath, client: Call.Fa
      */
     @Suppress("UNCHECKED_CAST")
     @Throws(IllegalStateException::class, IOException::class, UnsupportedOperationException::class, ClientException::class, ServerException::class)
-    suspend fun consentPageResult(request: kotlin.String) : kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement?> = withContext(Dispatchers.IO) {
+    suspend fun consentPageResult(request: kotlin.String) : ConsentPageResult200Response = withContext(Dispatchers.IO) {
         val localVarResponse = consentPageResultWithHttpInfo(request = request)
 
         return@withContext when (localVarResponse.responseType) {
-            ResponseType.Success -> (localVarResponse as Success<*>).data as kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement?>
+            ResponseType.Success -> (localVarResponse as Success<*>).data as ConsentPageResult200Response
             ResponseType.Informational -> throw UnsupportedOperationException("Client does not support Informational responses.")
             ResponseType.Redirection -> throw UnsupportedOperationException("Client does not support Redirection responses.")
             ResponseType.ClientError -> {
@@ -174,18 +168,18 @@ open class ConsentApi(basePath: kotlin.String = defaultBasePath, client: Call.Fa
     /**
      * GET /consent/{request}/result
      * What became of a consent request
-     * **Who:** a passkey session (an API key is refused).
+     * &#x60;decidedAt&#x60; (Unix seconds) is &#x60;null&#x60; while it is pending.  **Who:** a passkey session (an API key is refused).
      * @param request 
-     * @return ApiResponse<kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement?>?>
+     * @return ApiResponse<ConsentPageResult200Response?>
      * @throws IllegalStateException If the request is not correctly configured
      * @throws IOException Rethrows the OkHttp execute method exception
      */
     @Suppress("UNCHECKED_CAST")
     @Throws(IllegalStateException::class, IOException::class)
-    suspend fun consentPageResultWithHttpInfo(request: kotlin.String) : ApiResponse<kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement?>?> = withContext(Dispatchers.IO) {
+    suspend fun consentPageResultWithHttpInfo(request: kotlin.String) : ApiResponse<ConsentPageResult200Response?> = withContext(Dispatchers.IO) {
         val localVariableConfig = consentPageResultRequestConfig(request = request)
 
-        return@withContext request<Unit, kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement?>>(
+        return@withContext request<Unit, ConsentPageResult200Response>(
             localVariableConfig
         )
     }

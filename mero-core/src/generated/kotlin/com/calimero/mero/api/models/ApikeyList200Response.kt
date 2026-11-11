@@ -23,6 +23,7 @@
 
 package com.calimero.mero.api.models
 
+import com.calimero.mero.api.models.ApiKey
 
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.SerialName
@@ -38,7 +39,7 @@ import kotlinx.serialization.Contextual
 data class ApikeyList200Response (
 
     @SerialName(value = "keys")
-    val propertyKeys: kotlin.collections.List<@Contextual kotlinx.serialization.json.JsonElement?>
+    val propertyKeys: kotlin.collections.List<ApiKey>
 
 ) {
 

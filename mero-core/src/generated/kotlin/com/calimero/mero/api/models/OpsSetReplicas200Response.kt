@@ -23,6 +23,7 @@
 
 package com.calimero.mero.api.models
 
+import com.calimero.mero.api.models.OpsSetReplicas200ResponseStatus
 
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.SerialName
@@ -39,7 +40,7 @@ import kotlinx.serialization.Contextual
 data class OpsSetReplicas200Response (
 
     @SerialName(value = "status")
-    val status: kotlin.String,
+    val status: OpsSetReplicas200ResponseStatus,
 
     @SerialName(value = "unchanged")
     val unchanged: kotlin.Boolean

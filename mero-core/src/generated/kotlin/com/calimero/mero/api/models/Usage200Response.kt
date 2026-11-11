@@ -29,7 +29,7 @@ import kotlinx.serialization.SerialName
 import kotlinx.serialization.Contextual
 
 /**
- * 
+ * Other properties than those listed may be present: the ones listed are those clients rely on.
  *
  * @param bundleBytes an unsigned 64-bit integer as a decimal string (D20)
  * @param developerFuelToday an unsigned 64-bit integer as a decimal string (D20)
@@ -45,11 +45,11 @@ data class Usage200Response (
 
     /* an unsigned 64-bit integer as a decimal string (D20) */
     @SerialName(value = "developerFuelToday")
-    val developerFuelToday: kotlin.String,
+    val developerFuelToday: kotlin.String? = null,
 
     /* an unsigned 64-bit integer as a decimal string (D20) */
     @SerialName(value = "developerWritesToday")
-    val developerWritesToday: kotlin.String
+    val developerWritesToday: kotlin.String? = null
 
 ) {
 

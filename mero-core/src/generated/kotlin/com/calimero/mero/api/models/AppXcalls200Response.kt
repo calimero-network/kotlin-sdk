@@ -23,6 +23,7 @@
 
 package com.calimero.mero.api.models
 
+import com.calimero.mero.api.models.DeadLetter
 
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.SerialName
@@ -39,10 +40,10 @@ import kotlinx.serialization.Contextual
 data class AppXcalls200Response (
 
     @SerialName(value = "pending")
-    val pending: kotlin.collections.List<@Contextual kotlinx.serialization.json.JsonElement?>,
+    val pending: kotlin.Long,
 
     @SerialName(value = "deadLetters")
-    val deadLetters: kotlin.collections.List<@Contextual kotlinx.serialization.json.JsonElement?>
+    val deadLetters: kotlin.collections.List<DeadLetter>
 
 ) {
 

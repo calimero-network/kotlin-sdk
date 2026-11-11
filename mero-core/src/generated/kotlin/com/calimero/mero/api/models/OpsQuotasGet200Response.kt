@@ -29,7 +29,7 @@ import kotlinx.serialization.SerialName
 import kotlinx.serialization.Contextual
 
 /**
- * 
+ * Other properties than those listed may be present: the ones listed are those clients rely on.
  *
  * @param maxAppsPerAccount 
  * @param maxBundleBytesPerAccount 
@@ -47,28 +47,28 @@ import kotlinx.serialization.Contextual
 data class OpsQuotasGet200Response (
 
     @SerialName(value = "maxAppsPerAccount")
-    val maxAppsPerAccount: kotlin.Long?,
+    val maxAppsPerAccount: kotlin.Long,
 
     @SerialName(value = "maxBundleBytesPerAccount")
-    val maxBundleBytesPerAccount: kotlin.Long?,
+    val maxBundleBytesPerAccount: kotlin.Long,
 
     @SerialName(value = "maxApiKeysPerAccount")
-    val maxApiKeysPerAccount: kotlin.Long?,
+    val maxApiKeysPerAccount: kotlin.Long,
 
     @SerialName(value = "maxOrgsPerAccount")
-    val maxOrgsPerAccount: kotlin.Long?,
+    val maxOrgsPerAccount: kotlin.Long,
 
     @SerialName(value = "maxAccounts")
-    val maxAccounts: kotlin.Long?,
+    val maxAccounts: kotlin.Long,
 
     @SerialName(value = "maxFileBytesPerOrg")
-    val maxFileBytesPerOrg: kotlin.Long?,
+    val maxFileBytesPerOrg: kotlin.Long,
 
     @SerialName(value = "maxConcurrentRunsPerOrg")
-    val maxConcurrentRunsPerOrg: kotlin.Long?,
+    val maxConcurrentRunsPerOrg: kotlin.Long,
 
     @SerialName(value = "computeFuelPerOrg")
-    val computeFuelPerOrg: kotlin.Long?,
+    val computeFuelPerOrg: kotlin.Long,
 
     /* an unsigned 64-bit integer as a decimal string (D20) */
     @SerialName(value = "maxFuelPerDeveloperPerDay")

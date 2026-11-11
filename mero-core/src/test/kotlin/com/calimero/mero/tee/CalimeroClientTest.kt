@@ -20,6 +20,7 @@ import com.calimero.mero.Deployer
 import com.calimero.mero.DirectoryError
 import com.calimero.mero.DirectoryFailure
 import com.calimero.mero.DirectoryNode
+import com.calimero.mero.Explicit
 import com.calimero.mero.LoginRequired
 import com.calimero.mero.MOCK_QUOTE_HEADER
 import com.calimero.mero.NotFound
@@ -966,7 +967,9 @@ class CalimeroClientTest {
     @Test
     fun `a generated route takes an id as one path segment and refuses a dot segment before sending`() =
         runBlocking {
-            val org = """{"orgId":"a/b?c","name":"n","owner":"acc-1","members":{},"teams":{},"metadata":null}"""
+            val org =
+                """{"orgId":"a/b?c","name":"n","members":{},"teams":{},"defaultCapabilities":0,"capabilities":{},"approvedReleases":[],""" +
+                    """"outboundApprovals":{},"metadata":null,"memberMetadata":{},"upgradeRuns":{}}"""
             val cluster = Cluster({ _, _ -> json(200, org) })
             val client = cluster.client()
             assertEquals("a/b?c", client.orgs.get(org = "a/b?c").orgId)
@@ -979,5 +982,19 @@ class CalimeroClientTest {
                 }
             }
             assertEquals(1, cluster.nodes[0].requests.size)
+        }
+
+    @Test
+    fun `the facade sends a meaningful null only when asked, and leaves other nulls out`() =
+        runBlocking {
+            val cluster = Cluster({ _, _ -> json(200, "{}") })
+            val client = cluster.client()
+            client.orgs.teamUpdate(org = "o1", team = "t1", parent = Explicit(null))
+            assertEquals(JsonNull, sent(cluster, 0)["parent"])
+            assertTrue(!sent(cluster, 0).containsKey("name"))
+            client.orgs.teamUpdate(org = "o1", team = "t1", name = "n")
+            assertTrue(!sent(cluster, 1).containsKey("parent"))
+            client.orgs.teamUpdate(org = "o1", team = "t1", parent = Explicit("t0"))
+            assertEquals("t0", sent(cluster, 2)["parent"]!!.jsonPrimitive.content)
         }
 }

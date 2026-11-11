@@ -44,7 +44,7 @@ data class OpsOutboundRequest (
     @SerialName(value = "package")
     val `package`: kotlin.String,
 
-    @Contextual @SerialName(value = "prefixes")
+    @SerialName(value = "prefixes")
     val prefixes: com.calimero.mero.OutboundSelection? = null,
 
     @SerialName(value = "replace")

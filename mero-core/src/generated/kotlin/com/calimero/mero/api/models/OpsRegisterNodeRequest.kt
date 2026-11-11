@@ -44,7 +44,7 @@ import kotlinx.serialization.Contextual
 data class OpsRegisterNodeRequest (
 
     @SerialName(value = "id")
-    val id: kotlin.Long?,
+    val id: kotlin.Long,
 
     @SerialName(value = "addr")
     val addr: kotlin.String,

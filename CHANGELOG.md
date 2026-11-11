@@ -22,6 +22,11 @@
   Ceremonies, streams, binary uploads/downloads and composites (`signIn`, `events`, `uploadBlob`,
   `pendingApprovals`, …) are not deprecated.
 - `AppAccess` is `@Serializable`; new `OutboundSelection` (`Manifest` / `Prefixes`).
+- Fields whose `null` means something (a team's `parent`, a recovery `publicKey`, a presence
+  `state`) are `Explicit<T>?` on the facade: `Explicit(null)` sends `null`; leaving it out sends nothing.
+- `ConsentRequest` is `@Serializable` (the consent body), and `requestConsent` and `appXcalls` are
+  deprecated in favour of `consent.pageCreate` and `apps.xcalls`. `uploadFile` is deprecated: core
+  refuses sealed uploads.
 
 ### Outbound approval (mero-core, mero-compose)
 

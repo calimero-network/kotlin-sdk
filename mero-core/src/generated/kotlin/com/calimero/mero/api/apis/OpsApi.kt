@@ -27,69 +27,43 @@ import java.io.IOException
 import okhttp3.Call
 import okhttp3.HttpUrl
 
-import com.calimero.mero.api.models.AppCreate401Response
-import com.calimero.mero.api.models.AppDelete403Response
-import com.calimero.mero.api.models.BlobDownload404Response
+import com.calimero.mero.api.models.Error
 import com.calimero.mero.api.models.OpsApps200Response
 import com.calimero.mero.api.models.OpsBackup200Response
 import com.calimero.mero.api.models.OpsCluster200Response
 import com.calimero.mero.api.models.OpsClusterOwner200Response
-import com.calimero.mero.api.models.OpsClusterOwner409Response
 import com.calimero.mero.api.models.OpsClusterOwnerRequest
 import com.calimero.mero.api.models.OpsDeployerGrant200Response
 import com.calimero.mero.api.models.OpsDeployerGrantRequest
 import com.calimero.mero.api.models.OpsDeployerRevokeDelete200Response
-import com.calimero.mero.api.models.OpsDeployerRevokeDeleteRequest
-import com.calimero.mero.api.models.OpsDeployerRevokePostRequest
 import com.calimero.mero.api.models.OpsDeploymentsGranted200Response
-import com.calimero.mero.api.models.OpsDeploymentsGranted409Response
 import com.calimero.mero.api.models.OpsOrgUpgradeRequest
 import com.calimero.mero.api.models.OpsOrgs200Response
 import com.calimero.mero.api.models.OpsOutboundRequest
 import com.calimero.mero.api.models.OpsPackageInstall200Response
+import com.calimero.mero.api.models.OpsPackageInstallRequest
 import com.calimero.mero.api.models.OpsPackageList200Response
 import com.calimero.mero.api.models.OpsPackageUpload200Response
-import com.calimero.mero.api.models.OpsPackageUpload400Response
 import com.calimero.mero.api.models.OpsPlacement200Response
-import com.calimero.mero.api.models.OpsPoolsSet409Response
 import com.calimero.mero.api.models.OpsPoolsSetRequest
 import com.calimero.mero.api.models.OpsQuotasGet200Response
-import com.calimero.mero.api.models.OpsQuotasSet400Response
-import com.calimero.mero.api.models.OpsQuotasSet409Response
 import com.calimero.mero.api.models.OpsQuotasSetRequest
 import com.calimero.mero.api.models.OpsReceiptKey200Response
-import com.calimero.mero.api.models.OpsRegisterNode400Response
-import com.calimero.mero.api.models.OpsRegisterNode409Response
 import com.calimero.mero.api.models.OpsRegisterNodeRequest
 import com.calimero.mero.api.models.OpsReleaseDeadlineRequest
 import com.calimero.mero.api.models.OpsReleaseRequest
 import com.calimero.mero.api.models.OpsRemoveNode200Response
-import com.calimero.mero.api.models.OpsRemoveNode400Response
-import com.calimero.mero.api.models.OpsRemoveNode421Response
 import com.calimero.mero.api.models.OpsRestore200Response
-import com.calimero.mero.api.models.OpsRestore400Response
-import com.calimero.mero.api.models.OpsRestore403Response
-import com.calimero.mero.api.models.OpsRestore404Response
-import com.calimero.mero.api.models.OpsRestore409Response
-import com.calimero.mero.api.models.OpsRestore428Response
 import com.calimero.mero.api.models.OpsRestoreRequest
 import com.calimero.mero.api.models.OpsServed200Response
 import com.calimero.mero.api.models.OpsSetReplicas200Response
-import com.calimero.mero.api.models.OpsSetReplicas400Response
-import com.calimero.mero.api.models.OpsSetReplicas403Response
-import com.calimero.mero.api.models.OpsSetReplicas409Response
-import com.calimero.mero.api.models.OpsSetReplicas421Response
-import com.calimero.mero.api.models.OpsSetReplicas428Response
 import com.calimero.mero.api.models.OpsSetReplicasRequest
-import com.calimero.mero.api.models.OpsSignUpInviteCreate400Response
 import com.calimero.mero.api.models.OpsSignUpInviteCreateRequest
 import com.calimero.mero.api.models.OpsSignUpSetRequest
 import com.calimero.mero.api.models.OpsStatus200Response
 import com.calimero.mero.api.models.OpsUpgrade200Response
-import com.calimero.mero.api.models.OpsUpgrade400Response
-import com.calimero.mero.api.models.OpsUpgrade409Response
-import com.calimero.mero.api.models.OpsUpgrade422Response
 import com.calimero.mero.api.models.OpsUpgradeRequest
+import com.calimero.mero.api.models.ProofOnly
 import com.calimero.mero.api.models.UpgradeRun
 
 import kotlinx.serialization.SerialName
@@ -505,7 +479,7 @@ open class OpsApi(basePath: kotlin.String = defaultBasePath, client: Call.Factor
      * Revoke a deployer
      * **Who:** the ops token. **Operator signature:** answers &#x60;428 OPERATOR_SIGNATURE_REQUIRED&#x60; first; send it again with &#x60;operatorProof&#x60;, the operator key&#39;s signature over &#x60;details.message&#x60; and its &#x60;nonce&#x60;.
      * @param key 
-     * @param opsDeployerRevokeDeleteRequest May be absent. (optional)
+     * @param proofOnly May be absent. (optional)
      * @return OpsDeployerRevokeDelete200Response
      * @throws IllegalStateException If the request is not correctly configured
      * @throws IOException Rethrows the OkHttp execute method exception
@@ -515,8 +489,8 @@ open class OpsApi(basePath: kotlin.String = defaultBasePath, client: Call.Factor
      */
     @Suppress("UNCHECKED_CAST")
     @Throws(IllegalStateException::class, IOException::class, UnsupportedOperationException::class, ClientException::class, ServerException::class)
-    suspend fun opsDeployerRevokeDelete(key: kotlin.String, opsDeployerRevokeDeleteRequest: OpsDeployerRevokeDeleteRequest? = null) : OpsDeployerRevokeDelete200Response = withContext(Dispatchers.IO) {
-        val localVarResponse = opsDeployerRevokeDeleteWithHttpInfo(key = key, opsDeployerRevokeDeleteRequest = opsDeployerRevokeDeleteRequest)
+    suspend fun opsDeployerRevokeDelete(key: kotlin.String, proofOnly: ProofOnly? = null) : OpsDeployerRevokeDelete200Response = withContext(Dispatchers.IO) {
+        val localVarResponse = opsDeployerRevokeDeleteWithHttpInfo(key = key, proofOnly = proofOnly)
 
         return@withContext when (localVarResponse.responseType) {
             ResponseType.Success -> (localVarResponse as Success<*>).data as OpsDeployerRevokeDelete200Response
@@ -538,17 +512,17 @@ open class OpsApi(basePath: kotlin.String = defaultBasePath, client: Call.Factor
      * Revoke a deployer
      * **Who:** the ops token. **Operator signature:** answers &#x60;428 OPERATOR_SIGNATURE_REQUIRED&#x60; first; send it again with &#x60;operatorProof&#x60;, the operator key&#39;s signature over &#x60;details.message&#x60; and its &#x60;nonce&#x60;.
      * @param key 
-     * @param opsDeployerRevokeDeleteRequest May be absent. (optional)
+     * @param proofOnly May be absent. (optional)
      * @return ApiResponse<OpsDeployerRevokeDelete200Response?>
      * @throws IllegalStateException If the request is not correctly configured
      * @throws IOException Rethrows the OkHttp execute method exception
      */
     @Suppress("UNCHECKED_CAST")
     @Throws(IllegalStateException::class, IOException::class)
-    suspend fun opsDeployerRevokeDeleteWithHttpInfo(key: kotlin.String, opsDeployerRevokeDeleteRequest: OpsDeployerRevokeDeleteRequest?) : ApiResponse<OpsDeployerRevokeDelete200Response?> = withContext(Dispatchers.IO) {
-        val localVariableConfig = opsDeployerRevokeDeleteRequestConfig(key = key, opsDeployerRevokeDeleteRequest = opsDeployerRevokeDeleteRequest)
+    suspend fun opsDeployerRevokeDeleteWithHttpInfo(key: kotlin.String, proofOnly: ProofOnly?) : ApiResponse<OpsDeployerRevokeDelete200Response?> = withContext(Dispatchers.IO) {
+        val localVariableConfig = opsDeployerRevokeDeleteRequestConfig(key = key, proofOnly = proofOnly)
 
-        return@withContext request<OpsDeployerRevokeDeleteRequest, OpsDeployerRevokeDelete200Response>(
+        return@withContext request<ProofOnly, OpsDeployerRevokeDelete200Response>(
             localVariableConfig
         )
     }
@@ -557,11 +531,11 @@ open class OpsApi(basePath: kotlin.String = defaultBasePath, client: Call.Factor
      * To obtain the request config of the operation opsDeployerRevokeDelete
      *
      * @param key 
-     * @param opsDeployerRevokeDeleteRequest May be absent. (optional)
+     * @param proofOnly May be absent. (optional)
      * @return RequestConfig
      */
-    fun opsDeployerRevokeDeleteRequestConfig(key: kotlin.String, opsDeployerRevokeDeleteRequest: OpsDeployerRevokeDeleteRequest?) : RequestConfig<OpsDeployerRevokeDeleteRequest> {
-        val localVariableBody = opsDeployerRevokeDeleteRequest
+    fun opsDeployerRevokeDeleteRequestConfig(key: kotlin.String, proofOnly: ProofOnly?) : RequestConfig<ProofOnly> {
+        val localVariableBody = proofOnly
         val localVariableQuery: MultiValueMap = mutableMapOf()
         val localVariableHeaders: MutableMap<String, String> = mutableMapOf()
         localVariableHeaders["Content-Type"] = "application/json"
@@ -582,7 +556,7 @@ open class OpsApi(basePath: kotlin.String = defaultBasePath, client: Call.Factor
      * Revoke a deployer (POST)
      * The same as the &#x60;DELETE&#x60;, for an HTTP client whose &#x60;DELETE&#x60; carries no body.  **Who:** the ops token. **Operator signature:** answers &#x60;428 OPERATOR_SIGNATURE_REQUIRED&#x60; first; send it again with &#x60;operatorProof&#x60;, the operator key&#39;s signature over &#x60;details.message&#x60; and its &#x60;nonce&#x60;.
      * @param key 
-     * @param opsDeployerRevokePostRequest May be absent. (optional)
+     * @param proofOnly May be absent. (optional)
      * @return OpsDeployerRevokeDelete200Response
      * @throws IllegalStateException If the request is not correctly configured
      * @throws IOException Rethrows the OkHttp execute method exception
@@ -592,8 +566,8 @@ open class OpsApi(basePath: kotlin.String = defaultBasePath, client: Call.Factor
      */
     @Suppress("UNCHECKED_CAST")
     @Throws(IllegalStateException::class, IOException::class, UnsupportedOperationException::class, ClientException::class, ServerException::class)
-    suspend fun opsDeployerRevokePost(key: kotlin.String, opsDeployerRevokePostRequest: OpsDeployerRevokePostRequest? = null) : OpsDeployerRevokeDelete200Response = withContext(Dispatchers.IO) {
-        val localVarResponse = opsDeployerRevokePostWithHttpInfo(key = key, opsDeployerRevokePostRequest = opsDeployerRevokePostRequest)
+    suspend fun opsDeployerRevokePost(key: kotlin.String, proofOnly: ProofOnly? = null) : OpsDeployerRevokeDelete200Response = withContext(Dispatchers.IO) {
+        val localVarResponse = opsDeployerRevokePostWithHttpInfo(key = key, proofOnly = proofOnly)
 
         return@withContext when (localVarResponse.responseType) {
             ResponseType.Success -> (localVarResponse as Success<*>).data as OpsDeployerRevokeDelete200Response
@@ -615,17 +589,17 @@ open class OpsApi(basePath: kotlin.String = defaultBasePath, client: Call.Factor
      * Revoke a deployer (POST)
      * The same as the &#x60;DELETE&#x60;, for an HTTP client whose &#x60;DELETE&#x60; carries no body.  **Who:** the ops token. **Operator signature:** answers &#x60;428 OPERATOR_SIGNATURE_REQUIRED&#x60; first; send it again with &#x60;operatorProof&#x60;, the operator key&#39;s signature over &#x60;details.message&#x60; and its &#x60;nonce&#x60;.
      * @param key 
-     * @param opsDeployerRevokePostRequest May be absent. (optional)
+     * @param proofOnly May be absent. (optional)
      * @return ApiResponse<OpsDeployerRevokeDelete200Response?>
      * @throws IllegalStateException If the request is not correctly configured
      * @throws IOException Rethrows the OkHttp execute method exception
      */
     @Suppress("UNCHECKED_CAST")
     @Throws(IllegalStateException::class, IOException::class)
-    suspend fun opsDeployerRevokePostWithHttpInfo(key: kotlin.String, opsDeployerRevokePostRequest: OpsDeployerRevokePostRequest?) : ApiResponse<OpsDeployerRevokeDelete200Response?> = withContext(Dispatchers.IO) {
-        val localVariableConfig = opsDeployerRevokePostRequestConfig(key = key, opsDeployerRevokePostRequest = opsDeployerRevokePostRequest)
+    suspend fun opsDeployerRevokePostWithHttpInfo(key: kotlin.String, proofOnly: ProofOnly?) : ApiResponse<OpsDeployerRevokeDelete200Response?> = withContext(Dispatchers.IO) {
+        val localVariableConfig = opsDeployerRevokePostRequestConfig(key = key, proofOnly = proofOnly)
 
-        return@withContext request<OpsDeployerRevokePostRequest, OpsDeployerRevokeDelete200Response>(
+        return@withContext request<ProofOnly, OpsDeployerRevokeDelete200Response>(
             localVariableConfig
         )
     }
@@ -634,11 +608,11 @@ open class OpsApi(basePath: kotlin.String = defaultBasePath, client: Call.Factor
      * To obtain the request config of the operation opsDeployerRevokePost
      *
      * @param key 
-     * @param opsDeployerRevokePostRequest May be absent. (optional)
+     * @param proofOnly May be absent. (optional)
      * @return RequestConfig
      */
-    fun opsDeployerRevokePostRequestConfig(key: kotlin.String, opsDeployerRevokePostRequest: OpsDeployerRevokePostRequest?) : RequestConfig<OpsDeployerRevokePostRequest> {
-        val localVariableBody = opsDeployerRevokePostRequest
+    fun opsDeployerRevokePostRequestConfig(key: kotlin.String, proofOnly: ProofOnly?) : RequestConfig<ProofOnly> {
+        val localVariableBody = proofOnly
         val localVariableQuery: MultiValueMap = mutableMapOf()
         val localVariableHeaders: MutableMap<String, String> = mutableMapOf()
         localVariableHeaders["Content-Type"] = "application/json"
@@ -658,7 +632,7 @@ open class OpsApi(basePath: kotlin.String = defaultBasePath, client: Call.Factor
      * POST /ops/deployments/granted
      * Require deployer grants
      * From now on only granted deployers install; once.  **Who:** the ops token. **Operator signature:** answers &#x60;428 OPERATOR_SIGNATURE_REQUIRED&#x60; first; send it again with &#x60;operatorProof&#x60;, the operator key&#39;s signature over &#x60;details.message&#x60; and its &#x60;nonce&#x60;.
-     * @param opsDeployerRevokePostRequest May be absent. (optional)
+     * @param proofOnly May be absent. (optional)
      * @return OpsDeploymentsGranted200Response
      * @throws IllegalStateException If the request is not correctly configured
      * @throws IOException Rethrows the OkHttp execute method exception
@@ -668,8 +642,8 @@ open class OpsApi(basePath: kotlin.String = defaultBasePath, client: Call.Factor
      */
     @Suppress("UNCHECKED_CAST")
     @Throws(IllegalStateException::class, IOException::class, UnsupportedOperationException::class, ClientException::class, ServerException::class)
-    suspend fun opsDeploymentsGranted(opsDeployerRevokePostRequest: OpsDeployerRevokePostRequest? = null) : OpsDeploymentsGranted200Response = withContext(Dispatchers.IO) {
-        val localVarResponse = opsDeploymentsGrantedWithHttpInfo(opsDeployerRevokePostRequest = opsDeployerRevokePostRequest)
+    suspend fun opsDeploymentsGranted(proofOnly: ProofOnly? = null) : OpsDeploymentsGranted200Response = withContext(Dispatchers.IO) {
+        val localVarResponse = opsDeploymentsGrantedWithHttpInfo(proofOnly = proofOnly)
 
         return@withContext when (localVarResponse.responseType) {
             ResponseType.Success -> (localVarResponse as Success<*>).data as OpsDeploymentsGranted200Response
@@ -690,17 +664,17 @@ open class OpsApi(basePath: kotlin.String = defaultBasePath, client: Call.Factor
      * POST /ops/deployments/granted
      * Require deployer grants
      * From now on only granted deployers install; once.  **Who:** the ops token. **Operator signature:** answers &#x60;428 OPERATOR_SIGNATURE_REQUIRED&#x60; first; send it again with &#x60;operatorProof&#x60;, the operator key&#39;s signature over &#x60;details.message&#x60; and its &#x60;nonce&#x60;.
-     * @param opsDeployerRevokePostRequest May be absent. (optional)
+     * @param proofOnly May be absent. (optional)
      * @return ApiResponse<OpsDeploymentsGranted200Response?>
      * @throws IllegalStateException If the request is not correctly configured
      * @throws IOException Rethrows the OkHttp execute method exception
      */
     @Suppress("UNCHECKED_CAST")
     @Throws(IllegalStateException::class, IOException::class)
-    suspend fun opsDeploymentsGrantedWithHttpInfo(opsDeployerRevokePostRequest: OpsDeployerRevokePostRequest?) : ApiResponse<OpsDeploymentsGranted200Response?> = withContext(Dispatchers.IO) {
-        val localVariableConfig = opsDeploymentsGrantedRequestConfig(opsDeployerRevokePostRequest = opsDeployerRevokePostRequest)
+    suspend fun opsDeploymentsGrantedWithHttpInfo(proofOnly: ProofOnly?) : ApiResponse<OpsDeploymentsGranted200Response?> = withContext(Dispatchers.IO) {
+        val localVariableConfig = opsDeploymentsGrantedRequestConfig(proofOnly = proofOnly)
 
-        return@withContext request<OpsDeployerRevokePostRequest, OpsDeploymentsGranted200Response>(
+        return@withContext request<ProofOnly, OpsDeploymentsGranted200Response>(
             localVariableConfig
         )
     }
@@ -708,11 +682,11 @@ open class OpsApi(basePath: kotlin.String = defaultBasePath, client: Call.Factor
     /**
      * To obtain the request config of the operation opsDeploymentsGranted
      *
-     * @param opsDeployerRevokePostRequest May be absent. (optional)
+     * @param proofOnly May be absent. (optional)
      * @return RequestConfig
      */
-    fun opsDeploymentsGrantedRequestConfig(opsDeployerRevokePostRequest: OpsDeployerRevokePostRequest?) : RequestConfig<OpsDeployerRevokePostRequest> {
-        val localVariableBody = opsDeployerRevokePostRequest
+    fun opsDeploymentsGrantedRequestConfig(proofOnly: ProofOnly?) : RequestConfig<ProofOnly> {
+        val localVariableBody = proofOnly
         val localVariableQuery: MultiValueMap = mutableMapOf()
         val localVariableHeaders: MutableMap<String, String> = mutableMapOf()
         localVariableHeaders["Content-Type"] = "application/json"
@@ -964,7 +938,7 @@ open class OpsApi(basePath: kotlin.String = defaultBasePath, client: Call.Factor
      * Approve outbound prefixes
      * Where the operator holds outbound approvals.  **Who:** the ops token. **Operator signature:** answers &#x60;428 OPERATOR_SIGNATURE_REQUIRED&#x60; first; send it again with &#x60;operatorProof&#x60;, the operator key&#39;s signature over &#x60;details.message&#x60; and its &#x60;nonce&#x60;.
      * @param opsOutboundRequest 
-     * @return kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement?>
+     * @return kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement>
      * @throws IllegalStateException If the request is not correctly configured
      * @throws IOException Rethrows the OkHttp execute method exception
      * @throws UnsupportedOperationException If the API returns an informational or redirection response
@@ -973,11 +947,11 @@ open class OpsApi(basePath: kotlin.String = defaultBasePath, client: Call.Factor
      */
     @Suppress("UNCHECKED_CAST")
     @Throws(IllegalStateException::class, IOException::class, UnsupportedOperationException::class, ClientException::class, ServerException::class)
-    suspend fun opsOutbound(opsOutboundRequest: OpsOutboundRequest) : kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement?> = withContext(Dispatchers.IO) {
+    suspend fun opsOutbound(opsOutboundRequest: OpsOutboundRequest) : kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement> = withContext(Dispatchers.IO) {
         val localVarResponse = opsOutboundWithHttpInfo(opsOutboundRequest = opsOutboundRequest)
 
         return@withContext when (localVarResponse.responseType) {
-            ResponseType.Success -> (localVarResponse as Success<*>).data as kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement?>
+            ResponseType.Success -> (localVarResponse as Success<*>).data as kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement>
             ResponseType.Informational -> throw UnsupportedOperationException("Client does not support Informational responses.")
             ResponseType.Redirection -> throw UnsupportedOperationException("Client does not support Redirection responses.")
             ResponseType.ClientError -> {
@@ -996,16 +970,16 @@ open class OpsApi(basePath: kotlin.String = defaultBasePath, client: Call.Factor
      * Approve outbound prefixes
      * Where the operator holds outbound approvals.  **Who:** the ops token. **Operator signature:** answers &#x60;428 OPERATOR_SIGNATURE_REQUIRED&#x60; first; send it again with &#x60;operatorProof&#x60;, the operator key&#39;s signature over &#x60;details.message&#x60; and its &#x60;nonce&#x60;.
      * @param opsOutboundRequest 
-     * @return ApiResponse<kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement?>?>
+     * @return ApiResponse<kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement>?>
      * @throws IllegalStateException If the request is not correctly configured
      * @throws IOException Rethrows the OkHttp execute method exception
      */
     @Suppress("UNCHECKED_CAST")
     @Throws(IllegalStateException::class, IOException::class)
-    suspend fun opsOutboundWithHttpInfo(opsOutboundRequest: OpsOutboundRequest) : ApiResponse<kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement?>?> = withContext(Dispatchers.IO) {
+    suspend fun opsOutboundWithHttpInfo(opsOutboundRequest: OpsOutboundRequest) : ApiResponse<kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement>?> = withContext(Dispatchers.IO) {
         val localVariableConfig = opsOutboundRequestConfig(opsOutboundRequest = opsOutboundRequest)
 
-        return@withContext request<OpsOutboundRequest, kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement?>>(
+        return@withContext request<OpsOutboundRequest, kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement>>(
             localVariableConfig
         )
     }
@@ -1037,7 +1011,7 @@ open class OpsApi(basePath: kotlin.String = defaultBasePath, client: Call.Factor
      * POST /ops/packages/install
      * Install a release from the registry as the operator
      * **Who:** the ops token.
-     * @param opsPackageUpload200Response 
+     * @param opsPackageInstallRequest 
      * @return OpsPackageInstall200Response
      * @throws IllegalStateException If the request is not correctly configured
      * @throws IOException Rethrows the OkHttp execute method exception
@@ -1047,8 +1021,8 @@ open class OpsApi(basePath: kotlin.String = defaultBasePath, client: Call.Factor
      */
     @Suppress("UNCHECKED_CAST")
     @Throws(IllegalStateException::class, IOException::class, UnsupportedOperationException::class, ClientException::class, ServerException::class)
-    suspend fun opsPackageInstall(opsPackageUpload200Response: OpsPackageUpload200Response) : OpsPackageInstall200Response = withContext(Dispatchers.IO) {
-        val localVarResponse = opsPackageInstallWithHttpInfo(opsPackageUpload200Response = opsPackageUpload200Response)
+    suspend fun opsPackageInstall(opsPackageInstallRequest: OpsPackageInstallRequest) : OpsPackageInstall200Response = withContext(Dispatchers.IO) {
+        val localVarResponse = opsPackageInstallWithHttpInfo(opsPackageInstallRequest = opsPackageInstallRequest)
 
         return@withContext when (localVarResponse.responseType) {
             ResponseType.Success -> (localVarResponse as Success<*>).data as OpsPackageInstall200Response
@@ -1069,17 +1043,17 @@ open class OpsApi(basePath: kotlin.String = defaultBasePath, client: Call.Factor
      * POST /ops/packages/install
      * Install a release from the registry as the operator
      * **Who:** the ops token.
-     * @param opsPackageUpload200Response 
+     * @param opsPackageInstallRequest 
      * @return ApiResponse<OpsPackageInstall200Response?>
      * @throws IllegalStateException If the request is not correctly configured
      * @throws IOException Rethrows the OkHttp execute method exception
      */
     @Suppress("UNCHECKED_CAST")
     @Throws(IllegalStateException::class, IOException::class)
-    suspend fun opsPackageInstallWithHttpInfo(opsPackageUpload200Response: OpsPackageUpload200Response) : ApiResponse<OpsPackageInstall200Response?> = withContext(Dispatchers.IO) {
-        val localVariableConfig = opsPackageInstallRequestConfig(opsPackageUpload200Response = opsPackageUpload200Response)
+    suspend fun opsPackageInstallWithHttpInfo(opsPackageInstallRequest: OpsPackageInstallRequest) : ApiResponse<OpsPackageInstall200Response?> = withContext(Dispatchers.IO) {
+        val localVariableConfig = opsPackageInstallRequestConfig(opsPackageInstallRequest = opsPackageInstallRequest)
 
-        return@withContext request<OpsPackageUpload200Response, OpsPackageInstall200Response>(
+        return@withContext request<OpsPackageInstallRequest, OpsPackageInstall200Response>(
             localVariableConfig
         )
     }
@@ -1087,11 +1061,11 @@ open class OpsApi(basePath: kotlin.String = defaultBasePath, client: Call.Factor
     /**
      * To obtain the request config of the operation opsPackageInstall
      *
-     * @param opsPackageUpload200Response 
+     * @param opsPackageInstallRequest 
      * @return RequestConfig
      */
-    fun opsPackageInstallRequestConfig(opsPackageUpload200Response: OpsPackageUpload200Response) : RequestConfig<OpsPackageUpload200Response> {
-        val localVariableBody = opsPackageUpload200Response
+    fun opsPackageInstallRequestConfig(opsPackageInstallRequest: OpsPackageInstallRequest) : RequestConfig<OpsPackageInstallRequest> {
+        val localVariableBody = opsPackageInstallRequest
         val localVariableQuery: MultiValueMap = mutableMapOf()
         val localVariableHeaders: MutableMap<String, String> = mutableMapOf()
         localVariableHeaders["Content-Type"] = "application/json"
@@ -1182,7 +1156,7 @@ open class OpsApi(basePath: kotlin.String = defaultBasePath, client: Call.Factor
      * Uninstall what the operator installed
      * **Who:** the ops token.
      * @param `package` 
-     * @return kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement?>
+     * @return kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement>
      * @throws IllegalStateException If the request is not correctly configured
      * @throws IOException Rethrows the OkHttp execute method exception
      * @throws UnsupportedOperationException If the API returns an informational or redirection response
@@ -1191,11 +1165,11 @@ open class OpsApi(basePath: kotlin.String = defaultBasePath, client: Call.Factor
      */
     @Suppress("UNCHECKED_CAST")
     @Throws(IllegalStateException::class, IOException::class, UnsupportedOperationException::class, ClientException::class, ServerException::class)
-    suspend fun opsPackageUninstall(`package`: kotlin.String) : kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement?> = withContext(Dispatchers.IO) {
+    suspend fun opsPackageUninstall(`package`: kotlin.String) : kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement> = withContext(Dispatchers.IO) {
         val localVarResponse = opsPackageUninstallWithHttpInfo(`package` = `package`)
 
         return@withContext when (localVarResponse.responseType) {
-            ResponseType.Success -> (localVarResponse as Success<*>).data as kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement?>
+            ResponseType.Success -> (localVarResponse as Success<*>).data as kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement>
             ResponseType.Informational -> throw UnsupportedOperationException("Client does not support Informational responses.")
             ResponseType.Redirection -> throw UnsupportedOperationException("Client does not support Redirection responses.")
             ResponseType.ClientError -> {
@@ -1214,16 +1188,16 @@ open class OpsApi(basePath: kotlin.String = defaultBasePath, client: Call.Factor
      * Uninstall what the operator installed
      * **Who:** the ops token.
      * @param `package` 
-     * @return ApiResponse<kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement?>?>
+     * @return ApiResponse<kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement>?>
      * @throws IllegalStateException If the request is not correctly configured
      * @throws IOException Rethrows the OkHttp execute method exception
      */
     @Suppress("UNCHECKED_CAST")
     @Throws(IllegalStateException::class, IOException::class)
-    suspend fun opsPackageUninstallWithHttpInfo(`package`: kotlin.String) : ApiResponse<kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement?>?> = withContext(Dispatchers.IO) {
+    suspend fun opsPackageUninstallWithHttpInfo(`package`: kotlin.String) : ApiResponse<kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement>?> = withContext(Dispatchers.IO) {
         val localVariableConfig = opsPackageUninstallRequestConfig(`package` = `package`)
 
-        return@withContext request<Unit, kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement?>>(
+        return@withContext request<Unit, kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement>>(
             localVariableConfig
         )
     }
@@ -1330,7 +1304,7 @@ open class OpsApi(basePath: kotlin.String = defaultBasePath, client: Call.Factor
      * **Who:** the ops token.
      * @param `package` 
      * @param version 
-     * @return kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement?>
+     * @return kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement>
      * @throws IllegalStateException If the request is not correctly configured
      * @throws IOException Rethrows the OkHttp execute method exception
      * @throws UnsupportedOperationException If the API returns an informational or redirection response
@@ -1339,11 +1313,11 @@ open class OpsApi(basePath: kotlin.String = defaultBasePath, client: Call.Factor
      */
     @Suppress("UNCHECKED_CAST")
     @Throws(IllegalStateException::class, IOException::class, UnsupportedOperationException::class, ClientException::class, ServerException::class)
-    suspend fun opsPackageVersionUninstall(`package`: kotlin.String, version: kotlin.String) : kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement?> = withContext(Dispatchers.IO) {
+    suspend fun opsPackageVersionUninstall(`package`: kotlin.String, version: kotlin.String) : kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement> = withContext(Dispatchers.IO) {
         val localVarResponse = opsPackageVersionUninstallWithHttpInfo(`package` = `package`, version = version)
 
         return@withContext when (localVarResponse.responseType) {
-            ResponseType.Success -> (localVarResponse as Success<*>).data as kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement?>
+            ResponseType.Success -> (localVarResponse as Success<*>).data as kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement>
             ResponseType.Informational -> throw UnsupportedOperationException("Client does not support Informational responses.")
             ResponseType.Redirection -> throw UnsupportedOperationException("Client does not support Redirection responses.")
             ResponseType.ClientError -> {
@@ -1363,16 +1337,16 @@ open class OpsApi(basePath: kotlin.String = defaultBasePath, client: Call.Factor
      * **Who:** the ops token.
      * @param `package` 
      * @param version 
-     * @return ApiResponse<kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement?>?>
+     * @return ApiResponse<kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement>?>
      * @throws IllegalStateException If the request is not correctly configured
      * @throws IOException Rethrows the OkHttp execute method exception
      */
     @Suppress("UNCHECKED_CAST")
     @Throws(IllegalStateException::class, IOException::class)
-    suspend fun opsPackageVersionUninstallWithHttpInfo(`package`: kotlin.String, version: kotlin.String) : ApiResponse<kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement?>?> = withContext(Dispatchers.IO) {
+    suspend fun opsPackageVersionUninstallWithHttpInfo(`package`: kotlin.String, version: kotlin.String) : ApiResponse<kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement>?> = withContext(Dispatchers.IO) {
         val localVariableConfig = opsPackageVersionUninstallRequestConfig(`package` = `package`, version = version)
 
-        return@withContext request<Unit, kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement?>>(
+        return@withContext request<Unit, kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement>>(
             localVariableConfig
         )
     }
@@ -1474,7 +1448,7 @@ open class OpsApi(basePath: kotlin.String = defaultBasePath, client: Call.Factor
      * GET /ops/pools
      * Compute pools
      * The pools and the runs each takes.  **Who:** the ops token.
-     * @return kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement?>
+     * @return kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement>
      * @throws IllegalStateException If the request is not correctly configured
      * @throws IOException Rethrows the OkHttp execute method exception
      * @throws UnsupportedOperationException If the API returns an informational or redirection response
@@ -1483,11 +1457,11 @@ open class OpsApi(basePath: kotlin.String = defaultBasePath, client: Call.Factor
      */
     @Suppress("UNCHECKED_CAST")
     @Throws(IllegalStateException::class, IOException::class, UnsupportedOperationException::class, ClientException::class, ServerException::class)
-    suspend fun opsPoolsGet() : kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement?> = withContext(Dispatchers.IO) {
+    suspend fun opsPoolsGet() : kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement> = withContext(Dispatchers.IO) {
         val localVarResponse = opsPoolsGetWithHttpInfo()
 
         return@withContext when (localVarResponse.responseType) {
-            ResponseType.Success -> (localVarResponse as Success<*>).data as kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement?>
+            ResponseType.Success -> (localVarResponse as Success<*>).data as kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement>
             ResponseType.Informational -> throw UnsupportedOperationException("Client does not support Informational responses.")
             ResponseType.Redirection -> throw UnsupportedOperationException("Client does not support Redirection responses.")
             ResponseType.ClientError -> {
@@ -1505,16 +1479,16 @@ open class OpsApi(basePath: kotlin.String = defaultBasePath, client: Call.Factor
      * GET /ops/pools
      * Compute pools
      * The pools and the runs each takes.  **Who:** the ops token.
-     * @return ApiResponse<kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement?>?>
+     * @return ApiResponse<kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement>?>
      * @throws IllegalStateException If the request is not correctly configured
      * @throws IOException Rethrows the OkHttp execute method exception
      */
     @Suppress("UNCHECKED_CAST")
     @Throws(IllegalStateException::class, IOException::class)
-    suspend fun opsPoolsGetWithHttpInfo() : ApiResponse<kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement?>?> = withContext(Dispatchers.IO) {
+    suspend fun opsPoolsGetWithHttpInfo() : ApiResponse<kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement>?> = withContext(Dispatchers.IO) {
         val localVariableConfig = opsPoolsGetRequestConfig()
 
-        return@withContext request<Unit, kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement?>>(
+        return@withContext request<Unit, kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement>>(
             localVariableConfig
         )
     }
@@ -1910,7 +1884,7 @@ open class OpsApi(basePath: kotlin.String = defaultBasePath, client: Call.Factor
      * Approve a mero-tee release for every app
      * Where the operator holds release approvals.  **Who:** the ops token. **Operator signature:** answers &#x60;428 OPERATOR_SIGNATURE_REQUIRED&#x60; first; send it again with &#x60;operatorProof&#x60;, the operator key&#39;s signature over &#x60;details.message&#x60; and its &#x60;nonce&#x60;.
      * @param opsReleaseRequest 
-     * @return kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement?>
+     * @return kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement>
      * @throws IllegalStateException If the request is not correctly configured
      * @throws IOException Rethrows the OkHttp execute method exception
      * @throws UnsupportedOperationException If the API returns an informational or redirection response
@@ -1919,11 +1893,11 @@ open class OpsApi(basePath: kotlin.String = defaultBasePath, client: Call.Factor
      */
     @Suppress("UNCHECKED_CAST")
     @Throws(IllegalStateException::class, IOException::class, UnsupportedOperationException::class, ClientException::class, ServerException::class)
-    suspend fun opsRelease(opsReleaseRequest: OpsReleaseRequest) : kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement?> = withContext(Dispatchers.IO) {
+    suspend fun opsRelease(opsReleaseRequest: OpsReleaseRequest) : kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement> = withContext(Dispatchers.IO) {
         val localVarResponse = opsReleaseWithHttpInfo(opsReleaseRequest = opsReleaseRequest)
 
         return@withContext when (localVarResponse.responseType) {
-            ResponseType.Success -> (localVarResponse as Success<*>).data as kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement?>
+            ResponseType.Success -> (localVarResponse as Success<*>).data as kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement>
             ResponseType.Informational -> throw UnsupportedOperationException("Client does not support Informational responses.")
             ResponseType.Redirection -> throw UnsupportedOperationException("Client does not support Redirection responses.")
             ResponseType.ClientError -> {
@@ -1942,16 +1916,16 @@ open class OpsApi(basePath: kotlin.String = defaultBasePath, client: Call.Factor
      * Approve a mero-tee release for every app
      * Where the operator holds release approvals.  **Who:** the ops token. **Operator signature:** answers &#x60;428 OPERATOR_SIGNATURE_REQUIRED&#x60; first; send it again with &#x60;operatorProof&#x60;, the operator key&#39;s signature over &#x60;details.message&#x60; and its &#x60;nonce&#x60;.
      * @param opsReleaseRequest 
-     * @return ApiResponse<kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement?>?>
+     * @return ApiResponse<kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement>?>
      * @throws IllegalStateException If the request is not correctly configured
      * @throws IOException Rethrows the OkHttp execute method exception
      */
     @Suppress("UNCHECKED_CAST")
     @Throws(IllegalStateException::class, IOException::class)
-    suspend fun opsReleaseWithHttpInfo(opsReleaseRequest: OpsReleaseRequest) : ApiResponse<kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement?>?> = withContext(Dispatchers.IO) {
+    suspend fun opsReleaseWithHttpInfo(opsReleaseRequest: OpsReleaseRequest) : ApiResponse<kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement>?> = withContext(Dispatchers.IO) {
         val localVariableConfig = opsReleaseRequestConfig(opsReleaseRequest = opsReleaseRequest)
 
-        return@withContext request<OpsReleaseRequest, kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement?>>(
+        return@withContext request<OpsReleaseRequest, kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement>>(
             localVariableConfig
         )
     }
@@ -1985,7 +1959,7 @@ open class OpsApi(basePath: kotlin.String = defaultBasePath, client: Call.Factor
      * After &#x60;after&#x60; (RFC 3339), apps whose approver has not moved past the release may start no new work.  **Who:** the ops token. **Operator signature:** answers &#x60;428 OPERATOR_SIGNATURE_REQUIRED&#x60; first; send it again with &#x60;operatorProof&#x60;, the operator key&#39;s signature over &#x60;details.message&#x60; and its &#x60;nonce&#x60;.
      * @param version 
      * @param opsReleaseDeadlineRequest 
-     * @return kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement?>
+     * @return kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement>
      * @throws IllegalStateException If the request is not correctly configured
      * @throws IOException Rethrows the OkHttp execute method exception
      * @throws UnsupportedOperationException If the API returns an informational or redirection response
@@ -1994,11 +1968,11 @@ open class OpsApi(basePath: kotlin.String = defaultBasePath, client: Call.Factor
      */
     @Suppress("UNCHECKED_CAST")
     @Throws(IllegalStateException::class, IOException::class, UnsupportedOperationException::class, ClientException::class, ServerException::class)
-    suspend fun opsReleaseDeadline(version: kotlin.String, opsReleaseDeadlineRequest: OpsReleaseDeadlineRequest) : kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement?> = withContext(Dispatchers.IO) {
+    suspend fun opsReleaseDeadline(version: kotlin.String, opsReleaseDeadlineRequest: OpsReleaseDeadlineRequest) : kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement> = withContext(Dispatchers.IO) {
         val localVarResponse = opsReleaseDeadlineWithHttpInfo(version = version, opsReleaseDeadlineRequest = opsReleaseDeadlineRequest)
 
         return@withContext when (localVarResponse.responseType) {
-            ResponseType.Success -> (localVarResponse as Success<*>).data as kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement?>
+            ResponseType.Success -> (localVarResponse as Success<*>).data as kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement>
             ResponseType.Informational -> throw UnsupportedOperationException("Client does not support Informational responses.")
             ResponseType.Redirection -> throw UnsupportedOperationException("Client does not support Redirection responses.")
             ResponseType.ClientError -> {
@@ -2018,16 +1992,16 @@ open class OpsApi(basePath: kotlin.String = defaultBasePath, client: Call.Factor
      * After &#x60;after&#x60; (RFC 3339), apps whose approver has not moved past the release may start no new work.  **Who:** the ops token. **Operator signature:** answers &#x60;428 OPERATOR_SIGNATURE_REQUIRED&#x60; first; send it again with &#x60;operatorProof&#x60;, the operator key&#39;s signature over &#x60;details.message&#x60; and its &#x60;nonce&#x60;.
      * @param version 
      * @param opsReleaseDeadlineRequest 
-     * @return ApiResponse<kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement?>?>
+     * @return ApiResponse<kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement>?>
      * @throws IllegalStateException If the request is not correctly configured
      * @throws IOException Rethrows the OkHttp execute method exception
      */
     @Suppress("UNCHECKED_CAST")
     @Throws(IllegalStateException::class, IOException::class)
-    suspend fun opsReleaseDeadlineWithHttpInfo(version: kotlin.String, opsReleaseDeadlineRequest: OpsReleaseDeadlineRequest) : ApiResponse<kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement?>?> = withContext(Dispatchers.IO) {
+    suspend fun opsReleaseDeadlineWithHttpInfo(version: kotlin.String, opsReleaseDeadlineRequest: OpsReleaseDeadlineRequest) : ApiResponse<kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement>?> = withContext(Dispatchers.IO) {
         val localVariableConfig = opsReleaseDeadlineRequestConfig(version = version, opsReleaseDeadlineRequest = opsReleaseDeadlineRequest)
 
-        return@withContext request<OpsReleaseDeadlineRequest, kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement?>>(
+        return@withContext request<OpsReleaseDeadlineRequest, kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement>>(
             localVariableConfig
         )
     }
@@ -2061,8 +2035,8 @@ open class OpsApi(basePath: kotlin.String = defaultBasePath, client: Call.Factor
      * Lift a release deadline
      * **Who:** the ops token. **Operator signature:** answers &#x60;428 OPERATOR_SIGNATURE_REQUIRED&#x60; first; send it again with &#x60;operatorProof&#x60;, the operator key&#39;s signature over &#x60;details.message&#x60; and its &#x60;nonce&#x60;.
      * @param version 
-     * @param opsDeployerRevokePostRequest May be absent. (optional)
-     * @return kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement?>
+     * @param proofOnly May be absent. (optional)
+     * @return kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement>
      * @throws IllegalStateException If the request is not correctly configured
      * @throws IOException Rethrows the OkHttp execute method exception
      * @throws UnsupportedOperationException If the API returns an informational or redirection response
@@ -2071,11 +2045,11 @@ open class OpsApi(basePath: kotlin.String = defaultBasePath, client: Call.Factor
      */
     @Suppress("UNCHECKED_CAST")
     @Throws(IllegalStateException::class, IOException::class, UnsupportedOperationException::class, ClientException::class, ServerException::class)
-    suspend fun opsReleaseDeadlineLift(version: kotlin.String, opsDeployerRevokePostRequest: OpsDeployerRevokePostRequest? = null) : kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement?> = withContext(Dispatchers.IO) {
-        val localVarResponse = opsReleaseDeadlineLiftWithHttpInfo(version = version, opsDeployerRevokePostRequest = opsDeployerRevokePostRequest)
+    suspend fun opsReleaseDeadlineLift(version: kotlin.String, proofOnly: ProofOnly? = null) : kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement> = withContext(Dispatchers.IO) {
+        val localVarResponse = opsReleaseDeadlineLiftWithHttpInfo(version = version, proofOnly = proofOnly)
 
         return@withContext when (localVarResponse.responseType) {
-            ResponseType.Success -> (localVarResponse as Success<*>).data as kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement?>
+            ResponseType.Success -> (localVarResponse as Success<*>).data as kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement>
             ResponseType.Informational -> throw UnsupportedOperationException("Client does not support Informational responses.")
             ResponseType.Redirection -> throw UnsupportedOperationException("Client does not support Redirection responses.")
             ResponseType.ClientError -> {
@@ -2094,17 +2068,17 @@ open class OpsApi(basePath: kotlin.String = defaultBasePath, client: Call.Factor
      * Lift a release deadline
      * **Who:** the ops token. **Operator signature:** answers &#x60;428 OPERATOR_SIGNATURE_REQUIRED&#x60; first; send it again with &#x60;operatorProof&#x60;, the operator key&#39;s signature over &#x60;details.message&#x60; and its &#x60;nonce&#x60;.
      * @param version 
-     * @param opsDeployerRevokePostRequest May be absent. (optional)
-     * @return ApiResponse<kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement?>?>
+     * @param proofOnly May be absent. (optional)
+     * @return ApiResponse<kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement>?>
      * @throws IllegalStateException If the request is not correctly configured
      * @throws IOException Rethrows the OkHttp execute method exception
      */
     @Suppress("UNCHECKED_CAST")
     @Throws(IllegalStateException::class, IOException::class)
-    suspend fun opsReleaseDeadlineLiftWithHttpInfo(version: kotlin.String, opsDeployerRevokePostRequest: OpsDeployerRevokePostRequest?) : ApiResponse<kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement?>?> = withContext(Dispatchers.IO) {
-        val localVariableConfig = opsReleaseDeadlineLiftRequestConfig(version = version, opsDeployerRevokePostRequest = opsDeployerRevokePostRequest)
+    suspend fun opsReleaseDeadlineLiftWithHttpInfo(version: kotlin.String, proofOnly: ProofOnly?) : ApiResponse<kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement>?> = withContext(Dispatchers.IO) {
+        val localVariableConfig = opsReleaseDeadlineLiftRequestConfig(version = version, proofOnly = proofOnly)
 
-        return@withContext request<OpsDeployerRevokePostRequest, kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement?>>(
+        return@withContext request<ProofOnly, kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement>>(
             localVariableConfig
         )
     }
@@ -2113,11 +2087,11 @@ open class OpsApi(basePath: kotlin.String = defaultBasePath, client: Call.Factor
      * To obtain the request config of the operation opsReleaseDeadlineLift
      *
      * @param version 
-     * @param opsDeployerRevokePostRequest May be absent. (optional)
+     * @param proofOnly May be absent. (optional)
      * @return RequestConfig
      */
-    fun opsReleaseDeadlineLiftRequestConfig(version: kotlin.String, opsDeployerRevokePostRequest: OpsDeployerRevokePostRequest?) : RequestConfig<OpsDeployerRevokePostRequest> {
-        val localVariableBody = opsDeployerRevokePostRequest
+    fun opsReleaseDeadlineLiftRequestConfig(version: kotlin.String, proofOnly: ProofOnly?) : RequestConfig<ProofOnly> {
+        val localVariableBody = proofOnly
         val localVariableQuery: MultiValueMap = mutableMapOf()
         val localVariableHeaders: MutableMap<String, String> = mutableMapOf()
         localVariableHeaders["Content-Type"] = "application/json"
@@ -2138,7 +2112,7 @@ open class OpsApi(basePath: kotlin.String = defaultBasePath, client: Call.Factor
      * Remove a node
      * One no app keeps a replica on; the system leader (elsewhere &#x60;421 NOT_LEADER&#x60;); signed over &#x60;__remove_node / { id }&#x60;.  **Who:** the ops token. **Operator signature:** answers &#x60;428 OPERATOR_SIGNATURE_REQUIRED&#x60; first; send it again with &#x60;operatorProof&#x60;, the operator key&#39;s signature over &#x60;details.message&#x60; and its &#x60;nonce&#x60;.
      * @param id 
-     * @param opsDeployerRevokePostRequest May be absent. (optional)
+     * @param proofOnly May be absent. (optional)
      * @return OpsRemoveNode200Response
      * @throws IllegalStateException If the request is not correctly configured
      * @throws IOException Rethrows the OkHttp execute method exception
@@ -2148,8 +2122,8 @@ open class OpsApi(basePath: kotlin.String = defaultBasePath, client: Call.Factor
      */
     @Suppress("UNCHECKED_CAST")
     @Throws(IllegalStateException::class, IOException::class, UnsupportedOperationException::class, ClientException::class, ServerException::class)
-    suspend fun opsRemoveNode(id: kotlin.String, opsDeployerRevokePostRequest: OpsDeployerRevokePostRequest? = null) : OpsRemoveNode200Response = withContext(Dispatchers.IO) {
-        val localVarResponse = opsRemoveNodeWithHttpInfo(id = id, opsDeployerRevokePostRequest = opsDeployerRevokePostRequest)
+    suspend fun opsRemoveNode(id: kotlin.String, proofOnly: ProofOnly? = null) : OpsRemoveNode200Response = withContext(Dispatchers.IO) {
+        val localVarResponse = opsRemoveNodeWithHttpInfo(id = id, proofOnly = proofOnly)
 
         return@withContext when (localVarResponse.responseType) {
             ResponseType.Success -> (localVarResponse as Success<*>).data as OpsRemoveNode200Response
@@ -2171,17 +2145,17 @@ open class OpsApi(basePath: kotlin.String = defaultBasePath, client: Call.Factor
      * Remove a node
      * One no app keeps a replica on; the system leader (elsewhere &#x60;421 NOT_LEADER&#x60;); signed over &#x60;__remove_node / { id }&#x60;.  **Who:** the ops token. **Operator signature:** answers &#x60;428 OPERATOR_SIGNATURE_REQUIRED&#x60; first; send it again with &#x60;operatorProof&#x60;, the operator key&#39;s signature over &#x60;details.message&#x60; and its &#x60;nonce&#x60;.
      * @param id 
-     * @param opsDeployerRevokePostRequest May be absent. (optional)
+     * @param proofOnly May be absent. (optional)
      * @return ApiResponse<OpsRemoveNode200Response?>
      * @throws IllegalStateException If the request is not correctly configured
      * @throws IOException Rethrows the OkHttp execute method exception
      */
     @Suppress("UNCHECKED_CAST")
     @Throws(IllegalStateException::class, IOException::class)
-    suspend fun opsRemoveNodeWithHttpInfo(id: kotlin.String, opsDeployerRevokePostRequest: OpsDeployerRevokePostRequest?) : ApiResponse<OpsRemoveNode200Response?> = withContext(Dispatchers.IO) {
-        val localVariableConfig = opsRemoveNodeRequestConfig(id = id, opsDeployerRevokePostRequest = opsDeployerRevokePostRequest)
+    suspend fun opsRemoveNodeWithHttpInfo(id: kotlin.String, proofOnly: ProofOnly?) : ApiResponse<OpsRemoveNode200Response?> = withContext(Dispatchers.IO) {
+        val localVariableConfig = opsRemoveNodeRequestConfig(id = id, proofOnly = proofOnly)
 
-        return@withContext request<OpsDeployerRevokePostRequest, OpsRemoveNode200Response>(
+        return@withContext request<ProofOnly, OpsRemoveNode200Response>(
             localVariableConfig
         )
     }
@@ -2190,11 +2164,11 @@ open class OpsApi(basePath: kotlin.String = defaultBasePath, client: Call.Factor
      * To obtain the request config of the operation opsRemoveNode
      *
      * @param id 
-     * @param opsDeployerRevokePostRequest May be absent. (optional)
+     * @param proofOnly May be absent. (optional)
      * @return RequestConfig
      */
-    fun opsRemoveNodeRequestConfig(id: kotlin.String, opsDeployerRevokePostRequest: OpsDeployerRevokePostRequest?) : RequestConfig<OpsDeployerRevokePostRequest> {
-        val localVariableBody = opsDeployerRevokePostRequest
+    fun opsRemoveNodeRequestConfig(id: kotlin.String, proofOnly: ProofOnly?) : RequestConfig<ProofOnly> {
+        val localVariableBody = proofOnly
         val localVariableQuery: MultiValueMap = mutableMapOf()
         val localVariableHeaders: MutableMap<String, String> = mutableMapOf()
         localVariableHeaders["Content-Type"] = "application/json"
@@ -2360,7 +2334,7 @@ open class OpsApi(basePath: kotlin.String = defaultBasePath, client: Call.Factor
     /**
      * POST /ops/apps/{app}/replicas
      * Move an app&#39;s replicas
-     * Signed over &#x60;&lt;app&gt; / __set_replicas / { replicas }&#x60; (sorted); at least &#x60;min(3, nodes)&#x60; registered nodes, each on a release the app&#39;s owner approved. The set it already has answers &#x60;unchanged: true&#x60;.  **Who:** the ops token. **Operator signature:** answers &#x60;428 OPERATOR_SIGNATURE_REQUIRED&#x60; first; send it again with &#x60;operatorProof&#x60;, the operator key&#39;s signature over &#x60;details.message&#x60; and its &#x60;nonce&#x60;.
+     * Signed over &#x60;&lt;app&gt; / __set_replicas / { replicas }&#x60; (sorted); at least &#x60;min(3, nodes)&#x60; registered nodes, each on a release the app&#39;s owner approved. The set it already has answers &#x60;unchanged: true&#x60;. &#x60;status&#x60; is the app group&#39;s Raft status when the move finished (as the leader saw it).  **Who:** the ops token. **Operator signature:** answers &#x60;428 OPERATOR_SIGNATURE_REQUIRED&#x60; first; send it again with &#x60;operatorProof&#x60;, the operator key&#39;s signature over &#x60;details.message&#x60; and its &#x60;nonce&#x60;.
      * @param app 
      * @param opsSetReplicasRequest 
      * @return OpsSetReplicas200Response
@@ -2393,7 +2367,7 @@ open class OpsApi(basePath: kotlin.String = defaultBasePath, client: Call.Factor
     /**
      * POST /ops/apps/{app}/replicas
      * Move an app&#39;s replicas
-     * Signed over &#x60;&lt;app&gt; / __set_replicas / { replicas }&#x60; (sorted); at least &#x60;min(3, nodes)&#x60; registered nodes, each on a release the app&#39;s owner approved. The set it already has answers &#x60;unchanged: true&#x60;.  **Who:** the ops token. **Operator signature:** answers &#x60;428 OPERATOR_SIGNATURE_REQUIRED&#x60; first; send it again with &#x60;operatorProof&#x60;, the operator key&#39;s signature over &#x60;details.message&#x60; and its &#x60;nonce&#x60;.
+     * Signed over &#x60;&lt;app&gt; / __set_replicas / { replicas }&#x60; (sorted); at least &#x60;min(3, nodes)&#x60; registered nodes, each on a release the app&#39;s owner approved. The set it already has answers &#x60;unchanged: true&#x60;. &#x60;status&#x60; is the app group&#39;s Raft status when the move finished (as the leader saw it).  **Who:** the ops token. **Operator signature:** answers &#x60;428 OPERATOR_SIGNATURE_REQUIRED&#x60; first; send it again with &#x60;operatorProof&#x60;, the operator key&#39;s signature over &#x60;details.message&#x60; and its &#x60;nonce&#x60;.
      * @param app 
      * @param opsSetReplicasRequest 
      * @return ApiResponse<OpsSetReplicas200Response?>
@@ -2439,7 +2413,7 @@ open class OpsApi(basePath: kotlin.String = defaultBasePath, client: Call.Factor
      * Issue a cluster sign-up invite
      * **Who:** the ops token. **Operator signature:** answers &#x60;428 OPERATOR_SIGNATURE_REQUIRED&#x60; first; send it again with &#x60;operatorProof&#x60;, the operator key&#39;s signature over &#x60;details.message&#x60; and its &#x60;nonce&#x60;.
      * @param opsSignUpInviteCreateRequest 
-     * @return kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement?>
+     * @return kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement>
      * @throws IllegalStateException If the request is not correctly configured
      * @throws IOException Rethrows the OkHttp execute method exception
      * @throws UnsupportedOperationException If the API returns an informational or redirection response
@@ -2448,11 +2422,11 @@ open class OpsApi(basePath: kotlin.String = defaultBasePath, client: Call.Factor
      */
     @Suppress("UNCHECKED_CAST")
     @Throws(IllegalStateException::class, IOException::class, UnsupportedOperationException::class, ClientException::class, ServerException::class)
-    suspend fun opsSignUpInviteCreate(opsSignUpInviteCreateRequest: OpsSignUpInviteCreateRequest) : kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement?> = withContext(Dispatchers.IO) {
+    suspend fun opsSignUpInviteCreate(opsSignUpInviteCreateRequest: OpsSignUpInviteCreateRequest) : kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement> = withContext(Dispatchers.IO) {
         val localVarResponse = opsSignUpInviteCreateWithHttpInfo(opsSignUpInviteCreateRequest = opsSignUpInviteCreateRequest)
 
         return@withContext when (localVarResponse.responseType) {
-            ResponseType.Success -> (localVarResponse as Success<*>).data as kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement?>
+            ResponseType.Success -> (localVarResponse as Success<*>).data as kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement>
             ResponseType.Informational -> throw UnsupportedOperationException("Client does not support Informational responses.")
             ResponseType.Redirection -> throw UnsupportedOperationException("Client does not support Redirection responses.")
             ResponseType.ClientError -> {
@@ -2471,16 +2445,16 @@ open class OpsApi(basePath: kotlin.String = defaultBasePath, client: Call.Factor
      * Issue a cluster sign-up invite
      * **Who:** the ops token. **Operator signature:** answers &#x60;428 OPERATOR_SIGNATURE_REQUIRED&#x60; first; send it again with &#x60;operatorProof&#x60;, the operator key&#39;s signature over &#x60;details.message&#x60; and its &#x60;nonce&#x60;.
      * @param opsSignUpInviteCreateRequest 
-     * @return ApiResponse<kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement?>?>
+     * @return ApiResponse<kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement>?>
      * @throws IllegalStateException If the request is not correctly configured
      * @throws IOException Rethrows the OkHttp execute method exception
      */
     @Suppress("UNCHECKED_CAST")
     @Throws(IllegalStateException::class, IOException::class)
-    suspend fun opsSignUpInviteCreateWithHttpInfo(opsSignUpInviteCreateRequest: OpsSignUpInviteCreateRequest) : ApiResponse<kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement?>?> = withContext(Dispatchers.IO) {
+    suspend fun opsSignUpInviteCreateWithHttpInfo(opsSignUpInviteCreateRequest: OpsSignUpInviteCreateRequest) : ApiResponse<kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement>?> = withContext(Dispatchers.IO) {
         val localVariableConfig = opsSignUpInviteCreateRequestConfig(opsSignUpInviteCreateRequest = opsSignUpInviteCreateRequest)
 
-        return@withContext request<OpsSignUpInviteCreateRequest, kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement?>>(
+        return@withContext request<OpsSignUpInviteCreateRequest, kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement>>(
             localVariableConfig
         )
     }
@@ -2512,7 +2486,7 @@ open class OpsApi(basePath: kotlin.String = defaultBasePath, client: Call.Factor
      * GET /ops/sign-up/invites
      * Cluster sign-up invites
      * **Who:** the ops token.
-     * @return kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement?>
+     * @return kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement>
      * @throws IllegalStateException If the request is not correctly configured
      * @throws IOException Rethrows the OkHttp execute method exception
      * @throws UnsupportedOperationException If the API returns an informational or redirection response
@@ -2521,11 +2495,11 @@ open class OpsApi(basePath: kotlin.String = defaultBasePath, client: Call.Factor
      */
     @Suppress("UNCHECKED_CAST")
     @Throws(IllegalStateException::class, IOException::class, UnsupportedOperationException::class, ClientException::class, ServerException::class)
-    suspend fun opsSignUpInviteList() : kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement?> = withContext(Dispatchers.IO) {
+    suspend fun opsSignUpInviteList() : kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement> = withContext(Dispatchers.IO) {
         val localVarResponse = opsSignUpInviteListWithHttpInfo()
 
         return@withContext when (localVarResponse.responseType) {
-            ResponseType.Success -> (localVarResponse as Success<*>).data as kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement?>
+            ResponseType.Success -> (localVarResponse as Success<*>).data as kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement>
             ResponseType.Informational -> throw UnsupportedOperationException("Client does not support Informational responses.")
             ResponseType.Redirection -> throw UnsupportedOperationException("Client does not support Redirection responses.")
             ResponseType.ClientError -> {
@@ -2543,16 +2517,16 @@ open class OpsApi(basePath: kotlin.String = defaultBasePath, client: Call.Factor
      * GET /ops/sign-up/invites
      * Cluster sign-up invites
      * **Who:** the ops token.
-     * @return ApiResponse<kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement?>?>
+     * @return ApiResponse<kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement>?>
      * @throws IllegalStateException If the request is not correctly configured
      * @throws IOException Rethrows the OkHttp execute method exception
      */
     @Suppress("UNCHECKED_CAST")
     @Throws(IllegalStateException::class, IOException::class)
-    suspend fun opsSignUpInviteListWithHttpInfo() : ApiResponse<kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement?>?> = withContext(Dispatchers.IO) {
+    suspend fun opsSignUpInviteListWithHttpInfo() : ApiResponse<kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement>?> = withContext(Dispatchers.IO) {
         val localVariableConfig = opsSignUpInviteListRequestConfig()
 
-        return@withContext request<Unit, kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement?>>(
+        return@withContext request<Unit, kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement>>(
             localVariableConfig
         )
     }
@@ -2583,8 +2557,8 @@ open class OpsApi(basePath: kotlin.String = defaultBasePath, client: Call.Factor
      * Withdraw a cluster sign-up invite
      * **Who:** the ops token. **Operator signature:** answers &#x60;428 OPERATOR_SIGNATURE_REQUIRED&#x60; first; send it again with &#x60;operatorProof&#x60;, the operator key&#39;s signature over &#x60;details.message&#x60; and its &#x60;nonce&#x60;.
      * @param key 
-     * @param opsDeployerRevokePostRequest May be absent. (optional)
-     * @return kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement?>
+     * @param proofOnly May be absent. (optional)
+     * @return kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement>
      * @throws IllegalStateException If the request is not correctly configured
      * @throws IOException Rethrows the OkHttp execute method exception
      * @throws UnsupportedOperationException If the API returns an informational or redirection response
@@ -2593,11 +2567,11 @@ open class OpsApi(basePath: kotlin.String = defaultBasePath, client: Call.Factor
      */
     @Suppress("UNCHECKED_CAST")
     @Throws(IllegalStateException::class, IOException::class, UnsupportedOperationException::class, ClientException::class, ServerException::class)
-    suspend fun opsSignUpInviteRevokeDelete(key: kotlin.String, opsDeployerRevokePostRequest: OpsDeployerRevokePostRequest? = null) : kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement?> = withContext(Dispatchers.IO) {
-        val localVarResponse = opsSignUpInviteRevokeDeleteWithHttpInfo(key = key, opsDeployerRevokePostRequest = opsDeployerRevokePostRequest)
+    suspend fun opsSignUpInviteRevokeDelete(key: kotlin.String, proofOnly: ProofOnly? = null) : kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement> = withContext(Dispatchers.IO) {
+        val localVarResponse = opsSignUpInviteRevokeDeleteWithHttpInfo(key = key, proofOnly = proofOnly)
 
         return@withContext when (localVarResponse.responseType) {
-            ResponseType.Success -> (localVarResponse as Success<*>).data as kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement?>
+            ResponseType.Success -> (localVarResponse as Success<*>).data as kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement>
             ResponseType.Informational -> throw UnsupportedOperationException("Client does not support Informational responses.")
             ResponseType.Redirection -> throw UnsupportedOperationException("Client does not support Redirection responses.")
             ResponseType.ClientError -> {
@@ -2616,17 +2590,17 @@ open class OpsApi(basePath: kotlin.String = defaultBasePath, client: Call.Factor
      * Withdraw a cluster sign-up invite
      * **Who:** the ops token. **Operator signature:** answers &#x60;428 OPERATOR_SIGNATURE_REQUIRED&#x60; first; send it again with &#x60;operatorProof&#x60;, the operator key&#39;s signature over &#x60;details.message&#x60; and its &#x60;nonce&#x60;.
      * @param key 
-     * @param opsDeployerRevokePostRequest May be absent. (optional)
-     * @return ApiResponse<kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement?>?>
+     * @param proofOnly May be absent. (optional)
+     * @return ApiResponse<kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement>?>
      * @throws IllegalStateException If the request is not correctly configured
      * @throws IOException Rethrows the OkHttp execute method exception
      */
     @Suppress("UNCHECKED_CAST")
     @Throws(IllegalStateException::class, IOException::class)
-    suspend fun opsSignUpInviteRevokeDeleteWithHttpInfo(key: kotlin.String, opsDeployerRevokePostRequest: OpsDeployerRevokePostRequest?) : ApiResponse<kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement?>?> = withContext(Dispatchers.IO) {
-        val localVariableConfig = opsSignUpInviteRevokeDeleteRequestConfig(key = key, opsDeployerRevokePostRequest = opsDeployerRevokePostRequest)
+    suspend fun opsSignUpInviteRevokeDeleteWithHttpInfo(key: kotlin.String, proofOnly: ProofOnly?) : ApiResponse<kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement>?> = withContext(Dispatchers.IO) {
+        val localVariableConfig = opsSignUpInviteRevokeDeleteRequestConfig(key = key, proofOnly = proofOnly)
 
-        return@withContext request<OpsDeployerRevokePostRequest, kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement?>>(
+        return@withContext request<ProofOnly, kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement>>(
             localVariableConfig
         )
     }
@@ -2635,11 +2609,11 @@ open class OpsApi(basePath: kotlin.String = defaultBasePath, client: Call.Factor
      * To obtain the request config of the operation opsSignUpInviteRevokeDelete
      *
      * @param key 
-     * @param opsDeployerRevokePostRequest May be absent. (optional)
+     * @param proofOnly May be absent. (optional)
      * @return RequestConfig
      */
-    fun opsSignUpInviteRevokeDeleteRequestConfig(key: kotlin.String, opsDeployerRevokePostRequest: OpsDeployerRevokePostRequest?) : RequestConfig<OpsDeployerRevokePostRequest> {
-        val localVariableBody = opsDeployerRevokePostRequest
+    fun opsSignUpInviteRevokeDeleteRequestConfig(key: kotlin.String, proofOnly: ProofOnly?) : RequestConfig<ProofOnly> {
+        val localVariableBody = proofOnly
         val localVariableQuery: MultiValueMap = mutableMapOf()
         val localVariableHeaders: MutableMap<String, String> = mutableMapOf()
         localVariableHeaders["Content-Type"] = "application/json"
@@ -2660,8 +2634,8 @@ open class OpsApi(basePath: kotlin.String = defaultBasePath, client: Call.Factor
      * Withdraw a cluster sign-up invite (POST)
      * For an HTTP client whose &#x60;DELETE&#x60; carries no body.  **Who:** the ops token. **Operator signature:** answers &#x60;428 OPERATOR_SIGNATURE_REQUIRED&#x60; first; send it again with &#x60;operatorProof&#x60;, the operator key&#39;s signature over &#x60;details.message&#x60; and its &#x60;nonce&#x60;.
      * @param key 
-     * @param opsDeployerRevokePostRequest May be absent. (optional)
-     * @return kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement?>
+     * @param proofOnly May be absent. (optional)
+     * @return kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement>
      * @throws IllegalStateException If the request is not correctly configured
      * @throws IOException Rethrows the OkHttp execute method exception
      * @throws UnsupportedOperationException If the API returns an informational or redirection response
@@ -2670,11 +2644,11 @@ open class OpsApi(basePath: kotlin.String = defaultBasePath, client: Call.Factor
      */
     @Suppress("UNCHECKED_CAST")
     @Throws(IllegalStateException::class, IOException::class, UnsupportedOperationException::class, ClientException::class, ServerException::class)
-    suspend fun opsSignUpInviteRevokePost(key: kotlin.String, opsDeployerRevokePostRequest: OpsDeployerRevokePostRequest? = null) : kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement?> = withContext(Dispatchers.IO) {
-        val localVarResponse = opsSignUpInviteRevokePostWithHttpInfo(key = key, opsDeployerRevokePostRequest = opsDeployerRevokePostRequest)
+    suspend fun opsSignUpInviteRevokePost(key: kotlin.String, proofOnly: ProofOnly? = null) : kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement> = withContext(Dispatchers.IO) {
+        val localVarResponse = opsSignUpInviteRevokePostWithHttpInfo(key = key, proofOnly = proofOnly)
 
         return@withContext when (localVarResponse.responseType) {
-            ResponseType.Success -> (localVarResponse as Success<*>).data as kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement?>
+            ResponseType.Success -> (localVarResponse as Success<*>).data as kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement>
             ResponseType.Informational -> throw UnsupportedOperationException("Client does not support Informational responses.")
             ResponseType.Redirection -> throw UnsupportedOperationException("Client does not support Redirection responses.")
             ResponseType.ClientError -> {
@@ -2693,17 +2667,17 @@ open class OpsApi(basePath: kotlin.String = defaultBasePath, client: Call.Factor
      * Withdraw a cluster sign-up invite (POST)
      * For an HTTP client whose &#x60;DELETE&#x60; carries no body.  **Who:** the ops token. **Operator signature:** answers &#x60;428 OPERATOR_SIGNATURE_REQUIRED&#x60; first; send it again with &#x60;operatorProof&#x60;, the operator key&#39;s signature over &#x60;details.message&#x60; and its &#x60;nonce&#x60;.
      * @param key 
-     * @param opsDeployerRevokePostRequest May be absent. (optional)
-     * @return ApiResponse<kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement?>?>
+     * @param proofOnly May be absent. (optional)
+     * @return ApiResponse<kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement>?>
      * @throws IllegalStateException If the request is not correctly configured
      * @throws IOException Rethrows the OkHttp execute method exception
      */
     @Suppress("UNCHECKED_CAST")
     @Throws(IllegalStateException::class, IOException::class)
-    suspend fun opsSignUpInviteRevokePostWithHttpInfo(key: kotlin.String, opsDeployerRevokePostRequest: OpsDeployerRevokePostRequest?) : ApiResponse<kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement?>?> = withContext(Dispatchers.IO) {
-        val localVariableConfig = opsSignUpInviteRevokePostRequestConfig(key = key, opsDeployerRevokePostRequest = opsDeployerRevokePostRequest)
+    suspend fun opsSignUpInviteRevokePostWithHttpInfo(key: kotlin.String, proofOnly: ProofOnly?) : ApiResponse<kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement>?> = withContext(Dispatchers.IO) {
+        val localVariableConfig = opsSignUpInviteRevokePostRequestConfig(key = key, proofOnly = proofOnly)
 
-        return@withContext request<OpsDeployerRevokePostRequest, kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement?>>(
+        return@withContext request<ProofOnly, kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement>>(
             localVariableConfig
         )
     }
@@ -2712,11 +2686,11 @@ open class OpsApi(basePath: kotlin.String = defaultBasePath, client: Call.Factor
      * To obtain the request config of the operation opsSignUpInviteRevokePost
      *
      * @param key 
-     * @param opsDeployerRevokePostRequest May be absent. (optional)
+     * @param proofOnly May be absent. (optional)
      * @return RequestConfig
      */
-    fun opsSignUpInviteRevokePostRequestConfig(key: kotlin.String, opsDeployerRevokePostRequest: OpsDeployerRevokePostRequest?) : RequestConfig<OpsDeployerRevokePostRequest> {
-        val localVariableBody = opsDeployerRevokePostRequest
+    fun opsSignUpInviteRevokePostRequestConfig(key: kotlin.String, proofOnly: ProofOnly?) : RequestConfig<ProofOnly> {
+        val localVariableBody = proofOnly
         val localVariableQuery: MultiValueMap = mutableMapOf()
         val localVariableHeaders: MutableMap<String, String> = mutableMapOf()
         localVariableHeaders["Content-Type"] = "application/json"
@@ -2737,7 +2711,7 @@ open class OpsApi(basePath: kotlin.String = defaultBasePath, client: Call.Factor
      * Set the sign-up policy
      * Refused once the cluster&#39;s owner runs sign-up.  **Who:** the ops token. **Operator signature:** answers &#x60;428 OPERATOR_SIGNATURE_REQUIRED&#x60; first; send it again with &#x60;operatorProof&#x60;, the operator key&#39;s signature over &#x60;details.message&#x60; and its &#x60;nonce&#x60;.
      * @param opsSignUpSetRequest 
-     * @return kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement?>
+     * @return kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement>
      * @throws IllegalStateException If the request is not correctly configured
      * @throws IOException Rethrows the OkHttp execute method exception
      * @throws UnsupportedOperationException If the API returns an informational or redirection response
@@ -2746,11 +2720,11 @@ open class OpsApi(basePath: kotlin.String = defaultBasePath, client: Call.Factor
      */
     @Suppress("UNCHECKED_CAST")
     @Throws(IllegalStateException::class, IOException::class, UnsupportedOperationException::class, ClientException::class, ServerException::class)
-    suspend fun opsSignUpSet(opsSignUpSetRequest: OpsSignUpSetRequest) : kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement?> = withContext(Dispatchers.IO) {
+    suspend fun opsSignUpSet(opsSignUpSetRequest: OpsSignUpSetRequest) : kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement> = withContext(Dispatchers.IO) {
         val localVarResponse = opsSignUpSetWithHttpInfo(opsSignUpSetRequest = opsSignUpSetRequest)
 
         return@withContext when (localVarResponse.responseType) {
-            ResponseType.Success -> (localVarResponse as Success<*>).data as kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement?>
+            ResponseType.Success -> (localVarResponse as Success<*>).data as kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement>
             ResponseType.Informational -> throw UnsupportedOperationException("Client does not support Informational responses.")
             ResponseType.Redirection -> throw UnsupportedOperationException("Client does not support Redirection responses.")
             ResponseType.ClientError -> {
@@ -2769,16 +2743,16 @@ open class OpsApi(basePath: kotlin.String = defaultBasePath, client: Call.Factor
      * Set the sign-up policy
      * Refused once the cluster&#39;s owner runs sign-up.  **Who:** the ops token. **Operator signature:** answers &#x60;428 OPERATOR_SIGNATURE_REQUIRED&#x60; first; send it again with &#x60;operatorProof&#x60;, the operator key&#39;s signature over &#x60;details.message&#x60; and its &#x60;nonce&#x60;.
      * @param opsSignUpSetRequest 
-     * @return ApiResponse<kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement?>?>
+     * @return ApiResponse<kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement>?>
      * @throws IllegalStateException If the request is not correctly configured
      * @throws IOException Rethrows the OkHttp execute method exception
      */
     @Suppress("UNCHECKED_CAST")
     @Throws(IllegalStateException::class, IOException::class)
-    suspend fun opsSignUpSetWithHttpInfo(opsSignUpSetRequest: OpsSignUpSetRequest) : ApiResponse<kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement?>?> = withContext(Dispatchers.IO) {
+    suspend fun opsSignUpSetWithHttpInfo(opsSignUpSetRequest: OpsSignUpSetRequest) : ApiResponse<kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement>?> = withContext(Dispatchers.IO) {
         val localVariableConfig = opsSignUpSetRequestConfig(opsSignUpSetRequest = opsSignUpSetRequest)
 
-        return@withContext request<OpsSignUpSetRequest, kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement?>>(
+        return@withContext request<OpsSignUpSetRequest, kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement>>(
             localVariableConfig
         )
     }

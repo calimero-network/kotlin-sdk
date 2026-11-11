@@ -44,13 +44,13 @@ data class UploadBegin200Response (
     val uploadId: kotlin.String,
 
     @SerialName(value = "partBytes")
-    val partBytes: kotlin.Long?,
+    val partBytes: kotlin.Long,
 
     @SerialName(value = "parts")
-    val parts: kotlin.Long?,
+    val parts: kotlin.Long,
 
     @SerialName(value = "expiresAt")
-    val expiresAt: kotlin.Long?
+    val expiresAt: kotlin.Long
 
 ) {
 

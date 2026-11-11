@@ -31,40 +31,31 @@ scripts/refresh-openapi.sh --check   # regenerate from the vendored document; fa
 
 `codegen/build.gradle.kts` refuses a document whose SHA-256 is not the one `SOURCE` records.
 
-## Where the document and a generated client disagree
+## Where the document and the generated client still need help
 
-The generator follows the document; these spots in it do not say what a client must send or reads,
-so the hand-written methods keep their own handling, and the facade method is either avoided or
-noted:
+Core #4937 (`94bcde342`) closed most gaps: integers carry `format: int64`, binary bodies `format:
+binary`, unions have discriminators, literals are enums, meaningful nulls are `[T, "null"]`, and
+shared bodies are components (`ConfirmOnly`, `ProofOnly`). What is left:
 
-- **Binary bodies** (`POST /apps/{app}/blobs`, `/apps/{app}/files`, `/packages`, `/ops/packages`,
-  `PUT …/parts/{k}`, `POST /bundles`) are `type: string` with a `contentMediaType`. The generator
-  makes most a `java.io.File` (and a download a temp file), and `POST /bundles`
-  (`application/wasm`) a `String`. `uploadBlob`, `uploadFile`, `uploadPackage`, `uploadBundle` and
-  `blobContent` stay as they are, on the generated routes.
-- **`POST /consent/requests`**'s body is `type: string` with `contentMediaType: application/json`
-  and its shape in prose, so a generated client sends a quoted string. `requestConsent` keeps its
-  own body.
-- **`POST /apps/{app}/views`**: `consistency` is `const: "stale"`; nothing names `strong`.
-- **`GET /orgs/{org}/members`**: `detail` is `const: "security"`, generated as a `JsonElement`.
-- **`POST /apps`** has no `confirmMethods`; `createApp` still sends it.
-- **A null that means something**: `parent: null` (`POST /orgs/{org}/teams/{team}`, to the top),
-  `publicKey: null` (`POST /orgs/{org}/recovery`, remove) and `state: null`
-  (`POST /apps/{app}/presence`, retract). A generated request leaves a null out, so the deprecated
-  methods add these explicitly.
-- **Integers** carry no `format`; the node's are u64. They are generated as `Long`.
-- **Untyped answers**: many routes answer `{ type: object }` or `additionalProperties: {}` only
-  (`GET /orgs/{org}/invites`, `/orgs/{org}/teams/{team}`, `/packages/{package}`,
-  `/deployments/{id}`, `/deployers`, `/releases`, `/publishers/{signer}`, …): a `JsonObject` or a
-  `Map<String, JsonElement?>`.
-- **Unions** (`Access`, `Deployer`, `OutboundSelection`) are `anyOf` without a discriminator; they
-  are mapped to mero-core's `AppAccess`, `Deployer` and `OutboundSelection`.
-- **Shared `{ confirm? }` bodies** are inline, so the generator names them after the first
-  operation it meets (`PasskeyRemoveRequest` for `DELETE /orgs/{org}`, …).
-- `GET /apps/{app}/xcalls` types `pending` as an array; the node answers a count (u64). `appXcalls`
-  stays hand-written and is not deprecated.
-- `POST /apps/{app}/blobs?sealed=true` answers `sha256` and `sealed`, which the spec does not list;
-  `uploadFile` stays hand-written and is not deprecated.
-- A property named `keys` is generated as `propertyKeys` (`GET /auth/apikeys`).
-- `info.license` has no `identifier` or `url`, which OpenAPI 3.1 requires; generation skips
-  validation for it.
+- **Meaningful nulls**: a team's `parent: null` (to the top), recovery `publicKey: null` (remove)
+  and presence `state: null` (retract) are the only fields typed `[T, "null"]`. The generated
+  request leaves every null out (`explicitNulls = false`, so an optional field you leave alone is
+  never sent), so the facade takes these as `Explicit<T>?`. `Explicit(null)` sends `null`;
+  `codegen/facade.py` finds the fields in the spec.
+- **`POST /consent/requests`** is a `oneOf` with a `kind` discriminator. OpenAPI Generator 7.26's
+  kotlinx output renders it as a sealed class that no branch extends, so the spec copy the
+  generator reads names it as a component (`prepare-spec.py`) and `schemaMappings` maps it to
+  mero-core's `ConsentRequest`.
+- **Objects with `properties` and `additionalProperties: true`** make 7.26 emit a data class that
+  also extends `HashMap` and does not compile. `prepare-spec.py` drops `additionalProperties` from
+  those, and the client ignores unknown keys anyway.
+- **`AppAccess`, `Deployer`, `OutboundSelection`** stay mapped to mero-core's sealed types, which
+  read and write exactly the union's forms.
+- **Untyped answers** that carry data: `GET /deployers`, `/deployments/{id}/orgs`,
+  `/orgs/{org}/invites`, `/publishers/{signer}`, `/releases`, `/sign-up/invites`, `/ops/pools`,
+  `/ops/sign-up/invites`, `/apps/{app}/runs` and `/apps/{app}/runs/{run}` are a free-form object (a
+  `JsonObject` or a `Map`).
+- **`POST /apps`** has no `confirmMethods`; the deprecated `createApp` still sends it when given.
+- **A property named `keys`** is generated as `propertyKeys` (`GET /auth/apikeys`, `GET /apps/{app}/storage`).
+- **A sealed blob upload** (`POST /apps/{app}/blobs?sealed=true`) is refused with `400` by current
+  core, so `uploadFile` is deprecated with no replacement.

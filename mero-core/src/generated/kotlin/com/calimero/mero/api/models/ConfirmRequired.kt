@@ -32,7 +32,7 @@ import kotlinx.serialization.Contextual
  * `details` of a `412 CONFIRM_REQUIRED`: the WebAuthn challenge to sign with a passkey of the account.
  *
  * @param challengeId 
- * @param challenge 
+ * @param challenge base64url (RFC 4648 section 5) without padding
  * @param rpId 
  * @param allowCredentials 
  */
@@ -43,6 +43,7 @@ data class ConfirmRequired (
     @SerialName(value = "challengeId")
     val challengeId: kotlin.String,
 
+    /* base64url (RFC 4648 section 5) without padding */
     @SerialName(value = "challenge")
     val challenge: kotlin.String,
 
