@@ -1,5 +1,6 @@
 package com.calimero.mero
 
+import com.calimero.mero.api.models.ConsentPageResult200Response
 import com.calimero.mero.tee.compareReleaseVersions
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.JsonElement
@@ -383,6 +384,12 @@ data class ConsentResult(
 ) {
     val isPending: Boolean get() = status == "pending"
     val isApproved: Boolean get() = status == "approved"
+
+    companion object {
+        /** The facade's answer (`client.consent.pageResult(request = id)`) as a [ConsentResult]. */
+        fun from(answer: ConsentPageResult200Response): ConsentResult =
+            ConsentResult(answer.requestId, answer.kind.value, answer.status.value, answer.decidedAt)
+    }
 }
 
 /** What the consent page put on `returnTo` when it sent the person back. */

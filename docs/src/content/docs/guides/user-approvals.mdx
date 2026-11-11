@@ -26,7 +26,7 @@ hint (anyone can type a URL): confirm it with the node.
 
 ```kotlin
 // In the activity that receives the link:
-consentReturn(url)?.let { back -> client.consentResult(back.requestId) }
+consentReturn(url)?.let { back -> ConsentResult.from(client.consent.pageResult(request = back.requestId)) }
 // or poll:
 client.waitForConsent(started.requestId, expiresAt = started.expiresAt)
 ```

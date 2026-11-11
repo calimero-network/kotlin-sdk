@@ -187,7 +187,7 @@ class MeroAppSession(
                 knownAccount = saved.accountId
                 rebuild()
                 try {
-                    client.me()
+                    client.auth.me()
                 } catch (e: LoginRequired) {
                     client.forget()
                     _lastError.value = e
@@ -252,7 +252,7 @@ class MeroAppSession(
     suspend fun handle(url: String): Boolean {
         restoring.withLock { }
         consentReturn(url)?.let { back ->
-            _consentResult.value = runCatching { client.consentResult(back.requestId) }.getOrNull()
+            _consentResult.value = runCatching { ConsentResult.from(client.consent.pageResult(request = back.requestId)) }.getOrNull()
             return true
         }
         val recognised = options.isInvitation?.invoke(url) ?: isInvitationLink(url, packageName)
