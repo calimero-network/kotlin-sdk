@@ -46,9 +46,14 @@ shared bodies are components (`ConfirmOnly`, `ProofOnly`). What is left:
   kotlinx output renders it as a sealed class that no branch extends, so the spec copy the
   generator reads names it as a component (`prepare-spec.py`) and `schemaMappings` maps it to
   mero-core's `ConsentRequest`.
+- **Binary bodies with an unusual media type** (`application/wasm` on `POST /bundles`, `*/*` on
+  `POST /apps/{app}/blobs` and `/files`): 7.26 writes no `Content-Type` for them and its ApiClient
+  then labels the bytes `application/json`. `Routes.binaryBody` (generated from the spec) gives the
+  transport the right type; the wildcard goes as `application/octet-stream`.
 - **Objects with `properties` and `additionalProperties: true`** make 7.26 emit a data class that
   also extends `HashMap` and does not compile. `prepare-spec.py` drops `additionalProperties` from
-  those, and the client ignores unknown keys anyway.
+  those, so a property the spec leaves open is out of reach of the typed answer. One answer leaves
+  open what a client needs: `POST /deployments` lists only `host`, not the new deployment's `id`.
 - **`AppAccess`, `Deployer`, `OutboundSelection`** stay mapped to mero-core's sealed types, which
   read and write exactly the union's forms.
 - **Untyped answers** that carry data: `GET /deployers`, `/deployments/{id}/orgs`,

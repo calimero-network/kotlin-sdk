@@ -1022,4 +1022,15 @@ class CalimeroClientTest {
             client.orgs.teamUpdate(org = "o1", team = "t1", parent = Explicit("t0"))
             assertEquals("t0", sent(cluster, 2)["parent"]!!.jsonPrimitive.content)
         }
+
+    @Test
+    fun `the facade sends a binary body with the spec's media type`() =
+        runBlocking {
+            val cluster = Cluster({ _, _ -> json(200, """{"blobId":"B58","id":"ab","size":3,"index":4,"hash":"h"}""") })
+            val client = cluster.client()
+            assertEquals("B58", client.apps.blobUpload(app = "app-1", body = byteArrayOf(1, 2, 3)).blobId)
+            assertEquals("application/octet-stream", header(cluster.nodes[0].requests[0].first, "content-type"))
+            assertEquals("h", client.packages.bundlePut(body = byteArrayOf(0, 0x61, 0x73, 0x6d)).hash)
+            assertEquals("application/wasm", header(cluster.nodes[0].requests[1].first, "content-type"))
+        }
 }

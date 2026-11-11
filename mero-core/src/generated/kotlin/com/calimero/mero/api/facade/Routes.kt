@@ -30,6 +30,21 @@ internal object Routes {
             Route("POST", Regex("^apps/[^/]+/methods/[^/]+$")),
         )
 
+    /**
+     * The media type of each binary request body. OpenAPI Generator 7.26 writes no `Content-Type`
+     * for one it does not know (`application/wasm`, the any-type wildcard), and its ApiClient then labels the bytes
+     * `application/json`; the transport sends them as the spec says instead (the wildcard as octet-stream).
+     */
+    val binaryBody: Map<Route, String> =
+        mapOf(
+            Route("POST", Regex("^apps/[^/]+/blobs$")) to "application/octet-stream",
+            Route("POST", Regex("^apps/[^/]+/files$")) to "application/octet-stream",
+            Route("POST", Regex("^bundles$")) to "application/wasm",
+            Route("POST", Regex("^ops/packages$")) to "application/octet-stream",
+            Route("POST", Regex("^packages$")) to "application/octet-stream",
+            Route("PUT", Regex("^apps/[^/]+/files/uploads/[^/]+/parts/[^/]+$")) to "application/octet-stream",
+        )
+
     /** `x-calimero-sealed: false`: answered in the clear (`/health`, `/attestation`). */
     val plain: List<Route> =
         listOf(
