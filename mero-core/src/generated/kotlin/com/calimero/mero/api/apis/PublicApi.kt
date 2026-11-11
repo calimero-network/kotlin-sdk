@@ -30,6 +30,8 @@ import okhttp3.HttpUrl
 import com.calimero.mero.api.models.AttestationDoc
 import com.calimero.mero.api.models.Error
 import com.calimero.mero.api.models.Health200Response
+import com.calimero.mero.api.models.PublisherBinding200Response
+import com.calimero.mero.api.models.ReleasesPublic200Response
 
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
@@ -243,10 +245,10 @@ open class PublicApi(basePath: kotlin.String = defaultBasePath, client: Call.Fac
 
     /**
      * GET /publishers/{signer}
-     * A signing key&#39;s organization
-     * The organization a package signing key (&#x60;did:key&#x60;) is bound to, if any.  **Who:** anyone.
+     * Whether a signing key is bound
+     * Whether a package signing key (&#x60;did:key&#x60;) is bound to an organization on this cluster (&#x60;bound&#x60;, never which), and its binding generation (&#x60;0&#x60;: never bound).  **Who:** signed in (a session or an API key).
      * @param signer 
-     * @return kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement>
+     * @return PublisherBinding200Response
      * @throws IllegalStateException If the request is not correctly configured
      * @throws IOException Rethrows the OkHttp execute method exception
      * @throws UnsupportedOperationException If the API returns an informational or redirection response
@@ -255,11 +257,11 @@ open class PublicApi(basePath: kotlin.String = defaultBasePath, client: Call.Fac
      */
     @Suppress("UNCHECKED_CAST")
     @Throws(IllegalStateException::class, IOException::class, UnsupportedOperationException::class, ClientException::class, ServerException::class)
-    suspend fun publisherBinding(signer: kotlin.String) : kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement> = withContext(Dispatchers.IO) {
+    suspend fun publisherBinding(signer: kotlin.String) : PublisherBinding200Response = withContext(Dispatchers.IO) {
         val localVarResponse = publisherBindingWithHttpInfo(signer = signer)
 
         return@withContext when (localVarResponse.responseType) {
-            ResponseType.Success -> (localVarResponse as Success<*>).data as kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement>
+            ResponseType.Success -> (localVarResponse as Success<*>).data as PublisherBinding200Response
             ResponseType.Informational -> throw UnsupportedOperationException("Client does not support Informational responses.")
             ResponseType.Redirection -> throw UnsupportedOperationException("Client does not support Redirection responses.")
             ResponseType.ClientError -> {
@@ -275,19 +277,19 @@ open class PublicApi(basePath: kotlin.String = defaultBasePath, client: Call.Fac
 
     /**
      * GET /publishers/{signer}
-     * A signing key&#39;s organization
-     * The organization a package signing key (&#x60;did:key&#x60;) is bound to, if any.  **Who:** anyone.
+     * Whether a signing key is bound
+     * Whether a package signing key (&#x60;did:key&#x60;) is bound to an organization on this cluster (&#x60;bound&#x60;, never which), and its binding generation (&#x60;0&#x60;: never bound).  **Who:** signed in (a session or an API key).
      * @param signer 
-     * @return ApiResponse<kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement>?>
+     * @return ApiResponse<PublisherBinding200Response?>
      * @throws IllegalStateException If the request is not correctly configured
      * @throws IOException Rethrows the OkHttp execute method exception
      */
     @Suppress("UNCHECKED_CAST")
     @Throws(IllegalStateException::class, IOException::class)
-    suspend fun publisherBindingWithHttpInfo(signer: kotlin.String) : ApiResponse<kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement>?> = withContext(Dispatchers.IO) {
+    suspend fun publisherBindingWithHttpInfo(signer: kotlin.String) : ApiResponse<PublisherBinding200Response?> = withContext(Dispatchers.IO) {
         val localVariableConfig = publisherBindingRequestConfig(signer = signer)
 
-        return@withContext request<Unit, kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement>>(
+        return@withContext request<Unit, PublisherBinding200Response>(
             localVariableConfig
         )
     }
@@ -309,7 +311,7 @@ open class PublicApi(basePath: kotlin.String = defaultBasePath, client: Call.Fac
             path = "/publishers/{signer}".replace("{"+"signer"+"}", encodeURIComponent(signer.toString())),
             query = localVariableQuery,
             headers = localVariableHeaders,
-            requiresAuthentication = false,
+            requiresAuthentication = true,
             body = localVariableBody
         )
     }
@@ -317,8 +319,8 @@ open class PublicApi(basePath: kotlin.String = defaultBasePath, client: Call.Fac
     /**
      * GET /releases
      * The cluster&#39;s releases
-     * The mero-tee releases the cluster&#39;s nodes run and the deadlines set on them.  **Who:** anyone.
-     * @return kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement>
+     * The cluster&#39;s governance and the deadlines set on mero-tee releases, oldest release first: after &#x60;after&#x60; (RFC 3339; &#x60;afterSecs&#x60; Unix seconds) a scope that has not approved that release (or a newer one) starts no new work.  **Who:** anyone.
+     * @return ReleasesPublic200Response
      * @throws IllegalStateException If the request is not correctly configured
      * @throws IOException Rethrows the OkHttp execute method exception
      * @throws UnsupportedOperationException If the API returns an informational or redirection response
@@ -327,11 +329,11 @@ open class PublicApi(basePath: kotlin.String = defaultBasePath, client: Call.Fac
      */
     @Suppress("UNCHECKED_CAST")
     @Throws(IllegalStateException::class, IOException::class, UnsupportedOperationException::class, ClientException::class, ServerException::class)
-    suspend fun releasesPublic() : kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement> = withContext(Dispatchers.IO) {
+    suspend fun releasesPublic() : ReleasesPublic200Response = withContext(Dispatchers.IO) {
         val localVarResponse = releasesPublicWithHttpInfo()
 
         return@withContext when (localVarResponse.responseType) {
-            ResponseType.Success -> (localVarResponse as Success<*>).data as kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement>
+            ResponseType.Success -> (localVarResponse as Success<*>).data as ReleasesPublic200Response
             ResponseType.Informational -> throw UnsupportedOperationException("Client does not support Informational responses.")
             ResponseType.Redirection -> throw UnsupportedOperationException("Client does not support Redirection responses.")
             ResponseType.ClientError -> {
@@ -348,17 +350,17 @@ open class PublicApi(basePath: kotlin.String = defaultBasePath, client: Call.Fac
     /**
      * GET /releases
      * The cluster&#39;s releases
-     * The mero-tee releases the cluster&#39;s nodes run and the deadlines set on them.  **Who:** anyone.
-     * @return ApiResponse<kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement>?>
+     * The cluster&#39;s governance and the deadlines set on mero-tee releases, oldest release first: after &#x60;after&#x60; (RFC 3339; &#x60;afterSecs&#x60; Unix seconds) a scope that has not approved that release (or a newer one) starts no new work.  **Who:** anyone.
+     * @return ApiResponse<ReleasesPublic200Response?>
      * @throws IllegalStateException If the request is not correctly configured
      * @throws IOException Rethrows the OkHttp execute method exception
      */
     @Suppress("UNCHECKED_CAST")
     @Throws(IllegalStateException::class, IOException::class)
-    suspend fun releasesPublicWithHttpInfo() : ApiResponse<kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement>?> = withContext(Dispatchers.IO) {
+    suspend fun releasesPublicWithHttpInfo() : ApiResponse<ReleasesPublic200Response?> = withContext(Dispatchers.IO) {
         val localVariableConfig = releasesPublicRequestConfig()
 
-        return@withContext request<Unit, kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement>>(
+        return@withContext request<Unit, ReleasesPublic200Response>(
             localVariableConfig
         )
     }

@@ -29,16 +29,40 @@ import kotlinx.serialization.SerialName
 import kotlinx.serialization.Contextual
 
 /**
- * Other properties than those listed may be present: the ones listed are those clients rely on.
+ * 
  *
  * @param token 
+ * @param inviteKey 
+ * @param uses 
+ * @param expiresAt 
+ * @param expiresAtSecs 
+ * @param createdBy 
+ * @param createdAt 
  */
 @Serializable
 
 data class SignUpInviteCreate200Response (
 
     @SerialName(value = "token")
-    val token: kotlin.String
+    val token: kotlin.String,
+
+    @SerialName(value = "inviteKey")
+    val inviteKey: kotlin.String,
+
+    @SerialName(value = "uses")
+    val uses: kotlin.Long,
+
+    @SerialName(value = "expiresAt")
+    val expiresAt: kotlin.String,
+
+    @SerialName(value = "expiresAtSecs")
+    val expiresAtSecs: kotlin.Long,
+
+    @SerialName(value = "createdBy")
+    val createdBy: kotlin.String,
+
+    @SerialName(value = "createdAt")
+    val createdAt: kotlin.String
 
 ) {
 

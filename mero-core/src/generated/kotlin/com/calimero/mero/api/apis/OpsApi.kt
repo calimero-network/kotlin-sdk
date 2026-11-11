@@ -45,6 +45,7 @@ import com.calimero.mero.api.models.OpsPackageInstallRequest
 import com.calimero.mero.api.models.OpsPackageList200Response
 import com.calimero.mero.api.models.OpsPackageUpload200Response
 import com.calimero.mero.api.models.OpsPlacement200Response
+import com.calimero.mero.api.models.OpsPoolsGet200Response
 import com.calimero.mero.api.models.OpsPoolsSetRequest
 import com.calimero.mero.api.models.OpsQuotasGet200Response
 import com.calimero.mero.api.models.OpsQuotasSetRequest
@@ -59,11 +60,13 @@ import com.calimero.mero.api.models.OpsServed200Response
 import com.calimero.mero.api.models.OpsSetReplicas200Response
 import com.calimero.mero.api.models.OpsSetReplicasRequest
 import com.calimero.mero.api.models.OpsSignUpInviteCreateRequest
+import com.calimero.mero.api.models.OpsSignUpInviteList200Response
 import com.calimero.mero.api.models.OpsSignUpSetRequest
 import com.calimero.mero.api.models.OpsStatus200Response
 import com.calimero.mero.api.models.OpsUpgrade200Response
 import com.calimero.mero.api.models.OpsUpgradeRequest
 import com.calimero.mero.api.models.ProofOnly
+import com.calimero.mero.api.models.SignUpInvite
 import com.calimero.mero.api.models.UpgradeRun
 
 import kotlinx.serialization.SerialName
@@ -1447,8 +1450,8 @@ open class OpsApi(basePath: kotlin.String = defaultBasePath, client: Call.Factor
     /**
      * GET /ops/pools
      * Compute pools
-     * The pools and the runs each takes.  **Who:** the ops token.
-     * @return kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement>
+     * The pools by name (absent: none set, one legacy pool), and each pool&#39;s capacity: how many runs its job nodes take at once.  **Who:** the ops token.
+     * @return OpsPoolsGet200Response
      * @throws IllegalStateException If the request is not correctly configured
      * @throws IOException Rethrows the OkHttp execute method exception
      * @throws UnsupportedOperationException If the API returns an informational or redirection response
@@ -1457,11 +1460,11 @@ open class OpsApi(basePath: kotlin.String = defaultBasePath, client: Call.Factor
      */
     @Suppress("UNCHECKED_CAST")
     @Throws(IllegalStateException::class, IOException::class, UnsupportedOperationException::class, ClientException::class, ServerException::class)
-    suspend fun opsPoolsGet() : kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement> = withContext(Dispatchers.IO) {
+    suspend fun opsPoolsGet() : OpsPoolsGet200Response = withContext(Dispatchers.IO) {
         val localVarResponse = opsPoolsGetWithHttpInfo()
 
         return@withContext when (localVarResponse.responseType) {
-            ResponseType.Success -> (localVarResponse as Success<*>).data as kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement>
+            ResponseType.Success -> (localVarResponse as Success<*>).data as OpsPoolsGet200Response
             ResponseType.Informational -> throw UnsupportedOperationException("Client does not support Informational responses.")
             ResponseType.Redirection -> throw UnsupportedOperationException("Client does not support Redirection responses.")
             ResponseType.ClientError -> {
@@ -1478,17 +1481,17 @@ open class OpsApi(basePath: kotlin.String = defaultBasePath, client: Call.Factor
     /**
      * GET /ops/pools
      * Compute pools
-     * The pools and the runs each takes.  **Who:** the ops token.
-     * @return ApiResponse<kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement>?>
+     * The pools by name (absent: none set, one legacy pool), and each pool&#39;s capacity: how many runs its job nodes take at once.  **Who:** the ops token.
+     * @return ApiResponse<OpsPoolsGet200Response?>
      * @throws IllegalStateException If the request is not correctly configured
      * @throws IOException Rethrows the OkHttp execute method exception
      */
     @Suppress("UNCHECKED_CAST")
     @Throws(IllegalStateException::class, IOException::class)
-    suspend fun opsPoolsGetWithHttpInfo() : ApiResponse<kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement>?> = withContext(Dispatchers.IO) {
+    suspend fun opsPoolsGetWithHttpInfo() : ApiResponse<OpsPoolsGet200Response?> = withContext(Dispatchers.IO) {
         val localVariableConfig = opsPoolsGetRequestConfig()
 
-        return@withContext request<Unit, kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement>>(
+        return@withContext request<Unit, OpsPoolsGet200Response>(
             localVariableConfig
         )
     }
@@ -2264,7 +2267,7 @@ open class OpsApi(basePath: kotlin.String = defaultBasePath, client: Call.Factor
     /**
      * GET /ops/served-origins
      * Custom domains to serve
-     * Every served origin a package&#39;s manager registered, by the package&#39;s label, never its name.  **Who:** the ops token.
+     * Every served origin a package&#39;s manager registered, by the package&#39;s label, never its name; &#x60;addedAt&#x60; is RFC 3339.  **Who:** the ops token.
      * @return OpsServed200Response
      * @throws IllegalStateException If the request is not correctly configured
      * @throws IOException Rethrows the OkHttp execute method exception
@@ -2295,7 +2298,7 @@ open class OpsApi(basePath: kotlin.String = defaultBasePath, client: Call.Factor
     /**
      * GET /ops/served-origins
      * Custom domains to serve
-     * Every served origin a package&#39;s manager registered, by the package&#39;s label, never its name.  **Who:** the ops token.
+     * Every served origin a package&#39;s manager registered, by the package&#39;s label, never its name; &#x60;addedAt&#x60; is RFC 3339.  **Who:** the ops token.
      * @return ApiResponse<OpsServed200Response?>
      * @throws IllegalStateException If the request is not correctly configured
      * @throws IOException Rethrows the OkHttp execute method exception
@@ -2413,7 +2416,7 @@ open class OpsApi(basePath: kotlin.String = defaultBasePath, client: Call.Factor
      * Issue a cluster sign-up invite
      * **Who:** the ops token. **Operator signature:** answers &#x60;428 OPERATOR_SIGNATURE_REQUIRED&#x60; first; send it again with &#x60;operatorProof&#x60;, the operator key&#39;s signature over &#x60;details.message&#x60; and its &#x60;nonce&#x60;.
      * @param opsSignUpInviteCreateRequest 
-     * @return kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement>
+     * @return SignUpInvite
      * @throws IllegalStateException If the request is not correctly configured
      * @throws IOException Rethrows the OkHttp execute method exception
      * @throws UnsupportedOperationException If the API returns an informational or redirection response
@@ -2422,11 +2425,11 @@ open class OpsApi(basePath: kotlin.String = defaultBasePath, client: Call.Factor
      */
     @Suppress("UNCHECKED_CAST")
     @Throws(IllegalStateException::class, IOException::class, UnsupportedOperationException::class, ClientException::class, ServerException::class)
-    suspend fun opsSignUpInviteCreate(opsSignUpInviteCreateRequest: OpsSignUpInviteCreateRequest) : kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement> = withContext(Dispatchers.IO) {
+    suspend fun opsSignUpInviteCreate(opsSignUpInviteCreateRequest: OpsSignUpInviteCreateRequest) : SignUpInvite = withContext(Dispatchers.IO) {
         val localVarResponse = opsSignUpInviteCreateWithHttpInfo(opsSignUpInviteCreateRequest = opsSignUpInviteCreateRequest)
 
         return@withContext when (localVarResponse.responseType) {
-            ResponseType.Success -> (localVarResponse as Success<*>).data as kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement>
+            ResponseType.Success -> (localVarResponse as Success<*>).data as SignUpInvite
             ResponseType.Informational -> throw UnsupportedOperationException("Client does not support Informational responses.")
             ResponseType.Redirection -> throw UnsupportedOperationException("Client does not support Redirection responses.")
             ResponseType.ClientError -> {
@@ -2445,16 +2448,16 @@ open class OpsApi(basePath: kotlin.String = defaultBasePath, client: Call.Factor
      * Issue a cluster sign-up invite
      * **Who:** the ops token. **Operator signature:** answers &#x60;428 OPERATOR_SIGNATURE_REQUIRED&#x60; first; send it again with &#x60;operatorProof&#x60;, the operator key&#39;s signature over &#x60;details.message&#x60; and its &#x60;nonce&#x60;.
      * @param opsSignUpInviteCreateRequest 
-     * @return ApiResponse<kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement>?>
+     * @return ApiResponse<SignUpInvite?>
      * @throws IllegalStateException If the request is not correctly configured
      * @throws IOException Rethrows the OkHttp execute method exception
      */
     @Suppress("UNCHECKED_CAST")
     @Throws(IllegalStateException::class, IOException::class)
-    suspend fun opsSignUpInviteCreateWithHttpInfo(opsSignUpInviteCreateRequest: OpsSignUpInviteCreateRequest) : ApiResponse<kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement>?> = withContext(Dispatchers.IO) {
+    suspend fun opsSignUpInviteCreateWithHttpInfo(opsSignUpInviteCreateRequest: OpsSignUpInviteCreateRequest) : ApiResponse<SignUpInvite?> = withContext(Dispatchers.IO) {
         val localVariableConfig = opsSignUpInviteCreateRequestConfig(opsSignUpInviteCreateRequest = opsSignUpInviteCreateRequest)
 
-        return@withContext request<OpsSignUpInviteCreateRequest, kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement>>(
+        return@withContext request<OpsSignUpInviteCreateRequest, SignUpInvite>(
             localVariableConfig
         )
     }
@@ -2486,7 +2489,7 @@ open class OpsApi(basePath: kotlin.String = defaultBasePath, client: Call.Factor
      * GET /ops/sign-up/invites
      * Cluster sign-up invites
      * **Who:** the ops token.
-     * @return kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement>
+     * @return OpsSignUpInviteList200Response
      * @throws IllegalStateException If the request is not correctly configured
      * @throws IOException Rethrows the OkHttp execute method exception
      * @throws UnsupportedOperationException If the API returns an informational or redirection response
@@ -2495,11 +2498,11 @@ open class OpsApi(basePath: kotlin.String = defaultBasePath, client: Call.Factor
      */
     @Suppress("UNCHECKED_CAST")
     @Throws(IllegalStateException::class, IOException::class, UnsupportedOperationException::class, ClientException::class, ServerException::class)
-    suspend fun opsSignUpInviteList() : kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement> = withContext(Dispatchers.IO) {
+    suspend fun opsSignUpInviteList() : OpsSignUpInviteList200Response = withContext(Dispatchers.IO) {
         val localVarResponse = opsSignUpInviteListWithHttpInfo()
 
         return@withContext when (localVarResponse.responseType) {
-            ResponseType.Success -> (localVarResponse as Success<*>).data as kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement>
+            ResponseType.Success -> (localVarResponse as Success<*>).data as OpsSignUpInviteList200Response
             ResponseType.Informational -> throw UnsupportedOperationException("Client does not support Informational responses.")
             ResponseType.Redirection -> throw UnsupportedOperationException("Client does not support Redirection responses.")
             ResponseType.ClientError -> {
@@ -2517,16 +2520,16 @@ open class OpsApi(basePath: kotlin.String = defaultBasePath, client: Call.Factor
      * GET /ops/sign-up/invites
      * Cluster sign-up invites
      * **Who:** the ops token.
-     * @return ApiResponse<kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement>?>
+     * @return ApiResponse<OpsSignUpInviteList200Response?>
      * @throws IllegalStateException If the request is not correctly configured
      * @throws IOException Rethrows the OkHttp execute method exception
      */
     @Suppress("UNCHECKED_CAST")
     @Throws(IllegalStateException::class, IOException::class)
-    suspend fun opsSignUpInviteListWithHttpInfo() : ApiResponse<kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement>?> = withContext(Dispatchers.IO) {
+    suspend fun opsSignUpInviteListWithHttpInfo() : ApiResponse<OpsSignUpInviteList200Response?> = withContext(Dispatchers.IO) {
         val localVariableConfig = opsSignUpInviteListRequestConfig()
 
-        return@withContext request<Unit, kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement>>(
+        return@withContext request<Unit, OpsSignUpInviteList200Response>(
             localVariableConfig
         )
     }

@@ -56,7 +56,7 @@ data class SessionsList200ResponseSessionsInner (
     val origin: kotlin.String?,
 
     @SerialName(value = "openedAt")
-    val openedAt: kotlin.Long,
+    val openedAt: kotlin.Long?,
 
     @SerialName(value = "lastActiveAt")
     val lastActiveAt: kotlin.Long,

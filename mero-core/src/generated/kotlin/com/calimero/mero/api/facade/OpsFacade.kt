@@ -314,7 +314,7 @@ class OpsFacade internal constructor(
     /**
      * Compute pools
      *
-     * The pools and the runs each takes.
+     * The pools by name (absent: none set, one legacy pool), and each pool's capacity: how many runs its job nodes take at once.
      *
      * **Who:** the ops token.
      *
@@ -322,7 +322,7 @@ class OpsFacade internal constructor(
      *
      * @throws com.calimero.mero.CalimeroError the node's refusal, typed by [com.calimero.mero.errorFrom].
      */
-    suspend fun poolsGet(): kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement> =
+    suspend fun poolsGet(): OpsPoolsGet200Response =
         api(null, null, emptySet()).ops.opsPoolsGet()
 
     /**
@@ -513,7 +513,7 @@ class OpsFacade internal constructor(
     /**
      * Custom domains to serve
      *
-     * Every served origin a package's manager registered, by the package's label, never its name.
+     * Every served origin a package's manager registered, by the package's label, never its name; `addedAt` is RFC 3339.
      *
      * **Who:** the ops token.
      *
@@ -560,7 +560,7 @@ class OpsFacade internal constructor(
         expiresAt: kotlin.String,
         uses: kotlin.Long? = null,
         operator: DeviceSigner? = null,
-    ): kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement> =
+    ): SignUpInvite =
         api(null, operator, emptySet()).ops.opsSignUpInviteCreate(opsSignUpInviteCreateRequest = OpsSignUpInviteCreateRequest(token = token, expiresAt = expiresAt, uses = uses))
 
     /**
@@ -572,7 +572,7 @@ class OpsFacade internal constructor(
      *
      * @throws com.calimero.mero.CalimeroError the node's refusal, typed by [com.calimero.mero.errorFrom].
      */
-    suspend fun signUpInviteList(): kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement> =
+    suspend fun signUpInviteList(): OpsSignUpInviteList200Response =
         api(null, null, emptySet()).ops.opsSignUpInviteList()
 
     /**

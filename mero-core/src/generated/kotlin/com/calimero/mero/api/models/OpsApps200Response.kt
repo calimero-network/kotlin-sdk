@@ -23,6 +23,8 @@
 
 package com.calimero.mero.api.models
 
+import com.calimero.mero.api.models.Governance
+import com.calimero.mero.api.models.ReportApp
 
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.SerialName
@@ -43,11 +45,11 @@ data class OpsApps200Response (
     @SerialName(value = "fresh")
     val fresh: kotlin.Boolean,
 
-    @Contextual @SerialName(value = "governance")
-    val governance: kotlinx.serialization.json.JsonElement?,
+    @SerialName(value = "governance")
+    val governance: Governance,
 
     @SerialName(value = "apps")
-    val apps: kotlin.collections.List<@Contextual kotlinx.serialization.json.JsonElement?>,
+    val apps: kotlin.collections.List<ReportApp>,
 
     @SerialName(value = "next")
     val next: kotlin.String?

@@ -24,9 +24,9 @@
 package com.calimero.mero.api.models
 
 import com.calimero.mero.api.models.OrgNewWorkStopped
-import com.calimero.mero.api.models.OrgOutboundApprovalsValue
 import com.calimero.mero.api.models.OrgRecovery
 import com.calimero.mero.api.models.OrgRole
+import com.calimero.mero.api.models.OutboundApproval
 import com.calimero.mero.api.models.Team
 import com.calimero.mero.api.models.UpgradeRun
 
@@ -81,7 +81,7 @@ data class Org (
     val approvedReleases: kotlin.collections.List<kotlin.String>,
 
     @Contextual @SerialName(value = "outboundApprovals")
-    val outboundApprovals: kotlin.collections.Map<kotlin.String, OrgOutboundApprovalsValue>,
+    val outboundApprovals: kotlin.collections.Map<kotlin.String, OutboundApproval>,
 
     @Contextual @SerialName(value = "metadata")
     val metadata: kotlinx.serialization.json.JsonElement?,
