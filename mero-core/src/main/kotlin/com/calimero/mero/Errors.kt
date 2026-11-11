@@ -96,6 +96,24 @@ class ConfirmCancelled(
     cause: Throwable? = null,
 ) : Exception("the passkey confirmation was cancelled", cause)
 
+/**
+ * `428 OPERATOR_SIGNATURE_REQUIRED`: an operator decision (`/ops/...`, or a cluster owner's grant)
+ * needs the operator key's Ed25519 signature over the statement in [details]: [message] (the exact
+ * bytes, base64) and its [nonce]. The generated API answers it itself when given the operator's
+ * signer (`CalimeroClient.api(operator = ...)`); it reaches a caller only from a call that was given
+ * none.
+ */
+class OperatorSignatureRequired(
+    message: String,
+    details: JsonObject = JsonObject(emptyMap()),
+) : CalimeroError(428, "OPERATOR_SIGNATURE_REQUIRED", message, details) {
+    /** The statement's nonce, sent back beside the signature. */
+    val nonce: String = details.string("nonce").orEmpty()
+
+    /** The exact bytes to sign, base64 (`details.message`). */
+    val statement: String = details.string("message").orEmpty()
+}
+
 /** `413 ARGS_TOO_LARGE`: the call's arguments are over the node's limit; it did not run. */
 class ArgsTooLarge(
     message: String,
@@ -327,6 +345,7 @@ fun errorFrom(
         "403 SIGN_UP_REFUSED" -> SignUpRefused(message, details)
         "409 RECOVERY_NOT_READY" -> RecoveryNotReady(message, details)
         "412 CONFIRM_REQUIRED" -> ConfirmRequired(message, details)
+        "428 OPERATOR_SIGNATURE_REQUIRED" -> OperatorSignatureRequired(message, details)
         "413 ARGS_TOO_LARGE" -> ArgsTooLarge(message, details)
         "422 APP_ERROR" -> AppError(message, details)
         "422 TRAP" -> TrapError(message, details)

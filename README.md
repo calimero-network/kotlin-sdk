@@ -67,6 +67,20 @@ client.view(app, "get_messages", page).result
 client.events(app).collect { /* sealed SSE */ }
 ```
 
+Every route of core's node API is also a method of the facade generated from core's OpenAPI document
+(`openapi/`): one suspend method per operation, named parameters, the typed answer. A `412` step-up is
+approved with the client's `passkey` (or the call's), a `428` signed with its `operator`:
+
+```kotlin
+client.passkey = PlatformPasskey(activity)
+val token = client.orgs.inviteCreate(org = org, role = OrgRole.MEMBER, teams = listOf(team)).token
+val info = client.orgs.get(org = org)
+val apps = client.apps.list().apps
+```
+
+The older one-route methods (`client.invite(...)`, `client.getOrg(...)`) still work and are
+deprecated with a `ReplaceWith` to the facade.
+
 By cluster name instead of a node URL: `CalimeroClient.connect(CalimeroConnectOptions("eu-shared-1",
 CloudPolicy.production))` reads the nodes from the Calimero Cloud node directory and fails over
 between them.

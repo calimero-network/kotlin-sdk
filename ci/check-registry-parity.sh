@@ -49,6 +49,7 @@ EXCLUDED=(
   opsOrgs            # ditto
   setReleaseDeadline # ditto
   liftReleaseDeadline # ditto
+  api                # the generated client (MeroApi) under the facade properties: plumbing, not a request
   connect            # how the client is made (by cluster name), not a request; the sample signs in by node URL
   downloadBlobGranted # core rc.7 routes, kept out of the sample as in the Swift sample
   blobContent        # ditto
