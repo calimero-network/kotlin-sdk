@@ -1,8 +1,10 @@
 name: Release
 
-# Tag-driven release, mirroring the JS repos' semantic-release cadence.
-# Push a tag like `v0.1.0` to publish `network.calimero:{mero-core,mero-compose}:0.1.0`
-# to Maven Central and GitHub Packages, and cut a GitHub Release.
+# Tag-driven release. release-on-merge.yml pushes the tag (`v0.4.0`) on every merge to main
+# that calls for a release (semantic-release, as the JS repos do), and creates the GitHub
+# Release with its notes; this workflow then publishes
+# `network.calimero:{mero-core,mero-compose}:0.4.0` to GitHub Packages and Maven Central. A
+# tag pushed by hand still works: the GitHub Release is created here when there is none.
 #
 # Central is the public target: it resolves through the `mavenCentral()` every Android
 # project already declares, with no token on the consumer side. GitHub Packages stays
@@ -23,8 +25,8 @@ name: Release
 #             inside the Gradle build that holds the key). It runs in the
 #             `maven-central` environment, so required reviewers or a tag rule can be
 #             set on it in the repo settings, and the secrets can move there.
-#   release   GITHUB_TOKEN with contents: write, to cut the GitHub Release, and nothing
-#             else.
+#   release   GITHUB_TOKEN with contents: write, to cut the GitHub Release when
+#             release-on-merge did not, and nothing else.
 # They run in that order and stop at the first failure, as the single job did.
 on:
   push:
@@ -52,8 +54,12 @@ jobs:
           distribution: temurin
           java-version: '17'
 
+      # No Gradle cache in a release: a cache written by another run must not feed
+      # the artifacts that get published (zizmor: cache-poisoning).
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@8da46b539cd8fe6ab27ca75128919a18d757604c # v6.4.1
+        with:
+          cache-disabled: true
 
       - name: Publish to GitHub Packages
         env:
@@ -61,9 +67,9 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: ./gradlew publish -PVERSION_NAME="${GITHUB_REF_NAME#v}" --stacktrace
 
-  # Uploaded as ONE bundle and left for a human to release in the Portal
-  # (publishingType USER_MANAGED). A Central version can never be replaced, so
-  # the last step before it becomes permanent is deliberately manual.
+  # Uploaded as ONE bundle and published by the Portal once it validates
+  # (publishingType AUTOMATIC): no click. A Central version can never be replaced or
+  # deleted, so a tag that reaches this job is a permanent release.
   # Skipped, with a warning, until the Central secrets exist: a missing signing key
   # must not stop the GitHub Packages build from getting its GitHub Release.
   central:
@@ -120,6 +126,12 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GH_REPO: ${{ github.repository }}
         run: |
+          # release-on-merge.yml creates it with semantic-release's notes; a tag pushed
+          # by hand gets one here.
+          if gh release view "${GITHUB_REF_NAME}" >/dev/null 2>&1; then
+            echo "::notice::the GitHub Release for ${GITHUB_REF_NAME} exists already"
+            exit 0
+          fi
           gh release create "${GITHUB_REF_NAME}" \
             --title "${GITHUB_REF_NAME}" \
             --generate-notes \

@@ -119,7 +119,16 @@ A removed method that sent an explicit `null` (`setRecoveryKey(org, null, …)`,
 `publishPresence(state = null)`) maps to the facade's `Explicit(null)` (`publicKey`, `parent`, `state`).
 The sample app's SDK tab runs the facade methods, named `group.method`.
 
-## 0.x (deprecations)
+## 0.4.0
+
+### Releases are cut on merge (CI)
+
+- `.github/workflows/release-on-merge.yml` runs semantic-release (`.releaserc.json`, as in mero-js)
+  on every push to `main`: the conventional commits since the last `v*` tag decide the version, it
+  pushes the tag `vX.Y.Z` with a GitHub App token and creates the GitHub Release, and the tag runs
+  `release.yml`. No manual tag.
+- Maven Central publishes automatically (`publishingType = "AUTOMATIC"`), with no click in the Portal.
+  A Central version can never be replaced. See PUBLISHING.md.
 
 ### The API client is generated from core's OpenAPI document (mero-core)
 

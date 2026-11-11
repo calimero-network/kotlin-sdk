@@ -31,28 +31,48 @@ minimum run what CI enforces:
 
 ## How a release happens
 
-Tag-driven, mirroring the JS repos' semantic-release cadence:
+On merge, as in the JS repos. Every push to `main` runs `.github/workflows/release-on-merge.yml`,
+which runs semantic-release (`.releaserc.json`) over the conventional commits since the last
+`v*` tag:
 
-```bash
-git tag v0.1.0
-git push origin v0.1.0
-```
+| Commit | Release |
+|---|---|
+| `feat!:` / `BREAKING-CHANGE:` footer | major |
+| `feat:` | minor |
+| `fix:`, `chore:`, `docs:`, `refactor:`, `perf:` | patch |
+| `test:`, `build:`, `ci:` | none |
 
-`.github/workflows/release.yml` then:
-1. derives the version from the tag (`v0.1.0` → `0.1.0`),
-2. `./gradlew publish` → `mero-core` and `mero-compose` to **GitHub Packages**,
-3. `./gradlew nmcpPublishAggregationToCentralPortal` → both modules as one signed bundle to
-   **Maven Central**,
-4. cuts a GitHub Release with generated notes.
+Only the hyphenated `BREAKING-CHANGE:` footer (or `!`) makes a major; prose that happens to start a
+line with "breaking change" does not (see the comment in `.releaserc.json`).
 
-`VERSION_NAME` defaults to the value in `gradle.properties` for local/dev builds; the tag overrides it.
+When the commits call for a release, it pushes the tag `vX.Y.Z` and creates the GitHub Release with
+notes generated from those commits. The tag then runs `.github/workflows/release.yml`:
+1. `./gradlew publish` → `mero-core` and `mero-compose` to **GitHub Packages**,
+2. `./gradlew nmcpPublishAggregationToCentralPortal` → both modules as one signed bundle to
+   **Maven Central**, published as soon as the Portal validates it,
+3. the GitHub Release, when release-on-merge did not create it (a tag pushed by hand).
 
-### The Central upload is deliberately not automatic
+The tag is pushed with a GitHub App token (`vars.ACTIONS_APP_ID` / `secrets.ACTIONS_APP_PRIVATE_KEY`,
+scoped to this repository and `contents: write`): a tag pushed with `GITHUB_TOKEN` does not start
+`release.yml`. The app must be installed on this repository.
 
-`publishingType` is `USER_MANAGED`: the bundle is uploaded and validated, then waits for someone
-to press publish in the [Central Portal](https://central.sonatype.com/). **A Central version can
-never be replaced or re-published**, so the last step before it becomes permanent is a human one.
-Switch to `AUTOMATIC` in the root `build.gradle.kts` once the cadence is boring.
+`VERSION_NAME` in `gradle.properties` is only the default for local and dev builds; the tag
+overrides it, so a release commits nothing back to `main`. A tag pushed by hand
+(`git tag v1.2.3 && git push origin v1.2.3`) still releases through `release.yml`.
+
+### CHANGELOG.md
+
+`CHANGELOG.md` stays hand-written: a pull request that changes what the SDK does adds its entry
+under `## Unreleased`, in prose, as it always has. The per-version list of commits is the GitHub
+Release that semantic-release writes. Nothing rewrites the file on release; rename `## Unreleased`
+to the version in a later pull request if a version heading is wanted.
+
+### Maven Central publishes by itself
+
+`publishingType` is `AUTOMATIC`: the bundle is uploaded, validated and published with no click in
+the [Central Portal](https://central.sonatype.com/). **A Central version can never be replaced,
+deleted or re-published**, so a merge that semantic-release tags is a permanent release. A commit
+that must not release carries a type that releases nothing (`ci:`, `test:`, `build:`).
 
 ### One-time setup before the first Central release
 

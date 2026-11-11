@@ -60,10 +60,10 @@ nmcpAggregation {
     centralPortal {
         username = providers.gradleProperty("mavenCentralUsername")
         password = providers.gradleProperty("mavenCentralPassword")
-        // Uploads and validates, then waits for a human to press publish in the
-        // Portal. Deliberate for the first releases: an AUTOMATIC drop is
-        // irreversible, and a version can never be re-published on Central.
-        publishingType = "USER_MANAGED"
+        // Uploads, validates and publishes, with no click in the Portal: every merge
+        // that release-on-merge.yml tags reaches Central by itself. Irreversible: a
+        // version can never be replaced, deleted or re-published on Central.
+        publishingType = "AUTOMATIC"
     }
 }
 

@@ -31,6 +31,14 @@ scripts/refresh-openapi.sh --check   # regenerate from the vendored document; fa
 
 `codegen/build.gradle.kts` refuses a document whose SHA-256 is not the one `SOURCE` records.
 
+`.github/workflows/openapi-sync.yml` does the refresh by itself: core's `openapi-sync.yml` sends a
+`core-openapi` event with the commit (a weekly run and a manual one with a `ref` catch the rest),
+and the workflow opens or refreshes one pull request on `chore/core-openapi` titled
+`chore(api): sync with core <sha>`. Its body lists the facade methods added, removed or changed
+(`codegen/facade-diff.py`); a removed or changed one needs a major version. It uses the GitHub App
+whose credentials the org shares as `vars.ACTIONS_APP_ID` / `secrets.ACTIONS_APP_PRIVATE_KEY`
+(both must be shared with this repository); the app must be installed on this repository.
+
 ## Where the document and the generated client still need help
 
 Core's document (#4937, on master since `1ce553a58`) is closed and typed: integers carry `format:

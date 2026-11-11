@@ -1,0 +1,197 @@
+name: OpenAPI sync
+
+# Keeps the generated client in step with core's node API. Re-vendors core's
+# docs/public/openapi.json, regenerates mero-core/src/generated (client and
+# facade), and opens or refreshes one pull request on the machine-owned branch
+# `chore/core-openapi`. Core's openapi-sync.yml sends the `core-openapi` event
+# with the commit; a weekly run catches a missed one.
+#
+# The pull request is opened with a GitHub App token, not GITHUB_TOKEN: a pull
+# request GITHUB_TOKEN opens does not trigger this repository's CI. The app must
+# be installed on this repository; its credentials are the org-shared
+# vars.ACTIONS_APP_ID / secrets.ACTIONS_APP_PRIVATE_KEY, which must be shared
+# with this repository.
+
+on:
+  repository_dispatch:
+    types: [core-openapi]
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: "Core branch, tag or commit to sync with"
+        required: false
+        default: master
+        type: string
+      dry_run:
+        description: "Regenerate and print the changes, but push nothing"
+        required: false
+        default: false
+        type: boolean
+  schedule:
+    - cron: "17 5 * * 1"
+
+permissions:
+  contents: read
+
+# Never cancel: a cancelled run can leave the branch pushed with no pull
+# request opened against it. Queue instead.
+concurrency:
+  group: openapi-sync
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    name: Sync with core's OpenAPI document
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Check out the default branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          persist-credentials: false
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Validate Gradle wrapper
+        uses: gradle/actions/wrapper-validation@8da46b539cd8fe6ab27ca75128919a18d757604c # v6.4.1
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@8da46b539cd8fe6ab27ca75128919a18d757604c # v6.4.1
+
+      # A dispatch from core names the exact commit; a manual run names a ref; the
+      # weekly run follows master.
+      - name: Pick the core revision
+        id: rev
+        env:
+          COMMIT: ${{ github.event.client_payload.commit }}
+          REF: ${{ inputs.ref }}
+        run: |
+          set -euo pipefail
+          rev="${COMMIT:-${REF:-master}}"
+          if [ -z "$rev" ]; then rev=master; fi
+          case "$rev" in
+            *[!A-Za-z0-9._/-]*) echo "::error::not a git ref: $rev"; exit 1 ;;
+          esac
+          echo "rev=$rev" >> "$GITHUB_OUTPUT"
+
+      - name: Re-vendor and regenerate
+        env:
+          # Reads calimero-network/core (public) through gh.
+          GH_TOKEN: ${{ github.token }}
+          REV: ${{ steps.rev.outputs.rev }}
+        run: |
+          set -euo pipefail
+          facade=mero-core/src/generated/kotlin/com/calimero/mero/api/facade
+          cp -R "$facade" "$RUNNER_TEMP/facade-before"
+          scripts/refresh-openapi.sh "$REV"
+
+      - name: See what changed
+        id: diff
+        run: |
+          set -euo pipefail
+          if [ -z "$(git status --porcelain -- openapi mero-core/src/generated)" ]; then
+            echo "::notice::already in sync with core $(grep '^CORE_COMMIT=' openapi/SOURCE | cut -d= -f2)"
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          commit=$(grep '^CORE_COMMIT=' openapi/SOURCE | cut -d= -f2)
+          echo "changed=true" >> "$GITHUB_OUTPUT"
+          echo "commit=$commit" >> "$GITHUB_OUTPUT"
+          echo "short=${commit:0:9}" >> "$GITHUB_OUTPUT"
+          set +e
+          python3 codegen/facade-diff.py "$RUNNER_TEMP/facade-before" \
+            mero-core/src/generated/kotlin/com/calimero/mero/api/facade > "$RUNNER_TEMP/facade-diff.md"
+          code=$?
+          set -e
+          case "$code" in
+            0) echo "breaking=false" >> "$GITHUB_OUTPUT" ;;
+            3) echo "breaking=true" >> "$GITHUB_OUTPUT" ;;
+            *) exit "$code" ;;
+          esac
+          git --no-pager diff --stat -- openapi mero-core/src/generated
+          cat "$RUNNER_TEMP/facade-diff.md" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Mint a token for this repository
+        if: steps.diff.outputs.changed == 'true' && inputs.dry_run != true
+        id: token
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
+        with:
+          app-id: ${{ vars.ACTIONS_APP_ID }}
+          private-key: ${{ secrets.ACTIONS_APP_PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
+          repositories: ${{ github.event.repository.name }}
+          # Only what pushing the branch and opening the pull request needs, not
+          # everything the App was granted.
+          permission-contents: write
+          permission-pull-requests: write
+
+      - name: Identify the app
+        if: steps.diff.outputs.changed == 'true' && inputs.dry_run != true
+        id: app
+        env:
+          GH_TOKEN: ${{ steps.token.outputs.token }}
+          SLUG: ${{ steps.token.outputs.app-slug }}
+        run: echo "uid=$(gh api "/users/${SLUG}[bot]" --jq .id)" >> "$GITHUB_OUTPUT"
+
+      - name: Open or refresh the pull request
+        if: steps.diff.outputs.changed == 'true' && inputs.dry_run != true
+        env:
+          GH_TOKEN: ${{ steps.token.outputs.token }}
+          REPO: ${{ github.repository }}
+          BASE: ${{ github.event.repository.default_branch }}
+          SLUG: ${{ steps.token.outputs.app-slug }}
+          APP_UID: ${{ steps.app.outputs.uid }}
+          COMMIT: ${{ steps.diff.outputs.commit }}
+          SHORT: ${{ steps.diff.outputs.short }}
+          BREAKING: ${{ steps.diff.outputs.breaking }}
+        run: |
+          set -euo pipefail
+
+          # Deterministic, machine-owned branch: a re-run replaces it rather than
+          # opening a second pull request. Do not hand-edit it.
+          branch="chore/core-openapi"
+          title="chore(api): sync with core $SHORT"
+
+          git config user.name "${SLUG}[bot]"
+          git config user.email "${APP_UID}+${SLUG}[bot]@users.noreply.github.com"
+          git checkout -b "$branch"
+          git add -- openapi mero-core/src/generated
+          git commit -m "$title" \
+            -m "Re-vendors docs/public/openapi.json from calimero-network/core@$COMMIT and regenerates the client and facade. Generated by the openapi-sync workflow."
+          git push --force "https://x-access-token:${GH_TOKEN}@github.com/${REPO}.git" "HEAD:refs/heads/$branch"
+
+          {
+            echo "Syncs the generated API client with core's node API at"
+            echo "[calimero-network/core@$SHORT](https://github.com/calimero-network/core/commit/$COMMIT)."
+            echo
+            echo "\`openapi/openapi.json\` is re-vendored (\`openapi/SOURCE\` records the commit and its SHA-256),"
+            echo "and \`mero-core/src/generated\` (the OpenAPI Generator client and the facade) regenerated by"
+            echo "\`scripts/refresh-openapi.sh\`. Nothing here is edited by hand."
+            echo
+            cat "$RUNNER_TEMP/facade-diff.md"
+            echo
+            if [ "$BREAKING" = "true" ]; then
+              echo "> **Major version.** A facade method was removed, renamed or changed its signature, so"
+              echo "> apps that call it stop compiling. Release this in a new major version and say so in CHANGELOG.md."
+            else
+              echo "A facade method that is removed or renamed, or whose signature changes, needs a major version;"
+              echo "this sync only adds methods, if any. Changes inside generated models are not listed above:"
+              echo "check the diff of \`mero-core/src/generated/kotlin/com/calimero/mero/api/models\`."
+            fi
+            echo
+            echo "Opened by the \`openapi-sync\` workflow on the \`$branch\` branch, which a later run replaces."
+          } > "$RUNNER_TEMP/pr-body.md"
+
+          if gh pr view "$branch" --repo "$REPO" --json state --jq .state 2>/dev/null | grep -q OPEN; then
+            gh pr edit "$branch" --repo "$REPO" --title "$title" --body-file "$RUNNER_TEMP/pr-body.md"
+            echo "::notice::refreshed the existing pull request for $branch"
+          else
+            gh pr create --repo "$REPO" --base "$BASE" --head "$branch" \
+              --title "$title" --body-file "$RUNNER_TEMP/pr-body.md"
+          fi
+          gh pr view "$branch" --repo "$REPO" --json url --jq .url >> "$GITHUB_STEP_SUMMARY"
