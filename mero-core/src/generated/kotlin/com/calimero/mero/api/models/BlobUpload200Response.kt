@@ -47,10 +47,10 @@ data class BlobUpload200Response (
     val id: kotlin.String,
 
     @SerialName(value = "size")
-    val propertySize: kotlin.Long?,
+    val propertySize: kotlin.Long,
 
     @SerialName(value = "index")
-    val index: kotlin.Long?
+    val index: kotlin.Long
 
 ) {
 

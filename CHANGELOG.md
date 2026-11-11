@@ -13,14 +13,15 @@ Facade methods take named parameters and the generated enums (`com.calimero.mero
 
 Kept, because no single operation replaces them: the passkey ceremonies (`signUp`, `signIn`,
 `addPasskey`, `refresh`, `signOut`, `signOutEverywhere`), the streams (`events`, `presenceStream`),
-`uploadBlob` (a caller's content type), `blobContent`, `uploadFile` (the spec's answer has no
-`sha256`/`sealed`), `appXcalls` (the spec types `pending` as an array; the node answers a count),
-`requestConsent`, `attestation`, and the composites (`appsReportAll`, `pendingApprovals`,
-`openConsentPage`, `waitForConsent`, `startRecovery`, `connect`). New: `ConsentResult.from` reads
-`client.consent.pageResult`'s answer.
+`uploadBlob` (a caller's content type), `blobContent`, `attestation`, and the composites
+(`appsReportAll`, `pendingApprovals`, `openConsentPage`, `waitForConsent`, `startRecovery`,
+`connect`). New: `ConsentResult.from` reads `client.consent.pageResult`'s answer.
 
 | Removed | Use instead |
 |---|---|
+| `appXcalls` | `` client.apps.xcalls(app = app) `` |
+| `requestConsent` | `` client.consent.pageCreate(consentRequest = request) `` |
+| `uploadFile` | none: core refuses a sealed upload (`400`); `` client.apps.blobUpload(app = app, body = data) `` for a plain one |
 | `post` | the facade method for the route (raw plumbing) |
 | `get` | the facade method for the route (raw plumbing) |
 | `put` | the facade method for the route (raw plumbing) |
@@ -59,14 +60,14 @@ Kept, because no single operation replaces them: the passkey ceremonies (`signUp
 | `call` | `` client.apps.intents(app = app, method = method, args = args, idempotencyKey = idempotencyKey) `` |
 | `callConfirmed` | `` client.apps.intents(app = app, method = method, args = args, idempotencyKey = idempotencyKey, passkey = passkey) `` |
 | `view` | `` client.apps.views(app = app, method = method, args = args, consistency = if (stale) ViewsRequest.Consistency.STALE else ViewsRequest.Consistency.STRONG, minIndex = minIndex) `` |
-| `publishPresence` | `` client.apps.presencePublish(app = app, seq = seq, state = state?.let(Hex::encode)) `` |
+| `publishPresence` | `` client.apps.presencePublish(app = app, seq = seq, state = Explicit(state?.let(Hex::encode))) `` |
 | `presence` | `` client.apps.presenceGet(app = app).present `` |
 | `setAlias` | `` client.auth.aliasSet(alias = alias, app = app) `` |
 | `aliases` | `` client.auth.aliasList().aliases `` |
 | `alias` | `` client.auth.aliasGet(alias = alias).appId `` |
 | `deleteAlias` | `` client.auth.aliasDelete(alias = alias) `` |
 | `createOrg` | `` client.orgs.create(name = name, recoveryKey = recoveryKey).orgId `` |
-| `setRecoveryKey` | `` client.orgs.recoverySet(org = org, publicKey = publicKey, passkey = passkey) `` (A null publicKey must go as null, which the generated request leaves out) |
+| `setRecoveryKey` | `` client.orgs.recoverySet(org = org, publicKey = Explicit(publicKey), passkey = passkey) `` (`Explicit(null)` removes the key) |
 | `cancelRecovery` | `` client.orgs.recoveryCancel(org = org, passkey = passkey) `` |
 | `finishRecovery` | `` client.orgs.recoveryFinish(org = org, passkey = passkey) `` |
 | `getOrg` | `` client.orgs.get(org = org) `` |
@@ -88,16 +89,16 @@ Kept, because no single operation replaces them: the passkey ceremonies (`signUp
 | `opsOrgs` | `` client.ops.orgs(after = page.after, limit = page.limit?.toLong()) `` |
 | `setReleaseDeadline` | `` client.ops.releaseDeadline(version = version, after = after.toString()) `` |
 | `liftReleaseDeadline` | `` client.ops.releaseDeadlineLift(version = version) `` |
-| `setMember` | `` client.orgs.setMember(org = org, account = account, role = role.api(), passkey = passkey) `` |
+| `setMember` | `` client.orgs.setMember(org = org, account = account, role = OrgRole.decode(role.wire)!!, passkey = passkey) `` |
 | `removeMember` | `` client.orgs.removeMember(org = org, account = account, passkey = passkey) `` |
 | `setCapabilities` | `` client.orgs.capabilities(org = org, capabilities = capabilities.toLong(), account = account, team = team, passkey = passkey) `` |
-| `createTeam` | `` client.orgs.teamCreate(org = org, name = name, join = join.api(), parent = parent).teamId `` |
+| `createTeam` | `` client.orgs.teamCreate(org = org, name = name, join = TeamJoin.decode(join.wire)!!, parent = parent).teamId `` |
 | `getTeam` | `` client.orgs.teamGet(org = org, team = team) `` |
-| `updateTeam` | `` client.orgs.teamUpdate(org = org, team = team, name = name, join = join?.api(), parent = parent, metadata = metadata) `` (Moving to the top (parent null) is not expressible: the generated request leaves a null out) |
+| `updateTeam` | `` client.orgs.teamUpdate(org = org, team = team, name = name, join = join?.let { TeamJoin.decode(it.wire) }, parent = if (toTop) Explicit(null) else parent?.let(::Explicit), metadata = metadata) `` |
 | `deleteTeam` | `` client.orgs.teamDelete(org = org, team = team) `` |
-| `setTeamMember` | `` client.orgs.teamSetMember(org = org, team = team, account = account, lead = lead, role = role?.api(), capabilities = capabilities?.toLong(), passkey = passkey) `` |
+| `setTeamMember` | `` client.orgs.teamSetMember(org = org, team = team, account = account, lead = lead, role = role?.let { TeamRole.decode(it.wire) }, capabilities = capabilities?.toLong(), passkey = passkey) `` |
 | `removeTeamMember` | `` client.orgs.teamRemoveMember(org = org, team = team, account = account, passkey = passkey) `` |
-| `invite` | `` client.orgs.inviteCreate(org = org, role = role.api(), teams = teams, ttlSecs = ttlSecs, uses = uses?.toLong(), passkey = passkey).token `` |
+| `invite` | `` client.orgs.inviteCreate(org = org, role = OrgRole.decode(role.wire)!!, teams = teams, ttlSecs = ttlSecs, uses = uses?.toLong(), passkey = passkey).token `` |
 | `redeemInvite` | `` client.orgs.inviteRedeem(token = token) `` |
 | `packageOrigins` | `` client.packages.originsList(`package` = pkg).origins `` |
 | `addPackageOrigin` | `` client.packages.originsAdd(`package` = pkg, origin = origin, rpId = rpId, passkey = passkey) `` |
@@ -114,9 +115,9 @@ Kept, because no single operation replaces them: the passkey ceremonies (`signUp
 | `deploymentOrgs` | `` client.deployments.orgs(id = id) `` |
 
 
-Behaviour that moved with them: a removed method that sent an explicit `null` (`setRecoveryKey(org, null, …)`,
-`updateTeam(toTop = true)`, `publishPresence(state = null)`) has no facade equivalent that sends one: the
-generated request leaves a null out. The sample app's SDK tab runs the facade methods, named `group.method`.
+A removed method that sent an explicit `null` (`setRecoveryKey(org, null, …)`, `updateTeam(toTop = true)`,
+`publishPresence(state = null)`) maps to the facade's `Explicit(null)` (`publicKey`, `parent`, `state`).
+The sample app's SDK tab runs the facade methods, named `group.method`.
 
 ## 0.x (deprecations)
 
@@ -140,6 +141,11 @@ generated request leaves a null out. The sample app's SDK tab runs the facade me
   Ceremonies, streams, binary uploads/downloads and composites (`signIn`, `events`, `uploadBlob`,
   `pendingApprovals`, …) are not deprecated.
 - `AppAccess` is `@Serializable`; new `OutboundSelection` (`Manifest` / `Prefixes`).
+- Fields whose `null` means something (a team's `parent`, a recovery `publicKey`, a presence
+  `state`) are `Explicit<T>?` on the facade: `Explicit(null)` sends `null`; leaving it out sends nothing.
+- `ConsentRequest` is `@Serializable` (the consent body), and `requestConsent` and `appXcalls` are
+  deprecated in favour of `consent.pageCreate` and `apps.xcalls`. `uploadFile` is deprecated: core
+  refuses sealed uploads.
 
 ### Outbound approval (mero-core, mero-compose)
 

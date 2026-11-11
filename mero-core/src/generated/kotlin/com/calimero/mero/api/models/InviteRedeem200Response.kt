@@ -29,7 +29,7 @@ import kotlinx.serialization.SerialName
 import kotlinx.serialization.Contextual
 
 /**
- * 
+ * Other properties than those listed may be present: the ones listed are those clients rely on.
  *
  * @param org 
  */

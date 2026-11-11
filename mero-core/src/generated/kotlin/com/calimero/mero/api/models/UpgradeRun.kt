@@ -72,7 +72,7 @@ data class UpgradeRun (
     val done: kotlin.collections.List<kotlin.String>,
 
     @Contextual @SerialName(value = "failed")
-    val failed: kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement?>,
+    val failed: kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement>,
 
     @SerialName(value = "finished")
     val finished: kotlin.Boolean,

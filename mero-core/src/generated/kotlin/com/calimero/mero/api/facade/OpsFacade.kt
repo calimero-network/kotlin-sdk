@@ -15,7 +15,7 @@ import com.calimero.mero.crypto.DeviceSigner
  * [com.calimero.mero.CalimeroError] it means.
  */
 class OpsFacade internal constructor(
-    private val api: (PasskeyProvider?, DeviceSigner?) -> MeroApi,
+    private val api: (PasskeyProvider?, DeviceSigner?, Set<String>) -> MeroApi,
 ) {
     /**
      * What each app runs
@@ -32,7 +32,7 @@ class OpsFacade internal constructor(
         after: kotlin.String? = null,
         limit: kotlin.Long? = null,
     ): OpsApps200Response =
-        api(null, null).ops.opsApps(after = after, limit = limit)
+        api(null, null, emptySet()).ops.opsApps(after = after, limit = limit)
 
     /**
      * Snapshot the apps this node leads
@@ -48,7 +48,7 @@ class OpsFacade internal constructor(
     suspend fun backup(
         all: kotlin.Boolean? = null,
     ): OpsBackup200Response =
-        api(null, null).ops.opsBackup(all = all)
+        api(null, null, emptySet()).ops.opsBackup(all = all)
 
     /**
      * The cluster's identity
@@ -60,7 +60,7 @@ class OpsFacade internal constructor(
      * @throws com.calimero.mero.CalimeroError the node's refusal, typed by [com.calimero.mero.errorFrom].
      */
     suspend fun cluster(): OpsCluster200Response =
-        api(null, null).ops.opsCluster()
+        api(null, null, emptySet()).ops.opsCluster()
 
     /**
      * Name the cluster's owner
@@ -79,7 +79,7 @@ class OpsFacade internal constructor(
         owner: com.calimero.mero.Deployer,
         operator: DeviceSigner? = null,
     ): OpsClusterOwner200Response =
-        api(null, operator).ops.opsClusterOwner(opsClusterOwnerRequest = OpsClusterOwnerRequest(owner = owner))
+        api(null, operator, emptySet()).ops.opsClusterOwner(opsClusterOwnerRequest = OpsClusterOwnerRequest(owner = owner))
 
     /**
      * Grant a deployer
@@ -99,7 +99,7 @@ class OpsFacade internal constructor(
         until: kotlin.String? = null,
         operator: DeviceSigner? = null,
     ): OpsDeployerGrant200Response =
-        api(null, operator).ops.opsDeployerGrant(opsDeployerGrantRequest = OpsDeployerGrantRequest(deployer = deployer, until = until))
+        api(null, operator, emptySet()).ops.opsDeployerGrant(opsDeployerGrantRequest = OpsDeployerGrantRequest(deployer = deployer, until = until))
 
     /**
      * Revoke a deployer
@@ -116,7 +116,7 @@ class OpsFacade internal constructor(
         key: kotlin.String,
         operator: DeviceSigner? = null,
     ): OpsDeployerRevokeDelete200Response =
-        api(null, operator).ops.opsDeployerRevokeDelete(key = key)
+        api(null, operator, emptySet()).ops.opsDeployerRevokeDelete(key = key)
 
     /**
      * Revoke a deployer (POST)
@@ -135,7 +135,7 @@ class OpsFacade internal constructor(
         key: kotlin.String,
         operator: DeviceSigner? = null,
     ): OpsDeployerRevokeDelete200Response =
-        api(null, operator).ops.opsDeployerRevokePost(key = key)
+        api(null, operator, emptySet()).ops.opsDeployerRevokePost(key = key)
 
     /**
      * Require deployer grants
@@ -153,7 +153,7 @@ class OpsFacade internal constructor(
     suspend fun deploymentsGranted(
         operator: DeviceSigner? = null,
     ): OpsDeploymentsGranted200Response =
-        api(null, operator).ops.opsDeploymentsGranted()
+        api(null, operator, emptySet()).ops.opsDeploymentsGranted()
 
     /**
      * Prometheus metrics
@@ -167,7 +167,7 @@ class OpsFacade internal constructor(
      * @throws com.calimero.mero.CalimeroError the node's refusal, typed by [com.calimero.mero.errorFrom].
      */
     suspend fun metrics(): kotlin.String =
-        api(null, null).ops.opsMetrics()
+        api(null, null, emptySet()).ops.opsMetrics()
 
     /**
      * An operator's upgrade run
@@ -189,7 +189,7 @@ class OpsFacade internal constructor(
         migrate: kotlin.String? = null,
         operator: DeviceSigner? = null,
     ): UpgradeRun =
-        api(null, operator).ops.opsOrgUpgrade(org = org, opsOrgUpgradeRequest = OpsOrgUpgradeRequest(`package` = `package`, version = version, team = team, cascade = cascade, migrate = migrate))
+        api(null, operator, emptySet()).ops.opsOrgUpgrade(org = org, opsOrgUpgradeRequest = OpsOrgUpgradeRequest(`package` = `package`, version = version, team = team, cascade = cascade, migrate = migrate))
 
     /**
      * Each organization's approved releases
@@ -204,7 +204,7 @@ class OpsFacade internal constructor(
         after: kotlin.String? = null,
         limit: kotlin.Long? = null,
     ): OpsOrgs200Response =
-        api(null, null).ops.opsOrgs(after = after, limit = limit)
+        api(null, null, emptySet()).ops.opsOrgs(after = after, limit = limit)
 
     /**
      * Approve outbound prefixes
@@ -224,8 +224,8 @@ class OpsFacade internal constructor(
         prefixes: com.calimero.mero.OutboundSelection? = null,
         replace: kotlin.Boolean? = null,
         operator: DeviceSigner? = null,
-    ): kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement?> =
-        api(null, operator).ops.opsOutbound(opsOutboundRequest = OpsOutboundRequest(`package` = `package`, prefixes = prefixes, replace = replace))
+    ): kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement> =
+        api(null, operator, emptySet()).ops.opsOutbound(opsOutboundRequest = OpsOutboundRequest(`package` = `package`, prefixes = prefixes, replace = replace))
 
     /**
      * Install a release from the registry as the operator
@@ -240,7 +240,7 @@ class OpsFacade internal constructor(
         `package`: kotlin.String,
         version: kotlin.String,
     ): OpsPackageInstall200Response =
-        api(null, null).ops.opsPackageInstall(opsPackageUpload200Response = OpsPackageUpload200Response(`package` = `package`, version = version))
+        api(null, null, emptySet()).ops.opsPackageInstall(opsPackageInstallRequest = OpsPackageInstallRequest(`package` = `package`, version = version))
 
     /**
      * The releases the operator installed
@@ -252,7 +252,7 @@ class OpsFacade internal constructor(
      * @throws com.calimero.mero.CalimeroError the node's refusal, typed by [com.calimero.mero.errorFrom].
      */
     suspend fun packageList(): OpsPackageList200Response =
-        api(null, null).ops.opsPackageList()
+        api(null, null, emptySet()).ops.opsPackageList()
 
     /**
      * Uninstall what the operator installed
@@ -265,8 +265,8 @@ class OpsFacade internal constructor(
      */
     suspend fun packageUninstall(
         `package`: kotlin.String,
-    ): kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement?> =
-        api(null, null).ops.opsPackageUninstall(`package` = `package`)
+    ): kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement> =
+        api(null, null, emptySet()).ops.opsPackageUninstall(`package` = `package`)
 
     /**
      * Install an uploaded release as the operator
@@ -280,7 +280,7 @@ class OpsFacade internal constructor(
     suspend fun packageUpload(
         body: kotlin.ByteArray,
     ): OpsPackageUpload200Response =
-        api(null, null).ops.opsPackageUpload(body = body)
+        api(null, null, emptySet()).ops.opsPackageUpload(body = body)
 
     /**
      * Uninstall one operator-installed version
@@ -294,8 +294,8 @@ class OpsFacade internal constructor(
     suspend fun packageVersionUninstall(
         `package`: kotlin.String,
         version: kotlin.String,
-    ): kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement?> =
-        api(null, null).ops.opsPackageVersionUninstall(`package` = `package`, version = version)
+    ): kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement> =
+        api(null, null, emptySet()).ops.opsPackageVersionUninstall(`package` = `package`, version = version)
 
     /**
      * Where every app's replicas are
@@ -309,7 +309,7 @@ class OpsFacade internal constructor(
      * @throws com.calimero.mero.CalimeroError the node's refusal, typed by [com.calimero.mero.errorFrom].
      */
     suspend fun placement(): OpsPlacement200Response =
-        api(null, null).ops.opsPlacement()
+        api(null, null, emptySet()).ops.opsPlacement()
 
     /**
      * Compute pools
@@ -322,8 +322,8 @@ class OpsFacade internal constructor(
      *
      * @throws com.calimero.mero.CalimeroError the node's refusal, typed by [com.calimero.mero.errorFrom].
      */
-    suspend fun poolsGet(): kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement?> =
-        api(null, null).ops.opsPoolsGet()
+    suspend fun poolsGet(): kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement> =
+        api(null, null, emptySet()).ops.opsPoolsGet()
 
     /**
      * Set the compute pools
@@ -342,7 +342,7 @@ class OpsFacade internal constructor(
         pools: kotlin.collections.Map<kotlin.String, OpsPoolsSetRequestPoolsValue>,
         operator: DeviceSigner? = null,
     ): kotlinx.serialization.json.JsonObject =
-        api(null, operator).ops.opsPoolsSet(opsPoolsSetRequest = OpsPoolsSetRequest(pools = pools))
+        api(null, operator, emptySet()).ops.opsPoolsSet(opsPoolsSetRequest = OpsPoolsSetRequest(pools = pools))
 
     /**
      * The quotas
@@ -356,7 +356,7 @@ class OpsFacade internal constructor(
      * @throws com.calimero.mero.CalimeroError the node's refusal, typed by [com.calimero.mero.errorFrom].
      */
     suspend fun quotasGet(): OpsQuotasGet200Response =
-        api(null, null).ops.opsQuotasGet()
+        api(null, null, emptySet()).ops.opsQuotasGet()
 
     /**
      * Change quotas
@@ -375,7 +375,7 @@ class OpsFacade internal constructor(
         org: kotlin.String? = null,
         operator: DeviceSigner? = null,
     ): kotlinx.serialization.json.JsonObject =
-        api(null, operator).ops.opsQuotasSet(opsQuotasSetRequest = OpsQuotasSetRequest(org = org))
+        api(null, operator, emptySet()).ops.opsQuotasSet(opsQuotasSetRequest = OpsQuotasSetRequest(org = org))
 
     /**
      * A node's receipt key
@@ -389,7 +389,7 @@ class OpsFacade internal constructor(
     suspend fun receiptKey(
         id: kotlin.String,
     ): OpsReceiptKey200Response =
-        api(null, null).ops.opsReceiptKey(id = id)
+        api(null, null, emptySet()).ops.opsReceiptKey(id = id)
 
     /**
      * Register a node
@@ -405,14 +405,14 @@ class OpsFacade internal constructor(
      * @throws com.calimero.mero.CalimeroError the node's refusal, typed by [com.calimero.mero.errorFrom].
      */
     suspend fun registerNode(
-        id: kotlin.Long?,
+        id: kotlin.Long,
         addr: kotlin.String,
         zone: kotlin.String? = null,
         role: OpsRegisterNodeRequest.Role? = null,
         pool: kotlin.String? = null,
         operator: DeviceSigner? = null,
     ): kotlinx.serialization.json.JsonObject =
-        api(null, operator).ops.opsRegisterNode(opsRegisterNodeRequest = OpsRegisterNodeRequest(id = id, addr = addr, zone = zone, role = role, pool = pool))
+        api(null, operator, emptySet()).ops.opsRegisterNode(opsRegisterNodeRequest = OpsRegisterNodeRequest(id = id, addr = addr, zone = zone, role = role, pool = pool))
 
     /**
      * Approve a mero-tee release for every app
@@ -431,8 +431,8 @@ class OpsFacade internal constructor(
         version: kotlin.String,
         approved: kotlin.Boolean? = null,
         operator: DeviceSigner? = null,
-    ): kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement?> =
-        api(null, operator).ops.opsRelease(opsReleaseRequest = OpsReleaseRequest(version = version, approved = approved))
+    ): kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement> =
+        api(null, operator, emptySet()).ops.opsRelease(opsReleaseRequest = OpsReleaseRequest(version = version, approved = approved))
 
     /**
      * Set a release deadline
@@ -451,8 +451,8 @@ class OpsFacade internal constructor(
         version: kotlin.String,
         after: kotlin.String? = null,
         operator: DeviceSigner? = null,
-    ): kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement?> =
-        api(null, operator).ops.opsReleaseDeadline(version = version, opsReleaseDeadlineRequest = OpsReleaseDeadlineRequest(after = after))
+    ): kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement> =
+        api(null, operator, emptySet()).ops.opsReleaseDeadline(version = version, opsReleaseDeadlineRequest = OpsReleaseDeadlineRequest(after = after))
 
     /**
      * Lift a release deadline
@@ -468,8 +468,8 @@ class OpsFacade internal constructor(
     suspend fun releaseDeadlineLift(
         version: kotlin.String,
         operator: DeviceSigner? = null,
-    ): kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement?> =
-        api(null, operator).ops.opsReleaseDeadlineLift(version = version)
+    ): kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement> =
+        api(null, operator, emptySet()).ops.opsReleaseDeadlineLift(version = version)
 
     /**
      * Remove a node
@@ -488,7 +488,7 @@ class OpsFacade internal constructor(
         id: kotlin.String,
         operator: DeviceSigner? = null,
     ): OpsRemoveNode200Response =
-        api(null, operator).ops.opsRemoveNode(id = id)
+        api(null, operator, emptySet()).ops.opsRemoveNode(id = id)
 
     /**
      * Restore an app from its sealed backup
@@ -508,7 +508,7 @@ class OpsFacade internal constructor(
         backup: kotlin.String? = null,
         operator: DeviceSigner? = null,
     ): OpsRestore200Response =
-        api(null, operator).ops.opsRestore(app = app, opsRestoreRequest = OpsRestoreRequest(backup = backup))
+        api(null, operator, emptySet()).ops.opsRestore(app = app, opsRestoreRequest = OpsRestoreRequest(backup = backup))
 
     /**
      * Custom domains to serve
@@ -522,12 +522,12 @@ class OpsFacade internal constructor(
      * @throws com.calimero.mero.CalimeroError the node's refusal, typed by [com.calimero.mero.errorFrom].
      */
     suspend fun served(): OpsServed200Response =
-        api(null, null).ops.opsServed()
+        api(null, null, emptySet()).ops.opsServed()
 
     /**
      * Move an app's replicas
      *
-     * Signed over `<app> / __set_replicas / { replicas }` (sorted); at least `min(3, nodes)` registered nodes, each on a release the app's owner approved. The set it already has answers `unchanged: true`.
+     * Signed over `<app> / __set_replicas / { replicas }` (sorted); at least `min(3, nodes)` registered nodes, each on a release the app's owner approved. The set it already has answers `unchanged: true`. `status` is the app group's Raft status when the move finished (as the leader saw it).
      *
      * **Who:** the ops token. **Operator signature:** answers `428 OPERATOR_SIGNATURE_REQUIRED` first; send it again with `operatorProof`, the operator key's signature over `details.message` and its `nonce`.
      *
@@ -542,7 +542,7 @@ class OpsFacade internal constructor(
         replicas: kotlin.collections.List<kotlin.Long>,
         operator: DeviceSigner? = null,
     ): OpsSetReplicas200Response =
-        api(null, operator).ops.opsSetReplicas(app = app, opsSetReplicasRequest = OpsSetReplicasRequest(replicas = replicas))
+        api(null, operator, emptySet()).ops.opsSetReplicas(app = app, opsSetReplicasRequest = OpsSetReplicasRequest(replicas = replicas))
 
     /**
      * Issue a cluster sign-up invite
@@ -560,8 +560,8 @@ class OpsFacade internal constructor(
         expiresAt: kotlin.String,
         uses: kotlin.Long? = null,
         operator: DeviceSigner? = null,
-    ): kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement?> =
-        api(null, operator).ops.opsSignUpInviteCreate(opsSignUpInviteCreateRequest = OpsSignUpInviteCreateRequest(token = token, expiresAt = expiresAt, uses = uses))
+    ): kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement> =
+        api(null, operator, emptySet()).ops.opsSignUpInviteCreate(opsSignUpInviteCreateRequest = OpsSignUpInviteCreateRequest(token = token, expiresAt = expiresAt, uses = uses))
 
     /**
      * Cluster sign-up invites
@@ -572,8 +572,8 @@ class OpsFacade internal constructor(
      *
      * @throws com.calimero.mero.CalimeroError the node's refusal, typed by [com.calimero.mero.errorFrom].
      */
-    suspend fun signUpInviteList(): kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement?> =
-        api(null, null).ops.opsSignUpInviteList()
+    suspend fun signUpInviteList(): kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement> =
+        api(null, null, emptySet()).ops.opsSignUpInviteList()
 
     /**
      * Withdraw a cluster sign-up invite
@@ -589,8 +589,8 @@ class OpsFacade internal constructor(
     suspend fun signUpInviteRevokeDelete(
         key: kotlin.String,
         operator: DeviceSigner? = null,
-    ): kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement?> =
-        api(null, operator).ops.opsSignUpInviteRevokeDelete(key = key)
+    ): kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement> =
+        api(null, operator, emptySet()).ops.opsSignUpInviteRevokeDelete(key = key)
 
     /**
      * Withdraw a cluster sign-up invite (POST)
@@ -608,8 +608,8 @@ class OpsFacade internal constructor(
     suspend fun signUpInviteRevokePost(
         key: kotlin.String,
         operator: DeviceSigner? = null,
-    ): kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement?> =
-        api(null, operator).ops.opsSignUpInviteRevokePost(key = key)
+    ): kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement> =
+        api(null, operator, emptySet()).ops.opsSignUpInviteRevokePost(key = key)
 
     /**
      * Set the sign-up policy
@@ -627,8 +627,8 @@ class OpsFacade internal constructor(
     suspend fun signUpSet(
         policy: SignUp,
         operator: DeviceSigner? = null,
-    ): kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement?> =
-        api(null, operator).ops.opsSignUpSet(opsSignUpSetRequest = OpsSignUpSetRequest(policy = policy))
+    ): kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement> =
+        api(null, operator, emptySet()).ops.opsSignUpSet(opsSignUpSetRequest = OpsSignUpSetRequest(policy = policy))
 
     /**
      * The node and the cluster
@@ -642,7 +642,7 @@ class OpsFacade internal constructor(
      * @throws com.calimero.mero.CalimeroError the node's refusal, typed by [com.calimero.mero.errorFrom].
      */
     suspend fun status(): OpsStatus200Response =
-        api(null, null).ops.opsStatus()
+        api(null, null, emptySet()).ops.opsStatus()
 
     /**
      * Upgrade an app as the operator
@@ -666,5 +666,5 @@ class OpsFacade internal constructor(
         migrate: kotlin.String? = null,
         operator: DeviceSigner? = null,
     ): OpsUpgrade200Response =
-        api(null, operator).ops.opsUpgrade(app = app, opsUpgradeRequest = OpsUpgradeRequest(bundle = bundle, `package` = `package`, version = version, service = service, migrate = migrate))
+        api(null, operator, emptySet()).ops.opsUpgrade(app = app, opsUpgradeRequest = OpsUpgradeRequest(bundle = bundle, `package` = `package`, version = version, service = service, migrate = migrate))
 }

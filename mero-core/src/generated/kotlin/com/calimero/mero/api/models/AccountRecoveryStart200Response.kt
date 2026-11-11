@@ -47,10 +47,10 @@ data class AccountRecoveryStart200Response (
     val credentialId: kotlin.String,
 
     @SerialName(value = "startedAt")
-    val startedAt: kotlin.Long?,
+    val startedAt: kotlin.Long,
 
     @SerialName(value = "readyAt")
-    val readyAt: kotlin.Long?
+    val readyAt: kotlin.Long
 
 ) {
 

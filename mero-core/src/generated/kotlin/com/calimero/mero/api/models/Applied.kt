@@ -40,7 +40,7 @@ import kotlinx.serialization.Contextual
 data class Applied (
 
     @SerialName(value = "index")
-    val index: kotlin.Long?,
+    val index: kotlin.Long,
 
     @SerialName(value = "status")
     val status: kotlin.String,

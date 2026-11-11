@@ -15,7 +15,7 @@ import com.calimero.mero.crypto.DeviceSigner
  * [com.calimero.mero.CalimeroError] it means.
  */
 class AuthFacade internal constructor(
-    private val api: (PasskeyProvider?, DeviceSigner?) -> MeroApi,
+    private val api: (PasskeyProvider?, DeviceSigner?, Set<String>) -> MeroApi,
 ) {
     /**
      * The account's own apps
@@ -32,7 +32,7 @@ class AuthFacade internal constructor(
         after: kotlin.String? = null,
         limit: kotlin.Long? = null,
     ): AccountApps200Response =
-        api(null, null).accounts.accountApps(after = after, limit = limit)
+        api(null, null, emptySet()).accounts.accountApps(after = after, limit = limit)
 
     /**
      * Approve outbound prefixes for the account's apps
@@ -50,8 +50,8 @@ class AuthFacade internal constructor(
         prefixes: com.calimero.mero.OutboundSelection? = null,
         replace: kotlin.Boolean? = null,
         passkey: PasskeyProvider? = null,
-    ): kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement?> =
-        api(passkey, null).accounts.accountOutboundApproval(accountOutboundApprovalRequest = AccountOutboundApprovalRequest(`package` = `package`, prefixes = prefixes, replace = replace))
+    ): kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement> =
+        api(passkey, null, emptySet()).accounts.accountOutboundApproval(accountOutboundApprovalRequest = AccountOutboundApprovalRequest(`package` = `package`, prefixes = prefixes, replace = replace))
 
     /**
      * Prove the account to another party
@@ -67,8 +67,8 @@ class AuthFacade internal constructor(
     suspend fun accountProofProve(
         nonce: kotlin.String,
         audience: kotlin.String,
-    ): kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement?> =
-        api(null, null).accounts.accountProofProve(accountProofProveRequest = AccountProofProveRequest(nonce = nonce, audience = audience))
+    ): kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement> =
+        api(null, null, emptySet()).accounts.accountProofProve(accountProofProveRequest = AccountProofProveRequest(nonce = nonce, audience = audience))
 
     /**
      * Start an account recovery
@@ -84,7 +84,7 @@ class AuthFacade internal constructor(
     suspend fun accountRecoveryBegin(
         code: kotlin.String,
     ): RegisterBegin200Response =
-        api(null, null).accounts.accountRecoveryBegin(recoveryCreate200Response = RecoveryCreate200Response(code = code))
+        api(null, null, emptySet()).accounts.accountRecoveryBegin(recoveryCreate200Response = RecoveryCreate200Response(code = code))
 
     /**
      * Cancel an account recovery
@@ -102,7 +102,7 @@ class AuthFacade internal constructor(
     suspend fun accountRecoveryCancel(
         passkey: PasskeyProvider? = null,
     ): kotlinx.serialization.json.JsonObject =
-        api(passkey, null).accounts.accountRecoveryCancel()
+        api(passkey, null, emptySet()).accounts.accountRecoveryCancel()
 
     /**
      * Finish an account recovery
@@ -121,7 +121,7 @@ class AuthFacade internal constructor(
         accountId: kotlin.String? = null,
         passkey: PasskeyProvider? = null,
     ): Session =
-        api(passkey, null).accounts.accountRecoveryFinish(accountRecoveryFinishRequest = AccountRecoveryFinishRequest(accountId = accountId))
+        api(passkey, null, emptySet()).accounts.accountRecoveryFinish(accountRecoveryFinishRequest = AccountRecoveryFinishRequest(accountId = accountId))
 
     /**
      * Spend the recovery code
@@ -139,7 +139,7 @@ class AuthFacade internal constructor(
         code: kotlin.String,
         registration: Registration,
     ): AccountRecoveryStart200Response =
-        api(null, null).accounts.accountRecoveryStart(accountRecoveryStartRequest = AccountRecoveryStartRequest(challengeId = challengeId, code = code, registration = registration))
+        api(null, null, emptySet()).accounts.accountRecoveryStart(accountRecoveryStartRequest = AccountRecoveryStartRequest(challengeId = challengeId, code = code, registration = registration))
 
     /**
      * Approve a mero-tee release for the account's apps
@@ -158,8 +158,8 @@ class AuthFacade internal constructor(
         version: kotlin.String,
         approved: kotlin.Boolean? = null,
         passkey: PasskeyProvider? = null,
-    ): kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement?> =
-        api(passkey, null).accounts.accountReleaseApproval(accountReleaseApprovalRequest = AccountReleaseApprovalRequest(version = version, approved = approved))
+    ): kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement> =
+        api(passkey, null, emptySet()).accounts.accountReleaseApproval(accountReleaseApprovalRequest = AccountReleaseApprovalRequest(version = version, approved = approved))
 
     /**
      * What the account's passkeys did
@@ -175,7 +175,7 @@ class AuthFacade internal constructor(
     suspend fun activityList(
         after: kotlin.Long? = null,
     ): ActivityList200Response =
-        api(null, null).accounts.activityList(after = after)
+        api(null, null, emptySet()).accounts.activityList(after = after)
 
     /**
      * Remove an alias
@@ -189,7 +189,7 @@ class AuthFacade internal constructor(
     suspend fun aliasDelete(
         alias: kotlin.String,
     ): kotlinx.serialization.json.JsonObject =
-        api(null, null).accounts.aliasDelete(alias = alias)
+        api(null, null, emptySet()).accounts.aliasDelete(alias = alias)
 
     /**
      * Resolve an alias
@@ -203,7 +203,7 @@ class AuthFacade internal constructor(
     suspend fun aliasGet(
         alias: kotlin.String,
     ): AliasGet200Response =
-        api(null, null).accounts.aliasGet(alias = alias)
+        api(null, null, emptySet()).accounts.aliasGet(alias = alias)
 
     /**
      * The account's aliases
@@ -215,7 +215,7 @@ class AuthFacade internal constructor(
      * @throws com.calimero.mero.CalimeroError the node's refusal, typed by [com.calimero.mero.errorFrom].
      */
     suspend fun aliasList(): AliasList200Response =
-        api(null, null).accounts.aliasList()
+        api(null, null, emptySet()).accounts.aliasList()
 
     /**
      * Set an alias
@@ -230,7 +230,7 @@ class AuthFacade internal constructor(
         alias: kotlin.String,
         app: kotlin.String,
     ): kotlinx.serialization.json.JsonObject =
-        api(null, null).accounts.aliasSet(alias = alias, aliasSetRequest = AliasSetRequest(app = app))
+        api(null, null, emptySet()).accounts.aliasSet(alias = alias, aliasSetRequest = AliasSetRequest(app = app))
 
     /**
      * Make an API key
@@ -255,7 +255,7 @@ class AuthFacade internal constructor(
         upgrades: ApikeyCreateRequestUpgrades? = null,
         passkey: PasskeyProvider? = null,
     ): ApikeyCreate200Response =
-        api(passkey, null).accounts.apikeyCreate(apikeyCreateRequest = ApikeyCreateRequest(label = label, apps = apps, methods = methods, readOnly = readOnly, allowConfirm = allowConfirm, ttlSecs = ttlSecs, upgrades = upgrades))
+        api(passkey, null, emptySet()).accounts.apikeyCreate(apikeyCreateRequest = ApikeyCreateRequest(label = label, apps = apps, methods = methods, readOnly = readOnly, allowConfirm = allowConfirm, ttlSecs = ttlSecs, upgrades = upgrades))
 
     /**
      * The account's API keys
@@ -267,7 +267,7 @@ class AuthFacade internal constructor(
      * @throws com.calimero.mero.CalimeroError the node's refusal, typed by [com.calimero.mero.errorFrom].
      */
     suspend fun apikeyList(): ApikeyList200Response =
-        api(null, null).accounts.apikeyList()
+        api(null, null, emptySet()).accounts.apikeyList()
 
     /**
      * Revoke an API key
@@ -284,7 +284,7 @@ class AuthFacade internal constructor(
         key: kotlin.String,
         passkey: PasskeyProvider? = null,
     ): kotlinx.serialization.json.JsonObject =
-        api(passkey, null).accounts.apikeyRevoke(key = key)
+        api(passkey, null, emptySet()).accounts.apikeyRevoke(key = key)
 
     /**
      * Start a sign-in
@@ -300,7 +300,7 @@ class AuthFacade internal constructor(
     suspend fun loginBegin(
         origin: kotlin.String? = null,
     ): LoginBegin200Response =
-        api(null, null).accounts.loginBegin(loginBeginRequest = LoginBeginRequest(origin = origin))
+        api(null, null, emptySet()).accounts.loginBegin(loginBeginRequest = LoginBeginRequest(origin = origin))
 
     /**
      * Finish a sign-in
@@ -315,7 +315,7 @@ class AuthFacade internal constructor(
         challengeId: kotlin.String,
         assertion: Assertion,
     ): Session =
-        api(null, null).accounts.loginFinish(loginFinishRequest = LoginFinishRequest(challengeId = challengeId, assertion = assertion))
+        api(null, null, emptySet()).accounts.loginFinish(loginFinishRequest = LoginFinishRequest(challengeId = challengeId, assertion = assertion))
 
     /**
      * End this session
@@ -327,7 +327,7 @@ class AuthFacade internal constructor(
      * @throws com.calimero.mero.CalimeroError the node's refusal, typed by [com.calimero.mero.errorFrom].
      */
     suspend fun logout(): kotlinx.serialization.json.JsonObject =
-        api(null, null).accounts.logout()
+        api(null, null, emptySet()).accounts.logout()
 
     /**
      * End every session of the account
@@ -338,8 +338,8 @@ class AuthFacade internal constructor(
      *
      * @throws com.calimero.mero.CalimeroError the node's refusal, typed by [com.calimero.mero.errorFrom].
      */
-    suspend fun logoutAll(): kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement?> =
-        api(null, null).accounts.logoutAll()
+    suspend fun logoutAll(): kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement> =
+        api(null, null, emptySet()).accounts.logoutAll()
 
     /**
      * The caller's account
@@ -353,7 +353,7 @@ class AuthFacade internal constructor(
      * @throws com.calimero.mero.CalimeroError the node's refusal, typed by [com.calimero.mero.errorFrom].
      */
     suspend fun me(): Me200Response =
-        api(null, null).accounts.me()
+        api(null, null, emptySet()).accounts.me()
 
     /**
      * Start adding a passkey
@@ -367,7 +367,7 @@ class AuthFacade internal constructor(
      * @throws com.calimero.mero.CalimeroError the node's refusal, typed by [com.calimero.mero.errorFrom].
      */
     suspend fun passkeyAddBegin(): RegisterBegin200Response =
-        api(null, null).accounts.passkeyAddBegin()
+        api(null, null, emptySet()).accounts.passkeyAddBegin()
 
     /**
      * Finish adding a passkey
@@ -387,7 +387,7 @@ class AuthFacade internal constructor(
         registration: Registration,
         passkey: PasskeyProvider? = null,
     ): PasskeyAddFinish200Response =
-        api(passkey, null).accounts.passkeyAddFinish(passkeyAddFinishRequest = PasskeyAddFinishRequest(challengeId = challengeId, registration = registration))
+        api(passkey, null, emptySet()).accounts.passkeyAddFinish(passkeyAddFinishRequest = PasskeyAddFinishRequest(challengeId = challengeId, registration = registration))
 
     /**
      * Name a passkey
@@ -402,7 +402,7 @@ class AuthFacade internal constructor(
         cred: kotlin.String,
         label: kotlin.String,
     ): kotlinx.serialization.json.JsonObject =
-        api(null, null).accounts.passkeyLabel(cred = cred, passkeyLabelRequest = PasskeyLabelRequest(label = label))
+        api(null, null, emptySet()).accounts.passkeyLabel(cred = cred, passkeyLabelRequest = PasskeyLabelRequest(label = label))
 
     /**
      * Remove a passkey
@@ -421,7 +421,7 @@ class AuthFacade internal constructor(
         cred: kotlin.String,
         passkey: PasskeyProvider? = null,
     ): kotlinx.serialization.json.JsonObject =
-        api(passkey, null).accounts.passkeyRemove(cred = cred)
+        api(passkey, null, emptySet()).accounts.passkeyRemove(cred = cred)
 
     /**
      * Make a recovery code
@@ -439,7 +439,7 @@ class AuthFacade internal constructor(
     suspend fun recoveryCreate(
         passkey: PasskeyProvider? = null,
     ): RecoveryCreate200Response =
-        api(passkey, null).accounts.recoveryCreate()
+        api(passkey, null, emptySet()).accounts.recoveryCreate()
 
     /**
      * Remove the recovery code
@@ -455,7 +455,7 @@ class AuthFacade internal constructor(
     suspend fun recoveryRemove(
         passkey: PasskeyProvider? = null,
     ): kotlinx.serialization.json.JsonObject =
-        api(passkey, null).accounts.recoveryRemove()
+        api(passkey, null, emptySet()).accounts.recoveryRemove()
 
     /**
      * Refresh a session
@@ -471,7 +471,7 @@ class AuthFacade internal constructor(
     suspend fun refresh(
         refreshToken: kotlin.String,
     ): Session =
-        api(null, null).accounts.refresh(refreshRequest = RefreshRequest(refreshToken = refreshToken))
+        api(null, null, emptySet()).accounts.refresh(refreshRequest = RefreshRequest(refreshToken = refreshToken))
 
     /**
      * Start a sign-up
@@ -489,7 +489,7 @@ class AuthFacade internal constructor(
         origin: kotlin.String? = null,
         invite: kotlin.String? = null,
     ): RegisterBegin200Response =
-        api(null, null).accounts.registerBegin(registerBeginRequest = RegisterBeginRequest(name = name, origin = origin, invite = invite))
+        api(null, null, emptySet()).accounts.registerBegin(registerBeginRequest = RegisterBeginRequest(name = name, origin = origin, invite = invite))
 
     /**
      * Finish a sign-up
@@ -510,7 +510,7 @@ class AuthFacade internal constructor(
         invite: kotlin.String? = null,
         passkey: PasskeyProvider? = null,
     ): Session =
-        api(passkey, null).accounts.registerFinish(registerFinishRequest = RegisterFinishRequest(challengeId = challengeId, registration = registration, invite = invite))
+        api(passkey, null, emptySet()).accounts.registerFinish(registerFinishRequest = RegisterFinishRequest(challengeId = challengeId, registration = registration, invite = invite))
 
     /**
      * End one session
@@ -526,7 +526,7 @@ class AuthFacade internal constructor(
     suspend fun sessionRevoke(
         session: kotlin.String,
     ): kotlinx.serialization.json.JsonObject =
-        api(null, null).accounts.sessionRevoke(session = session)
+        api(null, null, emptySet()).accounts.sessionRevoke(session = session)
 
     /**
      * The account's live sessions
@@ -540,7 +540,7 @@ class AuthFacade internal constructor(
      * @throws com.calimero.mero.CalimeroError the node's refusal, typed by [com.calimero.mero.errorFrom].
      */
     suspend fun sessionsList(): SessionsList200Response =
-        api(null, null).accounts.sessionsList()
+        api(null, null, emptySet()).accounts.sessionsList()
 
     /**
      * The account's usage against its quotas
@@ -554,5 +554,5 @@ class AuthFacade internal constructor(
      * @throws com.calimero.mero.CalimeroError the node's refusal, typed by [com.calimero.mero.errorFrom].
      */
     suspend fun usage(): Usage200Response =
-        api(null, null).accounts.usage()
+        api(null, null, emptySet()).accounts.usage()
 }

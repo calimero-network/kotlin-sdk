@@ -50,7 +50,7 @@ data class OpsServed200ResponseOriginsInner (
     val label: kotlin.String,
 
     @SerialName(value = "addedAt")
-    val addedAt: kotlin.Long?
+    val addedAt: kotlin.Long
 
 ) {
 

@@ -37,11 +37,20 @@ import kotlinx.serialization.Contextual
 
 data class AccessOneOf2 (
 
-    @Contextual @SerialName(value = "kind")
-    val kind: kotlinx.serialization.json.JsonElement?
+    @SerialName(value = "kind")
+    val kind: AccessOneOf2.Kind
 
 ) {
 
+    /**
+     * 
+     *
+     * Values: PUBLIC
+     */
+    @Serializable
+    enum class Kind(val value: kotlin.String) {
+        @SerialName(value = "public") PUBLIC("public");
+    }
 
 }
 

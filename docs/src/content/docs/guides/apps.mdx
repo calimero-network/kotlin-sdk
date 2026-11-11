@@ -46,7 +46,7 @@ val blob = client.uploadBlob(appId, bytes, "image/png")      // BlobInfo(blobId 
 val back = client.downloadBlob(appId, blob.blobId)
 val content = client.blobContent(appId, blob.blobId)         // bytes + the content type served
 val shared = client.downloadBlobGranted(appId, blobId, grant) // a run's grant: no session needed
-val outbox = client.appXcalls(appId)                         // a component app's pending xcalls, dead letters
+val outbox = client.apps.xcalls(app = appId)                 // a component app's pending xcalls, dead letters
 client.publishPresence(appId, seq = 1, state = "typing".encodeToByteArray())
 client.presence(appId)
 ```

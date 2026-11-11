@@ -12,7 +12,7 @@ import com.calimero.mero.OpenConsentOptions
 /**
  * Opens the node's consent page in a Custom Tab (the system browser), where the account holder
  * approves a release, an upgrade or outbound hosts with their passkey. Approvals happen only
- * there, never in the app: the app asks ([CalimeroClient.requestConsent]), the page decides, and
+ * there, never in the app: the app asks (`client.consent.pageCreate`, [CalimeroClient.openConsentPage]), the page decides, and
  * sends the person back to the request's `returnTo` with `?request_id=…&result=…`, which the app
  * hands to [MeroAppSession.handle] (or reads with [com.calimero.mero.consentReturn]) and confirms
  * with `client.consent.pageResult` ([ConsentResult.from]). (Swift `ConsentLauncher`.)

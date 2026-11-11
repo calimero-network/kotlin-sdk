@@ -19,6 +19,7 @@ import com.calimero.mero.DeployersInfo
 import com.calimero.mero.DirectoryError
 import com.calimero.mero.DirectoryFailure
 import com.calimero.mero.DirectoryNode
+import com.calimero.mero.Explicit
 import com.calimero.mero.LoginRequired
 import com.calimero.mero.MOCK_QUOTE_HEADER
 import com.calimero.mero.NotFound
@@ -671,22 +672,22 @@ class CalimeroClientTest {
                     }
                 })
             val client = cluster.client()
-            // `appXcalls` stays hand-written: the spec types `pending` as an array, the node answers a count.
-            val xcalls = client.appXcalls("app-1")
+            val xcalls = client.apps.xcalls(app = "app-1")
             assertEquals(2L, xcalls.pending)
             assertEquals("ping", xcalls.deadLetters.single().method)
-            assertEquals("Acme", (client.deployments.get(id = "d1")["owner"] as JsonObject)["name"]!!.jsonPrimitive.content)
+            assertEquals(
+                "Acme",
+                client.deployments
+                    .get(id = "d1")
+                    .owner.name,
+            )
             val info = Json { ignoreUnknownKeys = true }.decodeFromJsonElement(DeployersInfo.serializer(), JsonObject(client.deployments.deployerList().mapValues { it.value ?: JsonNull }))
             assertEquals(Deployer.Org("o1"), info.grants.single().deployer)
             assertEquals(Deployer.Account("acc-1"), info.owner)
             assertEquals("org:o1", client.deployments.deployerGrant(deployer = Deployer.Org("o1"), passkey = passkey).key)
             assertEquals("o1", sent(cluster, 4)["deployer"]!!.jsonObject["org"]!!.jsonPrimitive.content)
-            assertEquals(
-                "d2",
-                client.deployments
-                    .create(name = "Chat", owner = Deployer.Account("acc-1"), passkey = passkey)["id"]!!
-                    .jsonPrimitive.content,
-            )
+            // The spec's answer lists only `host` (`id` is among the properties it leaves open).
+            client.deployments.create(name = "Chat", owner = Deployer.Account("acc-1"), passkey = passkey)
             assertEquals("acc-1", sent(cluster, 6)["owner"]!!.jsonObject["account"]!!.jsonPrimitive.content)
             client.deployments.deployerRevoke(key = Deployer.Org("o1").key, passkey = passkey)
             assertEquals("/deployers/org%3Ao1", path(cluster.nodes[0].requests[8].first))
@@ -886,13 +887,13 @@ class CalimeroClientTest {
         }
 
     @Test
-    fun `uploads a sealed file and reads its plaintext hash`() =
+    fun `uploads a blob's bytes as they are`() =
         runBlocking {
-            val cluster = Cluster({ _, _ -> json(200, """{"blobId":"B58","id":"ab","size":3,"sha256":"cafe","sealed":true,"index":4}""") })
-            val file = cluster.client().uploadFile("app-1", byteArrayOf(1, 2, 3))
-            assertTrue(file.sealed)
-            assertEquals("cafe", file.sha256)
-            assertEquals("/apps/app-1/blobs?sealed=true", path(cluster.nodes[0].requests[0].first))
+            val cluster = Cluster({ _, _ -> json(200, """{"blobId":"B58","id":"ab","size":3,"index":4}""") })
+            val blob = cluster.client().apps.blobUpload(app = "app-1", body = byteArrayOf(1, 2, 3))
+            assertEquals("B58", blob.blobId)
+            assertEquals(3L, blob.propertySize)
+            assertEquals("/apps/app-1/blobs", path(cluster.nodes[0].requests[0].first))
             assertEquals("application/octet-stream", header(cluster.nodes[0].requests[0].first, "content-type"))
         }
 
@@ -991,7 +992,9 @@ class CalimeroClientTest {
     @Test
     fun `a generated route takes an id as one path segment and refuses a dot segment before sending`() =
         runBlocking {
-            val org = """{"orgId":"a/b?c","name":"n","owner":"acc-1","members":{},"teams":{},"metadata":null}"""
+            val org =
+                """{"orgId":"a/b?c","name":"n","members":{},"teams":{},"defaultCapabilities":0,"capabilities":{},"approvedReleases":[],""" +
+                    """"outboundApprovals":{},"metadata":null,"memberMetadata":{},"upgradeRuns":{}}"""
             val cluster = Cluster({ _, _ -> json(200, org) })
             val client = cluster.client()
             assertEquals("a/b?c", client.orgs.get(org = "a/b?c").orgId)
@@ -1004,5 +1007,19 @@ class CalimeroClientTest {
                 }
             }
             assertEquals(1, cluster.nodes[0].requests.size)
+        }
+
+    @Test
+    fun `the facade sends a meaningful null only when asked, and leaves other nulls out`() =
+        runBlocking {
+            val cluster = Cluster({ _, _ -> json(200, "{}") })
+            val client = cluster.client()
+            client.orgs.teamUpdate(org = "o1", team = "t1", parent = Explicit(null))
+            assertEquals(JsonNull, sent(cluster, 0)["parent"])
+            assertTrue(!sent(cluster, 0).containsKey("name"))
+            client.orgs.teamUpdate(org = "o1", team = "t1", name = "n")
+            assertTrue(!sent(cluster, 1).containsKey("parent"))
+            client.orgs.teamUpdate(org = "o1", team = "t1", parent = Explicit("t0"))
+            assertEquals("t0", sent(cluster, 2)["parent"]!!.jsonPrimitive.content)
         }
 }

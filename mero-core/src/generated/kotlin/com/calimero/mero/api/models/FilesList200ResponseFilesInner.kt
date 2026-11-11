@@ -47,7 +47,7 @@ data class FilesList200ResponseFilesInner (
     val id: kotlin.String,
 
     @SerialName(value = "size")
-    val propertySize: kotlin.Long?,
+    val propertySize: kotlin.Long,
 
     @SerialName(value = "sha256")
     val sha256: kotlin.String

@@ -15,7 +15,7 @@ import com.calimero.mero.crypto.DeviceSigner
  * [com.calimero.mero.CalimeroError] it means.
  */
 class ConsentFacade internal constructor(
-    private val api: (PasskeyProvider?, DeviceSigner?) -> MeroApi,
+    private val api: (PasskeyProvider?, DeviceSigner?, Set<String>) -> MeroApi,
 ) {
     /**
      * Ask the account's owner to approve
@@ -29,15 +29,14 @@ class ConsentFacade internal constructor(
      * @throws com.calimero.mero.CalimeroError the node's refusal, typed by [com.calimero.mero.errorFrom].
      */
     suspend fun pageCreate(
-        kind: kotlinx.serialization.json.JsonElement?,
-        scope: ConsentPageCreateRequestOneOf2Scope?,
-        subject: ConsentPageCreateRequestOneOf2Subject,
-        returnTo: kotlin.String,
+        consentRequest: com.calimero.mero.ConsentRequest,
     ): ConsentPageCreate200Response =
-        api(null, null).consent.consentPageCreate(consentPageCreateRequest = ConsentPageCreateRequest(kind = kind, scope = scope, subject = subject, returnTo = returnTo))
+        api(null, null, emptySet()).consent.consentPageCreate(comCalimeroMeroConsentRequest = consentRequest)
 
     /**
      * What became of a consent request
+     *
+     * `decidedAt` (Unix seconds) is `null` while it is pending.
      *
      * **Who:** a passkey session (an API key is refused).
      *
@@ -47,6 +46,6 @@ class ConsentFacade internal constructor(
      */
     suspend fun pageResult(
         request: kotlin.String,
-    ): kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement?> =
-        api(null, null).consent.consentPageResult(request = request)
+    ): ConsentPageResult200Response =
+        api(null, null, emptySet()).consent.consentPageResult(request = request)
 }

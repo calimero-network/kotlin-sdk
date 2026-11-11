@@ -48,7 +48,7 @@ data class AppCreate200Response (
     val contextId: kotlin.String,
 
     @SerialName(value = "group")
-    val group: kotlin.Long?,
+    val group: kotlin.Long,
 
     @SerialName(value = "replicas")
     val replicas: kotlin.collections.List<kotlin.Long>,

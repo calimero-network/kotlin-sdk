@@ -41,7 +41,7 @@ import kotlinx.serialization.Contextual
 data class Views200Response (
 
     @SerialName(value = "index")
-    val index: kotlin.Long?,
+    val index: kotlin.Long,
 
     @Contextual @SerialName(value = "result")
     val result: kotlinx.serialization.json.JsonElement?,

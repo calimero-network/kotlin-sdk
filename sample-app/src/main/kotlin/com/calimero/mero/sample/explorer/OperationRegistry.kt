@@ -3,6 +3,7 @@ package com.calimero.mero.sample.explorer
 import com.calimero.mero.AppAccess
 import com.calimero.mero.ConsentRequest
 import com.calimero.mero.ConsentScope
+import com.calimero.mero.Explicit
 import com.calimero.mero.api.models.OrgRole
 import com.calimero.mero.api.models.TeamJoin
 import com.calimero.mero.api.models.TeamRole
@@ -90,7 +91,7 @@ private val appOps =
         op("transferApp", "Apps", "apps.transfer", "Hand the app to another account", app, OpField.line("to", "Account id")) { e, v -> e.client.apps.transfer(app = v.v("app"), to = v.v("to"), passkey = e.passkey) },
         op("presence", "Apps", "apps.presenceGet", "Who is present in the app now", app) { e, v -> e.client.apps.presenceGet(app = v.v("app")).present.joinToString("\n") },
         op("publishPresence", "Apps", "apps.presencePublish", "Publish this device's presence", app, OpField.line("seq", "Sequence", "1"), OpField.line("state", "State (text)")) { e, v ->
-            e.client.apps.presencePublish(app = v.v("app"), seq = v.v("seq").toLongOrNull() ?: 1, state = v.opt("state")?.encodeToByteArray()?.let(::hex))
+            e.client.apps.presencePublish(app = v.v("app"), seq = v.v("seq").toLongOrNull() ?: 1, state = v.opt("state")?.encodeToByteArray()?.let { Explicit(hex(it)) })
         },
         op("listBlobs", "Apps", "apps.blobList", "The app's blobs", app) { e, v -> e.client.apps.blobList(app = v.v("app")).blobs.joinToString("\n") },
         op("uploadBlob", "Apps", "uploadBlob", "Upload text as a blob", app, OpField.line("text", "Text")) { e, v -> e.client.uploadBlob(v.v("app"), v.v("text").encodeToByteArray()) },
@@ -157,8 +158,8 @@ private val approvalOps =
         },
         op("appsReport", "Approvals", "orgs.apps", "One page of a scope's apps report", OpField.line("org", "Organization (optional)")) { e, v -> v.opt("org")?.let { e.client.orgs.apps(org = it) } ?: e.client.auth.accountApps() },
         op("releaseRules", "Approvals", "public.releasesPublic", "The cluster's governance and release deadlines") { e, _ -> e.client.public.releasesPublic() },
-        op("requestConsent", "Approvals", "requestConsent", "Ask for a release approval on the node's consent page", OpField.line("version", "Release"), OpField.line("org", "Organization (optional)")) { e, v ->
-            e.client.requestConsent(ConsentRequest.Release(ConsentScope(v.opt("org")), v.v("version"), "mero-sample://consent"))
+        op("requestConsent", "Approvals", "consent.pageCreate", "Ask for a release approval on the node's consent page", OpField.line("version", "Release"), OpField.line("org", "Organization (optional)")) { e, v ->
+            e.client.consent.pageCreate(consentRequest = ConsentRequest.Release(ConsentScope(v.opt("org")), v.v("version"), "mero-sample://consent"))
         },
         op("consentResult", "Approvals", "consent.pageResult", "The decision on a consent request", OpField.line("id", "Request id")) { e, v -> e.client.consent.pageResult(request = v.v("id")) },
         op("publisherBinding", "Approvals", "public.publisherBinding", "What a signing key signs to bind itself", OpField.line("signer", "Signer id")) { e, v -> e.client.public.publisherBinding(signer = v.v("signer")) },

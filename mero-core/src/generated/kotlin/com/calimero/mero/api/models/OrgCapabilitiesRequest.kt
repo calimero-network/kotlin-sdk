@@ -42,7 +42,7 @@ import kotlinx.serialization.Contextual
 data class OrgCapabilitiesRequest (
 
     @SerialName(value = "capabilities")
-    val capabilities: kotlin.Long?,
+    val capabilities: kotlin.Long,
 
     @SerialName(value = "account")
     val account: kotlin.String? = null,

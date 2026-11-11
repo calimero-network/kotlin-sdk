@@ -42,19 +42,19 @@ import kotlinx.serialization.Contextual
 data class AppStorage200Response (
 
     @SerialName(value = "keys")
-    val propertyKeys: kotlin.Long?,
+    val propertyKeys: kotlin.Long,
 
     @SerialName(value = "bytes")
-    val bytes: kotlin.Long?,
+    val bytes: kotlin.Long,
 
     @SerialName(value = "blobs")
-    val blobs: kotlin.Long?,
+    val blobs: kotlin.Long,
 
     @SerialName(value = "blobBytes")
-    val blobBytes: kotlin.Long?,
+    val blobBytes: kotlin.Long,
 
     @SerialName(value = "lastWriteAt")
-    val lastWriteAt: kotlin.Long?
+    val lastWriteAt: kotlin.Long? = null
 
 ) {
 

@@ -45,10 +45,10 @@ data class OpsRestore200Response (
     val app: kotlin.String,
 
     @SerialName(value = "group")
-    val group: kotlin.Long?,
+    val group: kotlin.Long,
 
     @SerialName(value = "rows")
-    val rows: kotlin.Long?,
+    val rows: kotlin.Long,
 
     @Contextual @SerialName(value = "backup")
     val backup: kotlinx.serialization.json.JsonElement?,

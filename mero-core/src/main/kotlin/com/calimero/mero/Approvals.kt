@@ -248,7 +248,11 @@ data class ConsentScope(
     }
 }
 
-/** What the app asks its user to approve (`POST /consent/requests`). */
+/**
+ * What the app asks its user to approve (`POST /consent/requests`): the spec's consent request body,
+ * which the generated client takes as this type (`client.consent.pageCreate(request)`).
+ */
+@Serializable(with = ConsentRequestSerializer::class)
 sealed interface ConsentRequest {
     /** Where the page sends the person back: the package's frontend origin, an app link, or one its manifest names. */
     val returnTo: String
@@ -572,4 +576,19 @@ object OrgCapabilities {
 
     /** The bitmask of [names] (mero-js `orgCapabilities`). */
     fun of(vararg names: String): Int = names.fold(0) { mask, name -> mask or (ALL[name] ?: throw IllegalArgumentException("unknown capability $name")) }
+}
+
+/** Writes a [ConsentRequest] as [ConsentRequest.toJson]; one is never read back. */
+internal object ConsentRequestSerializer : kotlinx.serialization.KSerializer<ConsentRequest> {
+    override val descriptor: kotlinx.serialization.descriptors.SerialDescriptor = JsonObject.serializer().descriptor
+
+    override fun serialize(
+        encoder: kotlinx.serialization.encoding.Encoder,
+        value: ConsentRequest,
+    ) {
+        (encoder as kotlinx.serialization.json.JsonEncoder).encodeJsonElement(value.toJson())
+    }
+
+    override fun deserialize(decoder: kotlinx.serialization.encoding.Decoder): ConsentRequest =
+        throw kotlinx.serialization.SerializationException("a consent request is only ever sent")
 }

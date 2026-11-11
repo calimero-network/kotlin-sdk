@@ -41,8 +41,23 @@ class MeroApi internal constructor(
     }
 }
 
-/** How a request answers a step-up: the passkey for a `412`, the operator's key for a `428`. Null: it reaches the caller. */
+/**
+ * How a request answers a step-up: the passkey for a `412`, the operator's key for a `428` (null:
+ * it reaches the caller), and the body fields to send as `null` ([Explicit]).
+ */
 internal data class StepUp(
     val passkey: PasskeyProvider? = null,
     val operator: com.calimero.mero.crypto.DeviceSigner? = null,
+    val nulls: Set<String> = emptySet(),
+)
+
+/**
+ * A request field whose `null` means something (the spec types it `[T, "null"]`): a team's `parent`
+ * (`null`: to the top), an organization's recovery `publicKey` (`null`: remove it), a presence
+ * `state` (`null`: retract). The facade's parameter for one is an `Explicit<T>?`: leave it null to
+ * send nothing, pass `Explicit(value)` to send the value, or `Explicit(null)` to send `null`
+ * (`client.orgs.teamUpdate(org = o, team = t, parent = Explicit(null))`).
+ */
+data class Explicit<out T>(
+    val value: T?,
 )

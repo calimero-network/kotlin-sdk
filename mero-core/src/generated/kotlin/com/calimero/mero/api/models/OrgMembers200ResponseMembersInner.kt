@@ -67,7 +67,7 @@ data class OrgMembers200ResponseMembersInner (
     val lastActiveDay: kotlin.String?,
 
     @SerialName(value = "sessions")
-    val sessions: kotlin.Long?
+    val sessions: kotlin.Long
 
 ) {
 

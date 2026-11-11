@@ -10,7 +10,6 @@ import com.calimero.mero.api.facade.PackagesFacade
 import com.calimero.mero.api.facade.PublicFacade
 import com.calimero.mero.api.facade.Routes
 import com.calimero.mero.api.infrastructure.RequestConfig
-import com.calimero.mero.api.infrastructure.RequestMethod
 import com.calimero.mero.api.infrastructure.Serializer
 import com.calimero.mero.api.models.AppCreateRequest
 import com.calimero.mero.api.models.IntentsRequest
@@ -212,33 +211,40 @@ class CalimeroClient(
         operator: DeviceSigner? = null,
     ): MeroApi = if (passkey == null && operator == null) defaultApi else MeroApi(callFactory(StepUp(passkey, operator)))
 
+    /** The generated client for one facade call: its step-up overrides and the fields it sends as `null`. */
+    private fun facadeApi(
+        passkey: PasskeyProvider?,
+        operator: DeviceSigner?,
+        nulls: Set<String>,
+    ): MeroApi = if (nulls.isEmpty()) api(passkey, operator) else MeroApi(callFactory(StepUp(passkey, operator, nulls)))
+
     private fun callFactory(override: StepUp): MeroCallFactory = MeroCallFactory(scope) { send(it, stepUp(override)) }
 
-    private fun stepUp(override: StepUp): StepUp = StepUp(override.passkey ?: passkey, override.operator ?: operator)
+    private fun stepUp(override: StepUp): StepUp = StepUp(override.passkey ?: passkey, override.operator ?: operator, override.nulls)
 
     /** Core's account operations (`auth`): passkeys, sessions, API keys, aliases, recovery, usage. */
-    val auth: AuthFacade by lazy { AuthFacade(::api) }
+    val auth: AuthFacade by lazy { AuthFacade(::facadeApi) }
 
     /** Core's app operations: instances, calls and views, blobs, files, presence. */
-    val apps: AppsFacade by lazy { AppsFacade(::api) }
+    val apps: AppsFacade by lazy { AppsFacade(::facadeApi) }
 
     /** The node's consent page. */
-    val consent: ConsentFacade by lazy { ConsentFacade(::api) }
+    val consent: ConsentFacade by lazy { ConsentFacade(::facadeApi) }
 
     /** Operator routes (the ops token, [useApiKey]). */
-    val ops: OpsFacade by lazy { OpsFacade(::api) }
+    val ops: OpsFacade by lazy { OpsFacade(::facadeApi) }
 
     /** Organizations, members, teams, invites. */
-    val orgs: OrgsFacade by lazy { OrgsFacade(::api) }
+    val orgs: OrgsFacade by lazy { OrgsFacade(::facadeApi) }
 
     /** Packages and their web origins. */
-    val packages: PackagesFacade by lazy { PackagesFacade(::api) }
+    val packages: PackagesFacade by lazy { PackagesFacade(::facadeApi) }
 
     /** What any node answers anyone: health, attestation, releases, publisher bindings. */
-    val public: PublicFacade by lazy { PublicFacade(::api) }
+    val public: PublicFacade by lazy { PublicFacade(::facadeApi) }
 
     /** Sign-up policy and invites, deployers and deployments. */
-    val deployments: DeploymentsFacade by lazy { DeploymentsFacade(::api) }
+    val deployments: DeploymentsFacade by lazy { DeploymentsFacade(::facadeApi) }
 
     /** The sealed channel to [url], attested under the client's policy before its first request. */
     private fun channel(url: String): SealedTransport =
@@ -509,7 +515,12 @@ class CalimeroClient(
     ): Response {
         val bytes = request.body?.let { b -> Buffer().also { b.writeTo(it) }.readByteArray() }
         val type = request.body?.contentType()?.let { "${it.type}/${it.subtype}" }
-        val body = if (bytes == null || (bytes.isEmpty() && type == null)) null else Body(bytes, type ?: OCTET_STREAM)
+        var body = if (bytes == null || (bytes.isEmpty() && type == null)) null else Body(bytes, type ?: OCTET_STREAM)
+        if (stepUp.nulls.isNotEmpty()) {
+            // The generated request leaves every null out; these the caller set to `null` ([Explicit]).
+            val json = body?.let { parseOrNull(it.bytes.decodeToString()) as? JsonObject } ?: JsonObject(emptyMap())
+            body = jsonBody(JsonObject(json + stepUp.nulls.filterNot(json::containsKey).associateWith { JsonNull }))
+        }
         return dispatch(request.method, relativePath(request.url), body, stepUp)
     }
 
@@ -623,8 +634,8 @@ class CalimeroClient(
     }
 
     /**
-     * [config]'s route with [body] in place of the generated one: the binary uploads and the consent
-     * request, whose bodies the spec types as strings (see `openapi/README.md`).
+     * [config]'s route with [body] in place of the generated one: the binary uploads that keep the
+     * caller's content type, or the raw bytes, as they always sent them.
      */
     private suspend fun binary(
         method: String,
@@ -857,29 +868,6 @@ class CalimeroClient(
     ): BlobInfo = wire.decodeFromJsonElement(BlobInfo.serializer(), binary("POST", defaultApi.apps.blobUploadRequestConfig(app, NO_BYTES, null), Body(data, contentType)))
 
     /**
-     * Upload a sealed file for component app [app] (`POST /apps/{app}/blobs?sealed=true`): sealed
-     * under a key of its own that only the app's code reads, so it is never downloaded or granted.
-     * Its owner and its organization's members only (`403` otherwise). Answers the file's ids with
-     * the plaintext's size and [BlobInfo.sha256]. Held for an hour unless the app stores a
-     * `BlobRef` to it. Past the organization's file quota: [QuotaExceeded].
-     *
-     * Not deprecated: the spec's answer has no `sha256` or `sealed` (see openapi/README.md).
-     */
-    suspend fun uploadFile(
-        app: String,
-        data: ByteArray,
-    ): BlobInfo = wire.decodeFromJsonElement(BlobInfo.serializer(), binary("POST", defaultApi.apps.blobUploadRequestConfig(app, NO_BYTES, true), Body(data, OCTET_STREAM)))
-
-    /**
-     * A component app's xcalls: how many messages wait in its outbox, and the dead letters (never
-     * delivered), newest last. Its owner's or an org admin's (`403` to anyone else);
-     * `409 NOT_SUPPORTED` for an app on the wasmer runtime, whose xcalls are follow-ups.
-     *
-     * Not deprecated: the spec types `pending` as an array, the node answers a count (see openapi/README.md).
-     */
-    suspend fun appXcalls(app: String): AppXcalls = wire.decodeFromJsonElement(AppXcalls.serializer(), raw(defaultApi.apps.appXcallsRequestConfig(app)))
-
-    /**
      * A blob of [app] (with [grant], one a run handed out: no session needed) with the content type the node
      * serves it as: the uploader's, for a component app; `application/octet-stream` otherwise.
      */
@@ -1077,13 +1065,8 @@ class CalimeroClient(
      * to `returnTo?request_id=…&result=approved|declined` ([consentReturn]), and [consentResult]
      * confirms the decision.
      */
-    suspend fun requestConsent(request: ConsentRequest): ConsentStarted =
-        // Not deprecated: the spec's body is a `oneOf` of three kinds without a discriminator mapping,
-        // which the generator flattens into one class (see openapi/README.md).
-        wire.decodeFromJsonElement(
-            ConsentStarted.serializer(),
-            binary("POST", RequestConfig<Unit>(RequestMethod.POST, "/consent/requests", requiresAuthentication = true), jsonBody(request.toJson())),
-        )
+    internal suspend fun requestConsent(request: ConsentRequest): ConsentStarted =
+        wire.decodeFromJsonElement(ConsentStarted.serializer(), raw(defaultApi.consent.consentPageCreateRequestConfig(request)))
 
     /** [requestConsent], then hand the consent page's URL to [navigate] (open it in a Custom Tab). */
     suspend fun openConsentPage(

@@ -37,11 +37,20 @@ import kotlinx.serialization.Contextual
 
 data class AccessOneOf1 (
 
-    @Contextual @SerialName(value = "kind")
-    val kind: kotlinx.serialization.json.JsonElement?
+    @SerialName(value = "kind")
+    val kind: AccessOneOf1.Kind
 
 ) {
 
+    /**
+     * 
+     *
+     * Values: ORG
+     */
+    @Serializable
+    enum class Kind(val value: kotlin.String) {
+        @SerialName(value = "org") ORG("org");
+    }
 
 }
 

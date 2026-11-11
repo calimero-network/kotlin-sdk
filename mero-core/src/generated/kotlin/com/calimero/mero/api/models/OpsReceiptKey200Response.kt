@@ -41,7 +41,7 @@ import kotlinx.serialization.Contextual
 data class OpsReceiptKey200Response (
 
     @SerialName(value = "node")
-    val node: kotlin.Long?,
+    val node: kotlin.Long,
 
     @SerialName(value = "key")
     val key: kotlin.String,
@@ -50,7 +50,7 @@ data class OpsReceiptKey200Response (
     val release: kotlin.String,
 
     @SerialName(value = "attestedAt")
-    val attestedAt: kotlin.Long?
+    val attestedAt: kotlin.Long
 
 ) {
 

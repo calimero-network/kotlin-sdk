@@ -23,13 +23,16 @@
 
 package com.calimero.mero.api.models
 
+import com.calimero.mero.api.models.AppRestore
+import com.calimero.mero.api.models.PackageRef
+import com.calimero.mero.api.models.Upgrade
 
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Contextual
 
 /**
- * An app instance (a context) as the directory records it.
+ * An app instance (a context) as the directory records it. `executor` is absent for an SDK 0.12 app (wasmer), which this node lists but does not run; `release` is the package release it runs, absent for a record from before or a raw upload; `restore` is a restore from a backup under way.
  *
  * @param appId 
  * @param name 
@@ -43,9 +46,12 @@ import kotlinx.serialization.Contextual
  * @param createdAt 
  * @param initArgs 
  * @param metadata 
+ * @param executor 
  * @param computeBundle 
  * @param lastUpgrade 
+ * @param deployment 
  * @param release 
+ * @param restore 
  */
 @Serializable
 
@@ -87,17 +93,36 @@ data class App (
     @Contextual @SerialName(value = "metadata")
     val metadata: kotlinx.serialization.json.JsonElement?,
 
+    @SerialName(value = "executor")
+    val executor: App.Executor? = null,
+
     @SerialName(value = "computeBundle")
     val computeBundle: kotlin.String? = null,
 
-    @Contextual @SerialName(value = "lastUpgrade")
-    val lastUpgrade: kotlinx.serialization.json.JsonElement? = null,
+    @SerialName(value = "lastUpgrade")
+    val lastUpgrade: Upgrade? = null,
 
-    @Contextual @SerialName(value = "release")
-    val release: kotlinx.serialization.json.JsonElement? = null
+    @SerialName(value = "deployment")
+    val deployment: kotlin.String? = null,
+
+    @SerialName(value = "release")
+    val release: PackageRef? = null,
+
+    @SerialName(value = "restore")
+    val restore: AppRestore? = null
 
 ) {
 
+    /**
+     * 
+     *
+     * Values: COMPONENT,WASMER
+     */
+    @Serializable
+    enum class Executor(val value: kotlin.String) {
+        @SerialName(value = "component") COMPONENT("component"),
+        @SerialName(value = "wasmer") WASMER("wasmer");
+    }
 
 }
 

@@ -38,7 +38,7 @@ import kotlinx.serialization.Contextual
 data class BlobDelete200Response (
 
     @SerialName(value = "index")
-    val index: kotlin.Long?
+    val index: kotlin.Long
 
 ) {
 

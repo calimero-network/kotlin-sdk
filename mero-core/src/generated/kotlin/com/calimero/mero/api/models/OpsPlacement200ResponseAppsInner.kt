@@ -43,7 +43,7 @@ data class OpsPlacement200ResponseAppsInner (
     val app: kotlin.String,
 
     @SerialName(value = "group")
-    val group: kotlin.Long?,
+    val group: kotlin.Long,
 
     @SerialName(value = "replicas")
     val replicas: kotlin.collections.List<kotlin.Long>

@@ -42,7 +42,7 @@ import kotlinx.serialization.Contextual
 data class OpsPlacement200ResponseNodesInner (
 
     @SerialName(value = "id")
-    val id: kotlin.Long?,
+    val id: kotlin.Long,
 
     @SerialName(value = "zone")
     val zone: kotlin.String,
@@ -54,7 +54,7 @@ data class OpsPlacement200ResponseNodesInner (
     val release: kotlin.String?,
 
     @SerialName(value = "apps")
-    val apps: kotlin.Long?
+    val apps: kotlin.Long
 
 ) {
 

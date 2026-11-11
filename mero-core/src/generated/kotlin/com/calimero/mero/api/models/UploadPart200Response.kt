@@ -38,7 +38,7 @@ import kotlinx.serialization.Contextual
 data class UploadPart200Response (
 
     @SerialName(value = "next")
-    val next: kotlin.Long?
+    val next: kotlin.Long
 
 ) {
 

@@ -15,7 +15,7 @@ import com.calimero.mero.crypto.DeviceSigner
  * [com.calimero.mero.CalimeroError] it means.
  */
 class DeploymentsFacade internal constructor(
-    private val api: (PasskeyProvider?, DeviceSigner?) -> MeroApi,
+    private val api: (PasskeyProvider?, DeviceSigner?, Set<String>) -> MeroApi,
 ) {
     /**
      * Grant a deployer
@@ -35,7 +35,7 @@ class DeploymentsFacade internal constructor(
         until: kotlin.String? = null,
         passkey: PasskeyProvider? = null,
     ): DeployerGrant200Response =
-        api(passkey, null).signUpAndDeployments.deployerGrant(deployerGrantRequest = DeployerGrantRequest(deployer = deployer, until = until))
+        api(passkey, null, emptySet()).signUpAndDeployments.deployerGrant(deployerGrantRequest = DeployerGrantRequest(deployer = deployer, until = until))
 
     /**
      * The deployers
@@ -46,8 +46,8 @@ class DeploymentsFacade internal constructor(
      *
      * @throws com.calimero.mero.CalimeroError the node's refusal, typed by [com.calimero.mero.errorFrom].
      */
-    suspend fun deployerList(): kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement?> =
-        api(null, null).signUpAndDeployments.deployerList()
+    suspend fun deployerList(): kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement> =
+        api(null, null, emptySet()).signUpAndDeployments.deployerList()
 
     /**
      * Revoke a deployer
@@ -64,7 +64,7 @@ class DeploymentsFacade internal constructor(
         key: kotlin.String,
         passkey: PasskeyProvider? = null,
     ): DeployerRevoke200Response =
-        api(passkey, null).signUpAndDeployments.deployerRevoke(key = key)
+        api(passkey, null, emptySet()).signUpAndDeployments.deployerRevoke(key = key)
 
     /**
      * Create a deployment
@@ -83,8 +83,8 @@ class DeploymentsFacade internal constructor(
         name: kotlin.String,
         owner: com.calimero.mero.Deployer,
         passkey: PasskeyProvider? = null,
-    ): kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement?> =
-        api(passkey, null).signUpAndDeployments.deploymentCreate(deploymentCreateRequest = DeploymentCreateRequest(name = name, owner = owner))
+    ): DeploymentCreate200Response =
+        api(passkey, null, emptySet()).signUpAndDeployments.deploymentCreate(deploymentCreateRequest = DeploymentCreateRequest(name = name, owner = owner))
 
     /**
      * Delete a deployment
@@ -101,10 +101,12 @@ class DeploymentsFacade internal constructor(
         id: kotlin.String,
         passkey: PasskeyProvider? = null,
     ): DeploymentDelete200Response =
-        api(passkey, null).signUpAndDeployments.deploymentDelete(id = id)
+        api(passkey, null, emptySet()).signUpAndDeployments.deploymentDelete(id = id)
 
     /**
      * One deployment
+     *
+     * As anyone may read it: its name, its owner's kind and name (`null` when unknown), and the releases it offers; never its managers or customers.
      *
      * **Who:** signed in (a session or an API key).
      *
@@ -114,11 +116,13 @@ class DeploymentsFacade internal constructor(
      */
     suspend fun get(
         id: kotlin.String,
-    ): kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement?> =
-        api(null, null).signUpAndDeployments.deploymentGet(id = id)
+    ): DeploymentGet200Response =
+        api(null, null, emptySet()).signUpAndDeployments.deploymentGet(id = id)
 
     /**
      * Deployments
+     *
+     * The deployments the caller manages.
      *
      * **Who:** signed in (a session or an API key).
      *
@@ -127,7 +131,7 @@ class DeploymentsFacade internal constructor(
      * @throws com.calimero.mero.CalimeroError the node's refusal, typed by [com.calimero.mero.errorFrom].
      */
     suspend fun list(): DeploymentList200Response =
-        api(null, null).signUpAndDeployments.deploymentList()
+        api(null, null, emptySet()).signUpAndDeployments.deploymentList()
 
     /**
      * Offer a release in a deployment
@@ -147,7 +151,7 @@ class DeploymentsFacade internal constructor(
         version: kotlin.String,
         passkey: PasskeyProvider? = null,
     ): DeploymentOffer200Response =
-        api(passkey, null).signUpAndDeployments.deploymentOffer(id = id, deploymentOfferRequest = DeploymentOfferRequest(app = app, `package` = `package`, version = version))
+        api(passkey, null, emptySet()).signUpAndDeployments.deploymentOffer(id = id, deploymentOfferRequest = DeploymentOfferRequest(app = app, `package` = `package`, version = version))
 
     /**
      * The organizations a deployment serves
@@ -161,7 +165,7 @@ class DeploymentsFacade internal constructor(
     suspend fun orgs(
         id: kotlin.String,
     ): kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement?> =
-        api(null, null).signUpAndDeployments.deploymentOrgs(id = id)
+        api(null, null, emptySet()).signUpAndDeployments.deploymentOrgs(id = id)
 
     /**
      * Withdraw an offer
@@ -178,8 +182,8 @@ class DeploymentsFacade internal constructor(
         id: kotlin.String,
         app: kotlin.String,
         passkey: PasskeyProvider? = null,
-    ): kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement?> =
-        api(passkey, null).signUpAndDeployments.deploymentWithdraw(id = id, app = app)
+    ): kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement> =
+        api(passkey, null, emptySet()).signUpAndDeployments.deploymentWithdraw(id = id, app = app)
 
     /**
      * Issue a cluster sign-up invite
@@ -197,7 +201,7 @@ class DeploymentsFacade internal constructor(
         ttlSecs: kotlin.Long? = null,
         passkey: PasskeyProvider? = null,
     ): SignUpInviteCreate200Response =
-        api(passkey, null).signUpAndDeployments.signUpInviteCreate(signUpInviteCreateRequest = SignUpInviteCreateRequest(uses = uses, ttlSecs = ttlSecs))
+        api(passkey, null, emptySet()).signUpAndDeployments.signUpInviteCreate(signUpInviteCreateRequest = SignUpInviteCreateRequest(uses = uses, ttlSecs = ttlSecs))
 
     /**
      * Cluster sign-up invites
@@ -208,8 +212,8 @@ class DeploymentsFacade internal constructor(
      *
      * @throws com.calimero.mero.CalimeroError the node's refusal, typed by [com.calimero.mero.errorFrom].
      */
-    suspend fun signUpInviteList(): kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement?> =
-        api(null, null).signUpAndDeployments.signUpInviteList()
+    suspend fun signUpInviteList(): kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement> =
+        api(null, null, emptySet()).signUpAndDeployments.signUpInviteList()
 
     /**
      * Withdraw a cluster sign-up invite
@@ -225,8 +229,8 @@ class DeploymentsFacade internal constructor(
     suspend fun signUpInviteRevoke(
         key: kotlin.String,
         passkey: PasskeyProvider? = null,
-    ): kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement?> =
-        api(passkey, null).signUpAndDeployments.signUpInviteRevoke(key = key)
+    ): kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement> =
+        api(passkey, null, emptySet()).signUpAndDeployments.signUpInviteRevoke(key = key)
 
     /**
      * The sign-up policy
@@ -240,7 +244,7 @@ class DeploymentsFacade internal constructor(
      * @throws com.calimero.mero.CalimeroError the node's refusal, typed by [com.calimero.mero.errorFrom].
      */
     suspend fun signUpPublic(): SignUpPublic200Response =
-        api(null, null).signUpAndDeployments.signUpPublic()
+        api(null, null, emptySet()).signUpAndDeployments.signUpPublic()
 
     /**
      * Set the sign-up policy
@@ -258,6 +262,6 @@ class DeploymentsFacade internal constructor(
     suspend fun signUpSet(
         policy: SignUp,
         passkey: PasskeyProvider? = null,
-    ): kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement?> =
-        api(passkey, null).signUpAndDeployments.signUpSet(signUpSetRequest = SignUpSetRequest(policy = policy))
+    ): kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement> =
+        api(passkey, null, emptySet()).signUpAndDeployments.signUpSet(signUpSetRequest = SignUpSetRequest(policy = policy))
 }

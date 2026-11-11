@@ -61,9 +61,8 @@ openApiGenerate {
     generateModelDocumentation.set(false)
     generateApiTests.set(false)
     generateModelTests.set(false)
-    // The document is OpenAPI 3.1 and fails the generator's validator only on `info.license`
-    // (3.1 wants an `identifier` or a `url` beside the name); nothing that shapes the client.
-    skipValidateSpec.set(true)
+    // The document passes the generator's validator (OpenAPI 3.1, beta support there).
+    skipValidateSpec.set(false)
     templateDir.set(rootDir.resolve("templates").path)
     ignoreFileOverride.set(rootDir.resolve("openapi-generator-ignore").path)
     configOptions.putAll(
@@ -102,14 +101,17 @@ openApiGenerate {
             "JsonObject" to "kotlinx.serialization.json.JsonObject",
         ),
     )
-    // The spec's three unions (`anyOf`) are mero-core's own sealed types, each with the serializer
-    // that writes exactly the union's forms; the generator would flatten each into one class whose
-    // every branch's fields are required.
+    // The spec's unions are mero-core's own sealed types, each with the serializer that writes
+    // exactly the union's forms; the generator would flatten an `anyOf` into one class whose every
+    // branch's fields are required, and renders a `oneOf` as a sealed class no branch extends.
     schemaMappings.putAll(
         mapOf(
             "Access" to "com.calimero.mero.AppAccess",
             "Deployer" to "com.calimero.mero.Deployer",
             "OutboundSelection" to "com.calimero.mero.OutboundSelection",
+            // The consent request body is a `oneOf` with a `kind` discriminator, which 7.26's
+            // kotlinx output renders as a sealed class that no branch extends.
+            "ConsentPageCreateRequest" to "com.calimero.mero.ConsentRequest",
         ),
     )
     inlineSchemaOptions.putAll(mapOf("SKIP_SCHEMA_REUSE" to "true"))
