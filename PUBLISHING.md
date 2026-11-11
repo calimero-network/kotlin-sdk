@@ -31,6 +31,9 @@ minimum run what CI enforces:
 
 ## How a release happens
 
+[RELEASING.md](RELEASING.md) has the rules for titles and breaking changes that pick
+the version, shared with every Calimero repository that ships releases.
+
 On merge, as in the JS repos. Every push to `main` runs `.github/workflows/release-on-merge.yml`,
 which runs semantic-release (`.releaserc.json`) over the conventional commits since the last
 `v*` tag:
