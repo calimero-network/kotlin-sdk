@@ -999,8 +999,9 @@ class CalimeroClient(
      * Its owner and its organization's members only (`403` otherwise). Answers the file's ids with
      * the plaintext's size and [BlobInfo.sha256]. Held for an hour unless the app stores a
      * `BlobRef` to it. Past the organization's file quota: [QuotaExceeded].
+     *
+     * Not deprecated: the spec's answer has no `sha256` or `sealed` (see openapi/README.md).
      */
-    // Not deprecated: the spec's answer has no `sha256` or `sealed` (see openapi/README.md).
     suspend fun uploadFile(
         app: String,
         data: ByteArray,
@@ -1184,8 +1185,9 @@ class CalimeroClient(
      * A component app's xcalls: how many messages wait in its outbox, and the dead letters (never
      * delivered), newest last. Its owner's or an org admin's (`403` to anyone else);
      * `409 NOT_SUPPORTED` for an app on the wasmer runtime, whose xcalls are follow-ups.
+     *
+     * Not deprecated: the spec types `pending` as an array, the node answers a count (see openapi/README.md).
      */
-    // Not deprecated: the spec types `pending` as an array, the node answers a count (see openapi/README.md).
     suspend fun appXcalls(app: String): AppXcalls = wire.decodeFromJsonElement(AppXcalls.serializer(), raw(defaultApi.apps.appXcallsRequestConfig(app)))
 
     /** What the app's storage holds: `{ keys, bytes, blobs, blobBytes }`. */
