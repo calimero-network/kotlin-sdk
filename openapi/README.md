@@ -61,5 +61,10 @@ noted:
   are mapped to mero-core's `AppAccess`, `Deployer` and `OutboundSelection`.
 - **Shared `{ confirm? }` bodies** are inline, so the generator names them after the first
   operation it meets (`PasskeyRemoveRequest` for `DELETE /orgs/{org}`, …).
+- `GET /apps/{app}/xcalls` types `pending` as an array; the node answers a count (u64). `appXcalls`
+  stays hand-written and is not deprecated.
+- `POST /apps/{app}/blobs?sealed=true` answers `sha256` and `sealed`, which the spec does not list;
+  `uploadFile` stays hand-written and is not deprecated.
+- A property named `keys` is generated as `propertyKeys` (`GET /auth/apikeys`).
 - `info.license` has no `identifier` or `url`, which OpenAPI 3.1 requires; generation skips
   validation for it.

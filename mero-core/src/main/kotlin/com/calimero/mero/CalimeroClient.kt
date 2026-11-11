@@ -936,7 +936,7 @@ class CalimeroClient(
     /** The account's API keys (never the keys themselves). */
     @Deprecated(
         "Use the generated facade: auth.apikeyList",
-        ReplaceWith("auth.apikeyList().keys"),
+        ReplaceWith("auth.apikeyList().propertyKeys"),
     )
     suspend fun listApiKeys(): List<ApiKeyInfo> = listOf("keys", ApiKeyInfo.serializer(), raw(defaultApi.accounts.apikeyListRequestConfig()))
 
@@ -1000,10 +1000,7 @@ class CalimeroClient(
      * the plaintext's size and [BlobInfo.sha256]. Held for an hour unless the app stores a
      * `BlobRef` to it. Past the organization's file quota: [QuotaExceeded].
      */
-    @Deprecated(
-        "Use the generated facade: apps.blobUpload",
-        ReplaceWith("apps.blobUpload(app = app, body = data, sealed = true)"),
-    )
+    // Not deprecated: the spec's answer has no `sha256` or `sealed` (see openapi/README.md).
     suspend fun uploadFile(
         app: String,
         data: ByteArray,
@@ -1188,10 +1185,7 @@ class CalimeroClient(
      * delivered), newest last. Its owner's or an org admin's (`403` to anyone else);
      * `409 NOT_SUPPORTED` for an app on the wasmer runtime, whose xcalls are follow-ups.
      */
-    @Deprecated(
-        "Use the generated facade: apps.xcalls",
-        ReplaceWith("apps.xcalls(app = app)"),
-    )
+    // Not deprecated: the spec types `pending` as an array, the node answers a count (see openapi/README.md).
     suspend fun appXcalls(app: String): AppXcalls = wire.decodeFromJsonElement(AppXcalls.serializer(), raw(defaultApi.apps.appXcallsRequestConfig(app)))
 
     /** What the app's storage holds: `{ keys, bytes, blobs, blobBytes }`. */
