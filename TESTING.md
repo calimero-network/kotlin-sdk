@@ -12,6 +12,7 @@ Run every command from the repo root. You need **JDK 17** and the **Android SDK*
 ./gradlew assembleDebug
 ./gradlew :sample-app:assembleDebugAndroidTest   # instrumented tests must compile
 ./ci/check-registry-parity.sh                     # every public CalimeroClient method has an SDK-tab entry
+scripts/refresh-openapi.sh --check                # the generated OpenAPI client matches openapi/openapi.json
 ```
 
 The unit tests need no network and no node:

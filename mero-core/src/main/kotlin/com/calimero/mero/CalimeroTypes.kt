@@ -1,9 +1,17 @@
 package com.calimero.mero
 
+import kotlinx.serialization.KSerializer
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.descriptors.SerialDescriptor
+import kotlinx.serialization.encoding.Decoder
+import kotlinx.serialization.encoding.Encoder
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonDecoder
 import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonEncoder
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
 
 // What a [CalimeroClient] sends and answers (mero-js `cloud-v2/client.ts` types).
 
@@ -309,7 +317,12 @@ data class AppUpgradeTarget(
     val migrate: String? = null,
 )
 
-/** Who may reach an app (`setAccess`, `createApp`). */
+/**
+ * Who may reach an app (`setAccess`, `createApp`): `{ "kind": "owner" | "org" | "public" }`,
+ * `{ "kind": "accounts", "accounts": [...] }` or `{ "kind": "team", "team": id }` on the wire, the
+ * spec's `Access` (the generated client's type for it).
+ */
+@Serializable(with = AppAccessSerializer::class)
 sealed interface AppAccess {
     /** Only the owner. */
     data object Owner : AppAccess
@@ -329,6 +342,67 @@ sealed interface AppAccess {
     data class Team(
         val team: String,
     ) : AppAccess
+}
+
+internal object AppAccessSerializer : KSerializer<AppAccess> {
+    override val descriptor: SerialDescriptor = JsonObject.serializer().descriptor
+
+    override fun serialize(
+        encoder: Encoder,
+        value: AppAccess,
+    ) {
+        (encoder as JsonEncoder).encodeJsonElement(CalimeroClient.accessJson(value))
+    }
+
+    override fun deserialize(decoder: Decoder): AppAccess {
+        val o = (decoder as JsonDecoder).decodeJsonElement() as? JsonObject ?: error("an access is an object")
+        return when (val kind = o.string("kind")) {
+            "owner" -> AppAccess.Owner
+            "org" -> AppAccess.Org
+            "public" -> AppAccess.Public
+            "accounts" -> AppAccess.Accounts((o["accounts"] as? JsonArray)?.mapNotNull { (it as? JsonPrimitive)?.content }.orEmpty())
+            "team" -> AppAccess.Team(o.string("team").orEmpty())
+            else -> error("unknown access kind $kind")
+        }
+    }
+}
+
+/**
+ * Which outbound URL prefixes an approval covers (the spec's `OutboundSelection`): [Manifest], every
+ * prefix the package's release declares (the string `"manifest"`), or exactly [Prefixes] (a bare
+ * JSON array).
+ */
+@Serializable(with = OutboundSelectionSerializer::class)
+sealed interface OutboundSelection {
+    /** Every prefix the release's manifest declares. */
+    data object Manifest : OutboundSelection
+
+    /** Exactly these prefixes. */
+    data class Prefixes(
+        val prefixes: List<String>,
+    ) : OutboundSelection
+}
+
+internal object OutboundSelectionSerializer : KSerializer<OutboundSelection> {
+    override val descriptor: SerialDescriptor = JsonElement.serializer().descriptor
+
+    override fun serialize(
+        encoder: Encoder,
+        value: OutboundSelection,
+    ) {
+        val json =
+            when (value) {
+                OutboundSelection.Manifest -> JsonPrimitive("manifest")
+                is OutboundSelection.Prefixes -> JsonArray(value.prefixes.map(::JsonPrimitive))
+            }
+        (encoder as JsonEncoder).encodeJsonElement(json)
+    }
+
+    override fun deserialize(decoder: Decoder): OutboundSelection =
+        when (val json = (decoder as JsonDecoder).decodeJsonElement()) {
+            is JsonArray -> OutboundSelection.Prefixes(json.mapNotNull { (it as? JsonPrimitive)?.content })
+            else -> OutboundSelection.Manifest
+        }
 }
 
 /** An organization role. */

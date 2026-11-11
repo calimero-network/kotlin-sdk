@@ -26,6 +26,8 @@ subprojects {
         ignoreFailures.set(false)
         filter {
             exclude { entry -> entry.file.path.contains("/build/") }
+            // Generated from openapi/openapi.json (codegen/): its style is the generator's.
+            exclude { entry -> entry.file.path.contains("/src/generated/") }
         }
     }
 
@@ -33,6 +35,11 @@ subprojects {
         buildUponDefaultConfig = true
         config.setFrom(rootProject.file("config/detekt/detekt.yml"))
         parallel = true
+    }
+
+    // Generated from openapi/openapi.json (codegen/), never linted.
+    tasks.withType<io.gitlab.arturbosch.detekt.Detekt>().configureEach {
+        exclude("**/src/generated/**", "**/com/calimero/mero/api/**")
     }
 }
 

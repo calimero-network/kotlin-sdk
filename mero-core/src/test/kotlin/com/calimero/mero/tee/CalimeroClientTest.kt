@@ -13,6 +13,7 @@ import com.calimero.mero.CloudReleasePolicy
 import com.calimero.mero.CloudRetryOptions
 import com.calimero.mero.Committed
 import com.calimero.mero.ConfirmCancelled
+import com.calimero.mero.ConfirmRequired
 import com.calimero.mero.ConsentRequest
 import com.calimero.mero.ConsentScope
 import com.calimero.mero.Deployer
@@ -21,6 +22,7 @@ import com.calimero.mero.DirectoryFailure
 import com.calimero.mero.DirectoryNode
 import com.calimero.mero.LoginRequired
 import com.calimero.mero.MOCK_QUOTE_HEADER
+import com.calimero.mero.NotFound
 import com.calimero.mero.NotLeader
 import com.calimero.mero.OpenConsentOptions
 import com.calimero.mero.OrgRole
@@ -45,6 +47,7 @@ import com.calimero.mero.confirmationCode
 import com.calimero.mero.consentReturn
 import com.calimero.mero.crypto.Ed25519
 import com.calimero.mero.crypto.Hex
+import com.calimero.mero.crypto.SeedSigner
 import com.calimero.mero.crypto.base64
 import com.calimero.mero.crypto.concat
 import com.calimero.mero.errorFrom
@@ -82,6 +85,7 @@ import java.security.KeyFactory
 import java.security.Signature
 import java.security.spec.X509EncodedKeySpec
 import java.util.concurrent.atomic.AtomicInteger
+import com.calimero.mero.api.models.OrgRole as ApiOrgRole
 
 /**
  * [CalimeroClient] against stand-in cloud nodes, through the real sealed channel and a mock
@@ -890,5 +894,90 @@ class CalimeroClientTest {
             val any = issued("2020-01-01T00:00:00Z")
             assertTrue(freshCollateral(any, null) === any)
             assertEquals(DEFAULT_COLLATERAL_MIRROR, CloudReleasePolicy("2.3.109").collateralSource)
+        }
+
+    @Test
+    fun `the generated facade goes through the sealed transport and answers a 412 with the client's passkey`() =
+        runBlocking {
+            val cluster = Cluster(stepUp("""{"token":"inv_1"}"""))
+            val client = cluster.client()
+            client.passkey = softPasskey()
+            val token = client.orgs.inviteCreate(org = "org 1", role = ApiOrgRole.MEMBER, teams = listOf("t1")).token
+            assertEquals("inv_1", token)
+            assertEquals("/orgs/org%201/invites", path(cluster.nodes[0].requests[1].first))
+            assertEquals("member", sent(cluster, 1)["role"]!!.jsonPrimitive.content)
+            assertEquals("c1", sent(cluster, 1)["confirm"]!!.jsonObject["challengeId"]!!.jsonPrimitive.content)
+            // Optional fields left out, never sent as null.
+            assertTrue(!sent(cluster, 0).containsKey("ttlSecs"))
+        }
+
+    @Test
+    fun `the generated facade throws the typed refusal, and a 412 without a passkey reaches the caller`() =
+        runBlocking {
+            val cluster = Cluster({ head, _ -> if (path(head).startsWith("/apps/")) refused(404, "NOT_FOUND") else refused(412, "CONFIRM_REQUIRED", "{}") })
+            val client = cluster.client()
+            try {
+                client.apps.get(app = "app-1")
+                fail("expected NotFound")
+            } catch (e: NotFound) {
+                assertEquals(404, e.status)
+            }
+            try {
+                client.orgs.inviteCreate(org = "org-1", role = ApiOrgRole.MEMBER)
+                fail("expected ConfirmRequired")
+            } catch (e: ConfirmRequired) {
+                assertEquals(412, e.status)
+            }
+        }
+
+    @Test
+    fun `the generated facade signs a 428 with the client's operator key`() =
+        runBlocking {
+            val statement = "release-deadline-lift 1.0.0".encodeToByteArray()
+            val cluster =
+                Cluster({ _, body ->
+                    if (body.contains("\"operatorProof\"")) {
+                        json(200, "{}")
+                    } else {
+                        refused(
+                            428,
+                            "OPERATOR_SIGNATURE_REQUIRED",
+                            """{"subject":"s","method":"m","args":{},"nonce":"n1","cluster":"c","message":"${base64(statement)}"}""",
+                        )
+                    }
+                })
+            val client = cluster.client()
+            val seed = ByteArray(32) { it.toByte() }
+            client.operator = SeedSigner(Hex.encode(seed))
+            client.ops.releaseDeadlineLift(version = "1.0.0")
+            val proof = sent(cluster, 1)["operatorProof"]!!.jsonObject
+            assertEquals("n1", proof["nonce"]!!.jsonPrimitive.content)
+            val signature = Hex.decode(proof["signature"]!!.jsonPrimitive.content, "signature", 64)
+            assertTrue(Ed25519.verify(Ed25519.publicKey(seed), signature, statement))
+            assertEquals(
+                "DELETE",
+                cluster.nodes[0]
+                    .requests[1]
+                    .first["method"]!!
+                    .jsonPrimitive.content,
+            )
+        }
+
+    @Test
+    fun `a generated route takes an id as one path segment and refuses a dot segment before sending`() =
+        runBlocking {
+            val org = """{"orgId":"a/b?c","name":"n","owner":"acc-1","members":{},"teams":{},"metadata":null}"""
+            val cluster = Cluster({ _, _ -> json(200, org) })
+            val client = cluster.client()
+            assertEquals("a/b?c", client.orgs.get(org = "a/b?c").orgId)
+            assertEquals("/orgs/a%2Fb%3Fc", path(cluster.nodes[0].requests[0].first))
+            for (bad in listOf("", ".", "..")) {
+                try {
+                    client.orgs.get(org = bad)
+                    fail("expected IllegalArgumentException for '$bad'")
+                } catch (_: IllegalArgumentException) {
+                }
+            }
+            assertEquals(1, cluster.nodes[0].requests.size)
         }
 }

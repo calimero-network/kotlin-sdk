@@ -41,6 +41,12 @@ android {
         jvmTarget = "17"
     }
 
+    sourceSets {
+        // The OpenAPI client and its facade, generated from openapi/openapi.json by the codegen build
+        // (`./gradlew -p codegen generateMeroClient`) and checked in: see openapi/README.md.
+        getByName("main").java.srcDir("src/generated/kotlin")
+    }
+
     testOptions {
         unitTests {
             isReturnDefaultValues = true
