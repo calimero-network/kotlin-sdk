@@ -11,6 +11,8 @@ with the same names: `CalimeroClient` verifies a node's TDX attestation, seals e
 > relays, delegated execution, `/api/cloud/*`) is gone from core, and from this SDK. See
 > [Migrating from 0.x](https://calimero-network.github.io/kotlin-sdk/reference/migrating-from-0x/).
 
+> **Before committing, titling a pull request, or releasing**, read [RELEASING.md](RELEASING.md): the PR title is the release commit, and the rules are shared by every Calimero repository that ships releases.
+
 ## Modules
 
 | Module | What it is |
