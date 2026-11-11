@@ -124,6 +124,10 @@ jobs:
           private-key: ${{ secrets.GH_APP_PRIVATE_KEY }}
           owner: ${{ github.repository_owner }}
           repositories: ${{ github.event.repository.name }}
+          # Only what pushing the branch and opening the pull request needs, not
+          # everything the App was granted.
+          permission-contents: write
+          permission-pull-requests: write
 
       - name: Identify the app
         if: steps.diff.outputs.changed == 'true' && inputs.dry_run != true
