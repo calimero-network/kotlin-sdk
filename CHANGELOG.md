@@ -106,7 +106,7 @@ Kept, because no single operation replaces them: the passkey ceremonies (`signUp
 | `grantDeployer` | `` client.deployments.deployerGrant(deployer = deployer, until = until?.toString(), passkey = passkey) `` |
 | `deployers` | `` client.deployments.deployerList() `` |
 | `revokeDeployer` | `` client.deployments.deployerRevoke(key = deployer.key, passkey = passkey) `` |
-| `createDeployment` | `` client.deployments.create(name = name, owner = owner, passkey = passkey)["id"] `` |
+| `createDeployment` | `` client.deployments.create(name = name, owner = owner, passkey = passkey).id `` |
 | `deployments` | `` client.deployments.list().deployments `` |
 | `deployment` | `` client.deployments.get(id = id) `` |
 | `deleteDeployment` | `` client.deployments.delete(id = id, passkey = passkey) `` |

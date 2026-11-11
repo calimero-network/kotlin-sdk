@@ -72,8 +72,7 @@ A deployment is an account's or organization's list of the package releases it o
 an instance created from it runs the offered release, with no install and no deployer grant.
 
 ```kotlin
-client.deployments.create(name = "Chat", owner = Deployer.Org(org))
-val id = client.deployments.list().deployments.first { it.name == "Chat" }.id
+val id = client.deployments.create(name = "Chat", owner = Deployer.Org(org)).id
 client.deployments.offer(id = id, app = "chat", `package` = "com.calimero.chat", version = "1.0.0")
 client.deployments.get(id = id)                                         // public: name, owner, apps
 // a customer's app (or a page opened through /d/{id}/, see pageDeployment):

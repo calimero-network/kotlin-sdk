@@ -15,7 +15,6 @@ import com.calimero.mero.ConfirmRequired
 import com.calimero.mero.ConsentRequest
 import com.calimero.mero.ConsentScope
 import com.calimero.mero.Deployer
-import com.calimero.mero.DeployersInfo
 import com.calimero.mero.DirectoryError
 import com.calimero.mero.DirectoryFailure
 import com.calimero.mero.DirectoryNode
@@ -664,11 +663,14 @@ class CalimeroClientTest {
                             if (head["method"]!!.jsonPrimitive.content == "GET") {
                                 json(200, """{"deployments":"granted","deployers":"owner","owner":{"account":"acc-1"},"grants":[{"key":"org:o1","deployer":{"org":"o1"},"until":null,"untilSecs":null,"grantedAt":"t","grantedBy":"acc-1"}]}""")
                             } else {
-                                stepUp("""{"key":"org:o1","deployer":{"org":"o1"},"grant":{}}""")(head, body)
+                                stepUp("""{"key":"org:o1","deployer":{"org":"o1"},"grant":{"grantedAt":1,"grantedBy":"acc-1"}}""")(head, body)
                             }
                         "/apps" -> json(200, """{"appId":"a1","contextId":"c1","group":1,"replicas":[0]}""")
                         "/deployers/org%3Ao1" -> stepUp("""{"key":"org:o1"}""")(head, body)
-                        else -> stepUp("""{"id":"d2"}""")(head, body)
+                        else ->
+                            stepUp(
+                                """{"id":"d2","deployment":{"id":"d2","name":"Chat","owner":{"account":"acc-1"},"apps":{},"createdBy":"acc-1","createdAt":1},"host":null}""",
+                            )(head, body)
                     }
                 })
             val client = cluster.client()
@@ -681,13 +683,12 @@ class CalimeroClientTest {
                     .get(id = "d1")
                     .owner.name,
             )
-            val info = Json { ignoreUnknownKeys = true }.decodeFromJsonElement(DeployersInfo.serializer(), JsonObject(client.deployments.deployerList().mapValues { it.value ?: JsonNull }))
+            val info = client.deployments.deployerList()
             assertEquals(Deployer.Org("o1"), info.grants.single().deployer)
             assertEquals(Deployer.Account("acc-1"), info.owner)
             assertEquals("org:o1", client.deployments.deployerGrant(deployer = Deployer.Org("o1"), passkey = passkey).key)
             assertEquals("o1", sent(cluster, 4)["deployer"]!!.jsonObject["org"]!!.jsonPrimitive.content)
-            // The spec's answer lists only `host` (`id` is among the properties it leaves open).
-            client.deployments.create(name = "Chat", owner = Deployer.Account("acc-1"), passkey = passkey)
+            assertEquals("d2", client.deployments.create(name = "Chat", owner = Deployer.Account("acc-1"), passkey = passkey).id)
             assertEquals("acc-1", sent(cluster, 6)["owner"]!!.jsonObject["account"]!!.jsonPrimitive.content)
             client.deployments.deployerRevoke(key = Deployer.Org("o1").key, passkey = passkey)
             assertEquals("/deployers/org%3Ao1", path(cluster.nodes[0].requests[8].first))
@@ -801,7 +802,12 @@ class CalimeroClientTest {
             val cluster =
                 Cluster({ head, body ->
                     when (head["method"]!!.jsonPrimitive.content) {
-                        "GET" -> json(200, """{"package":"com.x","origins":[{"origin":"https://x.example","rpId":"x.example","addedBy":"acc-1","addedAt":"2026-11-05T10:00:00Z"}]}""")
+                        "GET" ->
+                            json(
+                                200,
+                                """{"package":"com.x","origins":[{"package":"com.x","origin":"https://x.example","rpId":"x.example","addedBy":"acc-1",""" +
+                                    """"addedAt":"2026-11-05T10:00:00Z","served":false}]}""",
+                            )
                         "POST" -> stepUp("""{"package":"com.x","origin":"https://x.example","rpId":"x.example","addedBy":"acc-1","addedAt":"2026-11-05T10:00:00Z"}""")(head, body)
                         else -> stepUp("""{"package":"com.x","origin":"https://x.example","removed":true}""")(head, body)
                     }
@@ -809,12 +815,11 @@ class CalimeroClientTest {
             val client = cluster.client()
             assertEquals(
                 "x.example",
-                (
-                    client.packages
-                        .originsList(`package` = "com.x")
-                        .origins
-                        .single() as JsonObject
-                )["rpId"]!!.jsonPrimitive.content,
+                client.packages
+                    .originsList(`package` = "com.x")
+                    .origins
+                    .single()
+                    .rpId,
             )
             assertEquals("/package-origins/com.x", path(cluster.nodes[0].requests[0].first))
             assertEquals(
@@ -847,7 +852,7 @@ class CalimeroClientTest {
             val cluster =
                 Cluster({ head, body ->
                     when (path(head)) {
-                        "/auth/me" -> json(200, """{"accountId":"acc-2","name":"b","passkeys":[],"orgs":[],"via":"session","passkeyId":null,"app":"com.x","origin":"https://x.example"}""")
+                        "/auth/me" -> json(200, """{"accountId":"acc-2","name":"b","passkeys":[],"orgs":[],"via":"session","passkeyId":null,"approvedReleases":[],"outboundApprovals":{},"app":"com.x","origin":"https://x.example"}""")
                         "/orgs/o1/recovery/start" -> json(200, """{"startedAt":10,"readyAt":20}""")
                         "/orgs/o1" -> json(200, """{"orgId":"o1","name":"Acme","recovery":{"publicKey":"pk","setAt":3,"pending":{"account":"acc-2","startedAt":10,"readyAt":20}}}""")
                         "/orgs" -> json(200, """{"orgId":"o1"}""")
