@@ -8,6 +8,7 @@ import com.calimero.mero.api.models.OrgRole
 import com.calimero.mero.api.models.TeamJoin
 import com.calimero.mero.api.models.TeamRole
 import com.calimero.mero.crypto.Hex
+import com.calimero.mero.sample.app.SampleViewModel
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonElement
 
@@ -213,10 +214,23 @@ private val approvalOps =
         },
         op("appsReport", "Approvals", "orgs.apps", "One page of a scope's apps report", OpField.line("org", "Organization (optional)")) { e, v -> v.opt("org")?.let { e.client.orgs.apps(org = it) } ?: e.client.auth.accountApps() },
         op("releaseRules", "Approvals", "public.releasesPublic", "The cluster's governance and release deadlines") { e, _ -> e.client.public.releasesPublic() },
-        op("requestConsent", "Approvals", "consent.pageCreate", "Ask for a release approval on the node's consent page", OpField.line("version", "Release"), OpField.line("org", "Organization (optional)")) { e, v ->
-            e.client.consent.pageCreate(consentRequest = ConsentRequest.Release(ConsentScope(v.opt("org")), v.v("version"), "mero-sample://consent"))
+        op("requestConsent", "Approvals", "requestConsent", "Ask for a release approval on the node's consent page", OpField.line("version", "Release"), OpField.line("org", "Organization (optional)")) { e, v ->
+            e.client.requestConsent(ConsentRequest.Release(ConsentScope(v.opt("org")), v.v("version"), SampleViewModel.CONSENT_CALLBACK))
         },
-        op("consentResult", "Approvals", "consent.pageResult", "The decision on a consent request", OpField.line("id", "Request id")) { e, v -> e.client.consent.pageResult(request = v.v("id")) },
+        op("consentCreateOrg", "Approvals", "requestConsent", "Ask to create an organization on the consent page", OpField.line("name", "Organization name")) { e, v ->
+            e.client.requestConsent(ConsentRequest.CreateOrg(v.v("name"), SampleViewModel.CONSENT_CALLBACK))
+        },
+        op("consentCreateInvite", "Approvals", "requestConsent", "Ask to mint an invitation on the consent page", org, OpField.line("role", "Role (guest|member|admin)", "member")) { e, v ->
+            e.client.requestConsent(ConsentRequest.CreateInvite(v.v("org"), checkNotNull(OrgRole.decode(v.v("role"))), SampleViewModel.CONSENT_CALLBACK))
+        },
+        op("consentAcceptInvite", "Approvals", "requestConsent", "Ask to accept an invitation on the consent page", OpField.line("token", "Invitation token")) { e, v ->
+            e.client.requestConsent(ConsentRequest.AcceptInvite(v.v("token"), SampleViewModel.CONSENT_CALLBACK))
+        },
+        // The outcome prints with a created invitation's token redacted (ConsentOutcome.InviteCreated).
+        op("consentResult", "Approvals", "consentResult", "The decision on a consent request", OpField.line("id", "Request id")) { e, v -> e.client.consentResult(v.v("id")) },
+        op("resumeConsent", "Approvals", "resumeConsent", "The decision behind a link the consent page sent back", OpField.line("link", "Return link", "${SampleViewModel.CONSENT_CALLBACK}?request_id=…&result=approved")) { e, v ->
+            e.client.resumeConsent(v.v("link")) ?: "not a consent return"
+        },
         op("publisherBinding", "Approvals", "public.publisherBinding", "What a signing key signs to bind itself", OpField.line("signer", "Signer id")) { e, v -> e.client.public.publisherBinding(signer = v.v("signer")) },
     )
 

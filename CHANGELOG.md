@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+### Consent: organizations and invitations, typed outcomes (mero-core, mero-compose)
+
+- `ConsentRequest.CreateOrg`, `ConsentRequest.CreateInvite` and `ConsentRequest.AcceptInvite`:
+  the consent page kinds core adds for a package-bound session (calimero-network/core#5014).
+- `ConsentResult.outcome`: a `ConsentOutcome` typed by kind (`OrgCreated(orgId)`,
+  `InviteCreated(token)`, `InviteAccepted(org)`, `Release`/`Upgrade`/`Outbound`, `Other` for a kind
+  this version does not know); `ConsentResult.isDeclined`. An invitation's token is left out of
+  `toString`.
+- `CalimeroClient.requestConsent` and `consentResult` are public; new `resumeConsent(href)` and
+  `waitForConsent(requestId, timeout)`.
+- `ConsentLauncher.resume(client, uri | intent)` for the App Link the page returns to.
+  `MeroAppSession.handle` reads results through `consentResult`, so it reads the new kinds too.
+
 ### Breaking: the `NoRelay*` aliases are gone (mero-core)
 
 The deprecated 0.x aliases kept since Calimero 1.0 dropped relays are removed:

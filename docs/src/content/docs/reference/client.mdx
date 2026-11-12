@@ -26,7 +26,7 @@ What `CalimeroClient` keeps besides:
 | Streams | `events`, `presenceStream` |
 | Blobs | `uploadBlob(app, data, contentType)`, `blobContent` (bytes and content type) |
 | Organizations | `startRecovery(org, seed)` (the seed signs here) |
-| Approvals | `appsReportAll`, `pendingApprovals`, `openConsentPage` (with `OpenConsentOptions(navigate, confirm)`; a code that is not `confirmationCode(requestId)` throws `CONSENT_CODE_MISMATCH`, `checkConsentCode`), `waitForConsent` |
+| Approvals | `appsReportAll`, `pendingApprovals`, `requestConsent`, `openConsentPage` (with `OpenConsentOptions(navigate, confirm)`; a code that is not `confirmationCode(requestId)` throws `CONSENT_CODE_MISMATCH`, `checkConsentCode`), `consentResult` (typed `ConsentOutcome` once approved), `resumeConsent`, `waitForConsent` (until `expiresAt`, or a `timeout`) |
 
 Helpers beside it: `errorFrom`, `fetchAttestedKey`, `claimedRelease`, `pendingApprovalsFrom`,
 `releaseConsent`, `withdrawConsent`, `upgradeConsent`, `consentReturn`, `stalledBy`,

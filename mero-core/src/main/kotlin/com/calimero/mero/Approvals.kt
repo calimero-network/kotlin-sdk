@@ -281,6 +281,49 @@ sealed interface ConsentRequest {
         val prefixes: List<String>? = null,
     ) : ConsentRequest
 
+    /** Create an organization named [name], owned by the account; the outcome is [ConsentOutcome.OrgCreated]. */
+    data class CreateOrg(
+        val name: String,
+        override val returnTo: String,
+    ) : ConsentRequest
+
+    /**
+     * Mint an invitation to [org] as [role] (guest, member or admin; never owner), on [teams], valid
+     * [ttlSecs] seconds and for [uses] redemptions (the node's defaults when null), for every app of
+     * the organization with [allApps]. The outcome is [ConsentOutcome.InviteCreated], which holds the
+     * token: hand it on, never log it.
+     */
+    data class CreateInvite(
+        val org: String,
+        val role: com.calimero.mero.api.models.OrgRole,
+        override val returnTo: String,
+        val teams: List<String>? = null,
+        val ttlSecs: Long? = null,
+        val uses: Long? = null,
+        val allApps: Boolean? = null,
+    ) : ConsentRequest {
+        init {
+            require(role != com.calimero.mero.api.models.OrgRole.OWNER) { "an invitation is for a guest, a member or an admin" }
+            require(ttlSecs == null || ttlSecs >= 0) { "ttlSecs is not negative" }
+            require(uses == null || uses >= 0) { "uses is not negative" }
+        }
+    }
+
+    /**
+     * Redeem the invitation [token]; the outcome is [ConsentOutcome.InviteAccepted]. [toString]
+     * leaves the token out, so a logged request does not leak it.
+     */
+    class AcceptInvite(
+        val token: String,
+        override val returnTo: String,
+    ) : ConsentRequest {
+        override fun equals(other: Any?): Boolean = other is AcceptInvite && other.token == token && other.returnTo == returnTo
+
+        override fun hashCode(): Int = 31 * token.hashCode() + returnTo.hashCode()
+
+        override fun toString(): String = "AcceptInvite(token=<redacted>, returnTo=$returnTo)"
+    }
+
     /** The wire body. */
     fun toJson(): JsonObject =
         when (this) {
@@ -322,6 +365,27 @@ sealed interface ConsentRequest {
                     )
                     put("returnTo", returnTo)
                 }
+            is CreateOrg -> body("createOrg") { put("name", name) }
+            is CreateInvite ->
+                body("createInvite") {
+                    put("org", org)
+                    put("role", role.value)
+                    teams?.let { list -> put("teams", kotlinx.serialization.json.JsonArray(list.map { kotlinx.serialization.json.JsonPrimitive(it) })) }
+                    ttlSecs?.let { put("ttlSecs", it) }
+                    uses?.let { put("uses", it) }
+                    allApps?.let { put("allApps", it) }
+                }
+            is AcceptInvite -> body("acceptInvite") { put("token", token) }
+        }
+
+    private fun body(
+        kind: String,
+        subject: kotlinx.serialization.json.JsonObjectBuilder.() -> Unit,
+    ): JsonObject =
+        buildJsonObject {
+            put("kind", kind)
+            put("subject", buildJsonObject(subject))
+            put("returnTo", returnTo)
         }
 }
 
@@ -373,22 +437,155 @@ fun confirmationCode(requestId: String): String {
     return code.toString()
 }
 
+/**
+ * What an approved consent request did, by its kind (`GET /consent/{id}/result`'s `outcome`). A
+ * release, upgrade or outbound approval carries nothing beyond the approval itself.
+ */
+sealed interface ConsentOutcome {
+    /** The request's `kind` on the wire. */
+    val kind: String
+
+    data object Release : ConsentOutcome {
+        override val kind: String = "release"
+    }
+
+    data object Upgrade : ConsentOutcome {
+        override val kind: String = "upgrade"
+    }
+
+    data object Outbound : ConsentOutcome {
+        override val kind: String = "outbound"
+    }
+
+    /** [ConsentRequest.CreateOrg]: the organization it created. */
+    data class OrgCreated(
+        val orgId: String,
+    ) : ConsentOutcome {
+        override val kind: String = "createOrg"
+    }
+
+    /**
+     * [ConsentRequest.CreateInvite]: the invitation's [token], a bearer secret. Hand it to whoever
+     * is invited (an invitation link); never log it. [toString] leaves it out.
+     */
+    class InviteCreated(
+        val token: String,
+    ) : ConsentOutcome {
+        override val kind: String = "createInvite"
+
+        override fun equals(other: Any?): Boolean = other is InviteCreated && other.token == token
+
+        override fun hashCode(): Int = token.hashCode()
+
+        override fun toString(): String = "InviteCreated(token=<redacted>)"
+    }
+
+    /** [ConsentRequest.AcceptInvite]: the organization the account joined. */
+    data class InviteAccepted(
+        val org: String,
+    ) : ConsentOutcome {
+        override val kind: String = "acceptInvite"
+    }
+
+    /** A kind this SDK does not know (a newer node), or a known kind whose `outcome` lacks its field. */
+    data class Other(
+        override val kind: String,
+        /** The `outcome` object as the node sent it, or null. Keys and values as sent: may hold a secret. */
+        val raw: JsonObject?,
+    ) : ConsentOutcome {
+        override fun toString(): String = "Other(kind=$kind, keys=${raw?.keys})"
+    }
+
+    companion object {
+        /** The outcome of an approved request of [kind] from the node's `outcome` object. */
+        fun of(
+            kind: String,
+            outcome: JsonObject?,
+        ): ConsentOutcome {
+            fun field(key: String): String? = (outcome?.get(key) as? kotlinx.serialization.json.JsonPrimitive)?.takeIf { it.isString }?.content
+            return when (kind) {
+                "release" -> Release
+                "upgrade" -> Upgrade
+                "outbound" -> Outbound
+                "createOrg" -> field("orgId")?.let(::OrgCreated)
+                "createInvite" -> field("token")?.let(::InviteCreated)
+                "acceptInvite" -> field("org")?.let(::InviteAccepted)
+                else -> null
+            } ?: Other(kind, outcome)
+        }
+    }
+}
+
 /** `GET /consent/{id}/result`. [status] is `pending`, `approved` or `declined`. */
-@Serializable
+@Serializable(with = ConsentResultSerializer::class)
 data class ConsentResult(
     val requestId: String,
     val kind: String = "",
     val status: String = "pending",
     /** Unix seconds, once decided. */
     val decidedAt: Long? = null,
+    /** What the approval did ([ConsentOutcome]); null unless [isApproved]. */
+    val outcome: ConsentOutcome? = null,
 ) {
     val isPending: Boolean get() = status == "pending"
     val isApproved: Boolean get() = status == "approved"
+    val isDeclined: Boolean get() = status == "declined"
 
     companion object {
         /** The facade's answer (`client.consent.pageResult(request = id)`) as a [ConsentResult]. */
         fun from(answer: ConsentPageResult200Response): ConsentResult =
-            ConsentResult(answer.requestId, answer.kind.value, answer.status.value, answer.decidedAt)
+            ConsentResult(
+                answer.requestId,
+                answer.kind.value,
+                answer.status.value,
+                answer.decidedAt,
+                if (answer.status == ConsentPageResult200Response.Status.APPROVED) ConsentOutcome.of(answer.kind.value, null) else null,
+            )
+
+        /** A result from the node's JSON answer: [outcome] typed by `kind` when approved. */
+        fun fromJson(o: JsonObject): ConsentResult {
+            fun str(key: String) = (o[key] as? kotlinx.serialization.json.JsonPrimitive)?.takeIf { it !is JsonNull }?.content
+            val kind = str("kind").orEmpty()
+            val status = str("status") ?: "pending"
+            return ConsentResult(
+                requestId = str("requestId").orEmpty(),
+                kind = kind,
+                status = status,
+                decidedAt = str("decidedAt")?.toLongOrNull(),
+                outcome = if (status == "approved") ConsentOutcome.of(kind, o["outcome"] as? JsonObject) else null,
+            )
+        }
+    }
+}
+
+/** Reads [ConsentResult.fromJson]; writes the wire shape back (`outcome` with its fields). */
+internal object ConsentResultSerializer : kotlinx.serialization.KSerializer<ConsentResult> {
+    override val descriptor: kotlinx.serialization.descriptors.SerialDescriptor = JsonObject.serializer().descriptor
+
+    override fun serialize(
+        encoder: kotlinx.serialization.encoding.Encoder,
+        value: ConsentResult,
+    ) {
+        val json =
+            buildJsonObject {
+                put("requestId", value.requestId)
+                put("kind", value.kind)
+                put("status", value.status)
+                if (value.decidedAt == null) put("decidedAt", JsonNull) else put("decidedAt", value.decidedAt)
+                when (val o = value.outcome) {
+                    is ConsentOutcome.OrgCreated -> put("outcome", buildJsonObject { put("orgId", o.orgId) })
+                    is ConsentOutcome.InviteCreated -> put("outcome", buildJsonObject { put("token", o.token) })
+                    is ConsentOutcome.InviteAccepted -> put("outcome", buildJsonObject { put("org", o.org) })
+                    is ConsentOutcome.Other -> o.raw?.let { put("outcome", it) }
+                    else -> Unit
+                }
+            }
+        (encoder as kotlinx.serialization.json.JsonEncoder).encodeJsonElement(json)
+    }
+
+    override fun deserialize(decoder: kotlinx.serialization.encoding.Decoder): ConsentResult {
+        val element = (decoder as kotlinx.serialization.json.JsonDecoder).decodeJsonElement()
+        return ConsentResult.fromJson(element as? JsonObject ?: throw kotlinx.serialization.SerializationException("a consent result is an object"))
     }
 }
 

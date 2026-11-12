@@ -252,7 +252,7 @@ class MeroAppSession(
     suspend fun handle(url: String): Boolean {
         restoring.withLock { }
         consentReturn(url)?.let { back ->
-            _consentResult.value = runCatching { ConsentResult.from(client.consent.pageResult(request = back.requestId)) }.getOrNull()
+            _consentResult.value = runCatching { client.consentResult(back.requestId) }.getOrNull()
             return true
         }
         val recognised = options.isInvitation?.invoke(url) ?: isInvitationLink(url, packageName)
