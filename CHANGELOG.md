@@ -10,10 +10,16 @@
   `InviteCreated(token)`, `InviteAccepted(org)`, `Release`/`Upgrade`/`Outbound`, `Other` for a kind
   this version does not know); `ConsentResult.isDeclined`. An invitation's token is left out of
   `toString`.
-- `CalimeroClient.requestConsent` and `consentResult` are public; new `resumeConsent(href)` and
-  `waitForConsent(requestId, timeout)`.
-- `ConsentLauncher.resume(client, uri | intent)` for the App Link the page returns to.
-  `MeroAppSession.handle` reads results through `consentResult`, so it reads the new kinds too.
+- `CalimeroClient.requestConsent` and `consentResult` are public; new `waitForConsent(requestId, timeout)`
+  and `resumeConsent(href, requestId)`, which reads the app's own request from the node and throws
+  `CONSENT_NOT_STARTED`, `CONSENT_REQUEST_MISMATCH`, `CONSENT_NOT_DECIDED` (still pending after the
+  page returned) or `CONSENT_REPLACED` (`404`: a newer request replaced it) when the return is not
+  that request's decision.
+- `consentReturnTo(origin, version)`: a native app's `returnTo` on Calimero Cloud, the package's
+  served page (`{origin}/{version}/?native-consent=1`).
+- `ConsentLauncher.resume(client, uri | intent, requestId)` for the link the page returns to.
+  `MeroAppSession.handle` checks a return against the request `requestConsent` started: the decision
+  in `consentResult`, a refused return in the new `consentError`.
 
 ### Breaking: the `NoRelay*` aliases are gone (mero-core)
 

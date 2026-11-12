@@ -26,10 +26,24 @@ hint (anyone can type a URL): confirm it with the node.
 
 ```kotlin
 // In the activity that receives the App Link (null when the intent is not a consent return):
-val result = ConsentLauncher.resume(client, intent)       // or client.resumeConsent(url)
+val result = ConsentLauncher.resume(client, intent, started.requestId) // or client.resumeConsent(url, id)
 // or poll, when the link does not come back:
 val polled = client.waitForConsent(started.requestId, timeout = 10.minutes)
 ```
+
+`resume` reads the decision on the request **this app started** from the node, never from the
+link (whose `result` anyone can type), and throws `CalimeroError` when the return is not that
+decision:
+
+| Code | Means |
+|---|---|
+| `CONSENT_NOT_STARTED` | the link names a request, and the app passed none (`requestId = null`) |
+| `CONSENT_REQUEST_MISMATCH` | the link, or the node's answer, names another request than the app's |
+| `CONSENT_NOT_DECIDED` | the page sent the person back, but the app's request is still pending: another request may have been approved on a page that was not the node's. Do not act on it |
+| `CONSENT_REPLACED` | the node no longer knows the app's request (`404`): an account has one undecided request per node, and a newer one replaced it, possibly on a forged page. Do not act on it either |
+
+Keep `started.requestId` across the trip to the browser (`onSaveInstanceState`, or your view
+model's saved state), since the process may be gone when the link comes back.
 
 The four steps are the same in mero-js and swift-sdk (`request / begin / resume / wait`):
 
@@ -37,7 +51,7 @@ The four steps are the same in mero-js and swift-sdk (`request / begin / resume 
 |---|---|---|
 | request | `client.requestConsent(request)`: `{ requestId, url, code, expiresAt }` | |
 | begin | `client.openConsentPage(request, OpenConsentOptions(navigate, confirm))` (checks `code`) | `ConsentLauncher.request(context, client, request, confirm)` (a Custom Tab) |
-| resume | `client.resumeConsent(href)` | `ConsentLauncher.resume(client, uri or intent)`, `MeroAppSession.handle(url)` |
+| resume | `client.resumeConsent(href, requestId)` | `ConsentLauncher.resume(client, uri or intent, requestId)`, `MeroAppSession.handle(url)` (`consentResult` / `consentError`) |
 | wait | `client.waitForConsent(requestId, timeout)`, `client.consentResult(requestId)` | |
 
 ## Organizations and invitations
@@ -51,9 +65,17 @@ ConsentRequest.CreateInvite(org, OrgRole.MEMBER, returnTo, teams = listOf(team),
 ConsentRequest.AcceptInvite(token, returnTo)
 ```
 
-`returnTo` must be the package's own frontend origin or one its signed manifest names, so on
-Android it is a verified App Link on such an `https` origin (an intent filter with
-`android:autoVerify="true"` and the origin's `assetlinks.json`).
+`returnTo` must be the package's own frontend origin or one its signed manifest names, never an
+app scheme. On Calimero Cloud, a native app uses the package's served page, which passes the
+answer on to the app's callback (`callback?request_id=…&result=…`), as in swift-sdk:
+
+```kotlin
+val returnTo = consentReturnTo(origin = "https://x.apps.calimero.network", version = "3.1.72")
+// https://x.apps.calimero.network/3.1.72/?native-consent=1
+```
+
+A verified App Link on such an `https` origin (an intent filter with `android:autoVerify="true"`
+and the origin's `assetlinks.json`) works too. On a development node, use the app's callback as it is.
 
 Once approved, `ConsentResult.outcome` says what the approval did, typed by kind:
 

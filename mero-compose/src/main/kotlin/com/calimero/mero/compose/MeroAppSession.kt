@@ -124,8 +124,21 @@ class MeroAppSession(
 
     private val _consentResult = MutableStateFlow<ConsentResult?>(null)
 
-    /** The decision the consent page sent the person back with ([handle]), confirmed with the node. */
+    /** The decision on the request [requestConsent] started, read from the node when the page sent the person back ([handle]). */
     val consentResult: StateFlow<ConsentResult?> = _consentResult.asStateFlow()
+
+    private val _consentError = MutableStateFlow<Throwable?>(null)
+
+    /**
+     * Why the last consent return was refused ([handle]): a [com.calimero.mero.CalimeroError] with
+     * `CONSENT_NOT_STARTED`, `CONSENT_REQUEST_MISMATCH`, `CONSENT_NOT_DECIDED` or `CONSENT_REPLACED`
+     * ([CalimeroClient.resumeConsent]), or the request's own failure. Do not act on the return then.
+     */
+    val consentError: StateFlow<Throwable?> = _consentError.asStateFlow()
+
+    /** The request [requestConsent] started and no return has settled yet. */
+    @Volatile
+    private var consentRequestId: String? = null
 
     /**
      * The passkey that approves the account's step-ups on 1.0 (`412 CONFIRM_REQUIRED`): inviting,
@@ -251,8 +264,17 @@ class MeroAppSession(
      */
     suspend fun handle(url: String): Boolean {
         restoring.withLock { }
-        consentReturn(url)?.let { back ->
-            _consentResult.value = runCatching { client.consentResult(back.requestId) }.getOrNull()
+        if (consentReturn(url) != null) {
+            runCatching { client.resumeConsent(url, consentRequestId) }
+                .onSuccess {
+                    _consentResult.value = it
+                    _consentError.value = null
+                    consentRequestId = null
+                }.onFailure {
+                    if (it is CancellationException) throw it
+                    _consentResult.value = null
+                    _consentError.value = it
+                }
             return true
         }
         val recognised = options.isInvitation?.invoke(url) ?: isInvitationLink(url, packageName)
@@ -289,7 +311,8 @@ class MeroAppSession(
     /**
      * Ask the account holder to approve [request] on the node's consent page, opened in a Custom
      * Tab ([ConsentLauncher]). The page sends them back to [callbackUrl]: hand that link to
-     * [handle], and read [consentResult]. Show the answer's [ConsentStarted.code] in [confirm]
+     * [handle], and read [consentResult] (or [consentError] when the return is not this request's
+     * decision). Show the answer's [ConsentStarted.code] in [confirm]
      * before the page opens (answer `false` and it does not): the page shows the same confirmation
      * code. A code that is not the page's throws `CONSENT_CODE_MISMATCH`.
      */
@@ -299,7 +322,8 @@ class MeroAppSession(
         confirm: (suspend (ConsentStarted) -> Boolean)? = null,
     ): ConsentStarted {
         _consentResult.value = null
-        return ConsentLauncher.request(context, client, request, confirm)
+        _consentError.value = null
+        return ConsentLauncher.request(context, client, request, confirm).also { consentRequestId = it.requestId }
     }
 
     /** Rebuild [backend] from the client's session. A no-op when the account did not change. */

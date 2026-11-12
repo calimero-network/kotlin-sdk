@@ -228,8 +228,8 @@ private val approvalOps =
         },
         // The outcome prints with a created invitation's token redacted (ConsentOutcome.InviteCreated).
         op("consentResult", "Approvals", "consentResult", "The decision on a consent request", OpField.line("id", "Request id")) { e, v -> e.client.consentResult(v.v("id")) },
-        op("resumeConsent", "Approvals", "resumeConsent", "The decision behind a link the consent page sent back", OpField.line("link", "Return link", "${SampleViewModel.CONSENT_CALLBACK}?request_id=…&result=approved")) { e, v ->
-            e.client.resumeConsent(v.v("link")) ?: "not a consent return"
+        op("resumeConsent", "Approvals", "resumeConsent", "The decision behind a link the consent page sent back", OpField.line("link", "Return link", "${SampleViewModel.CONSENT_CALLBACK}?request_id=…&result=approved"), OpField.line("id", "Request id you started")) { e, v ->
+            e.client.resumeConsent(v.v("link"), v.opt("id")) ?: "not a consent return"
         },
         op("publisherBinding", "Approvals", "public.publisherBinding", "What a signing key signs to bind itself", OpField.line("signer", "Signer id")) { e, v -> e.client.public.publisherBinding(signer = v.v("signer")) },
     )

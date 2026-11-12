@@ -44,6 +44,7 @@ import com.calimero.mero.app.OrgInvitation
 import com.calimero.mero.app.PasskeyRequired
 import com.calimero.mero.confirmationCode
 import com.calimero.mero.consentReturn
+import com.calimero.mero.consentReturnTo
 import com.calimero.mero.crypto.Ed25519
 import com.calimero.mero.crypto.Hex
 import com.calimero.mero.crypto.SeedSigner
@@ -479,9 +480,9 @@ class CalimeroClientTest {
             assertEquals("inv_secret", outcome.token)
             assertFalse(invited.toString(), invited.toString().contains("inv_secret"))
 
-            // resume confirms the link with the node; anything else is not a consent return.
-            assertEquals(ConsentOutcome.OrgCreated("org-9"), client.resumeConsent("https://app.example/consent?request_id=r3&result=approved")!!.outcome)
-            assertNull(client.resumeConsent("https://app.example/consent?foo=bar"))
+            // resume reads the app's own request from the node; anything else is not a consent return.
+            assertEquals(ConsentOutcome.OrgCreated("org-9"), client.resumeConsent("https://app.example/consent?request_id=r3&result=approved", "r3")!!.outcome)
+            assertNull(client.resumeConsent("https://app.example/consent?foo=bar", "r3"))
             assertEquals(ConsentOutcome.InviteAccepted("org-1"), client.consentResult("r4").outcome)
             val declined = client.consentResult("r5")
             assertTrue(declined.isDeclined)
@@ -492,6 +493,71 @@ class CalimeroClientTest {
             // A request still pending when the timeout passes answers the pending result.
             assertTrue(client.waitForConsent("r8", 20.milliseconds, intervalMs = 5).isPending)
         }
+
+    @Test
+    fun `refuses a consent return that is not the decision on the app's own request`() =
+        runBlocking {
+            val cluster =
+                Cluster({ head, _ ->
+                    when (path(head)) {
+                        "/consent/mine/result" -> json(200, """{"requestId":"mine","kind":"createInvite","status":"pending","decidedAt":null}""")
+                        "/consent/swapped/result" -> json(200, """{"requestId":"other","kind":"createInvite","status":"approved","decidedAt":1,"outcome":{"token":"t"}}""")
+                        "/consent/declined/result" -> json(200, """{"requestId":"declined","kind":"createOrg","status":"declined","decidedAt":1}""")
+                        else -> refused(404, "NOT_FOUND")
+                    }
+                })
+            val client = cluster.client()
+
+            suspend fun refusal(
+                href: String,
+                own: String?,
+            ): com.calimero.mero.CalimeroError =
+                try {
+                    client.resumeConsent(href, own)
+                    fail("expected a refusal")
+                    error("unreachable")
+                } catch (e: com.calimero.mero.CalimeroError) {
+                    e
+                }
+            val back = "https://app.example/consent?result=approved&request_id="
+
+            // The app started none: a return still names one.
+            val notStarted = refusal(back + "mine", null)
+            assertEquals(CalimeroClient.CONSENT_NOT_STARTED, notStarted.code)
+            assertEquals("mine", notStarted.details["returned"]!!.jsonPrimitive.content)
+            // The link names another request than the app's: refused before asking the node.
+            val before = cluster.nodes[0].requests.size
+            val mismatch = refusal(back + "forged", "mine")
+            assertEquals(CalimeroClient.CONSENT_REQUEST_MISMATCH, mismatch.code)
+            assertEquals("forged", mismatch.details["returned"]!!.jsonPrimitive.content)
+            assertEquals(before, cluster.nodes[0].requests.size)
+            // The page came back "approved", but the node says the app's request is pending.
+            val pending = refusal(back + "mine", "mine")
+            assertEquals(CalimeroClient.CONSENT_NOT_DECIDED, pending.code)
+            assertEquals("mine", pending.details["requestId"]!!.jsonPrimitive.content)
+            // A newer request replaced the app's: the node answers 404 for it.
+            val replaced = refusal(back + "gone", "gone")
+            assertEquals(CalimeroClient.CONSENT_REPLACED, replaced.code)
+            assertEquals(404, replaced.status)
+            assertTrue(replaced.cause is com.calimero.mero.NotFound)
+            // The node answered for another request than asked.
+            assertEquals(CalimeroClient.CONSENT_REQUEST_MISMATCH, refusal(back + "swapped", "swapped").code)
+            // A decline is a decision: the link's `result` is not trusted, the node's status is.
+            val declined = client.resumeConsent(back + "declined", "declined")!!
+            assertTrue(declined.isDeclined)
+            assertNull(declined.outcome)
+        }
+
+    @Test
+    fun `returns native consent to the package's served page`() {
+        assertEquals("https://x.apps.calimero.network/3.1.72/?native-consent=1", consentReturnTo("https://x.apps.calimero.network/", "3.1.72"))
+        assertEquals("https://x.apps.calimero.network/3.1.72/?native-consent=1", consentReturnTo("https://x.apps.calimero.network", "3.1.72"))
+        try {
+            consentReturnTo("https://x.apps.calimero.network", "../evil")
+            fail("a path is not a version")
+        } catch (_: IllegalArgumentException) {
+        }
+    }
 
     @Test
     fun `types consent outcomes by kind`() {

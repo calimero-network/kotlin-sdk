@@ -111,12 +111,14 @@ Approvals, creating an organization, and minting or accepting an invitation are 
 account holder on the node's own consent page:
 
 ```kotlin
-val started = ConsentLauncher.request(activity, client, ConsentRequest.CreateOrg("Acme", returnTo = appLink)) { s ->
+val returnTo = consentReturnTo(packageOrigin, version)   // the package's served page relays to the app
+val started = ConsentLauncher.request(activity, client, ConsentRequest.CreateOrg("Acme", returnTo)) { s ->
     showCode(s.code)                                     // the page shows the same code
     true
 }
-// The page returns to the App Link: confirm with the node (or client.waitForConsent(id, timeout)).
-val result = ConsentLauncher.resume(client, intent)
+// Back in the app: this request's decision, read from the node (or client.waitForConsent(id, timeout)).
+// A return that is not it throws (CONSENT_NOT_DECIDED, CONSENT_REPLACED, CONSENT_REQUEST_MISMATCH, …).
+val result = ConsentLauncher.resume(client, intent, started.requestId)
 (result?.outcome as? ConsentOutcome.OrgCreated)?.let { open(it.orgId) }
 ```
 

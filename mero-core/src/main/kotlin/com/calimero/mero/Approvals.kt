@@ -608,6 +608,21 @@ fun consentReturn(href: String): ConsentReturn? {
     return ConsentReturn(requestId, result)
 }
 
+/**
+ * A native app's consent `returnTo` on Calimero Cloud: the package's served page
+ * (`{origin}/{version}/?native-consent=1`), which passes the answer on to the app
+ * (`callback?request_id=…&result=…`). The node takes only the package's own https origin (or one its
+ * signed manifest names) as `returnTo`, never an app scheme. On a development node, use the app's
+ * callback as it is. (swift-sdk `ServedPageHandoff.consentReturnTo`.)
+ */
+fun consentReturnTo(
+    origin: String,
+    version: String,
+): String {
+    require(version.isNotEmpty() && '/' !in version && '?' !in version && '#' !in version) { "a package version" }
+    return "${origin.trimEnd('/')}/$version/?native-consent=1"
+}
+
 /** The public verifier for mero-tee releases (`attestation-verifier`). */
 const val RELEASE_VERIFIER: String = "https://mero-tee.vercel.app"
 

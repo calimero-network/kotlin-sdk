@@ -19,9 +19,10 @@ import com.calimero.mero.OpenConsentOptions
  * - [request]: ask the node ([CalimeroClient.openConsentPage]) and open the page; show the person
  *   the answer's `code` in `confirm` first.
  * - [resume]: the page sends the person back to the request's `returnTo` (a verified App Link on the
- *   package's frontend origin, or one its signed manifest names) with `?request_id=…&result=…`;
- *   hand the intent's URI here (or to [MeroAppSession.handle]) for the decision, confirmed with the
- *   node.
+ *   package's frontend origin, or one its signed manifest names, such as the package's served page:
+ *   [com.calimero.mero.consentReturnTo]) with `?request_id=…&result=…`; hand the intent's URI here
+ *   with the request id [request] answered (or to [MeroAppSession.handle]) for that request's
+ *   decision, read from the node; a return that is not it throws.
  * - [CalimeroClient.waitForConsent]: poll instead, when the link does not come back.
  *
  * The decision's [ConsentResult.outcome] is typed by kind ([com.calimero.mero.ConsentOutcome]).
@@ -51,18 +52,22 @@ object ConsentLauncher {
     ): ConsentStarted = client.openConsentPage(request, OpenConsentOptions({ open(context, it) }, confirm))
 
     /**
-     * The decision behind the link the consent page sent the person back with (an App Link intent's
-     * `data`), confirmed with the node ([CalimeroClient.resumeConsent]), or null when [uri] is not a
-     * consent return.
+     * The decision on [requestId] (the [ConsentStarted.requestId] that [request] answered) behind
+     * the link the consent page sent the person back with (an App Link intent's `data`), read from
+     * the node ([CalimeroClient.resumeConsent]), or null when [uri] is not a consent return. Throws
+     * [com.calimero.mero.CalimeroError] `CONSENT_NOT_STARTED`, `CONSENT_REQUEST_MISMATCH`,
+     * `CONSENT_NOT_DECIDED` or `CONSENT_REPLACED` when the return is not that request's decision.
      */
     suspend fun resume(
         client: CalimeroClient,
         uri: Uri,
-    ): ConsentResult? = client.resumeConsent(uri.toString())
+        requestId: String?,
+    ): ConsentResult? = client.resumeConsent(uri.toString(), requestId)
 
     /** [resume] with the intent the system handed the activity, or null when it carries no consent return. */
     suspend fun resume(
         client: CalimeroClient,
         intent: Intent?,
-    ): ConsentResult? = intent?.data?.let { resume(client, it) }
+        requestId: String?,
+    ): ConsentResult? = intent?.data?.let { resume(client, it, requestId) }
 }

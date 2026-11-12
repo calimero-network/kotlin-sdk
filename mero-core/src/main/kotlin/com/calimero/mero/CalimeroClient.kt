@@ -1111,10 +1111,59 @@ class CalimeroClient(
 
     /**
      * The link the consent page sent the person back with (the App Link the system handed the app):
-     * the decision confirmed with the node ([consentResult]), or null when [href] is not a consent
-     * return. The link is only a hint (anyone can open a URL); the answer is the node's.
+     * the decision on [requestId], the request this app started ([ConsentStarted.requestId]), read
+     * from the node ([consentResult]), never from the link. Null when [href] is not a consent return.
+     * The link's `result` is never trusted; an approval's [ConsentResult.outcome] is the node's.
+     *
+     * Throws [CalimeroError] with code:
+     * - [CONSENT_NOT_STARTED]: the link names a request, and [requestId] is null (the app started none);
+     * - [CONSENT_REQUEST_MISMATCH]: the link, or the node's answer, names another request than [requestId];
+     * - [CONSENT_NOT_DECIDED]: [requestId] is still pending although the page sent the person back,
+     *   a sign that another request was approved on a page that was not the node's. Do not act on it;
+     * - [CONSENT_REPLACED]: the node no longer knows [requestId] (`404`): an account has one undecided
+     *   request per node, and a newer one replaced it, possibly on a page that was not the node's.
+     *   Do not act on it either.
      */
-    suspend fun resumeConsent(href: String): ConsentResult? = consentReturn(href)?.let { consentResult(it.requestId) }
+    suspend fun resumeConsent(
+        href: String,
+        requestId: String?,
+    ): ConsentResult? {
+        val back = consentReturn(href) ?: return null
+        if (requestId.isNullOrEmpty()) consentRefused(CONSENT_NOT_STARTED, "this app started no consent request", returned = back.requestId)
+        if (back.requestId != requestId) {
+            consentRefused(CONSENT_REQUEST_MISMATCH, "the consent page returned another request than this app started", requestId, back.requestId)
+        }
+        val result =
+            try {
+                consentResult(requestId)
+            } catch (e: NotFound) {
+                // One undecided request per account per node: a newer one replaced this one,
+                // which then answers 404, perhaps swapped on a forged page.
+                consentRefused(CONSENT_REPLACED, "this app's consent request was replaced by a newer one", requestId, status = 404, cause = e)
+            }
+        if (result.requestId != requestId) consentRefused(CONSENT_REQUEST_MISMATCH, "the node answered another request", requestId, result.requestId)
+        if (result.isPending) consentRefused(CONSENT_NOT_DECIDED, "the consent page returned, but this request is still pending", requestId)
+        return result
+    }
+
+    private fun consentRefused(
+        code: String,
+        message: String,
+        requestId: String? = null,
+        returned: String? = null,
+        status: Int = 200,
+        cause: Throwable? = null,
+    ): Nothing =
+        throw CalimeroError(
+            status,
+            code,
+            message,
+            buildJsonObject {
+                requestId?.let { put("requestId", it) }
+                returned?.let { put("returned", it) }
+            },
+            cause,
+        )
 
     /**
      * Poll [consentResult] until the request is decided, every [intervalMs], until [expiresAt]
@@ -1238,6 +1287,18 @@ class CalimeroClient(
                 )
             }
         }
+
+        /** [resumeConsent]: a consent return reached an app that started no request. */
+        const val CONSENT_NOT_STARTED: String = "CONSENT_NOT_STARTED"
+
+        /** [resumeConsent]: the return, or the node's answer, is for another request than the app's. */
+        const val CONSENT_REQUEST_MISMATCH: String = "CONSENT_REQUEST_MISMATCH"
+
+        /** [resumeConsent]: the page returned, but the app's request is still pending. */
+        const val CONSENT_NOT_DECIDED: String = "CONSENT_NOT_DECIDED"
+
+        /** [resumeConsent]: the node no longer knows the app's request (`404`): a newer one replaced it. */
+        const val CONSENT_REPLACED: String = "CONSENT_REPLACED"
 
         internal const val OCTET_STREAM = "application/octet-stream"
 
