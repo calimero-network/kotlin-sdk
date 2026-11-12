@@ -65,6 +65,23 @@ ConsentRequest.CreateInvite(org, OrgRole.MEMBER, returnTo, teams = listOf(team),
 ConsentRequest.AcceptInvite(token, returnTo)
 ```
 
+Managing an organization goes through the page the same way (core#5018):
+
+```kotlin
+ConsentRequest.LeaveOrg(org, returnTo)
+ConsentRequest.RemoveMember(org, account, returnTo)
+ConsentRequest.SetMemberRole(org, account, OrgRole.ADMIN, returnTo)        // OWNER hands ownership over
+ConsentRequest.SetMemberTeams(org, account, listOf(ConsentTeamMembership(team, TeamRole.LEAD)), returnTo)
+ConsentRequest.RemoveMemberTeams(org, account, listOf(team), returnTo)
+ConsentRequest.RevokeInvite(org, inviteKey, returnTo)
+ConsentRequest.RenameOrg(org, "Acme Labs", returnTo)                      // outcome: OrgRenamed(orgId, name)
+ConsentRequest.DeleteOrg(org, returnTo)                                    // outcome: OrgDeleted(apps)
+ConsentRequest.SetCapabilities(org, OrgCapabilities.CREATE_APP.toLong(), returnTo, account = account, team = team)
+ConsentRequest.SetAllApps(org, account, allApps = true, returnTo)
+```
+
+`SetCapabilities` without `account` sets a default: the team's, or the organization's without `team`.
+
 `returnTo` must be the package's own frontend origin or one its signed manifest names, never an
 app scheme. On Calimero Cloud, a native app uses the package's served page, which passes the
 answer on to the app's callback (`callback?request_id=…&result=…`), as in swift-sdk:
@@ -84,6 +101,11 @@ when (val outcome = result.outcome) {
     is ConsentOutcome.OrgCreated -> openOrg(outcome.orgId)
     is ConsentOutcome.InviteCreated -> share(inviteLink(outcome.token)) // a bearer secret
     is ConsentOutcome.InviteAccepted -> openOrg(outcome.org)
+    is ConsentOutcome.OrgRenamed -> showName(outcome.name)
+    is ConsentOutcome.OrgDeleted -> forgetApps(outcome.apps)
+    ConsentOutcome.LeftOrg, ConsentOutcome.MemberRemoved, ConsentOutcome.MemberRoleSet,
+    ConsentOutcome.MemberTeamsSet, ConsentOutcome.MemberTeamsRemoved, ConsentOutcome.InviteRevoked,
+    ConsentOutcome.CapabilitiesSet, ConsentOutcome.AllAppsSet -> refresh()
     ConsentOutcome.Release, ConsentOutcome.Upgrade, ConsentOutcome.Outbound -> refresh()
     is ConsentOutcome.Other -> Unit // a kind this SDK version does not know
     null -> Unit // pending or declined (result.isDeclined)

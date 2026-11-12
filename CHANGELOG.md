@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+### Consent: organization management kinds (mero-core)
+
+- The ten consent page kinds of calimero-network/core#5018 as `ConsentRequest` cases: `LeaveOrg`,
+  `RemoveMember`, `SetMemberRole`, `SetMemberTeams` (with `ConsentTeamMembership`),
+  `RemoveMemberTeams`, `RevokeInvite`, `RenameOrg`, `DeleteOrg`, `SetCapabilities`, `SetAllApps`.
+- Their `ConsentOutcome`s: `OrgRenamed(orgId, name)`, `OrgDeleted(apps)`, and an object for each kind
+  the node answers nothing for (`LeftOrg`, `MemberRemoved`, …), so an approval of a known kind never
+  reads as `Other`.
+- `ConsentRequest.kind` and `ConsentRequest.subject()`: each case writes its own wire subject.
+- `ConsentResult.from` (the facade's `consent.pageResult` answer) types the generated `outcome`
+  (core c350a92bc's document) instead of dropping it. The request bodies stay hand-written: the codegen
+  maps the spec's `oneOf` body to `ConsentRequest` (`codegen/build.gradle.kts`).
+
 ### Consent: organizations and invitations, typed outcomes (mero-core, mero-compose)
 
 - `ConsentRequest.CreateOrg`, `ConsentRequest.CreateInvite` and `ConsentRequest.AcceptInvite`:
