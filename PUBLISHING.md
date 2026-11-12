@@ -42,8 +42,8 @@ which runs semantic-release (`.releaserc.json`) over the conventional commits si
 |---|---|
 | `feat!:` / `BREAKING-CHANGE:` footer | major |
 | `feat:` | minor |
-| `fix:`, `chore:`, `docs:`, `refactor:`, `perf:` | patch |
-| `test:`, `build:`, `ci:` | none |
+| `fix:`, `perf:` | patch |
+| `docs:`, `chore:`, `refactor:`, `style:`, `test:`, `build:`, `ci:`, `revert:` | none |
 
 Only the hyphenated `BREAKING-CHANGE:` footer (or `!`) makes a major; prose that happens to start a
 line with "breaking change" does not (see the comment in `.releaserc.json`).
