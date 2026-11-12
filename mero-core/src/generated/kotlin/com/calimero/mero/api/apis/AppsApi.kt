@@ -52,11 +52,23 @@ import com.calimero.mero.api.models.BlobInfo200Response
 import com.calimero.mero.api.models.BlobList200Response
 import com.calimero.mero.api.models.BlobUpload200Response
 import com.calimero.mero.api.models.Error
+import com.calimero.mero.api.models.ExportsExport200Response
+import com.calimero.mero.api.models.ExportsExportRequest
 import com.calimero.mero.api.models.FileInfo200Response
 import com.calimero.mero.api.models.FilesList200Response
 import com.calimero.mero.api.models.FilesUpload200Response
 import com.calimero.mero.api.models.Intents200Response
 import com.calimero.mero.api.models.IntentsRequest
+import com.calimero.mero.api.models.PipelineReceiptReceipt200Response
+import com.calimero.mero.api.models.PipelinesCancel200Response
+import com.calimero.mero.api.models.PipelinesEstimateRun200Response
+import com.calimero.mero.api.models.PipelinesEstimateRunRequest
+import com.calimero.mero.api.models.PipelinesRetry200Response
+import com.calimero.mero.api.models.PipelinesRetryRequest
+import com.calimero.mero.api.models.PipelinesStart200Response
+import com.calimero.mero.api.models.PipelinesStartRequest
+import com.calimero.mero.api.models.PipelinesValidate200Response
+import com.calimero.mero.api.models.PipelinesValidateRequest
 import com.calimero.mero.api.models.PresenceGet200Response
 import com.calimero.mero.api.models.PresencePublishRequest
 import com.calimero.mero.api.models.Run
@@ -172,7 +184,7 @@ open class AppsApi(basePath: kotlin.String = defaultBasePath, client: Call.Facto
     /**
      * POST /apps/{app}/access
      * Set who may reach an app
-     * **Who:** a passkey session (an API key is refused).
+     * A package-bound session: only its own package&#39;s app, from one of its package&#39;s teams to another.  **Who:** a passkey session (an API key is refused).
      * @param app 
      * @param appAccessRequest 
      * @return kotlinx.serialization.json.JsonObject
@@ -205,7 +217,7 @@ open class AppsApi(basePath: kotlin.String = defaultBasePath, client: Call.Facto
     /**
      * POST /apps/{app}/access
      * Set who may reach an app
-     * **Who:** a passkey session (an API key is refused).
+     * A package-bound session: only its own package&#39;s app, from one of its package&#39;s teams to another.  **Who:** a passkey session (an API key is refused).
      * @param app 
      * @param appAccessRequest 
      * @return ApiResponse<kotlinx.serialization.json.JsonObject?>
@@ -249,7 +261,7 @@ open class AppsApi(basePath: kotlin.String = defaultBasePath, client: Call.Facto
     /**
      * GET /apps/{app}/attestation
      * Every replica&#39;s receipt-key attestation
-     * Each replica&#39;s &#x60;/attestation?purpose&#x3D;receipts&#x60; for &#x60;nonce&#x60; (32 bytes, hex), or why it could not be had (&#x60;error&#x60;). Any other query parameter is ignored.  **Who:** whoever the app&#39;s access admits (a public app: anyone).
+     * Each replica&#39;s &#x60;/attestation?purpose&#x3D;receipts&#x60; for &#x60;nonce&#x60; (32 bytes, hex), or why it could not be had (&#x60;error&#x60;), and &#x60;cluster&#x60;, the cluster id each quote binds (with the replica&#39;s &#x60;node&#x60;): the documents are fetched in the clear, so their own &#x60;cluster&#x60; and &#x60;node&#x60; fields count for nothing. Any other query parameter is ignored.  **Who:** whoever the app&#39;s access admits (a public app: anyone).
      * @param app 
      * @param nonce 
      * @return AppAttestation200Response
@@ -282,7 +294,7 @@ open class AppsApi(basePath: kotlin.String = defaultBasePath, client: Call.Facto
     /**
      * GET /apps/{app}/attestation
      * Every replica&#39;s receipt-key attestation
-     * Each replica&#39;s &#x60;/attestation?purpose&#x3D;receipts&#x60; for &#x60;nonce&#x60; (32 bytes, hex), or why it could not be had (&#x60;error&#x60;). Any other query parameter is ignored.  **Who:** whoever the app&#39;s access admits (a public app: anyone).
+     * Each replica&#39;s &#x60;/attestation?purpose&#x3D;receipts&#x60; for &#x60;nonce&#x60; (32 bytes, hex), or why it could not be had (&#x60;error&#x60;), and &#x60;cluster&#x60;, the cluster id each quote binds (with the replica&#39;s &#x60;node&#x60;): the documents are fetched in the clear, so their own &#x60;cluster&#x60; and &#x60;node&#x60; fields count for nothing. Any other query parameter is ignored.  **Who:** whoever the app&#39;s access admits (a public app: anyone).
      * @param app 
      * @param nonce 
      * @return ApiResponse<AppAttestation200Response?>
@@ -2022,6 +2034,165 @@ open class AppsApi(basePath: kotlin.String = defaultBasePath, client: Call.Facto
     }
 
     /**
+     * POST /apps/{app}/files/{id}/export
+     * Export a sealed file&#39;s key
+     * The owner and the organization&#39;s members. &#x60;recipient&#x60; is an X25519 public key (64 hex characters); the file&#39;s data key comes back wrapped to it, with the file&#39;s &#x60;segments&#x60; (each one&#39;s hash, hex) and &#x60;ephemeral&#x60; public key. The node never answers plaintext or a key in the clear. 30 a minute per account.  **Who:** signed in (a session or an API key).
+     * @param app 
+     * @param id 
+     * @param exportsExportRequest 
+     * @return ExportsExport200Response
+     * @throws IllegalStateException If the request is not correctly configured
+     * @throws IOException Rethrows the OkHttp execute method exception
+     * @throws UnsupportedOperationException If the API returns an informational or redirection response
+     * @throws ClientException If the API returns a client error response
+     * @throws ServerException If the API returns a server error response
+     */
+    @Suppress("UNCHECKED_CAST")
+    @Throws(IllegalStateException::class, IOException::class, UnsupportedOperationException::class, ClientException::class, ServerException::class)
+    suspend fun exportsExport(app: kotlin.String, id: kotlin.String, exportsExportRequest: ExportsExportRequest) : ExportsExport200Response = withContext(Dispatchers.IO) {
+        val localVarResponse = exportsExportWithHttpInfo(app = app, id = id, exportsExportRequest = exportsExportRequest)
+
+        return@withContext when (localVarResponse.responseType) {
+            ResponseType.Success -> (localVarResponse as Success<*>).data as ExportsExport200Response
+            ResponseType.Informational -> throw UnsupportedOperationException("Client does not support Informational responses.")
+            ResponseType.Redirection -> throw UnsupportedOperationException("Client does not support Redirection responses.")
+            ResponseType.ClientError -> {
+                val localVarError = localVarResponse as ClientError<*>
+                throw ClientException("Client error : ${localVarError.statusCode} ${localVarError.message.orEmpty()}", localVarError.statusCode, localVarResponse)
+            }
+            ResponseType.ServerError -> {
+                val localVarError = localVarResponse as ServerError<*>
+                throw ServerException("Server error : ${localVarError.statusCode} ${localVarError.message.orEmpty()} ${localVarError.body}", localVarError.statusCode, localVarResponse)
+            }
+        }
+    }
+
+    /**
+     * POST /apps/{app}/files/{id}/export
+     * Export a sealed file&#39;s key
+     * The owner and the organization&#39;s members. &#x60;recipient&#x60; is an X25519 public key (64 hex characters); the file&#39;s data key comes back wrapped to it, with the file&#39;s &#x60;segments&#x60; (each one&#39;s hash, hex) and &#x60;ephemeral&#x60; public key. The node never answers plaintext or a key in the clear. 30 a minute per account.  **Who:** signed in (a session or an API key).
+     * @param app 
+     * @param id 
+     * @param exportsExportRequest 
+     * @return ApiResponse<ExportsExport200Response?>
+     * @throws IllegalStateException If the request is not correctly configured
+     * @throws IOException Rethrows the OkHttp execute method exception
+     */
+    @Suppress("UNCHECKED_CAST")
+    @Throws(IllegalStateException::class, IOException::class)
+    suspend fun exportsExportWithHttpInfo(app: kotlin.String, id: kotlin.String, exportsExportRequest: ExportsExportRequest) : ApiResponse<ExportsExport200Response?> = withContext(Dispatchers.IO) {
+        val localVariableConfig = exportsExportRequestConfig(app = app, id = id, exportsExportRequest = exportsExportRequest)
+
+        return@withContext request<ExportsExportRequest, ExportsExport200Response>(
+            localVariableConfig
+        )
+    }
+
+    /**
+     * To obtain the request config of the operation exportsExport
+     *
+     * @param app 
+     * @param id 
+     * @param exportsExportRequest 
+     * @return RequestConfig
+     */
+    fun exportsExportRequestConfig(app: kotlin.String, id: kotlin.String, exportsExportRequest: ExportsExportRequest) : RequestConfig<ExportsExportRequest> {
+        val localVariableBody = exportsExportRequest
+        val localVariableQuery: MultiValueMap = mutableMapOf()
+        val localVariableHeaders: MutableMap<String, String> = mutableMapOf()
+        localVariableHeaders["Content-Type"] = "application/json"
+        localVariableHeaders["Accept"] = "application/json"
+
+        return RequestConfig(
+            method = RequestMethod.POST,
+            path = "/apps/{app}/files/{id}/export".replace("{"+"app"+"}", encodeURIComponent(app.toString())).replace("{"+"id"+"}", encodeURIComponent(id.toString())),
+            query = localVariableQuery,
+            headers = localVariableHeaders,
+            requiresAuthentication = true,
+            body = localVariableBody
+        )
+    }
+
+    /**
+     * GET /apps/{app}/files/{id}/segments/{k}
+     * One segment of a sealed file
+     * Segment &#x60;k&#x60; (from 0) of the file&#39;s ciphertext, raw; the owner and the organization&#39;s members.  **Who:** signed in (a session or an API key).
+     * @param app 
+     * @param id 
+     * @param k 
+     * @return kotlin.ByteArray
+     * @throws IllegalStateException If the request is not correctly configured
+     * @throws IOException Rethrows the OkHttp execute method exception
+     * @throws UnsupportedOperationException If the API returns an informational or redirection response
+     * @throws ClientException If the API returns a client error response
+     * @throws ServerException If the API returns a server error response
+     */
+    @Suppress("UNCHECKED_CAST")
+    @Throws(IllegalStateException::class, IOException::class, UnsupportedOperationException::class, ClientException::class, ServerException::class)
+    suspend fun exportsSegment(app: kotlin.String, id: kotlin.String, k: kotlin.String) : kotlin.ByteArray = withContext(Dispatchers.IO) {
+        val localVarResponse = exportsSegmentWithHttpInfo(app = app, id = id, k = k)
+
+        return@withContext when (localVarResponse.responseType) {
+            ResponseType.Success -> (localVarResponse as Success<*>).data as kotlin.ByteArray
+            ResponseType.Informational -> throw UnsupportedOperationException("Client does not support Informational responses.")
+            ResponseType.Redirection -> throw UnsupportedOperationException("Client does not support Redirection responses.")
+            ResponseType.ClientError -> {
+                val localVarError = localVarResponse as ClientError<*>
+                throw ClientException("Client error : ${localVarError.statusCode} ${localVarError.message.orEmpty()}", localVarError.statusCode, localVarResponse)
+            }
+            ResponseType.ServerError -> {
+                val localVarError = localVarResponse as ServerError<*>
+                throw ServerException("Server error : ${localVarError.statusCode} ${localVarError.message.orEmpty()} ${localVarError.body}", localVarError.statusCode, localVarResponse)
+            }
+        }
+    }
+
+    /**
+     * GET /apps/{app}/files/{id}/segments/{k}
+     * One segment of a sealed file
+     * Segment &#x60;k&#x60; (from 0) of the file&#39;s ciphertext, raw; the owner and the organization&#39;s members.  **Who:** signed in (a session or an API key).
+     * @param app 
+     * @param id 
+     * @param k 
+     * @return ApiResponse<kotlin.ByteArray?>
+     * @throws IllegalStateException If the request is not correctly configured
+     * @throws IOException Rethrows the OkHttp execute method exception
+     */
+    @Suppress("UNCHECKED_CAST")
+    @Throws(IllegalStateException::class, IOException::class)
+    suspend fun exportsSegmentWithHttpInfo(app: kotlin.String, id: kotlin.String, k: kotlin.String) : ApiResponse<kotlin.ByteArray?> = withContext(Dispatchers.IO) {
+        val localVariableConfig = exportsSegmentRequestConfig(app = app, id = id, k = k)
+
+        return@withContext request<Unit, kotlin.ByteArray>(
+            localVariableConfig
+        )
+    }
+
+    /**
+     * To obtain the request config of the operation exportsSegment
+     *
+     * @param app 
+     * @param id 
+     * @param k 
+     * @return RequestConfig
+     */
+    fun exportsSegmentRequestConfig(app: kotlin.String, id: kotlin.String, k: kotlin.String) : RequestConfig<Unit> {
+        val localVariableBody = null
+        val localVariableQuery: MultiValueMap = mutableMapOf()
+        val localVariableHeaders: MutableMap<String, String> = mutableMapOf()
+        localVariableHeaders["Accept"] = "application/json"
+
+        return RequestConfig(
+            method = RequestMethod.GET,
+            path = "/apps/{app}/files/{id}/segments/{k}".replace("{"+"app"+"}", encodeURIComponent(app.toString())).replace("{"+"id"+"}", encodeURIComponent(id.toString())).replace("{"+"k"+"}", encodeURIComponent(k.toString())),
+            query = localVariableQuery,
+            headers = localVariableHeaders,
+            requiresAuthentication = true,
+            body = localVariableBody
+        )
+    }
+
+    /**
      * GET /apps/{app}/files/{id}
      * One sealed file
      * Its plaintext size and SHA-256, never its key.  **Who:** signed in (a session or an API key).
@@ -2317,6 +2488,705 @@ open class AppsApi(basePath: kotlin.String = defaultBasePath, client: Call.Facto
         return RequestConfig(
             method = RequestMethod.POST,
             path = "/apps/{app}/intents".replace("{"+"app"+"}", encodeURIComponent(app.toString())),
+            query = localVariableQuery,
+            headers = localVariableHeaders,
+            requiresAuthentication = true,
+            body = localVariableBody
+        )
+    }
+
+    /**
+     * GET /apps/{app}/pipeline-runs/{run}/events
+     * A pipeline run as server-sent events
+     * Whoever may read the run. Metadata only; at most 64 streams per app per node, and one lasts an hour.  **Who:** whoever the app&#39;s access admits (a public app: anyone).
+     * @param app 
+     * @param run 
+     * @return kotlin.String
+     * @throws IllegalStateException If the request is not correctly configured
+     * @throws IOException Rethrows the OkHttp execute method exception
+     * @throws UnsupportedOperationException If the API returns an informational or redirection response
+     * @throws ClientException If the API returns a client error response
+     * @throws ServerException If the API returns a server error response
+     */
+    @Suppress("UNCHECKED_CAST")
+    @Throws(IllegalStateException::class, IOException::class, UnsupportedOperationException::class, ClientException::class, ServerException::class)
+    suspend fun pipelineEventsEvents(app: kotlin.String, run: kotlin.String) : kotlin.String = withContext(Dispatchers.IO) {
+        val localVarResponse = pipelineEventsEventsWithHttpInfo(app = app, run = run)
+
+        return@withContext when (localVarResponse.responseType) {
+            ResponseType.Success -> (localVarResponse as Success<*>).data as kotlin.String
+            ResponseType.Informational -> throw UnsupportedOperationException("Client does not support Informational responses.")
+            ResponseType.Redirection -> throw UnsupportedOperationException("Client does not support Redirection responses.")
+            ResponseType.ClientError -> {
+                val localVarError = localVarResponse as ClientError<*>
+                throw ClientException("Client error : ${localVarError.statusCode} ${localVarError.message.orEmpty()}", localVarError.statusCode, localVarResponse)
+            }
+            ResponseType.ServerError -> {
+                val localVarError = localVarResponse as ServerError<*>
+                throw ServerException("Server error : ${localVarError.statusCode} ${localVarError.message.orEmpty()} ${localVarError.body}", localVarError.statusCode, localVarResponse)
+            }
+        }
+    }
+
+    /**
+     * GET /apps/{app}/pipeline-runs/{run}/events
+     * A pipeline run as server-sent events
+     * Whoever may read the run. Metadata only; at most 64 streams per app per node, and one lasts an hour.  **Who:** whoever the app&#39;s access admits (a public app: anyone).
+     * @param app 
+     * @param run 
+     * @return ApiResponse<kotlin.String?>
+     * @throws IllegalStateException If the request is not correctly configured
+     * @throws IOException Rethrows the OkHttp execute method exception
+     */
+    @Suppress("UNCHECKED_CAST")
+    @Throws(IllegalStateException::class, IOException::class)
+    suspend fun pipelineEventsEventsWithHttpInfo(app: kotlin.String, run: kotlin.String) : ApiResponse<kotlin.String?> = withContext(Dispatchers.IO) {
+        val localVariableConfig = pipelineEventsEventsRequestConfig(app = app, run = run)
+
+        return@withContext request<Unit, kotlin.String>(
+            localVariableConfig
+        )
+    }
+
+    /**
+     * To obtain the request config of the operation pipelineEventsEvents
+     *
+     * @param app 
+     * @param run 
+     * @return RequestConfig
+     */
+    fun pipelineEventsEventsRequestConfig(app: kotlin.String, run: kotlin.String) : RequestConfig<Unit> {
+        val localVariableBody = null
+        val localVariableQuery: MultiValueMap = mutableMapOf()
+        val localVariableHeaders: MutableMap<String, String> = mutableMapOf()
+        localVariableHeaders["Accept"] = "application/json"
+
+        return RequestConfig(
+            method = RequestMethod.GET,
+            path = "/apps/{app}/pipeline-runs/{run}/events".replace("{"+"app"+"}", encodeURIComponent(app.toString())).replace("{"+"run"+"}", encodeURIComponent(run.toString())),
+            query = localVariableQuery,
+            headers = localVariableHeaders,
+            requiresAuthentication = true,
+            body = localVariableBody
+        )
+    }
+
+    /**
+     * GET /apps/{app}/pipeline-runs/{run}/receipt
+     * A pipeline run&#39;s receipt
+     * The owner and the organization&#39;s members. For an ended run: the receipt, the answering node and its signature over it, by the node&#39;s receipt key.  **Who:** signed in (a session or an API key).
+     * @param app 
+     * @param run 
+     * @return PipelineReceiptReceipt200Response
+     * @throws IllegalStateException If the request is not correctly configured
+     * @throws IOException Rethrows the OkHttp execute method exception
+     * @throws UnsupportedOperationException If the API returns an informational or redirection response
+     * @throws ClientException If the API returns a client error response
+     * @throws ServerException If the API returns a server error response
+     */
+    @Suppress("UNCHECKED_CAST")
+    @Throws(IllegalStateException::class, IOException::class, UnsupportedOperationException::class, ClientException::class, ServerException::class)
+    suspend fun pipelineReceiptReceipt(app: kotlin.String, run: kotlin.String) : PipelineReceiptReceipt200Response = withContext(Dispatchers.IO) {
+        val localVarResponse = pipelineReceiptReceiptWithHttpInfo(app = app, run = run)
+
+        return@withContext when (localVarResponse.responseType) {
+            ResponseType.Success -> (localVarResponse as Success<*>).data as PipelineReceiptReceipt200Response
+            ResponseType.Informational -> throw UnsupportedOperationException("Client does not support Informational responses.")
+            ResponseType.Redirection -> throw UnsupportedOperationException("Client does not support Redirection responses.")
+            ResponseType.ClientError -> {
+                val localVarError = localVarResponse as ClientError<*>
+                throw ClientException("Client error : ${localVarError.statusCode} ${localVarError.message.orEmpty()}", localVarError.statusCode, localVarResponse)
+            }
+            ResponseType.ServerError -> {
+                val localVarError = localVarResponse as ServerError<*>
+                throw ServerException("Server error : ${localVarError.statusCode} ${localVarError.message.orEmpty()} ${localVarError.body}", localVarError.statusCode, localVarResponse)
+            }
+        }
+    }
+
+    /**
+     * GET /apps/{app}/pipeline-runs/{run}/receipt
+     * A pipeline run&#39;s receipt
+     * The owner and the organization&#39;s members. For an ended run: the receipt, the answering node and its signature over it, by the node&#39;s receipt key.  **Who:** signed in (a session or an API key).
+     * @param app 
+     * @param run 
+     * @return ApiResponse<PipelineReceiptReceipt200Response?>
+     * @throws IllegalStateException If the request is not correctly configured
+     * @throws IOException Rethrows the OkHttp execute method exception
+     */
+    @Suppress("UNCHECKED_CAST")
+    @Throws(IllegalStateException::class, IOException::class)
+    suspend fun pipelineReceiptReceiptWithHttpInfo(app: kotlin.String, run: kotlin.String) : ApiResponse<PipelineReceiptReceipt200Response?> = withContext(Dispatchers.IO) {
+        val localVariableConfig = pipelineReceiptReceiptRequestConfig(app = app, run = run)
+
+        return@withContext request<Unit, PipelineReceiptReceipt200Response>(
+            localVariableConfig
+        )
+    }
+
+    /**
+     * To obtain the request config of the operation pipelineReceiptReceipt
+     *
+     * @param app 
+     * @param run 
+     * @return RequestConfig
+     */
+    fun pipelineReceiptReceiptRequestConfig(app: kotlin.String, run: kotlin.String) : RequestConfig<Unit> {
+        val localVariableBody = null
+        val localVariableQuery: MultiValueMap = mutableMapOf()
+        val localVariableHeaders: MutableMap<String, String> = mutableMapOf()
+        localVariableHeaders["Accept"] = "application/json"
+
+        return RequestConfig(
+            method = RequestMethod.GET,
+            path = "/apps/{app}/pipeline-runs/{run}/receipt".replace("{"+"app"+"}", encodeURIComponent(app.toString())).replace("{"+"run"+"}", encodeURIComponent(run.toString())),
+            query = localVariableQuery,
+            headers = localVariableHeaders,
+            requiresAuthentication = true,
+            body = localVariableBody
+        )
+    }
+
+    /**
+     * POST /apps/{app}/pipeline-runs/{run}/cancel
+     * Cancel a pipeline run
+     * The owner and the organization&#39;s members. Its pending steps end cancelled and its running steps&#39; runs stop.  **Who:** signed in (a session or an API key).
+     * @param app 
+     * @param run 
+     * @return PipelinesCancel200Response
+     * @throws IllegalStateException If the request is not correctly configured
+     * @throws IOException Rethrows the OkHttp execute method exception
+     * @throws UnsupportedOperationException If the API returns an informational or redirection response
+     * @throws ClientException If the API returns a client error response
+     * @throws ServerException If the API returns a server error response
+     */
+    @Suppress("UNCHECKED_CAST")
+    @Throws(IllegalStateException::class, IOException::class, UnsupportedOperationException::class, ClientException::class, ServerException::class)
+    suspend fun pipelinesCancel(app: kotlin.String, run: kotlin.String) : PipelinesCancel200Response = withContext(Dispatchers.IO) {
+        val localVarResponse = pipelinesCancelWithHttpInfo(app = app, run = run)
+
+        return@withContext when (localVarResponse.responseType) {
+            ResponseType.Success -> (localVarResponse as Success<*>).data as PipelinesCancel200Response
+            ResponseType.Informational -> throw UnsupportedOperationException("Client does not support Informational responses.")
+            ResponseType.Redirection -> throw UnsupportedOperationException("Client does not support Redirection responses.")
+            ResponseType.ClientError -> {
+                val localVarError = localVarResponse as ClientError<*>
+                throw ClientException("Client error : ${localVarError.statusCode} ${localVarError.message.orEmpty()}", localVarError.statusCode, localVarResponse)
+            }
+            ResponseType.ServerError -> {
+                val localVarError = localVarResponse as ServerError<*>
+                throw ServerException("Server error : ${localVarError.statusCode} ${localVarError.message.orEmpty()} ${localVarError.body}", localVarError.statusCode, localVarResponse)
+            }
+        }
+    }
+
+    /**
+     * POST /apps/{app}/pipeline-runs/{run}/cancel
+     * Cancel a pipeline run
+     * The owner and the organization&#39;s members. Its pending steps end cancelled and its running steps&#39; runs stop.  **Who:** signed in (a session or an API key).
+     * @param app 
+     * @param run 
+     * @return ApiResponse<PipelinesCancel200Response?>
+     * @throws IllegalStateException If the request is not correctly configured
+     * @throws IOException Rethrows the OkHttp execute method exception
+     */
+    @Suppress("UNCHECKED_CAST")
+    @Throws(IllegalStateException::class, IOException::class)
+    suspend fun pipelinesCancelWithHttpInfo(app: kotlin.String, run: kotlin.String) : ApiResponse<PipelinesCancel200Response?> = withContext(Dispatchers.IO) {
+        val localVariableConfig = pipelinesCancelRequestConfig(app = app, run = run)
+
+        return@withContext request<Unit, PipelinesCancel200Response>(
+            localVariableConfig
+        )
+    }
+
+    /**
+     * To obtain the request config of the operation pipelinesCancel
+     *
+     * @param app 
+     * @param run 
+     * @return RequestConfig
+     */
+    fun pipelinesCancelRequestConfig(app: kotlin.String, run: kotlin.String) : RequestConfig<Unit> {
+        val localVariableBody = null
+        val localVariableQuery: MultiValueMap = mutableMapOf()
+        val localVariableHeaders: MutableMap<String, String> = mutableMapOf()
+        localVariableHeaders["Accept"] = "application/json"
+
+        return RequestConfig(
+            method = RequestMethod.POST,
+            path = "/apps/{app}/pipeline-runs/{run}/cancel".replace("{"+"app"+"}", encodeURIComponent(app.toString())).replace("{"+"run"+"}", encodeURIComponent(run.toString())),
+            query = localVariableQuery,
+            headers = localVariableHeaders,
+            requiresAuthentication = true,
+            body = localVariableBody
+        )
+    }
+
+    /**
+     * POST /apps/{app}/pipelines/{name}/estimate
+     * Estimate a pipeline run
+     * The owner and the organization&#39;s members. Runs, fuel and cost of a run of a pipeline the app&#39;s release registers, for &#x60;inputs&#x60; (file ids, only counted) or &#x60;counts&#x60;, not both; numbers as decimal strings.  **Who:** signed in (a session or an API key).
+     * @param app 
+     * @param name 
+     * @param pipelinesEstimateRunRequest 
+     * @return PipelinesEstimateRun200Response
+     * @throws IllegalStateException If the request is not correctly configured
+     * @throws IOException Rethrows the OkHttp execute method exception
+     * @throws UnsupportedOperationException If the API returns an informational or redirection response
+     * @throws ClientException If the API returns a client error response
+     * @throws ServerException If the API returns a server error response
+     */
+    @Suppress("UNCHECKED_CAST")
+    @Throws(IllegalStateException::class, IOException::class, UnsupportedOperationException::class, ClientException::class, ServerException::class)
+    suspend fun pipelinesEstimateRun(app: kotlin.String, name: kotlin.String, pipelinesEstimateRunRequest: PipelinesEstimateRunRequest) : PipelinesEstimateRun200Response = withContext(Dispatchers.IO) {
+        val localVarResponse = pipelinesEstimateRunWithHttpInfo(app = app, name = name, pipelinesEstimateRunRequest = pipelinesEstimateRunRequest)
+
+        return@withContext when (localVarResponse.responseType) {
+            ResponseType.Success -> (localVarResponse as Success<*>).data as PipelinesEstimateRun200Response
+            ResponseType.Informational -> throw UnsupportedOperationException("Client does not support Informational responses.")
+            ResponseType.Redirection -> throw UnsupportedOperationException("Client does not support Redirection responses.")
+            ResponseType.ClientError -> {
+                val localVarError = localVarResponse as ClientError<*>
+                throw ClientException("Client error : ${localVarError.statusCode} ${localVarError.message.orEmpty()}", localVarError.statusCode, localVarResponse)
+            }
+            ResponseType.ServerError -> {
+                val localVarError = localVarResponse as ServerError<*>
+                throw ServerException("Server error : ${localVarError.statusCode} ${localVarError.message.orEmpty()} ${localVarError.body}", localVarError.statusCode, localVarResponse)
+            }
+        }
+    }
+
+    /**
+     * POST /apps/{app}/pipelines/{name}/estimate
+     * Estimate a pipeline run
+     * The owner and the organization&#39;s members. Runs, fuel and cost of a run of a pipeline the app&#39;s release registers, for &#x60;inputs&#x60; (file ids, only counted) or &#x60;counts&#x60;, not both; numbers as decimal strings.  **Who:** signed in (a session or an API key).
+     * @param app 
+     * @param name 
+     * @param pipelinesEstimateRunRequest 
+     * @return ApiResponse<PipelinesEstimateRun200Response?>
+     * @throws IllegalStateException If the request is not correctly configured
+     * @throws IOException Rethrows the OkHttp execute method exception
+     */
+    @Suppress("UNCHECKED_CAST")
+    @Throws(IllegalStateException::class, IOException::class)
+    suspend fun pipelinesEstimateRunWithHttpInfo(app: kotlin.String, name: kotlin.String, pipelinesEstimateRunRequest: PipelinesEstimateRunRequest) : ApiResponse<PipelinesEstimateRun200Response?> = withContext(Dispatchers.IO) {
+        val localVariableConfig = pipelinesEstimateRunRequestConfig(app = app, name = name, pipelinesEstimateRunRequest = pipelinesEstimateRunRequest)
+
+        return@withContext request<PipelinesEstimateRunRequest, PipelinesEstimateRun200Response>(
+            localVariableConfig
+        )
+    }
+
+    /**
+     * To obtain the request config of the operation pipelinesEstimateRun
+     *
+     * @param app 
+     * @param name 
+     * @param pipelinesEstimateRunRequest 
+     * @return RequestConfig
+     */
+    fun pipelinesEstimateRunRequestConfig(app: kotlin.String, name: kotlin.String, pipelinesEstimateRunRequest: PipelinesEstimateRunRequest) : RequestConfig<PipelinesEstimateRunRequest> {
+        val localVariableBody = pipelinesEstimateRunRequest
+        val localVariableQuery: MultiValueMap = mutableMapOf()
+        val localVariableHeaders: MutableMap<String, String> = mutableMapOf()
+        localVariableHeaders["Content-Type"] = "application/json"
+        localVariableHeaders["Accept"] = "application/json"
+
+        return RequestConfig(
+            method = RequestMethod.POST,
+            path = "/apps/{app}/pipelines/{name}/estimate".replace("{"+"app"+"}", encodeURIComponent(app.toString())).replace("{"+"name"+"}", encodeURIComponent(name.toString())),
+            query = localVariableQuery,
+            headers = localVariableHeaders,
+            requiresAuthentication = true,
+            body = localVariableBody
+        )
+    }
+
+    /**
+     * GET /apps/{app}/pipeline-runs/{run}
+     * One pipeline run
+     * Its record: &#x60;state&#x60;, &#x60;version&#x60;, &#x60;hash&#x60;, &#x60;computeBundle&#x60;, &#x60;inputs&#x60;, &#x60;params&#x60;, per-step &#x60;status&#x60;, &#x60;runs&#x60;, &#x60;outputs&#x60;, &#x60;result&#x60;, &#x60;reason&#x60; and &#x60;cost&#x60; (&#x60;cost&#x60; and &#x60;costSoFar&#x60; for a run with a cap). Sizes, hashes and results only for callers who may list the app&#39;s files.  **Who:** whoever the app&#39;s access admits (a public app: anyone).
+     * @param app 
+     * @param run 
+     * @return kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement>
+     * @throws IllegalStateException If the request is not correctly configured
+     * @throws IOException Rethrows the OkHttp execute method exception
+     * @throws UnsupportedOperationException If the API returns an informational or redirection response
+     * @throws ClientException If the API returns a client error response
+     * @throws ServerException If the API returns a server error response
+     */
+    @Suppress("UNCHECKED_CAST")
+    @Throws(IllegalStateException::class, IOException::class, UnsupportedOperationException::class, ClientException::class, ServerException::class)
+    suspend fun pipelinesGet(app: kotlin.String, run: kotlin.String) : kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement> = withContext(Dispatchers.IO) {
+        val localVarResponse = pipelinesGetWithHttpInfo(app = app, run = run)
+
+        return@withContext when (localVarResponse.responseType) {
+            ResponseType.Success -> (localVarResponse as Success<*>).data as kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement>
+            ResponseType.Informational -> throw UnsupportedOperationException("Client does not support Informational responses.")
+            ResponseType.Redirection -> throw UnsupportedOperationException("Client does not support Redirection responses.")
+            ResponseType.ClientError -> {
+                val localVarError = localVarResponse as ClientError<*>
+                throw ClientException("Client error : ${localVarError.statusCode} ${localVarError.message.orEmpty()}", localVarError.statusCode, localVarResponse)
+            }
+            ResponseType.ServerError -> {
+                val localVarError = localVarResponse as ServerError<*>
+                throw ServerException("Server error : ${localVarError.statusCode} ${localVarError.message.orEmpty()} ${localVarError.body}", localVarError.statusCode, localVarResponse)
+            }
+        }
+    }
+
+    /**
+     * GET /apps/{app}/pipeline-runs/{run}
+     * One pipeline run
+     * Its record: &#x60;state&#x60;, &#x60;version&#x60;, &#x60;hash&#x60;, &#x60;computeBundle&#x60;, &#x60;inputs&#x60;, &#x60;params&#x60;, per-step &#x60;status&#x60;, &#x60;runs&#x60;, &#x60;outputs&#x60;, &#x60;result&#x60;, &#x60;reason&#x60; and &#x60;cost&#x60; (&#x60;cost&#x60; and &#x60;costSoFar&#x60; for a run with a cap). Sizes, hashes and results only for callers who may list the app&#39;s files.  **Who:** whoever the app&#39;s access admits (a public app: anyone).
+     * @param app 
+     * @param run 
+     * @return ApiResponse<kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement>?>
+     * @throws IllegalStateException If the request is not correctly configured
+     * @throws IOException Rethrows the OkHttp execute method exception
+     */
+    @Suppress("UNCHECKED_CAST")
+    @Throws(IllegalStateException::class, IOException::class)
+    suspend fun pipelinesGetWithHttpInfo(app: kotlin.String, run: kotlin.String) : ApiResponse<kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement>?> = withContext(Dispatchers.IO) {
+        val localVariableConfig = pipelinesGetRequestConfig(app = app, run = run)
+
+        return@withContext request<Unit, kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement>>(
+            localVariableConfig
+        )
+    }
+
+    /**
+     * To obtain the request config of the operation pipelinesGet
+     *
+     * @param app 
+     * @param run 
+     * @return RequestConfig
+     */
+    fun pipelinesGetRequestConfig(app: kotlin.String, run: kotlin.String) : RequestConfig<Unit> {
+        val localVariableBody = null
+        val localVariableQuery: MultiValueMap = mutableMapOf()
+        val localVariableHeaders: MutableMap<String, String> = mutableMapOf()
+        localVariableHeaders["Accept"] = "application/json"
+
+        return RequestConfig(
+            method = RequestMethod.GET,
+            path = "/apps/{app}/pipeline-runs/{run}".replace("{"+"app"+"}", encodeURIComponent(app.toString())).replace("{"+"run"+"}", encodeURIComponent(run.toString())),
+            query = localVariableQuery,
+            headers = localVariableHeaders,
+            requiresAuthentication = true,
+            body = localVariableBody
+        )
+    }
+
+    /**
+     * GET /apps/{app}/pipeline-runs
+     * An app&#39;s pipeline runs
+     * The recent runs, newest first, as &#x60;{ runs }&#x60;; &#x60;limit&#x60; 1 to 100. Sizes, hashes and results only for callers who may list the app&#39;s files.  **Who:** whoever the app&#39;s access admits (a public app: anyone).
+     * @param app 
+     * @param limit  (optional)
+     * @return kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement>
+     * @throws IllegalStateException If the request is not correctly configured
+     * @throws IOException Rethrows the OkHttp execute method exception
+     * @throws UnsupportedOperationException If the API returns an informational or redirection response
+     * @throws ClientException If the API returns a client error response
+     * @throws ServerException If the API returns a server error response
+     */
+    @Suppress("UNCHECKED_CAST")
+    @Throws(IllegalStateException::class, IOException::class, UnsupportedOperationException::class, ClientException::class, ServerException::class)
+    suspend fun pipelinesList(app: kotlin.String, limit: kotlin.String? = null) : kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement> = withContext(Dispatchers.IO) {
+        val localVarResponse = pipelinesListWithHttpInfo(app = app, limit = limit)
+
+        return@withContext when (localVarResponse.responseType) {
+            ResponseType.Success -> (localVarResponse as Success<*>).data as kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement>
+            ResponseType.Informational -> throw UnsupportedOperationException("Client does not support Informational responses.")
+            ResponseType.Redirection -> throw UnsupportedOperationException("Client does not support Redirection responses.")
+            ResponseType.ClientError -> {
+                val localVarError = localVarResponse as ClientError<*>
+                throw ClientException("Client error : ${localVarError.statusCode} ${localVarError.message.orEmpty()}", localVarError.statusCode, localVarResponse)
+            }
+            ResponseType.ServerError -> {
+                val localVarError = localVarResponse as ServerError<*>
+                throw ServerException("Server error : ${localVarError.statusCode} ${localVarError.message.orEmpty()} ${localVarError.body}", localVarError.statusCode, localVarResponse)
+            }
+        }
+    }
+
+    /**
+     * GET /apps/{app}/pipeline-runs
+     * An app&#39;s pipeline runs
+     * The recent runs, newest first, as &#x60;{ runs }&#x60;; &#x60;limit&#x60; 1 to 100. Sizes, hashes and results only for callers who may list the app&#39;s files.  **Who:** whoever the app&#39;s access admits (a public app: anyone).
+     * @param app 
+     * @param limit  (optional)
+     * @return ApiResponse<kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement>?>
+     * @throws IllegalStateException If the request is not correctly configured
+     * @throws IOException Rethrows the OkHttp execute method exception
+     */
+    @Suppress("UNCHECKED_CAST")
+    @Throws(IllegalStateException::class, IOException::class)
+    suspend fun pipelinesListWithHttpInfo(app: kotlin.String, limit: kotlin.String?) : ApiResponse<kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement>?> = withContext(Dispatchers.IO) {
+        val localVariableConfig = pipelinesListRequestConfig(app = app, limit = limit)
+
+        return@withContext request<Unit, kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement>>(
+            localVariableConfig
+        )
+    }
+
+    /**
+     * To obtain the request config of the operation pipelinesList
+     *
+     * @param app 
+     * @param limit  (optional)
+     * @return RequestConfig
+     */
+    fun pipelinesListRequestConfig(app: kotlin.String, limit: kotlin.String?) : RequestConfig<Unit> {
+        val localVariableBody = null
+        val localVariableQuery: MultiValueMap = mutableMapOf<kotlin.String, kotlin.collections.List<kotlin.String>>()
+            .apply {
+                if (limit != null) {
+                    put("limit", listOf(limit.toString()))
+                }
+            }
+        val localVariableHeaders: MutableMap<String, String> = mutableMapOf()
+        localVariableHeaders["Accept"] = "application/json"
+
+        return RequestConfig(
+            method = RequestMethod.GET,
+            path = "/apps/{app}/pipeline-runs".replace("{"+"app"+"}", encodeURIComponent(app.toString())),
+            query = localVariableQuery,
+            headers = localVariableHeaders,
+            requiresAuthentication = true,
+            body = localVariableBody
+        )
+    }
+
+    /**
+     * POST /apps/{app}/pipeline-runs/{run}/retry
+     * Retry a pipeline run
+     * The owner and the organization&#39;s members. A new run of an ended run&#39;s pipeline at the same release, hash and compute component, with the same inputs and params, the &#x60;limits&#x60; applied and &#x60;retryOf&#x60; set. &#x60;202&#x60;.  **Who:** signed in (a session or an API key).
+     * @param app 
+     * @param run 
+     * @param pipelinesRetryRequest 
+     * @return PipelinesRetry200Response
+     * @throws IllegalStateException If the request is not correctly configured
+     * @throws IOException Rethrows the OkHttp execute method exception
+     * @throws UnsupportedOperationException If the API returns an informational or redirection response
+     * @throws ClientException If the API returns a client error response
+     * @throws ServerException If the API returns a server error response
+     */
+    @Suppress("UNCHECKED_CAST")
+    @Throws(IllegalStateException::class, IOException::class, UnsupportedOperationException::class, ClientException::class, ServerException::class)
+    suspend fun pipelinesRetry(app: kotlin.String, run: kotlin.String, pipelinesRetryRequest: PipelinesRetryRequest) : PipelinesRetry200Response = withContext(Dispatchers.IO) {
+        val localVarResponse = pipelinesRetryWithHttpInfo(app = app, run = run, pipelinesRetryRequest = pipelinesRetryRequest)
+
+        return@withContext when (localVarResponse.responseType) {
+            ResponseType.Success -> (localVarResponse as Success<*>).data as PipelinesRetry200Response
+            ResponseType.Informational -> throw UnsupportedOperationException("Client does not support Informational responses.")
+            ResponseType.Redirection -> throw UnsupportedOperationException("Client does not support Redirection responses.")
+            ResponseType.ClientError -> {
+                val localVarError = localVarResponse as ClientError<*>
+                throw ClientException("Client error : ${localVarError.statusCode} ${localVarError.message.orEmpty()}", localVarError.statusCode, localVarResponse)
+            }
+            ResponseType.ServerError -> {
+                val localVarError = localVarResponse as ServerError<*>
+                throw ServerException("Server error : ${localVarError.statusCode} ${localVarError.message.orEmpty()} ${localVarError.body}", localVarError.statusCode, localVarResponse)
+            }
+        }
+    }
+
+    /**
+     * POST /apps/{app}/pipeline-runs/{run}/retry
+     * Retry a pipeline run
+     * The owner and the organization&#39;s members. A new run of an ended run&#39;s pipeline at the same release, hash and compute component, with the same inputs and params, the &#x60;limits&#x60; applied and &#x60;retryOf&#x60; set. &#x60;202&#x60;.  **Who:** signed in (a session or an API key).
+     * @param app 
+     * @param run 
+     * @param pipelinesRetryRequest 
+     * @return ApiResponse<PipelinesRetry200Response?>
+     * @throws IllegalStateException If the request is not correctly configured
+     * @throws IOException Rethrows the OkHttp execute method exception
+     */
+    @Suppress("UNCHECKED_CAST")
+    @Throws(IllegalStateException::class, IOException::class)
+    suspend fun pipelinesRetryWithHttpInfo(app: kotlin.String, run: kotlin.String, pipelinesRetryRequest: PipelinesRetryRequest) : ApiResponse<PipelinesRetry200Response?> = withContext(Dispatchers.IO) {
+        val localVariableConfig = pipelinesRetryRequestConfig(app = app, run = run, pipelinesRetryRequest = pipelinesRetryRequest)
+
+        return@withContext request<PipelinesRetryRequest, PipelinesRetry200Response>(
+            localVariableConfig
+        )
+    }
+
+    /**
+     * To obtain the request config of the operation pipelinesRetry
+     *
+     * @param app 
+     * @param run 
+     * @param pipelinesRetryRequest 
+     * @return RequestConfig
+     */
+    fun pipelinesRetryRequestConfig(app: kotlin.String, run: kotlin.String, pipelinesRetryRequest: PipelinesRetryRequest) : RequestConfig<PipelinesRetryRequest> {
+        val localVariableBody = pipelinesRetryRequest
+        val localVariableQuery: MultiValueMap = mutableMapOf()
+        val localVariableHeaders: MutableMap<String, String> = mutableMapOf()
+        localVariableHeaders["Content-Type"] = "application/json"
+        localVariableHeaders["Accept"] = "application/json"
+
+        return RequestConfig(
+            method = RequestMethod.POST,
+            path = "/apps/{app}/pipeline-runs/{run}/retry".replace("{"+"app"+"}", encodeURIComponent(app.toString())).replace("{"+"run"+"}", encodeURIComponent(run.toString())),
+            query = localVariableQuery,
+            headers = localVariableHeaders,
+            requiresAuthentication = true,
+            body = localVariableBody
+        )
+    }
+
+    /**
+     * POST /apps/{app}/pipelines/{name}/runs
+     * Start a pipeline run
+     * The owner and the organization&#39;s members. Starts a run of a pipeline the app&#39;s release registers. &#x60;maxCost&#x60; (micro-units, a decimal string) caps the run, and &#x60;worstCase&#x60; answers it. &#x60;202&#x60;.  **Who:** signed in (a session or an API key).
+     * @param app 
+     * @param name 
+     * @param pipelinesStartRequest 
+     * @return PipelinesStart200Response
+     * @throws IllegalStateException If the request is not correctly configured
+     * @throws IOException Rethrows the OkHttp execute method exception
+     * @throws UnsupportedOperationException If the API returns an informational or redirection response
+     * @throws ClientException If the API returns a client error response
+     * @throws ServerException If the API returns a server error response
+     */
+    @Suppress("UNCHECKED_CAST")
+    @Throws(IllegalStateException::class, IOException::class, UnsupportedOperationException::class, ClientException::class, ServerException::class)
+    suspend fun pipelinesStart(app: kotlin.String, name: kotlin.String, pipelinesStartRequest: PipelinesStartRequest) : PipelinesStart200Response = withContext(Dispatchers.IO) {
+        val localVarResponse = pipelinesStartWithHttpInfo(app = app, name = name, pipelinesStartRequest = pipelinesStartRequest)
+
+        return@withContext when (localVarResponse.responseType) {
+            ResponseType.Success -> (localVarResponse as Success<*>).data as PipelinesStart200Response
+            ResponseType.Informational -> throw UnsupportedOperationException("Client does not support Informational responses.")
+            ResponseType.Redirection -> throw UnsupportedOperationException("Client does not support Redirection responses.")
+            ResponseType.ClientError -> {
+                val localVarError = localVarResponse as ClientError<*>
+                throw ClientException("Client error : ${localVarError.statusCode} ${localVarError.message.orEmpty()}", localVarError.statusCode, localVarResponse)
+            }
+            ResponseType.ServerError -> {
+                val localVarError = localVarResponse as ServerError<*>
+                throw ServerException("Server error : ${localVarError.statusCode} ${localVarError.message.orEmpty()} ${localVarError.body}", localVarError.statusCode, localVarResponse)
+            }
+        }
+    }
+
+    /**
+     * POST /apps/{app}/pipelines/{name}/runs
+     * Start a pipeline run
+     * The owner and the organization&#39;s members. Starts a run of a pipeline the app&#39;s release registers. &#x60;maxCost&#x60; (micro-units, a decimal string) caps the run, and &#x60;worstCase&#x60; answers it. &#x60;202&#x60;.  **Who:** signed in (a session or an API key).
+     * @param app 
+     * @param name 
+     * @param pipelinesStartRequest 
+     * @return ApiResponse<PipelinesStart200Response?>
+     * @throws IllegalStateException If the request is not correctly configured
+     * @throws IOException Rethrows the OkHttp execute method exception
+     */
+    @Suppress("UNCHECKED_CAST")
+    @Throws(IllegalStateException::class, IOException::class)
+    suspend fun pipelinesStartWithHttpInfo(app: kotlin.String, name: kotlin.String, pipelinesStartRequest: PipelinesStartRequest) : ApiResponse<PipelinesStart200Response?> = withContext(Dispatchers.IO) {
+        val localVariableConfig = pipelinesStartRequestConfig(app = app, name = name, pipelinesStartRequest = pipelinesStartRequest)
+
+        return@withContext request<PipelinesStartRequest, PipelinesStart200Response>(
+            localVariableConfig
+        )
+    }
+
+    /**
+     * To obtain the request config of the operation pipelinesStart
+     *
+     * @param app 
+     * @param name 
+     * @param pipelinesStartRequest 
+     * @return RequestConfig
+     */
+    fun pipelinesStartRequestConfig(app: kotlin.String, name: kotlin.String, pipelinesStartRequest: PipelinesStartRequest) : RequestConfig<PipelinesStartRequest> {
+        val localVariableBody = pipelinesStartRequest
+        val localVariableQuery: MultiValueMap = mutableMapOf()
+        val localVariableHeaders: MutableMap<String, String> = mutableMapOf()
+        localVariableHeaders["Content-Type"] = "application/json"
+        localVariableHeaders["Accept"] = "application/json"
+
+        return RequestConfig(
+            method = RequestMethod.POST,
+            path = "/apps/{app}/pipelines/{name}/runs".replace("{"+"app"+"}", encodeURIComponent(app.toString())).replace("{"+"name"+"}", encodeURIComponent(name.toString())),
+            query = localVariableQuery,
+            headers = localVariableHeaders,
+            requiresAuthentication = true,
+            body = localVariableBody
+        )
+    }
+
+    /**
+     * POST /pipelines/validate
+     * Validate a pipeline
+     * Every problem of &#x60;source&#x60;; with &#x60;package&#x60; and &#x60;version&#x60; (both, a release the caller sees) also against that release&#39;s methods, modules and the cluster&#39;s pools. Writes nothing.  **Who:** signed in (a session or an API key).
+     * @param pipelinesValidateRequest 
+     * @return PipelinesValidate200Response
+     * @throws IllegalStateException If the request is not correctly configured
+     * @throws IOException Rethrows the OkHttp execute method exception
+     * @throws UnsupportedOperationException If the API returns an informational or redirection response
+     * @throws ClientException If the API returns a client error response
+     * @throws ServerException If the API returns a server error response
+     */
+    @Suppress("UNCHECKED_CAST")
+    @Throws(IllegalStateException::class, IOException::class, UnsupportedOperationException::class, ClientException::class, ServerException::class)
+    suspend fun pipelinesValidate(pipelinesValidateRequest: PipelinesValidateRequest) : PipelinesValidate200Response = withContext(Dispatchers.IO) {
+        val localVarResponse = pipelinesValidateWithHttpInfo(pipelinesValidateRequest = pipelinesValidateRequest)
+
+        return@withContext when (localVarResponse.responseType) {
+            ResponseType.Success -> (localVarResponse as Success<*>).data as PipelinesValidate200Response
+            ResponseType.Informational -> throw UnsupportedOperationException("Client does not support Informational responses.")
+            ResponseType.Redirection -> throw UnsupportedOperationException("Client does not support Redirection responses.")
+            ResponseType.ClientError -> {
+                val localVarError = localVarResponse as ClientError<*>
+                throw ClientException("Client error : ${localVarError.statusCode} ${localVarError.message.orEmpty()}", localVarError.statusCode, localVarResponse)
+            }
+            ResponseType.ServerError -> {
+                val localVarError = localVarResponse as ServerError<*>
+                throw ServerException("Server error : ${localVarError.statusCode} ${localVarError.message.orEmpty()} ${localVarError.body}", localVarError.statusCode, localVarResponse)
+            }
+        }
+    }
+
+    /**
+     * POST /pipelines/validate
+     * Validate a pipeline
+     * Every problem of &#x60;source&#x60;; with &#x60;package&#x60; and &#x60;version&#x60; (both, a release the caller sees) also against that release&#39;s methods, modules and the cluster&#39;s pools. Writes nothing.  **Who:** signed in (a session or an API key).
+     * @param pipelinesValidateRequest 
+     * @return ApiResponse<PipelinesValidate200Response?>
+     * @throws IllegalStateException If the request is not correctly configured
+     * @throws IOException Rethrows the OkHttp execute method exception
+     */
+    @Suppress("UNCHECKED_CAST")
+    @Throws(IllegalStateException::class, IOException::class)
+    suspend fun pipelinesValidateWithHttpInfo(pipelinesValidateRequest: PipelinesValidateRequest) : ApiResponse<PipelinesValidate200Response?> = withContext(Dispatchers.IO) {
+        val localVariableConfig = pipelinesValidateRequestConfig(pipelinesValidateRequest = pipelinesValidateRequest)
+
+        return@withContext request<PipelinesValidateRequest, PipelinesValidate200Response>(
+            localVariableConfig
+        )
+    }
+
+    /**
+     * To obtain the request config of the operation pipelinesValidate
+     *
+     * @param pipelinesValidateRequest 
+     * @return RequestConfig
+     */
+    fun pipelinesValidateRequestConfig(pipelinesValidateRequest: PipelinesValidateRequest) : RequestConfig<PipelinesValidateRequest> {
+        val localVariableBody = pipelinesValidateRequest
+        val localVariableQuery: MultiValueMap = mutableMapOf()
+        val localVariableHeaders: MutableMap<String, String> = mutableMapOf()
+        localVariableHeaders["Content-Type"] = "application/json"
+        localVariableHeaders["Accept"] = "application/json"
+
+        return RequestConfig(
+            method = RequestMethod.POST,
+            path = "/pipelines/validate",
             query = localVariableQuery,
             headers = localVariableHeaders,
             requiresAuthentication = true,

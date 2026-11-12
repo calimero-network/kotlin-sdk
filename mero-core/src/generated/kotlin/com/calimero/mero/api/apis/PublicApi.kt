@@ -32,6 +32,8 @@ import com.calimero.mero.api.models.Error
 import com.calimero.mero.api.models.Health200Response
 import com.calimero.mero.api.models.PublisherBinding200Response
 import com.calimero.mero.api.models.ReleasesPublic200Response
+import com.calimero.mero.api.models.RestoreRecoverHolder200Response
+import com.calimero.mero.api.models.RestoreRecoverHolderRequest
 
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
@@ -379,6 +381,80 @@ open class PublicApi(basePath: kotlin.String = defaultBasePath, client: Call.Fac
         return RequestConfig(
             method = RequestMethod.GET,
             path = "/releases",
+            query = localVariableQuery,
+            headers = localVariableHeaders,
+            requiresAuthentication = false,
+            body = localVariableBody
+        )
+    }
+
+    /**
+     * POST /recover/holder
+     * Bring an organization&#39;s or account&#39;s apps back from its recovery files
+     * Sent by the holder&#39;s own device, over the sealed channel: its newest &#x60;holder&#x60; file (&#x60;slice&#x60;), each app&#39;s file and the code files, in the receiving node&#39;s &#x60;--recovery-dir&#x60; (or &#x60;--recover-from&#x60;) under &#x60;org-&lt;id&gt;/&#x60; or &#x60;account-&lt;id&gt;/&#x60;, each with the data key the holder opened from it with its backup key (hex). The cluster admits it with the operator&#39;s signature over &#x60;cluster / __recover_holder / { holder, slice, apps: [{ app, file, sha256 }] }&#x60; (&#x60;428&#x60; first, naming it). Where owners upgrade apps, and only for an organization, account, apps and passkeys the cluster does not hold; the receiving node seeds each app, which answers &#x60;409 APP_RESTORING&#x60; until its replicas hold it. People sign in again with the passkeys they had.  **Who:** anyone. **Operator signature:** answers &#x60;428 OPERATOR_SIGNATURE_REQUIRED&#x60; first; send it again with &#x60;operatorProof&#x60;, the operator key&#39;s signature over &#x60;details.message&#x60; and its &#x60;nonce&#x60;.
+     * @param restoreRecoverHolderRequest 
+     * @return RestoreRecoverHolder200Response
+     * @throws IllegalStateException If the request is not correctly configured
+     * @throws IOException Rethrows the OkHttp execute method exception
+     * @throws UnsupportedOperationException If the API returns an informational or redirection response
+     * @throws ClientException If the API returns a client error response
+     * @throws ServerException If the API returns a server error response
+     */
+    @Suppress("UNCHECKED_CAST")
+    @Throws(IllegalStateException::class, IOException::class, UnsupportedOperationException::class, ClientException::class, ServerException::class)
+    suspend fun restoreRecoverHolder(restoreRecoverHolderRequest: RestoreRecoverHolderRequest) : RestoreRecoverHolder200Response = withContext(Dispatchers.IO) {
+        val localVarResponse = restoreRecoverHolderWithHttpInfo(restoreRecoverHolderRequest = restoreRecoverHolderRequest)
+
+        return@withContext when (localVarResponse.responseType) {
+            ResponseType.Success -> (localVarResponse as Success<*>).data as RestoreRecoverHolder200Response
+            ResponseType.Informational -> throw UnsupportedOperationException("Client does not support Informational responses.")
+            ResponseType.Redirection -> throw UnsupportedOperationException("Client does not support Redirection responses.")
+            ResponseType.ClientError -> {
+                val localVarError = localVarResponse as ClientError<*>
+                throw ClientException("Client error : ${localVarError.statusCode} ${localVarError.message.orEmpty()}", localVarError.statusCode, localVarResponse)
+            }
+            ResponseType.ServerError -> {
+                val localVarError = localVarResponse as ServerError<*>
+                throw ServerException("Server error : ${localVarError.statusCode} ${localVarError.message.orEmpty()} ${localVarError.body}", localVarError.statusCode, localVarResponse)
+            }
+        }
+    }
+
+    /**
+     * POST /recover/holder
+     * Bring an organization&#39;s or account&#39;s apps back from its recovery files
+     * Sent by the holder&#39;s own device, over the sealed channel: its newest &#x60;holder&#x60; file (&#x60;slice&#x60;), each app&#39;s file and the code files, in the receiving node&#39;s &#x60;--recovery-dir&#x60; (or &#x60;--recover-from&#x60;) under &#x60;org-&lt;id&gt;/&#x60; or &#x60;account-&lt;id&gt;/&#x60;, each with the data key the holder opened from it with its backup key (hex). The cluster admits it with the operator&#39;s signature over &#x60;cluster / __recover_holder / { holder, slice, apps: [{ app, file, sha256 }] }&#x60; (&#x60;428&#x60; first, naming it). Where owners upgrade apps, and only for an organization, account, apps and passkeys the cluster does not hold; the receiving node seeds each app, which answers &#x60;409 APP_RESTORING&#x60; until its replicas hold it. People sign in again with the passkeys they had.  **Who:** anyone. **Operator signature:** answers &#x60;428 OPERATOR_SIGNATURE_REQUIRED&#x60; first; send it again with &#x60;operatorProof&#x60;, the operator key&#39;s signature over &#x60;details.message&#x60; and its &#x60;nonce&#x60;.
+     * @param restoreRecoverHolderRequest 
+     * @return ApiResponse<RestoreRecoverHolder200Response?>
+     * @throws IllegalStateException If the request is not correctly configured
+     * @throws IOException Rethrows the OkHttp execute method exception
+     */
+    @Suppress("UNCHECKED_CAST")
+    @Throws(IllegalStateException::class, IOException::class)
+    suspend fun restoreRecoverHolderWithHttpInfo(restoreRecoverHolderRequest: RestoreRecoverHolderRequest) : ApiResponse<RestoreRecoverHolder200Response?> = withContext(Dispatchers.IO) {
+        val localVariableConfig = restoreRecoverHolderRequestConfig(restoreRecoverHolderRequest = restoreRecoverHolderRequest)
+
+        return@withContext request<RestoreRecoverHolderRequest, RestoreRecoverHolder200Response>(
+            localVariableConfig
+        )
+    }
+
+    /**
+     * To obtain the request config of the operation restoreRecoverHolder
+     *
+     * @param restoreRecoverHolderRequest 
+     * @return RequestConfig
+     */
+    fun restoreRecoverHolderRequestConfig(restoreRecoverHolderRequest: RestoreRecoverHolderRequest) : RequestConfig<RestoreRecoverHolderRequest> {
+        val localVariableBody = restoreRecoverHolderRequest
+        val localVariableQuery: MultiValueMap = mutableMapOf()
+        val localVariableHeaders: MutableMap<String, String> = mutableMapOf()
+        localVariableHeaders["Content-Type"] = "application/json"
+        localVariableHeaders["Accept"] = "application/json"
+
+        return RequestConfig(
+            method = RequestMethod.POST,
+            path = "/recover/holder",
             query = localVariableQuery,
             headers = localVariableHeaders,
             requiresAuthentication = false,

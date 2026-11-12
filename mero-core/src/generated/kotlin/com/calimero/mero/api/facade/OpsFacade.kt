@@ -51,6 +51,20 @@ class OpsFacade internal constructor(
         api(null, null, emptySet()).ops.opsBackup(all = all)
 
     /**
+     * The operator's backup key
+     *
+     * The X25519 public key every app's recovery-disk backups are sealed to where the operator upgrades apps (`key`, `null` while none is set).
+     *
+     * **Who:** the ops token.
+     *
+     * `GET /ops/backup-key` (`ops_backup_key`).
+     *
+     * @throws com.calimero.mero.CalimeroError the node's refusal, typed by [com.calimero.mero.errorFrom].
+     */
+    suspend fun backupKey(): BackupKeyAnswer =
+        api(null, null, emptySet()).ops.opsBackupKey()
+
+    /**
      * The cluster's identity
      *
      * The cluster's name and the identity this replica holds (hex).
@@ -347,6 +361,39 @@ class OpsFacade internal constructor(
         api(null, operator, emptySet()).ops.opsPoolsSet(opsPoolsSetRequest = OpsPoolsSetRequest(pools = pools))
 
     /**
+     * The price table
+     *
+     * In micro-units of the billing currency; `{}` until one is set.
+     *
+     * **Who:** the ops token.
+     *
+     * `GET /ops/prices` (`ops_prices_get`).
+     *
+     * @throws com.calimero.mero.CalimeroError the node's refusal, typed by [com.calimero.mero.errorFrom].
+     */
+    suspend fun pricesGet(): OpsPricesGet200Response =
+        api(null, null, emptySet()).ops.opsPricesGet()
+
+    /**
+     * Set the price table
+     *
+     * Signed over `cluster / __set_price_table / { table }`; `PRICE_VERSION` unless `version` is the current one plus one (1 for the first), `BAD_PRICES` for a zero `fuelPerVcpuSecond`.
+     *
+     * **Who:** the ops token. **Operator signature:** answers `428 OPERATOR_SIGNATURE_REQUIRED` first; send it again with `operatorProof`, the operator key's signature over `details.message` and its `nonce`.
+     *
+     * `POST /ops/prices` (`ops_prices_set`).
+     *
+     * Answers `428 OPERATOR_SIGNATURE_REQUIRED` first: signed by [operator], else the client's ([CalimeroClient.operator]); with neither, [com.calimero.mero.OperatorSignatureRequired] reaches the caller.
+     *
+     * @throws com.calimero.mero.CalimeroError the node's refusal, typed by [com.calimero.mero.errorFrom].
+     */
+    suspend fun pricesSet(
+        table: OpsPricesSetRequestTable,
+        operator: DeviceSigner? = null,
+    ): kotlinx.serialization.json.JsonObject =
+        api(null, operator, emptySet()).ops.opsPricesSet(opsPricesSetRequest = OpsPricesSetRequest(table = table))
+
+    /**
      * The quotas
      *
      * The per-account quotas, and the per-payer overrides under `orgs`.
@@ -405,6 +452,39 @@ class OpsFacade internal constructor(
         id: kotlin.String,
     ): OpsReceiptKey200Response =
         api(null, null, emptySet()).ops.opsReceiptKey(id = id)
+
+    /**
+     * Found the cluster again from its recovery disk
+     *
+     * On the founder started with `--bootstrap --recover-from DIR`, its system state empty: the newest `system` file in `DIR/operator/` and the apps' `code` files, each with the data key the operator opened from it (hex). Checked as founding from backups is (governance, operator key, no node of the old cluster answering), then the system group is seeded; each app waits for `POST /ops/apps/{app}/restore { recovery }`.
+     *
+     * **Who:** the ops token.
+     *
+     * `POST /ops/recover` (`ops_recover`).
+     *
+     * @throws com.calimero.mero.CalimeroError the node's refusal, typed by [com.calimero.mero.errorFrom].
+     */
+    suspend fun recover(
+        system: OpsRecoverRequestSystem,
+        code: kotlin.collections.List<OpsRecoverRequestCodeInner>? = null,
+    ): OpsRecover200Response =
+        api(null, null, emptySet()).ops.opsRecover(opsRecoverRequest = OpsRecoverRequest(system = system, code = code))
+
+    /**
+     * The recovery files a node reads
+     *
+     * In `--recover-from`, else `--recovery-dir`, of `holder` (`operator`, the default; `org:<id>`; `account:<id>`): each file's name, its header as signed (JSON text) and the node's Ed25519 signature over `calimero.recovery-backup.v1\0` and those bytes (hex), for the holder's device to check before it opens a key with its own.
+     *
+     * **Who:** the ops token.
+     *
+     * `GET /ops/recovery-files` (`ops_recovery_files`).
+     *
+     * @throws com.calimero.mero.CalimeroError the node's refusal, typed by [com.calimero.mero.errorFrom].
+     */
+    suspend fun recoveryFiles(
+        holder: kotlin.String? = null,
+    ): OpsRecoveryFiles200Response =
+        api(null, null, emptySet()).ops.opsRecoveryFiles(holder = holder)
 
     /**
      * Register a node
@@ -508,7 +588,7 @@ class OpsFacade internal constructor(
     /**
      * Restore an app from its sealed backup
      *
-     * Signed over `<app> / __restore_app / { backup, sha256 }`. The receiving node holds the backup (`backup`, else the newest, in `{backup-dir}/{app}/`) and seeds the restore; answers once every replica holds the restored state: the rows restored, the backup (`format` 0, with `merod` and `release` `null`, for one written before manifests) and the app group's Raft status.
+     * Signed over `<app> / __restore_app / { backup, sha256 }`. The receiving node holds the backup (`backup`, else the newest, in `{backup-dir}/{app}/`) and seeds the restore; answers once every replica holds the restored state: the rows restored, the backup (`format` 0, with `merod` and `release` `null`, for one written before manifests) and the app group's Raft status. `recovery` restores from a recovery-disk file instead (in the app's holder's directory under `--recover-from`, else `--recovery-dir`), opened with the data key its holder opened from it (hex); `backup` is then the file's name and `sha256` its body's.
      *
      * **Who:** the ops token. **Operator signature:** answers `428 OPERATOR_SIGNATURE_REQUIRED` first; send it again with `operatorProof`, the operator key's signature over `details.message` and its `nonce`.
      *
@@ -521,9 +601,10 @@ class OpsFacade internal constructor(
     suspend fun restore(
         app: kotlin.String,
         backup: kotlin.String? = null,
+        recovery: OpsRestoreRequestRecovery? = null,
         operator: DeviceSigner? = null,
     ): OpsRestore200Response =
-        api(null, operator, emptySet()).ops.opsRestore(app = app, opsRestoreRequest = OpsRestoreRequest(backup = backup))
+        api(null, operator, emptySet()).ops.opsRestore(app = app, opsRestoreRequest = OpsRestoreRequest(backup = backup, recovery = recovery))
 
     /**
      * Custom domains to serve
@@ -538,6 +619,25 @@ class OpsFacade internal constructor(
      */
     suspend fun served(): OpsServed200Response =
         api(null, null, emptySet()).ops.opsServed()
+
+    /**
+     * Set the operator's backup key
+     *
+     * Signed over `operator / __set_backup_key / { publicKey }`, where the operator upgrades apps (else `403`). `publicKey`: 64 lowercase hex, an X25519 public key whose private half the operator keeps (never a node).
+     *
+     * **Who:** the ops token. **Operator signature:** answers `428 OPERATOR_SIGNATURE_REQUIRED` first; send it again with `operatorProof`, the operator key's signature over `details.message` and its `nonce`.
+     *
+     * `POST /ops/backup-key` (`ops_set_backup_key`).
+     *
+     * Answers `428 OPERATOR_SIGNATURE_REQUIRED` first: signed by [operator], else the client's ([CalimeroClient.operator]); with neither, [com.calimero.mero.OperatorSignatureRequired] reaches the caller.
+     *
+     * @throws com.calimero.mero.CalimeroError the node's refusal, typed by [com.calimero.mero.errorFrom].
+     */
+    suspend fun setBackupKey(
+        publicKey: kotlin.String,
+        operator: DeviceSigner? = null,
+    ): BackupKeyAnswer =
+        api(null, operator, emptySet()).ops.opsSetBackupKey(opsSetBackupKeyRequest = OpsSetBackupKeyRequest(publicKey = publicKey))
 
     /**
      * Move an app's replicas

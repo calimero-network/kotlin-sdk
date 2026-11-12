@@ -1,6 +1,6 @@
 # Where openapi.json came from. Written by scripts/refresh-openapi.sh; do not edit by hand.
 CORE_REPO=calimero-network/core
-CORE_REF=92ac297a1b3547aa039dac63825625fa8d7024ce
-CORE_COMMIT=92ac297a1b3547aa039dac63825625fa8d7024ce
+CORE_REF=c350a92bc37501e377e7314e4f762f700a442500
+CORE_COMMIT=c350a92bc37501e377e7314e4f762f700a442500
 CORE_PATH=docs/public/openapi.json
-SHA256=6b6ba492dbb7599ef35fa759c30a30a90fed5fe287a2aebc56ef4bcb7ef55770
+SHA256=b5ce93b108a0a722ac0427bc0e534a91f970ba985b560352f3d7aa7d4b189db3
