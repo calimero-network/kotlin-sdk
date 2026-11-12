@@ -1,5 +1,16 @@
 # Changelog
 
+## Unreleased
+
+### Breaking: the `NoRelay*` aliases are gone (mero-core)
+
+The deprecated 0.x aliases kept since Calimero 1.0 dropped relays are removed:
+
+| Removed | Use instead |
+|---|---|
+| `NoRelayException` | `SignedOutException` |
+| `NoRelayContextContract` | `SignedOutContextContract` |
+
 ## 1.0.0 (unreleased)
 
 ### Breaking: the deprecated one-route methods are gone (mero-core)
