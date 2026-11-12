@@ -942,6 +942,20 @@ class CalimeroClientTest {
         }
 
     @Test
+    fun `an app transfer answers null, which the generated facade returns as Unit`() =
+        runBlocking {
+            // core 92ac297a1: `POST /apps/{app}/transfer` answers `null` (`{ type: null }`).
+            val cluster = Cluster(stepUp("null"))
+            val client = cluster.client()
+            client.passkey = softPasskey()
+            val answer: Unit = client.apps.transfer(app = "app 1", to = "acc-2")
+            assertEquals(Unit, answer)
+            assertEquals("/apps/app%201/transfer", path(cluster.nodes[0].requests[1].first))
+            assertEquals("acc-2", sent(cluster, 1)["to"]!!.jsonPrimitive.content)
+            assertEquals("c1", sent(cluster, 1)["confirm"]!!.jsonObject["challengeId"]!!.jsonPrimitive.content)
+        }
+
+    @Test
     fun `the generated facade throws the typed refusal, and a 412 without a passkey reaches the caller`() =
         runBlocking {
             val cluster = Cluster({ head, _ -> if (path(head).startsWith("/apps/")) refused(404, "NOT_FOUND") else refused(412, "CONFIRM_REQUIRED", "{}") })

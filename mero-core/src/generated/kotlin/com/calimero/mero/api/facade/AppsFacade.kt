@@ -285,7 +285,7 @@ class AppsFacade internal constructor(
         app: kotlin.String,
         to: kotlin.String,
         passkey: PasskeyProvider? = null,
-    ): Null =
+    ): Unit =
         api(passkey, null, emptySet()).apps.appTransfer(app = app, appTransferRequest = AppTransferRequest(to = to))
 
     /**

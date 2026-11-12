@@ -57,7 +57,6 @@ import com.calimero.mero.api.models.FilesList200Response
 import com.calimero.mero.api.models.FilesUpload200Response
 import com.calimero.mero.api.models.Intents200Response
 import com.calimero.mero.api.models.IntentsRequest
-import com.calimero.mero.api.models.Null
 import com.calimero.mero.api.models.PresenceGet200Response
 import com.calimero.mero.api.models.PresencePublishRequest
 import com.calimero.mero.api.models.Run
@@ -1179,20 +1178,19 @@ open class AppsApi(basePath: kotlin.String = defaultBasePath, client: Call.Facto
      * The owner (for an organization&#39;s app, while a member and in the app&#39;s team), or an organization admin; an organization&#39;s app only to a member. Answers &#x60;null&#x60;.  **Who:** an account holder (a passkey session not bound to an app&#39;s frontend). **Step-up:** answers &#x60;412 CONFIRM_REQUIRED&#x60; first; send the same request again with &#x60;confirm&#x60;, a passkey assertion over &#x60;details.challenge&#x60;.
      * @param app 
      * @param appTransferRequest 
-     * @return Null
+     * @return void
      * @throws IllegalStateException If the request is not correctly configured
      * @throws IOException Rethrows the OkHttp execute method exception
      * @throws UnsupportedOperationException If the API returns an informational or redirection response
      * @throws ClientException If the API returns a client error response
      * @throws ServerException If the API returns a server error response
      */
-    @Suppress("UNCHECKED_CAST")
     @Throws(IllegalStateException::class, IOException::class, UnsupportedOperationException::class, ClientException::class, ServerException::class)
-    suspend fun appTransfer(app: kotlin.String, appTransferRequest: AppTransferRequest) : Null = withContext(Dispatchers.IO) {
+    suspend fun appTransfer(app: kotlin.String, appTransferRequest: AppTransferRequest) : Unit = withContext(Dispatchers.IO) {
         val localVarResponse = appTransferWithHttpInfo(app = app, appTransferRequest = appTransferRequest)
 
         return@withContext when (localVarResponse.responseType) {
-            ResponseType.Success -> (localVarResponse as Success<*>).data as Null
+            ResponseType.Success -> Unit
             ResponseType.Informational -> throw UnsupportedOperationException("Client does not support Informational responses.")
             ResponseType.Redirection -> throw UnsupportedOperationException("Client does not support Redirection responses.")
             ResponseType.ClientError -> {
@@ -1212,16 +1210,15 @@ open class AppsApi(basePath: kotlin.String = defaultBasePath, client: Call.Facto
      * The owner (for an organization&#39;s app, while a member and in the app&#39;s team), or an organization admin; an organization&#39;s app only to a member. Answers &#x60;null&#x60;.  **Who:** an account holder (a passkey session not bound to an app&#39;s frontend). **Step-up:** answers &#x60;412 CONFIRM_REQUIRED&#x60; first; send the same request again with &#x60;confirm&#x60;, a passkey assertion over &#x60;details.challenge&#x60;.
      * @param app 
      * @param appTransferRequest 
-     * @return ApiResponse<Null?>
+     * @return ApiResponse<Unit?>
      * @throws IllegalStateException If the request is not correctly configured
      * @throws IOException Rethrows the OkHttp execute method exception
      */
-    @Suppress("UNCHECKED_CAST")
     @Throws(IllegalStateException::class, IOException::class)
-    suspend fun appTransferWithHttpInfo(app: kotlin.String, appTransferRequest: AppTransferRequest) : ApiResponse<Null?> = withContext(Dispatchers.IO) {
+    suspend fun appTransferWithHttpInfo(app: kotlin.String, appTransferRequest: AppTransferRequest) : ApiResponse<Unit?> = withContext(Dispatchers.IO) {
         val localVariableConfig = appTransferRequestConfig(app = app, appTransferRequest = appTransferRequest)
 
-        return@withContext request<AppTransferRequest, Null>(
+        return@withContext request<AppTransferRequest, Unit>(
             localVariableConfig
         )
     }
