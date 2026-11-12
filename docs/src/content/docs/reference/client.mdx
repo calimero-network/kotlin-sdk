@@ -26,10 +26,10 @@ What `CalimeroClient` keeps besides:
 | Streams | `events`, `presenceStream` |
 | Blobs | `uploadBlob(app, data, contentType)`, `blobContent` (bytes and content type) |
 | Organizations | `startRecovery(org, seed)` (the seed signs here) |
-| Approvals | `appsReportAll`, `pendingApprovals`, `openConsentPage` (with `OpenConsentOptions(navigate, confirm)`; a code that is not `confirmationCode(requestId)` throws `CONSENT_CODE_MISMATCH`, `checkConsentCode`), `waitForConsent` |
+| Approvals | `appsReportAll`, `pendingApprovals`, `requestConsent`, `openConsentPage` (with `OpenConsentOptions(navigate, confirm)`; a code that is not `confirmationCode(requestId)` throws `CONSENT_CODE_MISMATCH`, `checkConsentCode`), `consentResult` (typed `ConsentOutcome` once approved), `resumeConsent(href, requestId)` (`CONSENT_NOT_STARTED`, `CONSENT_REQUEST_MISMATCH`, `CONSENT_NOT_DECIDED`, `CONSENT_REPLACED`), `waitForConsent` (until `expiresAt`, or a `timeout`) |
 
 Helpers beside it: `errorFrom`, `fetchAttestedKey`, `claimedRelease`, `pendingApprovalsFrom`,
-`releaseConsent`, `withdrawConsent`, `upgradeConsent`, `consentReturn`, `stalledBy`,
+`releaseConsent`, `withdrawConsent`, `upgradeConsent`, `consentReturn`, `consentReturnTo`, `stalledBy`,
 `compareVersions`, `publisherBindingMessage`, `OrgCapabilities`, `b64url` / `fromB64url`,
 `readDirectory` / `orderNodes` / `DEFAULT_DIRECTORY`, `deployerKey`, `frontendManifest`,
 `pageDeployment`, `freshCollateral`, and the recovery seed's `newRecoverySeed`, `recoverySeedText`,

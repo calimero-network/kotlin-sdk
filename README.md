@@ -18,7 +18,7 @@ with the same names: `CalimeroClient` verifies a node's TDX attestation, seals e
 | Module | What it is |
 |---|---|
 | `mero-core` | `CalimeroClient` and its typed errors (`AppError`, `ConfirmRequired`, `WrongNode`, `LoginRequired`, `NotFound`, `UnavailableError`, …); attestation (`CloudPolicy`, `fetchAttestedKey`: mock quotes only when allowed, real quotes checked against Sigstore-signed mero-tee releases and Intel's DCAP collateral on the device); the sealed transport (`tee.SealedTransport`); passkeys (`PasskeyProvider`, `SoftPasskey`); approvals and the consent page; `SessionStore`; and the app-facing layer in `app` (`MeroAppBackend`, `ContextContract`, `CalimeroAppBackend`, `OrgInvitation`). Also the mero-agent-gate client (`agentgate`). |
-| `mero-compose` | `MeroAppSession` (a mobile app's signed-in account over `CalimeroAppBackend`), `PlatformPasskey` (Android Credential Manager), `ConsentLauncher` (the node's consent page in a Custom Tab), `MeroTheme`. |
+| `mero-compose` | `MeroAppSession` (a mobile app's signed-in account over `CalimeroAppBackend`), `PlatformPasskey` (Android Credential Manager), `ConsentLauncher` (the node's consent page in a Custom Tab, and `resume` for the App Link it returns to), `MeroTheme`. |
 | `mero-testkit` | `InMemoryAppBackend` and `RecordingContextContract`: test an app's view models with no cluster. |
 | `sample-app` | **Mero Chat** sample in the light Calimero style: Home / Chat / SDK tabs. |
 
@@ -104,6 +104,27 @@ session.backend.collect { backend -> /* MeroAppBackend: orgs, teams, app instanc
 `MeroAppBackend` keeps the 0.x method names apps were written against (`listNamespaces`,
 `createSubgroup`, `createContext`, `joinNamespace`, …), mapped onto organizations, teams and app
 instances; see the [App session guide](https://calimero-network.github.io/kotlin-sdk/guides/app-session/).
+
+### Consent: what an app's session may not do itself
+
+Approvals, creating an organization, and minting or accepting an invitation are decided by the
+account holder on the node's own consent page:
+
+```kotlin
+val returnTo = consentReturnTo(packageOrigin, version)   // the package's served page relays to the app
+val started = ConsentLauncher.request(activity, client, ConsentRequest.CreateOrg("Acme", returnTo)) { s ->
+    showCode(s.code)                                     // the page shows the same code
+    true
+}
+// Back in the app: this request's decision, read from the node (or client.waitForConsent(id, timeout)).
+// A return that is not it throws (CONSENT_NOT_DECIDED, CONSENT_REPLACED, CONSENT_REQUEST_MISMATCH, …).
+val result = ConsentLauncher.resume(client, intent, started.requestId)
+(result?.outcome as? ConsentOutcome.OrgCreated)?.let { open(it.orgId) }
+```
+
+`ConsentOutcome` is typed per kind (`OrgCreated`, `InviteCreated`, `InviteAccepted`, …); an
+invitation's token never appears in `toString`. See the
+[User approvals guide](https://calimero-network.github.io/kotlin-sdk/guides/user-approvals/).
 
 ## Build & test
 

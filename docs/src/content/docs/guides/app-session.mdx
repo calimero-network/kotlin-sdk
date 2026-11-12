@@ -35,7 +35,7 @@ viewModelScope.launch { session.handle(url) }
 | `isSignedIn`, `account`, `applicationId`, `contract` | the account; `applicationId` is the package |
 | `restore()`, `signIn(…)`, `signUp(…)`, `cancelSignIn()`, `signOut()` | session lifecycle |
 | `handle(url)`, `pendingInvitation`, `pendingOrgInvitation`, `redeemPendingInvitation()`, `dismissPendingInvitation()` | links |
-| `requestConsent(context, request)`, `consentResult` | approvals on the consent page |
+| `requestConsent(context, request)`, `consentResult` | approvals on the consent page (`consentResult.outcome`: the typed `ConsentOutcome`) |
 | `passkey` | approves the backend's step-ups (`createInvitation`, `leaveNamespace`, `leaveSubgroup`, `setMemberRole`, `removeMember`); null: they throw `ConfirmRequired` |
 
 ## The backend's words

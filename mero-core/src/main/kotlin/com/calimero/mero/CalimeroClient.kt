@@ -1065,13 +1065,16 @@ class CalimeroClient(
     suspend fun pendingApprovals(org: String? = null): PendingApprovals = pendingApprovalsFrom(appsReportAll(org), releaseRules())
 
     /**
-     * Ask the node to ask the user: a release, upgrade or outbound approval that only the account
-     * holder may make, decided on the node's own consent page, never in the app. Send the person to
-     * the answer's `url` (a Custom Tab: mero-compose's `ConsentLauncher`); the page sends them back
-     * to `returnTo?request_id=…&result=approved|declined` ([consentReturn]), and [consentResult]
-     * confirms the decision.
+     * Ask the node to ask the user (`POST /consent/requests`): something a package-bound session may
+     * not do itself (approve a release, upgrade, outbound hosts; create an organization, mint or
+     * accept an invitation), decided on the node's own consent page, never in the app. Show the
+     * person the answer's `code`, then send them to its `url` (a Custom Tab: mero-compose's
+     * `ConsentLauncher`, or [openConsentPage] for both steps). The page sends them back to
+     * `returnTo?request_id=…&result=approved|declined` ([resumeConsent]), and [consentResult] (or
+     * [waitForConsent]) confirms the decision and its [ConsentOutcome]. It does not check the
+     * answer's `code`: [openConsentPage] does ([checkConsentCode]).
      */
-    internal suspend fun requestConsent(request: ConsentRequest): ConsentStarted =
+    suspend fun requestConsent(request: ConsentRequest): ConsentStarted =
         wire.decodeFromJsonElement(ConsentStarted.serializer(), raw(defaultApi.consent.consentPageCreateRequestConfig(request)))
 
     /** [requestConsent], then hand the consent page's URL to [navigate] (open it in a Custom Tab). */
@@ -1098,9 +1101,69 @@ class CalimeroClient(
         return started
     }
 
-    /** The decision on a consent request (any node answers, for the account that asked). */
-    internal suspend fun consentResult(requestId: String): ConsentResult =
+    /**
+     * The decision on a consent request (`GET /consent/{id}/result`; any node answers, for the
+     * account that asked), with its typed [ConsentResult.outcome] once approved. Unlike the facade's
+     * `consent.pageResult`, it reads kinds this SDK does not know as [ConsentOutcome.Other].
+     */
+    suspend fun consentResult(requestId: String): ConsentResult =
         wire.decodeFromJsonElement(ConsentResult.serializer(), raw(defaultApi.consent.consentPageResultRequestConfig(requestId)))
+
+    /**
+     * The link the consent page sent the person back with (the App Link the system handed the app):
+     * the decision on [requestId], the request this app started ([ConsentStarted.requestId]), read
+     * from the node ([consentResult]), never from the link. Null when [href] is not a consent return.
+     * The link's `result` is never trusted; an approval's [ConsentResult.outcome] is the node's.
+     *
+     * Throws [CalimeroError] with code:
+     * - [CONSENT_NOT_STARTED]: the link names a request, and [requestId] is null (the app started none);
+     * - [CONSENT_REQUEST_MISMATCH]: the link, or the node's answer, names another request than [requestId];
+     * - [CONSENT_NOT_DECIDED]: [requestId] is still pending although the page sent the person back,
+     *   a sign that another request was approved on a page that was not the node's. Do not act on it;
+     * - [CONSENT_REPLACED]: the node no longer knows [requestId] (`404`): an account has one undecided
+     *   request per node, and a newer one replaced it, possibly on a page that was not the node's.
+     *   Do not act on it either.
+     */
+    suspend fun resumeConsent(
+        href: String,
+        requestId: String?,
+    ): ConsentResult? {
+        val back = consentReturn(href) ?: return null
+        if (requestId.isNullOrEmpty()) consentRefused(CONSENT_NOT_STARTED, "this app started no consent request", returned = back.requestId)
+        if (back.requestId != requestId) {
+            consentRefused(CONSENT_REQUEST_MISMATCH, "the consent page returned another request than this app started", requestId, back.requestId)
+        }
+        val result =
+            try {
+                consentResult(requestId)
+            } catch (e: NotFound) {
+                // One undecided request per account per node: a newer one replaced this one,
+                // which then answers 404, perhaps swapped on a forged page.
+                consentRefused(CONSENT_REPLACED, "this app's consent request was replaced by a newer one", requestId, status = 404, cause = e)
+            }
+        if (result.requestId != requestId) consentRefused(CONSENT_REQUEST_MISMATCH, "the node answered another request", requestId, result.requestId)
+        if (result.isPending) consentRefused(CONSENT_NOT_DECIDED, "the consent page returned, but this request is still pending", requestId)
+        return result
+    }
+
+    private fun consentRefused(
+        code: String,
+        message: String,
+        requestId: String? = null,
+        returned: String? = null,
+        status: Int = 200,
+        cause: Throwable? = null,
+    ): Nothing =
+        throw CalimeroError(
+            status,
+            code,
+            message,
+            buildJsonObject {
+                requestId?.let { put("requestId", it) }
+                returned?.let { put("returned", it) }
+            },
+            cause,
+        )
 
     /**
      * Poll [consentResult] until the request is decided, every [intervalMs], until [expiresAt]
@@ -1116,6 +1179,26 @@ class CalimeroClient(
             if (!result.isPending) return result
             if (expiresAt != null && System.currentTimeMillis() / 1000 >= expiresAt) return result
             delay(intervalMs)
+        }
+    }
+
+    /**
+     * Poll [consentResult] every [intervalMs] until the request is decided or [timeout] passes, when
+     * it answers the last (pending) result. A request lives 10 minutes on the node.
+     */
+    suspend fun waitForConsent(
+        requestId: String,
+        timeout: kotlin.time.Duration,
+        intervalMs: Long = 2_000,
+    ): ConsentResult {
+        require(intervalMs > 0) { "intervalMs is positive" }
+        val deadline = System.nanoTime() + timeout.inWholeNanoseconds
+        while (true) {
+            val result = consentResult(requestId)
+            if (!result.isPending) return result
+            val left = deadline - System.nanoTime()
+            if (left <= 0) return result
+            delay(minOf(intervalMs, (left + 999_999) / 1_000_000))
         }
     }
 
@@ -1204,6 +1287,18 @@ class CalimeroClient(
                 )
             }
         }
+
+        /** [resumeConsent]: a consent return reached an app that started no request. */
+        const val CONSENT_NOT_STARTED: String = "CONSENT_NOT_STARTED"
+
+        /** [resumeConsent]: the return, or the node's answer, is for another request than the app's. */
+        const val CONSENT_REQUEST_MISMATCH: String = "CONSENT_REQUEST_MISMATCH"
+
+        /** [resumeConsent]: the page returned, but the app's request is still pending. */
+        const val CONSENT_NOT_DECIDED: String = "CONSENT_NOT_DECIDED"
+
+        /** [resumeConsent]: the node no longer knows the app's request (`404`): a newer one replaced it. */
+        const val CONSENT_REPLACED: String = "CONSENT_REPLACED"
 
         internal const val OCTET_STREAM = "application/octet-stream"
 

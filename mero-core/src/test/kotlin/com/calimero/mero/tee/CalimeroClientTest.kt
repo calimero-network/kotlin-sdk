@@ -12,7 +12,9 @@ import com.calimero.mero.CloudRetryOptions
 import com.calimero.mero.Committed
 import com.calimero.mero.ConfirmCancelled
 import com.calimero.mero.ConfirmRequired
+import com.calimero.mero.ConsentOutcome
 import com.calimero.mero.ConsentRequest
+import com.calimero.mero.ConsentResult
 import com.calimero.mero.ConsentScope
 import com.calimero.mero.Deployer
 import com.calimero.mero.DirectoryError
@@ -43,6 +45,7 @@ import com.calimero.mero.app.OrgInvitation
 import com.calimero.mero.app.PasskeyRequired
 import com.calimero.mero.confirmationCode
 import com.calimero.mero.consentReturn
+import com.calimero.mero.consentReturnTo
 import com.calimero.mero.crypto.Ed25519
 import com.calimero.mero.crypto.Hex
 import com.calimero.mero.crypto.SeedSigner
@@ -75,6 +78,7 @@ import kotlinx.serialization.json.put
 import okhttp3.Request
 import okhttp3.Response
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Assert.fail
@@ -83,6 +87,8 @@ import java.security.KeyFactory
 import java.security.Signature
 import java.security.spec.X509EncodedKeySpec
 import java.util.concurrent.atomic.AtomicInteger
+import kotlin.time.Duration.Companion.milliseconds
+import kotlin.time.Duration.Companion.seconds
 import com.calimero.mero.api.models.OrgRole as ApiOrgRole
 import com.calimero.mero.api.models.TeamRole as ApiTeamRole
 
@@ -411,6 +417,164 @@ class CalimeroClientTest {
             }
             assertNull(opened)
         }
+
+    @Test
+    fun `asks for the organization and invitation kinds and types their outcomes`() =
+        runBlocking {
+            var polls = 0
+            val cluster =
+                Cluster({ head, _ ->
+                    when (path(head)) {
+                        "/consent/requests" -> json(200, """{"requestId":"r2","url":"https://node0.example/consent/r2","expiresAt":9,"code":"${confirmationCode("r2")}"}""")
+                        "/consent/r2/result" ->
+                            if (++polls < 3) {
+                                json(200, """{"requestId":"r2","kind":"createInvite","status":"pending","decidedAt":null}""")
+                            } else {
+                                json(200, """{"requestId":"r2","kind":"createInvite","status":"approved","decidedAt":12,"outcome":{"token":"inv_secret"}}""")
+                            }
+                        "/consent/r3/result" -> json(200, """{"requestId":"r3","kind":"createOrg","status":"approved","decidedAt":12,"outcome":{"orgId":"org-9"}}""")
+                        "/consent/r4/result" -> json(200, """{"requestId":"r4","kind":"acceptInvite","status":"approved","decidedAt":12,"outcome":{"org":"org-1"}}""")
+                        "/consent/r5/result" -> json(200, """{"requestId":"r5","kind":"createOrg","status":"declined","decidedAt":12}""")
+                        "/consent/r6/result" -> json(200, """{"requestId":"r6","kind":"somethingNew","status":"approved","decidedAt":12,"outcome":{"x":"y"}}""")
+                        "/consent/r7/result" -> json(200, """{"requestId":"r7","kind":"release","status":"approved","decidedAt":12}""")
+                        "/consent/r8/result" -> json(200, """{"requestId":"r8","kind":"createOrg","status":"pending","decidedAt":null}""")
+                        else -> refused(404, "NOT_FOUND")
+                    }
+                })
+            val client = cluster.client()
+
+            // Each kind's wire body: kind, subject, returnTo (no scope).
+            val bodies =
+                listOf(
+                    ConsentRequest.CreateOrg("Acme", "https://app.example/consent"),
+                    ConsentRequest.CreateInvite("org-1", ApiOrgRole.ADMIN, "https://app.example/consent", teams = listOf("t1"), ttlSecs = 3600, uses = 1, allApps = true),
+                    ConsentRequest.CreateInvite("org-1", ApiOrgRole.GUEST, "https://app.example/consent"),
+                    ConsentRequest.AcceptInvite("inv_secret", "https://app.example/consent"),
+                )
+            for (body in bodies) assertEquals("r2", client.requestConsent(body).requestId)
+            val sent = cluster.nodes[0].requests.map { Json.parseToJsonElement(it.second).jsonObject }
+            assertEquals(
+                listOf(
+                    """{"kind":"createOrg","subject":{"name":"Acme"},"returnTo":"https://app.example/consent"}""",
+                    """{"kind":"createInvite","subject":{"org":"org-1","role":"admin","teams":["t1"],"ttlSecs":3600,"uses":1,"allApps":true},"returnTo":"https://app.example/consent"}""",
+                    """{"kind":"createInvite","subject":{"org":"org-1","role":"guest"},"returnTo":"https://app.example/consent"}""",
+                    """{"kind":"acceptInvite","subject":{"token":"inv_secret"},"returnTo":"https://app.example/consent"}""",
+                ),
+                sent.map { it.toString() },
+            )
+
+            // The token never reaches a string a log would print.
+            val accept = ConsentRequest.AcceptInvite("inv_secret", "https://app.example/consent")
+            assertFalse(accept.toString().contains("inv_secret"))
+            assertEquals(accept, ConsentRequest.AcceptInvite("inv_secret", "https://app.example/consent"))
+            try {
+                ConsentRequest.CreateInvite("org-1", ApiOrgRole.OWNER, "https://app.example/consent")
+                fail("an owner invitation is refused")
+            } catch (_: IllegalArgumentException) {
+            }
+
+            // wait polls until decided; the invitation's token is typed and redacted in toString.
+            val invited = client.waitForConsent("r2", 5.seconds, intervalMs = 1)
+            assertEquals(3, polls)
+            assertTrue(invited.isApproved)
+            val outcome = invited.outcome as ConsentOutcome.InviteCreated
+            assertEquals("inv_secret", outcome.token)
+            assertFalse(invited.toString(), invited.toString().contains("inv_secret"))
+
+            // resume reads the app's own request from the node; anything else is not a consent return.
+            assertEquals(ConsentOutcome.OrgCreated("org-9"), client.resumeConsent("https://app.example/consent?request_id=r3&result=approved", "r3")!!.outcome)
+            assertNull(client.resumeConsent("https://app.example/consent?foo=bar", "r3"))
+            assertEquals(ConsentOutcome.InviteAccepted("org-1"), client.consentResult("r4").outcome)
+            val declined = client.consentResult("r5")
+            assertTrue(declined.isDeclined)
+            assertNull(declined.outcome)
+            assertEquals(ConsentOutcome.Other("somethingNew", buildJsonObject { put("x", "y") }), client.consentResult("r6").outcome)
+            assertEquals(ConsentOutcome.Release, client.consentResult("r7").outcome)
+
+            // A request still pending when the timeout passes answers the pending result.
+            assertTrue(client.waitForConsent("r8", 20.milliseconds, intervalMs = 5).isPending)
+        }
+
+    @Test
+    fun `refuses a consent return that is not the decision on the app's own request`() =
+        runBlocking {
+            val cluster =
+                Cluster({ head, _ ->
+                    when (path(head)) {
+                        "/consent/mine/result" -> json(200, """{"requestId":"mine","kind":"createInvite","status":"pending","decidedAt":null}""")
+                        "/consent/swapped/result" -> json(200, """{"requestId":"other","kind":"createInvite","status":"approved","decidedAt":1,"outcome":{"token":"t"}}""")
+                        "/consent/declined/result" -> json(200, """{"requestId":"declined","kind":"createOrg","status":"declined","decidedAt":1}""")
+                        else -> refused(404, "NOT_FOUND")
+                    }
+                })
+            val client = cluster.client()
+
+            suspend fun refusal(
+                href: String,
+                own: String?,
+            ): com.calimero.mero.CalimeroError =
+                try {
+                    client.resumeConsent(href, own)
+                    fail("expected a refusal")
+                    error("unreachable")
+                } catch (e: com.calimero.mero.CalimeroError) {
+                    e
+                }
+            val back = "https://app.example/consent?result=approved&request_id="
+
+            // The app started none: a return still names one.
+            val notStarted = refusal(back + "mine", null)
+            assertEquals(CalimeroClient.CONSENT_NOT_STARTED, notStarted.code)
+            assertEquals("mine", notStarted.details["returned"]!!.jsonPrimitive.content)
+            // The link names another request than the app's: refused before asking the node.
+            val before = cluster.nodes[0].requests.size
+            val mismatch = refusal(back + "forged", "mine")
+            assertEquals(CalimeroClient.CONSENT_REQUEST_MISMATCH, mismatch.code)
+            assertEquals("forged", mismatch.details["returned"]!!.jsonPrimitive.content)
+            assertEquals(before, cluster.nodes[0].requests.size)
+            // The page came back "approved", but the node says the app's request is pending.
+            val pending = refusal(back + "mine", "mine")
+            assertEquals(CalimeroClient.CONSENT_NOT_DECIDED, pending.code)
+            assertEquals("mine", pending.details["requestId"]!!.jsonPrimitive.content)
+            // A newer request replaced the app's: the node answers 404 for it.
+            val replaced = refusal(back + "gone", "gone")
+            assertEquals(CalimeroClient.CONSENT_REPLACED, replaced.code)
+            assertEquals(404, replaced.status)
+            assertTrue(replaced.cause is com.calimero.mero.NotFound)
+            // The node answered for another request than asked.
+            assertEquals(CalimeroClient.CONSENT_REQUEST_MISMATCH, refusal(back + "swapped", "swapped").code)
+            // A decline is a decision: the link's `result` is not trusted, the node's status is.
+            val declined = client.resumeConsent(back + "declined", "declined")!!
+            assertTrue(declined.isDeclined)
+            assertNull(declined.outcome)
+        }
+
+    @Test
+    fun `returns native consent to the package's served page`() {
+        assertEquals("https://x.apps.calimero.network/3.1.72/?native-consent=1", consentReturnTo("https://x.apps.calimero.network/", "3.1.72"))
+        assertEquals("https://x.apps.calimero.network/3.1.72/?native-consent=1", consentReturnTo("https://x.apps.calimero.network", "3.1.72"))
+        try {
+            consentReturnTo("https://x.apps.calimero.network", "../evil")
+            fail("a path is not a version")
+        } catch (_: IllegalArgumentException) {
+        }
+    }
+
+    @Test
+    fun `types consent outcomes by kind`() {
+        fun outcome(raw: String?) = raw?.let { Json.parseToJsonElement(it).jsonObject }
+        assertEquals(ConsentOutcome.Upgrade, ConsentOutcome.of("upgrade", null))
+        assertEquals(ConsentOutcome.Outbound, ConsentOutcome.of("outbound", outcome("{}")))
+        assertEquals(ConsentOutcome.OrgCreated("o"), ConsentOutcome.of("createOrg", outcome("""{"orgId":"o"}""")))
+        // A known kind without its field is not invented: it stays raw.
+        assertEquals(ConsentOutcome.Other("createOrg", null), ConsentOutcome.of("createOrg", null))
+        assertEquals(ConsentOutcome.Other("createInvite", outcome("""{"token":1}""")), ConsentOutcome.of("createInvite", outcome("""{"token":1}""")))
+        // The result reads back as it was sent.
+        val text = """{"requestId":"r","kind":"createInvite","status":"approved","decidedAt":3,"outcome":{"token":"t"}}"""
+        val result = Json.decodeFromString(ConsentResult.serializer(), text)
+        assertEquals(ConsentOutcome.InviteCreated("t"), result.outcome)
+        assertEquals(Json.parseToJsonElement(text), Json.parseToJsonElement(Json.encodeToString(ConsentResult.serializer(), result)))
+    }
 
     @Test
     fun `computes the consent page's confirmation code as core does`() {
