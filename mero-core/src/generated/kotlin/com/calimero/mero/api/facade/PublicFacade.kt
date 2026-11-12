@@ -79,4 +79,26 @@ class PublicFacade internal constructor(
      */
     suspend fun releasesPublic(): ReleasesPublic200Response =
         api(null, null, emptySet()).publicApi.releasesPublic()
+
+    /**
+     * Bring an organization's or account's apps back from its recovery files
+     *
+     * Sent by the holder's own device, over the sealed channel: its newest `holder` file (`slice`), each app's file and the code files, in the receiving node's `--recovery-dir` (or `--recover-from`) under `org-<id>/` or `account-<id>/`, each with the data key the holder opened from it with its backup key (hex). The cluster admits it with the operator's signature over `cluster / __recover_holder / { holder, slice, apps: [{ app, file, sha256 }] }` (`428` first, naming it). Where owners upgrade apps, and only for an organization, account, apps and passkeys the cluster does not hold; the receiving node seeds each app, which answers `409 APP_RESTORING` until its replicas hold it. People sign in again with the passkeys they had.
+     *
+     * **Who:** anyone. **Operator signature:** answers `428 OPERATOR_SIGNATURE_REQUIRED` first; send it again with `operatorProof`, the operator key's signature over `details.message` and its `nonce`.
+     *
+     * `POST /recover/holder` (`restore_recover_holder`).
+     *
+     * Answers `428 OPERATOR_SIGNATURE_REQUIRED` first: signed by [operator], else the client's ([CalimeroClient.operator]); with neither, [com.calimero.mero.OperatorSignatureRequired] reaches the caller.
+     *
+     * @throws com.calimero.mero.CalimeroError the node's refusal, typed by [com.calimero.mero.errorFrom].
+     */
+    suspend fun restoreRecoverHolder(
+        holder: kotlin.String,
+        slice: RestoreRecoverHolderRequestSlice,
+        apps: kotlin.collections.List<RestoreRecoverHolderRequestAppsInner>? = null,
+        code: kotlin.collections.List<RestoreRecoverHolderRequestCodeInner>? = null,
+        operator: DeviceSigner? = null,
+    ): RestoreRecoverHolder200Response =
+        api(null, operator, emptySet()).publicApi.restoreRecoverHolder(restoreRecoverHolderRequest = RestoreRecoverHolderRequest(holder = holder, slice = slice, apps = apps, code = code))
 }

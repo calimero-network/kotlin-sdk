@@ -228,6 +228,22 @@ class OrgsFacade internal constructor(
         api(null, null, emptySet()).organizations.orgApps(org = org, after = after, limit = limit)
 
     /**
+     * The organization's backup key
+     *
+     * The X25519 public key its apps' recovery-disk backups are sealed to (`key`, `null` while none is set), and how many apps that covers. Any member; `404` outside the organization.
+     *
+     * **Who:** an account holder (a passkey session not bound to an app's frontend).
+     *
+     * `GET /orgs/{org}/backup-key` (`org_backup_key`).
+     *
+     * @throws com.calimero.mero.CalimeroError the node's refusal, typed by [com.calimero.mero.errorFrom].
+     */
+    suspend fun backupKey(
+        org: kotlin.String,
+    ): BackupKeyAnswer =
+        api(null, null, emptySet()).organizations.orgBackupKey(org = org)
+
+    /**
      * Set capabilities
      *
      * A member's (`account`), in a team (`team`), or a team's default; the capability bits. `412` first.
@@ -441,6 +457,26 @@ class OrgsFacade internal constructor(
         api(passkey, null, emptySet()).organizations.orgRename(org = org, orgRenameRequest = OrgRenameRequest(name = name))
 
     /**
+     * Set the organization's backup key
+     *
+     * `publicKey`: 64 lowercase hex, an X25519 public key whose private half its holder keeps (never a node). Those who upgrade all the organization's apps (org-wide `MANAGE_APPLICATION`), where owners upgrade apps; replaces the key before. `412` first.
+     *
+     * **Who:** an account holder (a passkey session not bound to an app's frontend). **Step-up:** answers `412 CONFIRM_REQUIRED` first; send the same request again with `confirm`, a passkey assertion over `details.challenge`.
+     *
+     * `POST /orgs/{org}/backup-key` (`org_set_backup_key`).
+     *
+     * Answers `412 CONFIRM_REQUIRED` first: approved with [passkey], else the client's ([CalimeroClient.passkey]); with neither, [com.calimero.mero.ConfirmRequired] reaches the caller.
+     *
+     * @throws com.calimero.mero.CalimeroError the node's refusal, typed by [com.calimero.mero.errorFrom].
+     */
+    suspend fun setBackupKey(
+        org: kotlin.String,
+        publicKey: kotlin.String,
+        passkey: PasskeyProvider? = null,
+    ): BackupKeyAnswer =
+        api(passkey, null, emptySet()).organizations.orgSetBackupKey(org = org, orgSetBackupKeyRequest = OrgSetBackupKeyRequest(publicKey = publicKey))
+
+    /**
      * Set a member's role
      *
      * `owner` moves ownership. `412` first.
@@ -642,7 +678,7 @@ class OrgsFacade internal constructor(
     /**
      * Create a team
      *
-     * An admin, a lead of `parent`, a member with `CREATE_TEAM` at the top, or a member who holds `CREATE_CHILD_TEAM` under `parent` (a restricted team only).
+     * An admin, a lead of `parent`, a member with `CREATE_TEAM` at the top, or a member who holds `CREATE_CHILD_TEAM` under `parent` (a restricted team only). A package-bound session: only its own package's teams (its app team and the teams below it): `parent` one of them.
      *
      * **Who:** a passkey session (an API key is refused).
      *
@@ -661,7 +697,7 @@ class OrgsFacade internal constructor(
     /**
      * Delete a team
      *
-     * With the teams and apps below it.
+     * With the teams and apps below it. A package-bound session: only its own package's teams (its app team and the teams below it): a team below its app team whose apps are all its package's.
      *
      * **Who:** a passkey session (an API key is refused). **Step-up:** answers `412 CONFIRM_REQUIRED` first; send the same request again with `confirm`, a passkey assertion over `details.challenge`.
      *
@@ -696,6 +732,8 @@ class OrgsFacade internal constructor(
     /**
      * Remove a team member, or leave
      *
+     * A package-bound session: only its own package's teams (its app team and the teams below it).
+     *
      * **Who:** a passkey session (an API key is refused). **Step-up:** answers `412 CONFIRM_REQUIRED` first; send the same request again with `confirm`, a passkey assertion over `details.challenge`.
      *
      * `DELETE /orgs/{org}/teams/{team}/members/{account}` (`team_remove_member`).
@@ -714,6 +752,8 @@ class OrgsFacade internal constructor(
 
     /**
      * Add or change a team member
+     *
+     * A package-bound session: only its own package's teams (its app team and the teams below it).
      *
      * **Who:** a passkey session (an API key is refused). **Step-up:** answers `412 CONFIRM_REQUIRED` first; send the same request again with `confirm`, a passkey assertion over `details.challenge`.
      *
@@ -737,7 +777,7 @@ class OrgsFacade internal constructor(
     /**
      * Update a team
      *
-     * Rename, open or restrict, move under another parent, or set its metadata (the caller's own JSON, free-form, kept as given). `parent` absent leaves the team where it is; `parent: null` (an explicit null) moves it to the top; a team id moves it under that team.
+     * Rename, open or restrict, move under another parent, or set its metadata (the caller's own JSON, free-form, kept as given). `parent` absent leaves the team where it is; `parent: null` (an explicit null) moves it to the top; a team id moves it under that team. A package-bound session: only its own package's teams (its app team and the teams below it): a team below its app team, moved only within.
      *
      * **Who:** a passkey session (an API key is refused).
      *

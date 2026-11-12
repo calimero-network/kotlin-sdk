@@ -35,6 +35,20 @@ class AuthFacade internal constructor(
         api(null, null, emptySet()).accounts.accountApps(after = after, limit = limit)
 
     /**
+     * The account's backup key
+     *
+     * The X25519 public key the recovery-disk backups of the account's personal apps are sealed to (`key`, `null` while none is set).
+     *
+     * **Who:** an account holder (a passkey session not bound to an app's frontend).
+     *
+     * `GET /auth/backup-key` (`account_backup_key`).
+     *
+     * @throws com.calimero.mero.CalimeroError the node's refusal, typed by [com.calimero.mero.errorFrom].
+     */
+    suspend fun accountBackupKey(): BackupKeyAnswer =
+        api(null, null, emptySet()).accounts.accountBackupKey()
+
+    /**
      * Approve outbound prefixes for the account's apps
      *
      * **Who:** an account holder (a passkey session not bound to an app's frontend). **Step-up:** answers `412 CONFIRM_REQUIRED` first; send the same request again with `confirm`, a passkey assertion over `details.challenge`.
@@ -160,6 +174,25 @@ class AuthFacade internal constructor(
         passkey: PasskeyProvider? = null,
     ): ApprovedReleases =
         api(passkey, null, emptySet()).accounts.accountReleaseApproval(accountReleaseApprovalRequest = AccountReleaseApprovalRequest(version = version, approved = approved))
+
+    /**
+     * Set the account's backup key
+     *
+     * `publicKey`: 64 lowercase hex, an X25519 public key whose private half the account holder keeps (never a node), for its personal apps, where owners upgrade apps. `412` first.
+     *
+     * **Who:** an account holder (a passkey session not bound to an app's frontend). **Step-up:** answers `412 CONFIRM_REQUIRED` first; send the same request again with `confirm`, a passkey assertion over `details.challenge`.
+     *
+     * `POST /auth/backup-key` (`account_set_backup_key`).
+     *
+     * Answers `412 CONFIRM_REQUIRED` first: approved with [passkey], else the client's ([CalimeroClient.passkey]); with neither, [com.calimero.mero.ConfirmRequired] reaches the caller.
+     *
+     * @throws com.calimero.mero.CalimeroError the node's refusal, typed by [com.calimero.mero.errorFrom].
+     */
+    suspend fun accountSetBackupKey(
+        publicKey: kotlin.String,
+        passkey: PasskeyProvider? = null,
+    ): BackupKeyAnswer =
+        api(passkey, null, emptySet()).accounts.accountSetBackupKey(accountSetBackupKeyRequest = AccountSetBackupKeyRequest(publicKey = publicKey))
 
     /**
      * What the account's passkeys did

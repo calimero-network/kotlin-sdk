@@ -31,6 +31,7 @@ import com.calimero.mero.api.models.AppTeamList200Response
 import com.calimero.mero.api.models.AppTeamsScope200Response
 import com.calimero.mero.api.models.AppTeamsScopeRequest
 import com.calimero.mero.api.models.ApprovedReleases
+import com.calimero.mero.api.models.BackupKeyAnswer
 import com.calimero.mero.api.models.ConfirmOnly
 import com.calimero.mero.api.models.Error
 import com.calimero.mero.api.models.InviteCreate200Response
@@ -54,6 +55,7 @@ import com.calimero.mero.api.models.OrgPublisherRequest
 import com.calimero.mero.api.models.OrgReleaseApprovalRequest
 import com.calimero.mero.api.models.OrgRename200Response
 import com.calimero.mero.api.models.OrgRenameRequest
+import com.calimero.mero.api.models.OrgSetBackupKeyRequest
 import com.calimero.mero.api.models.OrgSetMemberRequest
 import com.calimero.mero.api.models.OrgUpgradeRequest
 import com.calimero.mero.api.models.OrgUpgradeRetryRequest
@@ -958,6 +960,79 @@ open class OrganizationsApi(basePath: kotlin.String = defaultBasePath, client: C
     }
 
     /**
+     * GET /orgs/{org}/backup-key
+     * The organization&#39;s backup key
+     * The X25519 public key its apps&#39; recovery-disk backups are sealed to (&#x60;key&#x60;, &#x60;null&#x60; while none is set), and how many apps that covers. Any member; &#x60;404&#x60; outside the organization.  **Who:** an account holder (a passkey session not bound to an app&#39;s frontend).
+     * @param org 
+     * @return BackupKeyAnswer
+     * @throws IllegalStateException If the request is not correctly configured
+     * @throws IOException Rethrows the OkHttp execute method exception
+     * @throws UnsupportedOperationException If the API returns an informational or redirection response
+     * @throws ClientException If the API returns a client error response
+     * @throws ServerException If the API returns a server error response
+     */
+    @Suppress("UNCHECKED_CAST")
+    @Throws(IllegalStateException::class, IOException::class, UnsupportedOperationException::class, ClientException::class, ServerException::class)
+    suspend fun orgBackupKey(org: kotlin.String) : BackupKeyAnswer = withContext(Dispatchers.IO) {
+        val localVarResponse = orgBackupKeyWithHttpInfo(org = org)
+
+        return@withContext when (localVarResponse.responseType) {
+            ResponseType.Success -> (localVarResponse as Success<*>).data as BackupKeyAnswer
+            ResponseType.Informational -> throw UnsupportedOperationException("Client does not support Informational responses.")
+            ResponseType.Redirection -> throw UnsupportedOperationException("Client does not support Redirection responses.")
+            ResponseType.ClientError -> {
+                val localVarError = localVarResponse as ClientError<*>
+                throw ClientException("Client error : ${localVarError.statusCode} ${localVarError.message.orEmpty()}", localVarError.statusCode, localVarResponse)
+            }
+            ResponseType.ServerError -> {
+                val localVarError = localVarResponse as ServerError<*>
+                throw ServerException("Server error : ${localVarError.statusCode} ${localVarError.message.orEmpty()} ${localVarError.body}", localVarError.statusCode, localVarResponse)
+            }
+        }
+    }
+
+    /**
+     * GET /orgs/{org}/backup-key
+     * The organization&#39;s backup key
+     * The X25519 public key its apps&#39; recovery-disk backups are sealed to (&#x60;key&#x60;, &#x60;null&#x60; while none is set), and how many apps that covers. Any member; &#x60;404&#x60; outside the organization.  **Who:** an account holder (a passkey session not bound to an app&#39;s frontend).
+     * @param org 
+     * @return ApiResponse<BackupKeyAnswer?>
+     * @throws IllegalStateException If the request is not correctly configured
+     * @throws IOException Rethrows the OkHttp execute method exception
+     */
+    @Suppress("UNCHECKED_CAST")
+    @Throws(IllegalStateException::class, IOException::class)
+    suspend fun orgBackupKeyWithHttpInfo(org: kotlin.String) : ApiResponse<BackupKeyAnswer?> = withContext(Dispatchers.IO) {
+        val localVariableConfig = orgBackupKeyRequestConfig(org = org)
+
+        return@withContext request<Unit, BackupKeyAnswer>(
+            localVariableConfig
+        )
+    }
+
+    /**
+     * To obtain the request config of the operation orgBackupKey
+     *
+     * @param org 
+     * @return RequestConfig
+     */
+    fun orgBackupKeyRequestConfig(org: kotlin.String) : RequestConfig<Unit> {
+        val localVariableBody = null
+        val localVariableQuery: MultiValueMap = mutableMapOf()
+        val localVariableHeaders: MutableMap<String, String> = mutableMapOf()
+        localVariableHeaders["Accept"] = "application/json"
+
+        return RequestConfig(
+            method = RequestMethod.GET,
+            path = "/orgs/{org}/backup-key".replace("{"+"org"+"}", encodeURIComponent(org.toString())),
+            query = localVariableQuery,
+            headers = localVariableHeaders,
+            requiresAuthentication = true,
+            body = localVariableBody
+        )
+    }
+
+    /**
      * POST /orgs/{org}/capabilities
      * Set capabilities
      * A member&#39;s (&#x60;account&#x60;), in a team (&#x60;team&#x60;), or a team&#39;s default; the capability bits. &#x60;412&#x60; first.  **Who:** a passkey session (an API key is refused). **Step-up:** answers &#x60;412 CONFIRM_REQUIRED&#x60; first; send the same request again with &#x60;confirm&#x60;, a passkey assertion over &#x60;details.challenge&#x60;.
@@ -1821,6 +1896,83 @@ open class OrganizationsApi(basePath: kotlin.String = defaultBasePath, client: C
     }
 
     /**
+     * POST /orgs/{org}/backup-key
+     * Set the organization&#39;s backup key
+     * &#x60;publicKey&#x60;: 64 lowercase hex, an X25519 public key whose private half its holder keeps (never a node). Those who upgrade all the organization&#39;s apps (org-wide &#x60;MANAGE_APPLICATION&#x60;), where owners upgrade apps; replaces the key before. &#x60;412&#x60; first.  **Who:** an account holder (a passkey session not bound to an app&#39;s frontend). **Step-up:** answers &#x60;412 CONFIRM_REQUIRED&#x60; first; send the same request again with &#x60;confirm&#x60;, a passkey assertion over &#x60;details.challenge&#x60;.
+     * @param org 
+     * @param orgSetBackupKeyRequest 
+     * @return BackupKeyAnswer
+     * @throws IllegalStateException If the request is not correctly configured
+     * @throws IOException Rethrows the OkHttp execute method exception
+     * @throws UnsupportedOperationException If the API returns an informational or redirection response
+     * @throws ClientException If the API returns a client error response
+     * @throws ServerException If the API returns a server error response
+     */
+    @Suppress("UNCHECKED_CAST")
+    @Throws(IllegalStateException::class, IOException::class, UnsupportedOperationException::class, ClientException::class, ServerException::class)
+    suspend fun orgSetBackupKey(org: kotlin.String, orgSetBackupKeyRequest: OrgSetBackupKeyRequest) : BackupKeyAnswer = withContext(Dispatchers.IO) {
+        val localVarResponse = orgSetBackupKeyWithHttpInfo(org = org, orgSetBackupKeyRequest = orgSetBackupKeyRequest)
+
+        return@withContext when (localVarResponse.responseType) {
+            ResponseType.Success -> (localVarResponse as Success<*>).data as BackupKeyAnswer
+            ResponseType.Informational -> throw UnsupportedOperationException("Client does not support Informational responses.")
+            ResponseType.Redirection -> throw UnsupportedOperationException("Client does not support Redirection responses.")
+            ResponseType.ClientError -> {
+                val localVarError = localVarResponse as ClientError<*>
+                throw ClientException("Client error : ${localVarError.statusCode} ${localVarError.message.orEmpty()}", localVarError.statusCode, localVarResponse)
+            }
+            ResponseType.ServerError -> {
+                val localVarError = localVarResponse as ServerError<*>
+                throw ServerException("Server error : ${localVarError.statusCode} ${localVarError.message.orEmpty()} ${localVarError.body}", localVarError.statusCode, localVarResponse)
+            }
+        }
+    }
+
+    /**
+     * POST /orgs/{org}/backup-key
+     * Set the organization&#39;s backup key
+     * &#x60;publicKey&#x60;: 64 lowercase hex, an X25519 public key whose private half its holder keeps (never a node). Those who upgrade all the organization&#39;s apps (org-wide &#x60;MANAGE_APPLICATION&#x60;), where owners upgrade apps; replaces the key before. &#x60;412&#x60; first.  **Who:** an account holder (a passkey session not bound to an app&#39;s frontend). **Step-up:** answers &#x60;412 CONFIRM_REQUIRED&#x60; first; send the same request again with &#x60;confirm&#x60;, a passkey assertion over &#x60;details.challenge&#x60;.
+     * @param org 
+     * @param orgSetBackupKeyRequest 
+     * @return ApiResponse<BackupKeyAnswer?>
+     * @throws IllegalStateException If the request is not correctly configured
+     * @throws IOException Rethrows the OkHttp execute method exception
+     */
+    @Suppress("UNCHECKED_CAST")
+    @Throws(IllegalStateException::class, IOException::class)
+    suspend fun orgSetBackupKeyWithHttpInfo(org: kotlin.String, orgSetBackupKeyRequest: OrgSetBackupKeyRequest) : ApiResponse<BackupKeyAnswer?> = withContext(Dispatchers.IO) {
+        val localVariableConfig = orgSetBackupKeyRequestConfig(org = org, orgSetBackupKeyRequest = orgSetBackupKeyRequest)
+
+        return@withContext request<OrgSetBackupKeyRequest, BackupKeyAnswer>(
+            localVariableConfig
+        )
+    }
+
+    /**
+     * To obtain the request config of the operation orgSetBackupKey
+     *
+     * @param org 
+     * @param orgSetBackupKeyRequest 
+     * @return RequestConfig
+     */
+    fun orgSetBackupKeyRequestConfig(org: kotlin.String, orgSetBackupKeyRequest: OrgSetBackupKeyRequest) : RequestConfig<OrgSetBackupKeyRequest> {
+        val localVariableBody = orgSetBackupKeyRequest
+        val localVariableQuery: MultiValueMap = mutableMapOf()
+        val localVariableHeaders: MutableMap<String, String> = mutableMapOf()
+        localVariableHeaders["Content-Type"] = "application/json"
+        localVariableHeaders["Accept"] = "application/json"
+
+        return RequestConfig(
+            method = RequestMethod.POST,
+            path = "/orgs/{org}/backup-key".replace("{"+"org"+"}", encodeURIComponent(org.toString())),
+            query = localVariableQuery,
+            headers = localVariableHeaders,
+            requiresAuthentication = true,
+            body = localVariableBody
+        )
+    }
+
+    /**
      * POST /orgs/{org}/members
      * Set a member&#39;s role
      * &#x60;owner&#x60; moves ownership. &#x60;412&#x60; first.  **Who:** a passkey session (an API key is refused). **Step-up:** answers &#x60;412 CONFIRM_REQUIRED&#x60; first; send the same request again with &#x60;confirm&#x60;, a passkey assertion over &#x60;details.challenge&#x60;.
@@ -2594,7 +2746,7 @@ open class OrganizationsApi(basePath: kotlin.String = defaultBasePath, client: C
     /**
      * POST /orgs/{org}/teams
      * Create a team
-     * An admin, a lead of &#x60;parent&#x60;, a member with &#x60;CREATE_TEAM&#x60; at the top, or a member who holds &#x60;CREATE_CHILD_TEAM&#x60; under &#x60;parent&#x60; (a restricted team only).  **Who:** a passkey session (an API key is refused).
+     * An admin, a lead of &#x60;parent&#x60;, a member with &#x60;CREATE_TEAM&#x60; at the top, or a member who holds &#x60;CREATE_CHILD_TEAM&#x60; under &#x60;parent&#x60; (a restricted team only). A package-bound session: only its own package&#39;s teams (its app team and the teams below it): &#x60;parent&#x60; one of them.  **Who:** a passkey session (an API key is refused).
      * @param org 
      * @param teamCreateRequest 
      * @return TeamCreate200Response
@@ -2627,7 +2779,7 @@ open class OrganizationsApi(basePath: kotlin.String = defaultBasePath, client: C
     /**
      * POST /orgs/{org}/teams
      * Create a team
-     * An admin, a lead of &#x60;parent&#x60;, a member with &#x60;CREATE_TEAM&#x60; at the top, or a member who holds &#x60;CREATE_CHILD_TEAM&#x60; under &#x60;parent&#x60; (a restricted team only).  **Who:** a passkey session (an API key is refused).
+     * An admin, a lead of &#x60;parent&#x60;, a member with &#x60;CREATE_TEAM&#x60; at the top, or a member who holds &#x60;CREATE_CHILD_TEAM&#x60; under &#x60;parent&#x60; (a restricted team only). A package-bound session: only its own package&#39;s teams (its app team and the teams below it): &#x60;parent&#x60; one of them.  **Who:** a passkey session (an API key is refused).
      * @param org 
      * @param teamCreateRequest 
      * @return ApiResponse<TeamCreate200Response?>
@@ -2671,7 +2823,7 @@ open class OrganizationsApi(basePath: kotlin.String = defaultBasePath, client: C
     /**
      * DELETE /orgs/{org}/teams/{team}
      * Delete a team
-     * With the teams and apps below it.  **Who:** a passkey session (an API key is refused). **Step-up:** answers &#x60;412 CONFIRM_REQUIRED&#x60; first; send the same request again with &#x60;confirm&#x60;, a passkey assertion over &#x60;details.challenge&#x60;.
+     * With the teams and apps below it. A package-bound session: only its own package&#39;s teams (its app team and the teams below it): a team below its app team whose apps are all its package&#39;s.  **Who:** a passkey session (an API key is refused). **Step-up:** answers &#x60;412 CONFIRM_REQUIRED&#x60; first; send the same request again with &#x60;confirm&#x60;, a passkey assertion over &#x60;details.challenge&#x60;.
      * @param org 
      * @param team 
      * @param confirmOnly May be absent. (optional)
@@ -2705,7 +2857,7 @@ open class OrganizationsApi(basePath: kotlin.String = defaultBasePath, client: C
     /**
      * DELETE /orgs/{org}/teams/{team}
      * Delete a team
-     * With the teams and apps below it.  **Who:** a passkey session (an API key is refused). **Step-up:** answers &#x60;412 CONFIRM_REQUIRED&#x60; first; send the same request again with &#x60;confirm&#x60;, a passkey assertion over &#x60;details.challenge&#x60;.
+     * With the teams and apps below it. A package-bound session: only its own package&#39;s teams (its app team and the teams below it): a team below its app team whose apps are all its package&#39;s.  **Who:** a passkey session (an API key is refused). **Step-up:** answers &#x60;412 CONFIRM_REQUIRED&#x60; first; send the same request again with &#x60;confirm&#x60;, a passkey assertion over &#x60;details.challenge&#x60;.
      * @param org 
      * @param team 
      * @param confirmOnly May be absent. (optional)
@@ -2827,7 +2979,7 @@ open class OrganizationsApi(basePath: kotlin.String = defaultBasePath, client: C
     /**
      * DELETE /orgs/{org}/teams/{team}/members/{account}
      * Remove a team member, or leave
-     * **Who:** a passkey session (an API key is refused). **Step-up:** answers &#x60;412 CONFIRM_REQUIRED&#x60; first; send the same request again with &#x60;confirm&#x60;, a passkey assertion over &#x60;details.challenge&#x60;.
+     * A package-bound session: only its own package&#39;s teams (its app team and the teams below it).  **Who:** a passkey session (an API key is refused). **Step-up:** answers &#x60;412 CONFIRM_REQUIRED&#x60; first; send the same request again with &#x60;confirm&#x60;, a passkey assertion over &#x60;details.challenge&#x60;.
      * @param org 
      * @param team 
      * @param account 
@@ -2862,7 +3014,7 @@ open class OrganizationsApi(basePath: kotlin.String = defaultBasePath, client: C
     /**
      * DELETE /orgs/{org}/teams/{team}/members/{account}
      * Remove a team member, or leave
-     * **Who:** a passkey session (an API key is refused). **Step-up:** answers &#x60;412 CONFIRM_REQUIRED&#x60; first; send the same request again with &#x60;confirm&#x60;, a passkey assertion over &#x60;details.challenge&#x60;.
+     * A package-bound session: only its own package&#39;s teams (its app team and the teams below it).  **Who:** a passkey session (an API key is refused). **Step-up:** answers &#x60;412 CONFIRM_REQUIRED&#x60; first; send the same request again with &#x60;confirm&#x60;, a passkey assertion over &#x60;details.challenge&#x60;.
      * @param org 
      * @param team 
      * @param account 
@@ -2910,7 +3062,7 @@ open class OrganizationsApi(basePath: kotlin.String = defaultBasePath, client: C
     /**
      * POST /orgs/{org}/teams/{team}/members
      * Add or change a team member
-     * **Who:** a passkey session (an API key is refused). **Step-up:** answers &#x60;412 CONFIRM_REQUIRED&#x60; first; send the same request again with &#x60;confirm&#x60;, a passkey assertion over &#x60;details.challenge&#x60;.
+     * A package-bound session: only its own package&#39;s teams (its app team and the teams below it).  **Who:** a passkey session (an API key is refused). **Step-up:** answers &#x60;412 CONFIRM_REQUIRED&#x60; first; send the same request again with &#x60;confirm&#x60;, a passkey assertion over &#x60;details.challenge&#x60;.
      * @param org 
      * @param team 
      * @param teamSetMemberRequest 
@@ -2944,7 +3096,7 @@ open class OrganizationsApi(basePath: kotlin.String = defaultBasePath, client: C
     /**
      * POST /orgs/{org}/teams/{team}/members
      * Add or change a team member
-     * **Who:** a passkey session (an API key is refused). **Step-up:** answers &#x60;412 CONFIRM_REQUIRED&#x60; first; send the same request again with &#x60;confirm&#x60;, a passkey assertion over &#x60;details.challenge&#x60;.
+     * A package-bound session: only its own package&#39;s teams (its app team and the teams below it).  **Who:** a passkey session (an API key is refused). **Step-up:** answers &#x60;412 CONFIRM_REQUIRED&#x60; first; send the same request again with &#x60;confirm&#x60;, a passkey assertion over &#x60;details.challenge&#x60;.
      * @param org 
      * @param team 
      * @param teamSetMemberRequest 
@@ -2990,7 +3142,7 @@ open class OrganizationsApi(basePath: kotlin.String = defaultBasePath, client: C
     /**
      * POST /orgs/{org}/teams/{team}
      * Update a team
-     * Rename, open or restrict, move under another parent, or set its metadata (the caller&#39;s own JSON, free-form, kept as given). &#x60;parent&#x60; absent leaves the team where it is; &#x60;parent: null&#x60; (an explicit null) moves it to the top; a team id moves it under that team.  **Who:** a passkey session (an API key is refused).
+     * Rename, open or restrict, move under another parent, or set its metadata (the caller&#39;s own JSON, free-form, kept as given). &#x60;parent&#x60; absent leaves the team where it is; &#x60;parent: null&#x60; (an explicit null) moves it to the top; a team id moves it under that team. A package-bound session: only its own package&#39;s teams (its app team and the teams below it): a team below its app team, moved only within.  **Who:** a passkey session (an API key is refused).
      * @param org 
      * @param team 
      * @param teamUpdateRequest 
@@ -3024,7 +3176,7 @@ open class OrganizationsApi(basePath: kotlin.String = defaultBasePath, client: C
     /**
      * POST /orgs/{org}/teams/{team}
      * Update a team
-     * Rename, open or restrict, move under another parent, or set its metadata (the caller&#39;s own JSON, free-form, kept as given). &#x60;parent&#x60; absent leaves the team where it is; &#x60;parent: null&#x60; (an explicit null) moves it to the top; a team id moves it under that team.  **Who:** a passkey session (an API key is refused).
+     * Rename, open or restrict, move under another parent, or set its metadata (the caller&#39;s own JSON, free-form, kept as given). &#x60;parent&#x60; absent leaves the team where it is; &#x60;parent: null&#x60; (an explicit null) moves it to the top; a team id moves it under that team. A package-bound session: only its own package&#39;s teams (its app team and the teams below it): a team below its app team, moved only within.  **Who:** a passkey session (an API key is refused).
      * @param org 
      * @param team 
      * @param teamUpdateRequest 

@@ -48,6 +48,7 @@ import kotlinx.serialization.Contextual
  * @param metadata Free-form JSON: its shape is not this API's (see the description around it for whose it is).
  * @param executor 
  * @param computeBundle 
+ * @param components 
  * @param lastUpgrade 
  * @param deployment 
  * @param release 
@@ -101,6 +102,9 @@ data class App (
     @SerialName(value = "computeBundle")
     val computeBundle: kotlin.String? = null,
 
+    @SerialName(value = "components")
+    val components: App.Components? = null,
+
     @SerialName(value = "lastUpgrade")
     val lastUpgrade: Upgrade? = null,
 
@@ -124,6 +128,15 @@ data class App (
     enum class Executor(val value: kotlin.String) {
         @SerialName(value = "component") COMPONENT("component"),
         @SerialName(value = "wasmer") WASMER("wasmer");
+    }
+    /**
+     * 
+     *
+     * Values: COMPUTE_ONLY
+     */
+    @Serializable
+    enum class Components(val value: kotlin.String) {
+        @SerialName(value = "computeOnly") COMPUTE_ONLY("computeOnly");
     }
 
 }

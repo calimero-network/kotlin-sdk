@@ -23,6 +23,7 @@
 
 package com.calimero.mero.api.models
 
+import com.calimero.mero.api.models.ConsentPageResult200ResponseOutcome
 
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.SerialName
@@ -35,6 +36,7 @@ import kotlinx.serialization.Contextual
  * @param kind 
  * @param status 
  * @param decidedAt 
+ * @param outcome 
  */
 @Serializable
 
@@ -50,20 +52,36 @@ data class ConsentPageResult200Response (
     val status: ConsentPageResult200Response.Status,
 
     @SerialName(value = "decidedAt")
-    val decidedAt: kotlin.Long?
+    val decidedAt: kotlin.Long?,
+
+    @SerialName(value = "outcome")
+    val outcome: ConsentPageResult200ResponseOutcome? = null
 
 ) {
 
     /**
      * 
      *
-     * Values: RELEASE,UPGRADE,OUTBOUND
+     * Values: RELEASE,UPGRADE,OUTBOUND,CREATE_ORG,CREATE_INVITE,ACCEPT_INVITE,LEAVE_ORG,REMOVE_MEMBER,SET_MEMBER_ROLE,SET_MEMBER_TEAMS,REMOVE_MEMBER_TEAMS,REVOKE_INVITE,RENAME_ORG,DELETE_ORG,SET_CAPABILITIES,SET_ALL_APPS
      */
     @Serializable
     enum class Kind(val value: kotlin.String) {
         @SerialName(value = "release") RELEASE("release"),
         @SerialName(value = "upgrade") UPGRADE("upgrade"),
-        @SerialName(value = "outbound") OUTBOUND("outbound");
+        @SerialName(value = "outbound") OUTBOUND("outbound"),
+        @SerialName(value = "createOrg") CREATE_ORG("createOrg"),
+        @SerialName(value = "createInvite") CREATE_INVITE("createInvite"),
+        @SerialName(value = "acceptInvite") ACCEPT_INVITE("acceptInvite"),
+        @SerialName(value = "leaveOrg") LEAVE_ORG("leaveOrg"),
+        @SerialName(value = "removeMember") REMOVE_MEMBER("removeMember"),
+        @SerialName(value = "setMemberRole") SET_MEMBER_ROLE("setMemberRole"),
+        @SerialName(value = "setMemberTeams") SET_MEMBER_TEAMS("setMemberTeams"),
+        @SerialName(value = "removeMemberTeams") REMOVE_MEMBER_TEAMS("removeMemberTeams"),
+        @SerialName(value = "revokeInvite") REVOKE_INVITE("revokeInvite"),
+        @SerialName(value = "renameOrg") RENAME_ORG("renameOrg"),
+        @SerialName(value = "deleteOrg") DELETE_ORG("deleteOrg"),
+        @SerialName(value = "setCapabilities") SET_CAPABILITIES("setCapabilities"),
+        @SerialName(value = "setAllApps") SET_ALL_APPS("setAllApps");
     }
     /**
      * 
