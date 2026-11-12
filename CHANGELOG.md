@@ -11,6 +11,9 @@
   the node answers nothing for (`LeftOrg`, `MemberRemoved`, …), so an approval of a known kind never
   reads as `Other`.
 - `ConsentRequest.kind` and `ConsentRequest.subject()`: each case writes its own wire subject.
+- `ConsentResult.from` (the facade's `consent.pageResult` answer) types the generated `outcome`
+  (core c350a92bc's document) instead of dropping it. The request bodies stay hand-written: the codegen
+  maps the spec's `oneOf` body to `ConsentRequest` (`codegen/build.gradle.kts`).
 
 ### Consent: organizations and invitations, typed outcomes (mero-core, mero-compose)
 

@@ -40,6 +40,7 @@ import com.calimero.mero.SoftPasskey
 import com.calimero.mero.UnavailableError
 import com.calimero.mero.WrongNode
 import com.calimero.mero.api.models.ApikeyCreateRequestUpgrades
+import com.calimero.mero.api.models.ConsentPageResult200Response
 import com.calimero.mero.api.models.SignUp
 import com.calimero.mero.app.CalimeroAppBackend
 import com.calimero.mero.app.OrgInvitation
@@ -654,6 +655,19 @@ class CalimeroClientTest {
             val result = Json.decodeFromString(ConsentResult.serializer(), text)
             assertEquals(Json.parseToJsonElement(text), Json.parseToJsonElement(Json.encodeToString(ConsentResult.serializer(), result)))
         }
+    }
+
+    @Test
+    fun `types the facade's consent result outcome`() {
+        fun answer(text: String) = Json.decodeFromString(ConsentPageResult200Response.serializer(), text)
+        val renamed = ConsentResult.from(answer("""{"requestId":"r","kind":"renameOrg","status":"approved","decidedAt":1,"outcome":{"orgId":"o","name":"n"}}"""))
+        assertEquals(ConsentOutcome.OrgRenamed("o", "n"), renamed.outcome)
+        val deleted = ConsentResult.from(answer("""{"requestId":"r","kind":"deleteOrg","status":"approved","decidedAt":1,"outcome":{"apps":["a"]}}"""))
+        assertEquals(ConsentOutcome.OrgDeleted(listOf("a")), deleted.outcome)
+        val invite = ConsentResult.from(answer("""{"requestId":"r","kind":"createInvite","status":"approved","decidedAt":1,"outcome":{"token":"t"}}"""))
+        assertEquals(ConsentOutcome.InviteCreated("t"), invite.outcome)
+        assertEquals(ConsentOutcome.MemberRemoved, ConsentResult.from(answer("""{"requestId":"r","kind":"removeMember","status":"approved","decidedAt":1}""")).outcome)
+        assertNull(ConsentResult.from(answer("""{"requestId":"r","kind":"renameOrg","status":"declined","decidedAt":1}""")).outcome)
     }
 
     @Test
