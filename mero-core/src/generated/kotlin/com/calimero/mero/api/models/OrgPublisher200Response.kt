@@ -31,18 +31,14 @@ import kotlinx.serialization.Contextual
 /**
  * 
  *
- * @param signer 
- * @param approval 
+ * @param generation 
  */
 @Serializable
 
 data class OrgPublisher200Response (
 
-    @SerialName(value = "signer")
-    val signer: kotlin.String,
-
-    @Contextual @SerialName(value = "approval")
-    val approval: kotlinx.serialization.json.JsonElement?
+    @SerialName(value = "generation")
+    val generation: kotlin.Long
 
 ) {
 

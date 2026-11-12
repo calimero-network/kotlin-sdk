@@ -36,7 +36,7 @@ import kotlinx.serialization.Contextual
  * @param propertySize 
  * @param source 
  * @param services 
- * @param metadata 
+ * @param metadata Free-form JSON: its shape is not this API's (see the description around it for whose it is).
  * @param outbound 
  * @param installedBy 
  * @param installedAt 
@@ -60,6 +60,7 @@ data class PackageVersionsInner (
     @SerialName(value = "services")
     val services: kotlin.collections.Map<kotlin.String, kotlin.String>,
 
+    /* Free-form JSON: its shape is not this API's (see the description around it for whose it is). */
     @Contextual @SerialName(value = "metadata")
     val metadata: kotlinx.serialization.json.JsonElement?,
 

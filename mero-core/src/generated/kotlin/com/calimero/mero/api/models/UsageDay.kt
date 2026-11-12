@@ -29,7 +29,7 @@ import kotlinx.serialization.SerialName
 import kotlinx.serialization.Contextual
 
 /**
- * 
+ * What an app's runs used on one UTC day (`date`, `YYYY-MM-DD`), each figure a decimal string; `wallMs` is information only.
  *
  * @param date 
  * @param runs an unsigned 64-bit integer as a decimal string (D20)
@@ -41,7 +41,7 @@ import kotlinx.serialization.Contextual
  */
 @Serializable
 
-data class AppUsage200ResponseDaysInner (
+data class UsageDay (
 
     @SerialName(value = "date")
     val date: kotlin.String,

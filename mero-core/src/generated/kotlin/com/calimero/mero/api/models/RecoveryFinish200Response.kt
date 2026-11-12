@@ -41,8 +41,8 @@ data class RecoveryFinish200Response (
     @SerialName(value = "org")
     val org: kotlin.String,
 
-    @Contextual @SerialName(value = "previousOwners")
-    val previousOwners: kotlinx.serialization.json.JsonElement?
+    @SerialName(value = "previousOwners")
+    val previousOwners: kotlin.collections.List<kotlin.String>
 
 ) {
 

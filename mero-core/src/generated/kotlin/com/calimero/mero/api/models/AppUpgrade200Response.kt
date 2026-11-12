@@ -33,7 +33,7 @@ import kotlinx.serialization.Contextual
  *
  * @param index 
  * @param status 
- * @param error 
+ * @param error Free-form JSON: its shape is not this API's (see the description around it for whose it is).
  * @param compute 
  */
 @Serializable
@@ -46,6 +46,7 @@ data class AppUpgrade200Response (
     @SerialName(value = "status")
     val status: kotlin.String,
 
+    /* Free-form JSON: its shape is not this API's (see the description around it for whose it is). */
     @Contextual @SerialName(value = "error")
     val error: kotlinx.serialization.json.JsonElement?,
 

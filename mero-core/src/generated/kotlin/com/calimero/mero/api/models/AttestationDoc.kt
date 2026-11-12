@@ -23,6 +23,8 @@
 
 package com.calimero.mero.api.models
 
+import com.calimero.mero.api.models.Governance
+import com.calimero.mero.api.models.KmsKeys
 import com.calimero.mero.api.models.Release
 
 import kotlinx.serialization.Serializable
@@ -30,7 +32,7 @@ import kotlinx.serialization.SerialName
 import kotlinx.serialization.Contextual
 
 /**
- * A node's attestation: the TDX quote (base64), the key it binds (hex) and what it was asked for.
+ * A node's attestation: the TDX quote (base64), the key it binds (hex) and what it was asked for. `receiptKey` and `governance` with `purpose=receipts`, `kms` with `purpose=kms` on a node with a KMS record, `clusterIdentity` with `purpose=orchestrator`; `jobKey` only from a job node, never from this API.
  *
  * @param quote 
  * @param transportKey 
@@ -43,6 +45,7 @@ import kotlinx.serialization.Contextual
  * @param receiptKey 
  * @param governance 
  * @param kms 
+ * @param jobKey 
  * @param clusterIdentity 
  */
 @Serializable
@@ -76,11 +79,14 @@ data class AttestationDoc (
     @SerialName(value = "receiptKey")
     val receiptKey: kotlin.String? = null,
 
-    @Contextual @SerialName(value = "governance")
-    val governance: kotlinx.serialization.json.JsonElement? = null,
+    @SerialName(value = "governance")
+    val governance: Governance? = null,
 
-    @Contextual @SerialName(value = "kms")
-    val kms: kotlinx.serialization.json.JsonElement? = null,
+    @SerialName(value = "kms")
+    val kms: KmsKeys? = null,
+
+    @SerialName(value = "jobKey")
+    val jobKey: kotlin.String? = null,
 
     @SerialName(value = "clusterIdentity")
     val clusterIdentity: kotlin.String? = null

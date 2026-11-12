@@ -36,7 +36,7 @@ class PackagesFacade internal constructor(
     /**
      * Register a frontend origin
      *
-     * By whoever manages the package, with a passkey step-up over the change.
+     * By whoever manages the package, with a passkey step-up over the change. Answers the origin as registered (the one already there, when the same origin is registered again).
      *
      * **Who:** an account holder (a passkey session not bound to an app's frontend). **Step-up:** answers `412 CONFIRM_REQUIRED` first; send the same request again with `confirm`, a passkey assertion over `details.challenge`.
      *
@@ -52,7 +52,7 @@ class PackagesFacade internal constructor(
         rpId: kotlin.String? = null,
         served: kotlin.Boolean? = null,
         passkey: PasskeyProvider? = null,
-    ): kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement> =
+    ): PackageOrigin =
         api(passkey, null, emptySet()).packages.originsAdd(`package` = `package`, originsAddRequest = OriginsAddRequest(origin = origin, rpId = rpId, served = served))
 
     /**
@@ -86,7 +86,7 @@ class PackagesFacade internal constructor(
         `package`: kotlin.String,
         origin: kotlin.String,
         passkey: PasskeyProvider? = null,
-    ): kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement> =
+    ): OriginsRemove200Response =
         api(passkey, null, emptySet()).packages.originsRemove(`package` = `package`, originsRemoveRequest = OriginsRemoveRequest(origin = origin))
 
     /**
@@ -147,7 +147,7 @@ class PackagesFacade internal constructor(
      */
     suspend fun uninstall(
         `package`: kotlin.String,
-    ): kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement> =
+    ): Uninstalled =
         api(null, null, emptySet()).packages.packageUninstall(`package` = `package`)
 
     /**
@@ -178,6 +178,6 @@ class PackagesFacade internal constructor(
     suspend fun versionUninstall(
         `package`: kotlin.String,
         version: kotlin.String,
-    ): kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement> =
+    ): Uninstalled =
         api(null, null, emptySet()).packages.packageVersionUninstall(`package` = `package`, version = version)
 }

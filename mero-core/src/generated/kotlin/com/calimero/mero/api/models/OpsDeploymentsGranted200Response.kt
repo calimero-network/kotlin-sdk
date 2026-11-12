@@ -23,6 +23,7 @@
 
 package com.calimero.mero.api.models
 
+import com.calimero.mero.api.models.Governance
 
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.SerialName
@@ -37,8 +38,8 @@ import kotlinx.serialization.Contextual
 
 data class OpsDeploymentsGranted200Response (
 
-    @Contextual @SerialName(value = "governance")
-    val governance: kotlinx.serialization.json.JsonElement?
+    @SerialName(value = "governance")
+    val governance: Governance
 
 ) {
 

@@ -38,8 +38,8 @@ import kotlinx.serialization.Contextual
  * @param service 
  * @param org 
  * @param access 
- * @param initArgs 
- * @param metadata 
+ * @param initArgs Free-form JSON: its shape is not this API's (see the description around it for whose it is).
+ * @param metadata Free-form JSON: its shape is not this API's (see the description around it for whose it is).
  * @param deployment 
  */
 @Serializable
@@ -67,9 +67,11 @@ data class AppCreateRequest (
     @SerialName(value = "access")
     val access: com.calimero.mero.AppAccess? = null,
 
+    /* Free-form JSON: its shape is not this API's (see the description around it for whose it is). */
     @Contextual @SerialName(value = "initArgs")
     val initArgs: kotlinx.serialization.json.JsonElement? = null,
 
+    /* Free-form JSON: its shape is not this API's (see the description around it for whose it is). */
     @Contextual @SerialName(value = "metadata")
     val metadata: kotlinx.serialization.json.JsonElement? = null,
 

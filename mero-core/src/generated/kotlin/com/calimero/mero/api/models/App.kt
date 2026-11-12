@@ -44,8 +44,8 @@ import kotlinx.serialization.Contextual
  * @param confirmMethods 
  * @param replicas 
  * @param createdAt 
- * @param initArgs 
- * @param metadata 
+ * @param initArgs Free-form JSON: its shape is not this API's (see the description around it for whose it is).
+ * @param metadata Free-form JSON: its shape is not this API's (see the description around it for whose it is).
  * @param executor 
  * @param computeBundle 
  * @param lastUpgrade 
@@ -87,9 +87,11 @@ data class App (
     @SerialName(value = "createdAt")
     val createdAt: kotlin.Long,
 
+    /* Free-form JSON: its shape is not this API's (see the description around it for whose it is). */
     @Contextual @SerialName(value = "initArgs")
     val initArgs: kotlinx.serialization.json.JsonElement?,
 
+    /* Free-form JSON: its shape is not this API's (see the description around it for whose it is). */
     @Contextual @SerialName(value = "metadata")
     val metadata: kotlinx.serialization.json.JsonElement?,
 

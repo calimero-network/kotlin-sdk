@@ -39,7 +39,7 @@ import kotlinx.serialization.Contextual
  * @param name 
  * @param parent 
  * @param join 
- * @param metadata 
+ * @param metadata Free-form JSON: its shape is not this API's (see the description around it for whose it is).
  * @param members 
  * @param children 
  * @param apps 
@@ -64,6 +64,7 @@ data class TeamView (
     @Contextual @SerialName(value = "join")
     val join: TeamJoin,
 
+    /* Free-form JSON: its shape is not this API's (see the description around it for whose it is). */
     @Contextual @SerialName(value = "metadata")
     val metadata: kotlinx.serialization.json.JsonElement?,
 

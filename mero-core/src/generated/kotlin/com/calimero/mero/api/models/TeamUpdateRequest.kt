@@ -35,7 +35,7 @@ import kotlinx.serialization.Contextual
  * @param name 
  * @param join 
  * @param parent 
- * @param metadata 
+ * @param metadata Free-form JSON: its shape is not this API's (see the description around it for whose it is).
  */
 @Serializable
 
@@ -50,6 +50,7 @@ data class TeamUpdateRequest (
     @SerialName(value = "parent")
     val parent: kotlin.String? = null,
 
+    /* Free-form JSON: its shape is not this API's (see the description around it for whose it is). */
     @Contextual @SerialName(value = "metadata")
     val metadata: kotlinx.serialization.json.JsonElement? = null
 

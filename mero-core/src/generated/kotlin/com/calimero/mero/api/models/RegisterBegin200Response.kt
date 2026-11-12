@@ -32,7 +32,7 @@ import kotlinx.serialization.Contextual
  * 
  *
  * @param challengeId 
- * @param options 
+ * @param options Free-form JSON: its shape is not this API's (see the description around it for whose it is).
  */
 @Serializable
 
@@ -41,6 +41,7 @@ data class RegisterBegin200Response (
     @SerialName(value = "challengeId")
     val challengeId: kotlin.String,
 
+    /* Free-form JSON: its shape is not this API's (see the description around it for whose it is). */
     @Contextual @SerialName(value = "options")
     val options: kotlinx.serialization.json.JsonElement?
 

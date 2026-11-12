@@ -32,7 +32,7 @@ import kotlinx.serialization.Contextual
  * 
  *
  * @param bundle 
- * @param abi 
+ * @param abi Free-form JSON: its shape is not this API's (see the description around it for whose it is).
  */
 @Serializable
 
@@ -41,6 +41,7 @@ data class AppAbi200Response (
     @SerialName(value = "bundle")
     val bundle: kotlin.String,
 
+    /* Free-form JSON: its shape is not this API's (see the description around it for whose it is). */
     @Contextual @SerialName(value = "abi")
     val abi: kotlinx.serialization.json.JsonElement?
 

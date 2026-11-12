@@ -32,10 +32,13 @@ import com.calimero.mero.api.models.Error
 import com.calimero.mero.api.models.OpsPackageInstall200Response
 import com.calimero.mero.api.models.OriginsAddRequest
 import com.calimero.mero.api.models.OriginsList200Response
+import com.calimero.mero.api.models.OriginsRemove200Response
 import com.calimero.mero.api.models.OriginsRemoveRequest
 import com.calimero.mero.api.models.Package
 import com.calimero.mero.api.models.PackageInstallRequest
 import com.calimero.mero.api.models.PackageList200Response
+import com.calimero.mero.api.models.PackageOrigin
+import com.calimero.mero.api.models.Uninstalled
 
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
@@ -141,10 +144,10 @@ open class PackagesApi(basePath: kotlin.String = defaultBasePath, client: Call.F
     /**
      * POST /package-origins/{package}
      * Register a frontend origin
-     * By whoever manages the package, with a passkey step-up over the change.  **Who:** an account holder (a passkey session not bound to an app&#39;s frontend). **Step-up:** answers &#x60;412 CONFIRM_REQUIRED&#x60; first; send the same request again with &#x60;confirm&#x60;, a passkey assertion over &#x60;details.challenge&#x60;.
+     * By whoever manages the package, with a passkey step-up over the change. Answers the origin as registered (the one already there, when the same origin is registered again).  **Who:** an account holder (a passkey session not bound to an app&#39;s frontend). **Step-up:** answers &#x60;412 CONFIRM_REQUIRED&#x60; first; send the same request again with &#x60;confirm&#x60;, a passkey assertion over &#x60;details.challenge&#x60;.
      * @param `package` 
      * @param originsAddRequest 
-     * @return kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement>
+     * @return PackageOrigin
      * @throws IllegalStateException If the request is not correctly configured
      * @throws IOException Rethrows the OkHttp execute method exception
      * @throws UnsupportedOperationException If the API returns an informational or redirection response
@@ -153,11 +156,11 @@ open class PackagesApi(basePath: kotlin.String = defaultBasePath, client: Call.F
      */
     @Suppress("UNCHECKED_CAST")
     @Throws(IllegalStateException::class, IOException::class, UnsupportedOperationException::class, ClientException::class, ServerException::class)
-    suspend fun originsAdd(`package`: kotlin.String, originsAddRequest: OriginsAddRequest) : kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement> = withContext(Dispatchers.IO) {
+    suspend fun originsAdd(`package`: kotlin.String, originsAddRequest: OriginsAddRequest) : PackageOrigin = withContext(Dispatchers.IO) {
         val localVarResponse = originsAddWithHttpInfo(`package` = `package`, originsAddRequest = originsAddRequest)
 
         return@withContext when (localVarResponse.responseType) {
-            ResponseType.Success -> (localVarResponse as Success<*>).data as kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement>
+            ResponseType.Success -> (localVarResponse as Success<*>).data as PackageOrigin
             ResponseType.Informational -> throw UnsupportedOperationException("Client does not support Informational responses.")
             ResponseType.Redirection -> throw UnsupportedOperationException("Client does not support Redirection responses.")
             ResponseType.ClientError -> {
@@ -174,19 +177,19 @@ open class PackagesApi(basePath: kotlin.String = defaultBasePath, client: Call.F
     /**
      * POST /package-origins/{package}
      * Register a frontend origin
-     * By whoever manages the package, with a passkey step-up over the change.  **Who:** an account holder (a passkey session not bound to an app&#39;s frontend). **Step-up:** answers &#x60;412 CONFIRM_REQUIRED&#x60; first; send the same request again with &#x60;confirm&#x60;, a passkey assertion over &#x60;details.challenge&#x60;.
+     * By whoever manages the package, with a passkey step-up over the change. Answers the origin as registered (the one already there, when the same origin is registered again).  **Who:** an account holder (a passkey session not bound to an app&#39;s frontend). **Step-up:** answers &#x60;412 CONFIRM_REQUIRED&#x60; first; send the same request again with &#x60;confirm&#x60;, a passkey assertion over &#x60;details.challenge&#x60;.
      * @param `package` 
      * @param originsAddRequest 
-     * @return ApiResponse<kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement>?>
+     * @return ApiResponse<PackageOrigin?>
      * @throws IllegalStateException If the request is not correctly configured
      * @throws IOException Rethrows the OkHttp execute method exception
      */
     @Suppress("UNCHECKED_CAST")
     @Throws(IllegalStateException::class, IOException::class)
-    suspend fun originsAddWithHttpInfo(`package`: kotlin.String, originsAddRequest: OriginsAddRequest) : ApiResponse<kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement>?> = withContext(Dispatchers.IO) {
+    suspend fun originsAddWithHttpInfo(`package`: kotlin.String, originsAddRequest: OriginsAddRequest) : ApiResponse<PackageOrigin?> = withContext(Dispatchers.IO) {
         val localVariableConfig = originsAddRequestConfig(`package` = `package`, originsAddRequest = originsAddRequest)
 
-        return@withContext request<OriginsAddRequest, kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement>>(
+        return@withContext request<OriginsAddRequest, PackageOrigin>(
             localVariableConfig
         )
     }
@@ -294,7 +297,7 @@ open class PackagesApi(basePath: kotlin.String = defaultBasePath, client: Call.F
      * **Who:** an account holder (a passkey session not bound to an app&#39;s frontend). **Step-up:** answers &#x60;412 CONFIRM_REQUIRED&#x60; first; send the same request again with &#x60;confirm&#x60;, a passkey assertion over &#x60;details.challenge&#x60;.
      * @param `package` 
      * @param originsRemoveRequest 
-     * @return kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement>
+     * @return OriginsRemove200Response
      * @throws IllegalStateException If the request is not correctly configured
      * @throws IOException Rethrows the OkHttp execute method exception
      * @throws UnsupportedOperationException If the API returns an informational or redirection response
@@ -303,11 +306,11 @@ open class PackagesApi(basePath: kotlin.String = defaultBasePath, client: Call.F
      */
     @Suppress("UNCHECKED_CAST")
     @Throws(IllegalStateException::class, IOException::class, UnsupportedOperationException::class, ClientException::class, ServerException::class)
-    suspend fun originsRemove(`package`: kotlin.String, originsRemoveRequest: OriginsRemoveRequest) : kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement> = withContext(Dispatchers.IO) {
+    suspend fun originsRemove(`package`: kotlin.String, originsRemoveRequest: OriginsRemoveRequest) : OriginsRemove200Response = withContext(Dispatchers.IO) {
         val localVarResponse = originsRemoveWithHttpInfo(`package` = `package`, originsRemoveRequest = originsRemoveRequest)
 
         return@withContext when (localVarResponse.responseType) {
-            ResponseType.Success -> (localVarResponse as Success<*>).data as kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement>
+            ResponseType.Success -> (localVarResponse as Success<*>).data as OriginsRemove200Response
             ResponseType.Informational -> throw UnsupportedOperationException("Client does not support Informational responses.")
             ResponseType.Redirection -> throw UnsupportedOperationException("Client does not support Redirection responses.")
             ResponseType.ClientError -> {
@@ -327,16 +330,16 @@ open class PackagesApi(basePath: kotlin.String = defaultBasePath, client: Call.F
      * **Who:** an account holder (a passkey session not bound to an app&#39;s frontend). **Step-up:** answers &#x60;412 CONFIRM_REQUIRED&#x60; first; send the same request again with &#x60;confirm&#x60;, a passkey assertion over &#x60;details.challenge&#x60;.
      * @param `package` 
      * @param originsRemoveRequest 
-     * @return ApiResponse<kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement>?>
+     * @return ApiResponse<OriginsRemove200Response?>
      * @throws IllegalStateException If the request is not correctly configured
      * @throws IOException Rethrows the OkHttp execute method exception
      */
     @Suppress("UNCHECKED_CAST")
     @Throws(IllegalStateException::class, IOException::class)
-    suspend fun originsRemoveWithHttpInfo(`package`: kotlin.String, originsRemoveRequest: OriginsRemoveRequest) : ApiResponse<kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement>?> = withContext(Dispatchers.IO) {
+    suspend fun originsRemoveWithHttpInfo(`package`: kotlin.String, originsRemoveRequest: OriginsRemoveRequest) : ApiResponse<OriginsRemove200Response?> = withContext(Dispatchers.IO) {
         val localVariableConfig = originsRemoveRequestConfig(`package` = `package`, originsRemoveRequest = originsRemoveRequest)
 
-        return@withContext request<OriginsRemoveRequest, kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement>>(
+        return@withContext request<OriginsRemoveRequest, OriginsRemove200Response>(
             localVariableConfig
         )
     }
@@ -587,7 +590,7 @@ open class PackagesApi(basePath: kotlin.String = defaultBasePath, client: Call.F
      * Uninstall a package
      * Every version; refused while an app runs one.  **Who:** an account holder (a passkey session not bound to an app&#39;s frontend).
      * @param `package` 
-     * @return kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement>
+     * @return Uninstalled
      * @throws IllegalStateException If the request is not correctly configured
      * @throws IOException Rethrows the OkHttp execute method exception
      * @throws UnsupportedOperationException If the API returns an informational or redirection response
@@ -596,11 +599,11 @@ open class PackagesApi(basePath: kotlin.String = defaultBasePath, client: Call.F
      */
     @Suppress("UNCHECKED_CAST")
     @Throws(IllegalStateException::class, IOException::class, UnsupportedOperationException::class, ClientException::class, ServerException::class)
-    suspend fun packageUninstall(`package`: kotlin.String) : kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement> = withContext(Dispatchers.IO) {
+    suspend fun packageUninstall(`package`: kotlin.String) : Uninstalled = withContext(Dispatchers.IO) {
         val localVarResponse = packageUninstallWithHttpInfo(`package` = `package`)
 
         return@withContext when (localVarResponse.responseType) {
-            ResponseType.Success -> (localVarResponse as Success<*>).data as kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement>
+            ResponseType.Success -> (localVarResponse as Success<*>).data as Uninstalled
             ResponseType.Informational -> throw UnsupportedOperationException("Client does not support Informational responses.")
             ResponseType.Redirection -> throw UnsupportedOperationException("Client does not support Redirection responses.")
             ResponseType.ClientError -> {
@@ -619,16 +622,16 @@ open class PackagesApi(basePath: kotlin.String = defaultBasePath, client: Call.F
      * Uninstall a package
      * Every version; refused while an app runs one.  **Who:** an account holder (a passkey session not bound to an app&#39;s frontend).
      * @param `package` 
-     * @return ApiResponse<kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement>?>
+     * @return ApiResponse<Uninstalled?>
      * @throws IllegalStateException If the request is not correctly configured
      * @throws IOException Rethrows the OkHttp execute method exception
      */
     @Suppress("UNCHECKED_CAST")
     @Throws(IllegalStateException::class, IOException::class)
-    suspend fun packageUninstallWithHttpInfo(`package`: kotlin.String) : ApiResponse<kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement>?> = withContext(Dispatchers.IO) {
+    suspend fun packageUninstallWithHttpInfo(`package`: kotlin.String) : ApiResponse<Uninstalled?> = withContext(Dispatchers.IO) {
         val localVariableConfig = packageUninstallRequestConfig(`package` = `package`)
 
-        return@withContext request<Unit, kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement>>(
+        return@withContext request<Unit, Uninstalled>(
             localVariableConfig
         )
     }
@@ -735,7 +738,7 @@ open class PackagesApi(basePath: kotlin.String = defaultBasePath, client: Call.F
      * **Who:** an account holder (a passkey session not bound to an app&#39;s frontend).
      * @param `package` 
      * @param version 
-     * @return kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement>
+     * @return Uninstalled
      * @throws IllegalStateException If the request is not correctly configured
      * @throws IOException Rethrows the OkHttp execute method exception
      * @throws UnsupportedOperationException If the API returns an informational or redirection response
@@ -744,11 +747,11 @@ open class PackagesApi(basePath: kotlin.String = defaultBasePath, client: Call.F
      */
     @Suppress("UNCHECKED_CAST")
     @Throws(IllegalStateException::class, IOException::class, UnsupportedOperationException::class, ClientException::class, ServerException::class)
-    suspend fun packageVersionUninstall(`package`: kotlin.String, version: kotlin.String) : kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement> = withContext(Dispatchers.IO) {
+    suspend fun packageVersionUninstall(`package`: kotlin.String, version: kotlin.String) : Uninstalled = withContext(Dispatchers.IO) {
         val localVarResponse = packageVersionUninstallWithHttpInfo(`package` = `package`, version = version)
 
         return@withContext when (localVarResponse.responseType) {
-            ResponseType.Success -> (localVarResponse as Success<*>).data as kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement>
+            ResponseType.Success -> (localVarResponse as Success<*>).data as Uninstalled
             ResponseType.Informational -> throw UnsupportedOperationException("Client does not support Informational responses.")
             ResponseType.Redirection -> throw UnsupportedOperationException("Client does not support Redirection responses.")
             ResponseType.ClientError -> {
@@ -768,16 +771,16 @@ open class PackagesApi(basePath: kotlin.String = defaultBasePath, client: Call.F
      * **Who:** an account holder (a passkey session not bound to an app&#39;s frontend).
      * @param `package` 
      * @param version 
-     * @return ApiResponse<kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement>?>
+     * @return ApiResponse<Uninstalled?>
      * @throws IllegalStateException If the request is not correctly configured
      * @throws IOException Rethrows the OkHttp execute method exception
      */
     @Suppress("UNCHECKED_CAST")
     @Throws(IllegalStateException::class, IOException::class)
-    suspend fun packageVersionUninstallWithHttpInfo(`package`: kotlin.String, version: kotlin.String) : ApiResponse<kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement>?> = withContext(Dispatchers.IO) {
+    suspend fun packageVersionUninstallWithHttpInfo(`package`: kotlin.String, version: kotlin.String) : ApiResponse<Uninstalled?> = withContext(Dispatchers.IO) {
         val localVariableConfig = packageVersionUninstallRequestConfig(`package` = `package`, version = version)
 
-        return@withContext request<Unit, kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement>>(
+        return@withContext request<Unit, Uninstalled>(
             localVariableConfig
         )
     }

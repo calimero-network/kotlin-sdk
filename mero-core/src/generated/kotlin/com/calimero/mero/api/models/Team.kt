@@ -39,7 +39,7 @@ import kotlinx.serialization.Contextual
  * @param members 
  * @param readOnly 
  * @param capabilities 
- * @param metadata 
+ * @param metadata Free-form JSON: its shape is not this API's (see the description around it for whose it is).
  * @param removed 
  * @param defaultCapabilities 
  */
@@ -68,6 +68,7 @@ data class Team (
     @SerialName(value = "capabilities")
     val capabilities: kotlin.collections.Map<kotlin.String, kotlin.Long>,
 
+    /* Free-form JSON: its shape is not this API's (see the description around it for whose it is). */
     @Contextual @SerialName(value = "metadata")
     val metadata: kotlinx.serialization.json.JsonElement?,
 

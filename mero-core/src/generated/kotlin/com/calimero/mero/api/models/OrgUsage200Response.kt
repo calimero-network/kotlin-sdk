@@ -23,6 +23,7 @@
 
 package com.calimero.mero.api.models
 
+import com.calimero.mero.api.models.Quotas
 
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.SerialName
@@ -40,8 +41,8 @@ import kotlinx.serialization.Contextual
 
 data class OrgUsage200Response (
 
-    @Contextual @SerialName(value = "apps")
-    val apps: kotlinx.serialization.json.JsonElement?,
+    @SerialName(value = "apps")
+    val apps: kotlin.Long,
 
     /* an unsigned 64-bit integer as a decimal string (D20) */
     @SerialName(value = "developerFuelToday")
@@ -51,8 +52,8 @@ data class OrgUsage200Response (
     @SerialName(value = "developerWritesToday")
     val developerWritesToday: kotlin.String,
 
-    @Contextual @SerialName(value = "quotas")
-    val quotas: kotlinx.serialization.json.JsonElement?
+    @SerialName(value = "quotas")
+    val quotas: Quotas
 
 ) {
 

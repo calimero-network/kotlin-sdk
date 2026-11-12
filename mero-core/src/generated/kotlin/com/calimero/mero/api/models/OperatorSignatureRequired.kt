@@ -29,7 +29,7 @@ import kotlinx.serialization.SerialName
 import kotlinx.serialization.Contextual
 
 /**
- * `details` of a `428 OPERATOR_SIGNATURE_REQUIRED`: the statement to sign and the exact bytes (`message`, base64).
+ * `details` of a `428 OPERATOR_SIGNATURE_REQUIRED`: the statement to sign (`args` is the JSON text of its arguments, as signed) and the exact bytes to sign (`message`, standard base64).
  *
  * @param subject 
  * @param method 
@@ -48,8 +48,8 @@ data class OperatorSignatureRequired (
     @SerialName(value = "method")
     val method: kotlin.String,
 
-    @Contextual @SerialName(value = "args")
-    val args: kotlinx.serialization.json.JsonElement?,
+    @SerialName(value = "args")
+    val args: kotlin.String,
 
     @SerialName(value = "nonce")
     val nonce: kotlin.String,

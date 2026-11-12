@@ -23,7 +23,7 @@
 
 package com.calimero.mero.api.models
 
-import com.calimero.mero.api.models.AppUsage200ResponseDaysInner
+import com.calimero.mero.api.models.UsageDay
 
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.SerialName
@@ -39,11 +39,11 @@ import kotlinx.serialization.Contextual
 
 data class AppUsage200Response (
 
-    @Contextual @SerialName(value = "today")
-    val today: kotlinx.serialization.json.JsonElement?,
+    @SerialName(value = "today")
+    val today: UsageDay,
 
     @SerialName(value = "days")
-    val days: kotlin.collections.List<AppUsage200ResponseDaysInner>
+    val days: kotlin.collections.List<UsageDay>
 
 ) {
 

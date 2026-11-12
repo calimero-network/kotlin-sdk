@@ -30,6 +30,7 @@ import okhttp3.HttpUrl
 import com.calimero.mero.api.models.AppTeamList200Response
 import com.calimero.mero.api.models.AppTeamsScope200Response
 import com.calimero.mero.api.models.AppTeamsScopeRequest
+import com.calimero.mero.api.models.ApprovedReleases
 import com.calimero.mero.api.models.ConfirmOnly
 import com.calimero.mero.api.models.Error
 import com.calimero.mero.api.models.InviteCreate200Response
@@ -45,6 +46,7 @@ import com.calimero.mero.api.models.OrgApps200Response
 import com.calimero.mero.api.models.OrgCapabilitiesRequest
 import com.calimero.mero.api.models.OrgCreate200Response
 import com.calimero.mero.api.models.OrgCreateRequest
+import com.calimero.mero.api.models.OrgDelete200Response
 import com.calimero.mero.api.models.OrgMembers200Response
 import com.calimero.mero.api.models.OrgOutboundApprovalRequest
 import com.calimero.mero.api.models.OrgPublisher200Response
@@ -56,6 +58,7 @@ import com.calimero.mero.api.models.OrgSetMemberRequest
 import com.calimero.mero.api.models.OrgUpgradeRequest
 import com.calimero.mero.api.models.OrgUpgradeRetryRequest
 import com.calimero.mero.api.models.OrgUsage200Response
+import com.calimero.mero.api.models.OutboundApproved
 import com.calimero.mero.api.models.PublisherUpgradeRequest
 import com.calimero.mero.api.models.RecoveryFinish200Response
 import com.calimero.mero.api.models.RecoverySetRequest
@@ -400,7 +403,7 @@ open class OrganizationsApi(basePath: kotlin.String = defaultBasePath, client: C
     /**
      * POST /invites/{token}/redeem
      * Join with an invite
-     * No passkey prompt: the node signs the redemption with the token&#39;s key.  **Who:** a passkey session (an API key is refused).
+     * No passkey prompt: the node signs the redemption with the token&#39;s key. Answers the organization joined.  **Who:** a passkey session (an API key is refused).
      * @param token 
      * @return InviteRedeem200Response
      * @throws IllegalStateException If the request is not correctly configured
@@ -432,7 +435,7 @@ open class OrganizationsApi(basePath: kotlin.String = defaultBasePath, client: C
     /**
      * POST /invites/{token}/redeem
      * Join with an invite
-     * No passkey prompt: the node signs the redemption with the token&#39;s key.  **Who:** a passkey session (an API key is refused).
+     * No passkey prompt: the node signs the redemption with the token&#39;s key. Answers the organization joined.  **Who:** a passkey session (an API key is refused).
      * @param token 
      * @return ApiResponse<InviteRedeem200Response?>
      * @throws IllegalStateException If the request is not correctly configured
@@ -553,7 +556,7 @@ open class OrganizationsApi(basePath: kotlin.String = defaultBasePath, client: C
     /**
      * POST /orgs/{org}/members/{account}/metadata
      * Set a member&#39;s metadata
-     * **Who:** signed in (a session or an API key).
+     * &#x60;metadata&#x60; is the caller&#39;s own JSON, free-form, kept as given.  **Who:** signed in (a session or an API key).
      * @param org 
      * @param account 
      * @param memberMetadataRequest 
@@ -587,7 +590,7 @@ open class OrganizationsApi(basePath: kotlin.String = defaultBasePath, client: C
     /**
      * POST /orgs/{org}/members/{account}/metadata
      * Set a member&#39;s metadata
-     * **Who:** signed in (a session or an API key).
+     * &#x60;metadata&#x60; is the caller&#39;s own JSON, free-form, kept as given.  **Who:** signed in (a session or an API key).
      * @param org 
      * @param account 
      * @param memberMetadataRequest 
@@ -1108,10 +1111,10 @@ open class OrganizationsApi(basePath: kotlin.String = defaultBasePath, client: C
     /**
      * DELETE /orgs/{org}
      * Delete an organization
-     * With its teams, invites and apps; the owner.  **Who:** an account holder (a passkey session not bound to an app&#39;s frontend). **Step-up:** answers &#x60;412 CONFIRM_REQUIRED&#x60; first; send the same request again with &#x60;confirm&#x60;, a passkey assertion over &#x60;details.challenge&#x60;.
+     * With its teams, invites and apps; the owner. &#x60;apps&#x60;: the apps deleted with it.  **Who:** an account holder (a passkey session not bound to an app&#39;s frontend). **Step-up:** answers &#x60;412 CONFIRM_REQUIRED&#x60; first; send the same request again with &#x60;confirm&#x60;, a passkey assertion over &#x60;details.challenge&#x60;.
      * @param org 
      * @param confirmOnly May be absent. (optional)
-     * @return kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement>
+     * @return OrgDelete200Response
      * @throws IllegalStateException If the request is not correctly configured
      * @throws IOException Rethrows the OkHttp execute method exception
      * @throws UnsupportedOperationException If the API returns an informational or redirection response
@@ -1120,11 +1123,11 @@ open class OrganizationsApi(basePath: kotlin.String = defaultBasePath, client: C
      */
     @Suppress("UNCHECKED_CAST")
     @Throws(IllegalStateException::class, IOException::class, UnsupportedOperationException::class, ClientException::class, ServerException::class)
-    suspend fun orgDelete(org: kotlin.String, confirmOnly: ConfirmOnly? = null) : kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement> = withContext(Dispatchers.IO) {
+    suspend fun orgDelete(org: kotlin.String, confirmOnly: ConfirmOnly? = null) : OrgDelete200Response = withContext(Dispatchers.IO) {
         val localVarResponse = orgDeleteWithHttpInfo(org = org, confirmOnly = confirmOnly)
 
         return@withContext when (localVarResponse.responseType) {
-            ResponseType.Success -> (localVarResponse as Success<*>).data as kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement>
+            ResponseType.Success -> (localVarResponse as Success<*>).data as OrgDelete200Response
             ResponseType.Informational -> throw UnsupportedOperationException("Client does not support Informational responses.")
             ResponseType.Redirection -> throw UnsupportedOperationException("Client does not support Redirection responses.")
             ResponseType.ClientError -> {
@@ -1141,19 +1144,19 @@ open class OrganizationsApi(basePath: kotlin.String = defaultBasePath, client: C
     /**
      * DELETE /orgs/{org}
      * Delete an organization
-     * With its teams, invites and apps; the owner.  **Who:** an account holder (a passkey session not bound to an app&#39;s frontend). **Step-up:** answers &#x60;412 CONFIRM_REQUIRED&#x60; first; send the same request again with &#x60;confirm&#x60;, a passkey assertion over &#x60;details.challenge&#x60;.
+     * With its teams, invites and apps; the owner. &#x60;apps&#x60;: the apps deleted with it.  **Who:** an account holder (a passkey session not bound to an app&#39;s frontend). **Step-up:** answers &#x60;412 CONFIRM_REQUIRED&#x60; first; send the same request again with &#x60;confirm&#x60;, a passkey assertion over &#x60;details.challenge&#x60;.
      * @param org 
      * @param confirmOnly May be absent. (optional)
-     * @return ApiResponse<kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement>?>
+     * @return ApiResponse<OrgDelete200Response?>
      * @throws IllegalStateException If the request is not correctly configured
      * @throws IOException Rethrows the OkHttp execute method exception
      */
     @Suppress("UNCHECKED_CAST")
     @Throws(IllegalStateException::class, IOException::class)
-    suspend fun orgDeleteWithHttpInfo(org: kotlin.String, confirmOnly: ConfirmOnly?) : ApiResponse<kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement>?> = withContext(Dispatchers.IO) {
+    suspend fun orgDeleteWithHttpInfo(org: kotlin.String, confirmOnly: ConfirmOnly?) : ApiResponse<OrgDelete200Response?> = withContext(Dispatchers.IO) {
         val localVariableConfig = orgDeleteRequestConfig(org = org, confirmOnly = confirmOnly)
 
-        return@withContext request<ConfirmOnly, kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement>>(
+        return@withContext request<ConfirmOnly, OrgDelete200Response>(
             localVariableConfig
         )
     }
@@ -1355,7 +1358,7 @@ open class OrganizationsApi(basePath: kotlin.String = defaultBasePath, client: C
     /**
      * POST /orgs/{org}/metadata
      * Set an organization&#39;s metadata
-     * **Who:** signed in (a session or an API key).
+     * &#x60;metadata&#x60; is the caller&#39;s own JSON, free-form, kept as given.  **Who:** signed in (a session or an API key).
      * @param org 
      * @param memberMetadataRequest 
      * @return kotlinx.serialization.json.JsonObject
@@ -1388,7 +1391,7 @@ open class OrganizationsApi(basePath: kotlin.String = defaultBasePath, client: C
     /**
      * POST /orgs/{org}/metadata
      * Set an organization&#39;s metadata
-     * **Who:** signed in (a session or an API key).
+     * &#x60;metadata&#x60; is the caller&#39;s own JSON, free-form, kept as given.  **Who:** signed in (a session or an API key).
      * @param org 
      * @param memberMetadataRequest 
      * @return ApiResponse<kotlinx.serialization.json.JsonObject?>
@@ -1435,7 +1438,7 @@ open class OrganizationsApi(basePath: kotlin.String = defaultBasePath, client: C
      * The owner; &#x60;412&#x60; first.  **Who:** an account holder (a passkey session not bound to an app&#39;s frontend). **Step-up:** answers &#x60;412 CONFIRM_REQUIRED&#x60; first; send the same request again with &#x60;confirm&#x60;, a passkey assertion over &#x60;details.challenge&#x60;.
      * @param org 
      * @param orgOutboundApprovalRequest 
-     * @return kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement>
+     * @return OutboundApproved
      * @throws IllegalStateException If the request is not correctly configured
      * @throws IOException Rethrows the OkHttp execute method exception
      * @throws UnsupportedOperationException If the API returns an informational or redirection response
@@ -1444,11 +1447,11 @@ open class OrganizationsApi(basePath: kotlin.String = defaultBasePath, client: C
      */
     @Suppress("UNCHECKED_CAST")
     @Throws(IllegalStateException::class, IOException::class, UnsupportedOperationException::class, ClientException::class, ServerException::class)
-    suspend fun orgOutboundApproval(org: kotlin.String, orgOutboundApprovalRequest: OrgOutboundApprovalRequest) : kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement> = withContext(Dispatchers.IO) {
+    suspend fun orgOutboundApproval(org: kotlin.String, orgOutboundApprovalRequest: OrgOutboundApprovalRequest) : OutboundApproved = withContext(Dispatchers.IO) {
         val localVarResponse = orgOutboundApprovalWithHttpInfo(org = org, orgOutboundApprovalRequest = orgOutboundApprovalRequest)
 
         return@withContext when (localVarResponse.responseType) {
-            ResponseType.Success -> (localVarResponse as Success<*>).data as kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement>
+            ResponseType.Success -> (localVarResponse as Success<*>).data as OutboundApproved
             ResponseType.Informational -> throw UnsupportedOperationException("Client does not support Informational responses.")
             ResponseType.Redirection -> throw UnsupportedOperationException("Client does not support Redirection responses.")
             ResponseType.ClientError -> {
@@ -1468,16 +1471,16 @@ open class OrganizationsApi(basePath: kotlin.String = defaultBasePath, client: C
      * The owner; &#x60;412&#x60; first.  **Who:** an account holder (a passkey session not bound to an app&#39;s frontend). **Step-up:** answers &#x60;412 CONFIRM_REQUIRED&#x60; first; send the same request again with &#x60;confirm&#x60;, a passkey assertion over &#x60;details.challenge&#x60;.
      * @param org 
      * @param orgOutboundApprovalRequest 
-     * @return ApiResponse<kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement>?>
+     * @return ApiResponse<OutboundApproved?>
      * @throws IllegalStateException If the request is not correctly configured
      * @throws IOException Rethrows the OkHttp execute method exception
      */
     @Suppress("UNCHECKED_CAST")
     @Throws(IllegalStateException::class, IOException::class)
-    suspend fun orgOutboundApprovalWithHttpInfo(org: kotlin.String, orgOutboundApprovalRequest: OrgOutboundApprovalRequest) : ApiResponse<kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement>?> = withContext(Dispatchers.IO) {
+    suspend fun orgOutboundApprovalWithHttpInfo(org: kotlin.String, orgOutboundApprovalRequest: OrgOutboundApprovalRequest) : ApiResponse<OutboundApproved?> = withContext(Dispatchers.IO) {
         val localVariableConfig = orgOutboundApprovalRequestConfig(org = org, orgOutboundApprovalRequest = orgOutboundApprovalRequest)
 
-        return@withContext request<OrgOutboundApprovalRequest, kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement>>(
+        return@withContext request<OrgOutboundApprovalRequest, OutboundApproved>(
             localVariableConfig
         )
     }
@@ -1509,7 +1512,7 @@ open class OrganizationsApi(basePath: kotlin.String = defaultBasePath, client: C
     /**
      * POST /orgs/{org}/publishers
      * Bind a package signing key
-     * The key&#39;s signature over the binding proves the organization holds it; then its &#x60;MANAGE_APPLICATION&#x60; holders upgrade the apps of packages that name &#x60;publisher&#x60;.  **Who:** an account holder (a passkey session not bound to an app&#39;s frontend). **Step-up:** answers &#x60;412 CONFIRM_REQUIRED&#x60; first; send the same request again with &#x60;confirm&#x60;, a passkey assertion over &#x60;details.challenge&#x60;.
+     * The key&#39;s signature over the binding proves the organization holds it; then its &#x60;MANAGE_APPLICATION&#x60; holders upgrade the apps of packages that name &#x60;publisher&#x60;. Answers the key&#39;s binding generation now.  **Who:** an account holder (a passkey session not bound to an app&#39;s frontend). **Step-up:** answers &#x60;412 CONFIRM_REQUIRED&#x60; first; send the same request again with &#x60;confirm&#x60;, a passkey assertion over &#x60;details.challenge&#x60;.
      * @param org 
      * @param orgPublisherRequest 
      * @return OrgPublisher200Response
@@ -1542,7 +1545,7 @@ open class OrganizationsApi(basePath: kotlin.String = defaultBasePath, client: C
     /**
      * POST /orgs/{org}/publishers
      * Bind a package signing key
-     * The key&#39;s signature over the binding proves the organization holds it; then its &#x60;MANAGE_APPLICATION&#x60; holders upgrade the apps of packages that name &#x60;publisher&#x60;.  **Who:** an account holder (a passkey session not bound to an app&#39;s frontend). **Step-up:** answers &#x60;412 CONFIRM_REQUIRED&#x60; first; send the same request again with &#x60;confirm&#x60;, a passkey assertion over &#x60;details.challenge&#x60;.
+     * The key&#39;s signature over the binding proves the organization holds it; then its &#x60;MANAGE_APPLICATION&#x60; holders upgrade the apps of packages that name &#x60;publisher&#x60;. Answers the key&#39;s binding generation now.  **Who:** an account holder (a passkey session not bound to an app&#39;s frontend). **Step-up:** answers &#x60;412 CONFIRM_REQUIRED&#x60; first; send the same request again with &#x60;confirm&#x60;, a passkey assertion over &#x60;details.challenge&#x60;.
      * @param org 
      * @param orgPublisherRequest 
      * @return ApiResponse<OrgPublisher200Response?>
@@ -1589,7 +1592,7 @@ open class OrganizationsApi(basePath: kotlin.String = defaultBasePath, client: C
      * The owner; &#x60;412&#x60; first.  **Who:** an account holder (a passkey session not bound to an app&#39;s frontend). **Step-up:** answers &#x60;412 CONFIRM_REQUIRED&#x60; first; send the same request again with &#x60;confirm&#x60;, a passkey assertion over &#x60;details.challenge&#x60;.
      * @param org 
      * @param orgReleaseApprovalRequest 
-     * @return kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement>
+     * @return ApprovedReleases
      * @throws IllegalStateException If the request is not correctly configured
      * @throws IOException Rethrows the OkHttp execute method exception
      * @throws UnsupportedOperationException If the API returns an informational or redirection response
@@ -1598,11 +1601,11 @@ open class OrganizationsApi(basePath: kotlin.String = defaultBasePath, client: C
      */
     @Suppress("UNCHECKED_CAST")
     @Throws(IllegalStateException::class, IOException::class, UnsupportedOperationException::class, ClientException::class, ServerException::class)
-    suspend fun orgReleaseApproval(org: kotlin.String, orgReleaseApprovalRequest: OrgReleaseApprovalRequest) : kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement> = withContext(Dispatchers.IO) {
+    suspend fun orgReleaseApproval(org: kotlin.String, orgReleaseApprovalRequest: OrgReleaseApprovalRequest) : ApprovedReleases = withContext(Dispatchers.IO) {
         val localVarResponse = orgReleaseApprovalWithHttpInfo(org = org, orgReleaseApprovalRequest = orgReleaseApprovalRequest)
 
         return@withContext when (localVarResponse.responseType) {
-            ResponseType.Success -> (localVarResponse as Success<*>).data as kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement>
+            ResponseType.Success -> (localVarResponse as Success<*>).data as ApprovedReleases
             ResponseType.Informational -> throw UnsupportedOperationException("Client does not support Informational responses.")
             ResponseType.Redirection -> throw UnsupportedOperationException("Client does not support Redirection responses.")
             ResponseType.ClientError -> {
@@ -1622,16 +1625,16 @@ open class OrganizationsApi(basePath: kotlin.String = defaultBasePath, client: C
      * The owner; &#x60;412&#x60; first.  **Who:** an account holder (a passkey session not bound to an app&#39;s frontend). **Step-up:** answers &#x60;412 CONFIRM_REQUIRED&#x60; first; send the same request again with &#x60;confirm&#x60;, a passkey assertion over &#x60;details.challenge&#x60;.
      * @param org 
      * @param orgReleaseApprovalRequest 
-     * @return ApiResponse<kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement>?>
+     * @return ApiResponse<ApprovedReleases?>
      * @throws IllegalStateException If the request is not correctly configured
      * @throws IOException Rethrows the OkHttp execute method exception
      */
     @Suppress("UNCHECKED_CAST")
     @Throws(IllegalStateException::class, IOException::class)
-    suspend fun orgReleaseApprovalWithHttpInfo(org: kotlin.String, orgReleaseApprovalRequest: OrgReleaseApprovalRequest) : ApiResponse<kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement>?> = withContext(Dispatchers.IO) {
+    suspend fun orgReleaseApprovalWithHttpInfo(org: kotlin.String, orgReleaseApprovalRequest: OrgReleaseApprovalRequest) : ApiResponse<ApprovedReleases?> = withContext(Dispatchers.IO) {
         val localVariableConfig = orgReleaseApprovalRequestConfig(org = org, orgReleaseApprovalRequest = orgReleaseApprovalRequest)
 
-        return@withContext request<OrgReleaseApprovalRequest, kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement>>(
+        return@withContext request<OrgReleaseApprovalRequest, ApprovedReleases>(
             localVariableConfig
         )
     }
@@ -2130,7 +2133,7 @@ open class OrganizationsApi(basePath: kotlin.String = defaultBasePath, client: C
     /**
      * GET /orgs/{org}/usage
      * An organization&#39;s usage
-     * An admin: what today&#39;s runs of the apps the organization develops used (decimal strings) and its quotas; a member gets &#x60;403&#x60;.  **Who:** signed in (a session or an API key).
+     * An admin: how many apps the organization develops, what their runs used today (decimal strings) and the cluster&#39;s quotas; a member gets &#x60;403&#x60;.  **Who:** signed in (a session or an API key).
      * @param org 
      * @return OrgUsage200Response
      * @throws IllegalStateException If the request is not correctly configured
@@ -2162,7 +2165,7 @@ open class OrganizationsApi(basePath: kotlin.String = defaultBasePath, client: C
     /**
      * GET /orgs/{org}/usage
      * An organization&#39;s usage
-     * An admin: what today&#39;s runs of the apps the organization develops used (decimal strings) and its quotas; a member gets &#x60;403&#x60;.  **Who:** signed in (a session or an API key).
+     * An admin: how many apps the organization develops, what their runs used today (decimal strings) and the cluster&#39;s quotas; a member gets &#x60;403&#x60;.  **Who:** signed in (a session or an API key).
      * @param org 
      * @return ApiResponse<OrgUsage200Response?>
      * @throws IllegalStateException If the request is not correctly configured
@@ -2987,7 +2990,7 @@ open class OrganizationsApi(basePath: kotlin.String = defaultBasePath, client: C
     /**
      * POST /orgs/{org}/teams/{team}
      * Update a team
-     * Rename, open or restrict, move under another parent, or set its metadata. &#x60;parent&#x60; absent leaves the team where it is; &#x60;parent: null&#x60; (an explicit null) moves it to the top; a team id moves it under that team.  **Who:** a passkey session (an API key is refused).
+     * Rename, open or restrict, move under another parent, or set its metadata (the caller&#39;s own JSON, free-form, kept as given). &#x60;parent&#x60; absent leaves the team where it is; &#x60;parent: null&#x60; (an explicit null) moves it to the top; a team id moves it under that team.  **Who:** a passkey session (an API key is refused).
      * @param org 
      * @param team 
      * @param teamUpdateRequest 
@@ -3021,7 +3024,7 @@ open class OrganizationsApi(basePath: kotlin.String = defaultBasePath, client: C
     /**
      * POST /orgs/{org}/teams/{team}
      * Update a team
-     * Rename, open or restrict, move under another parent, or set its metadata. &#x60;parent&#x60; absent leaves the team where it is; &#x60;parent: null&#x60; (an explicit null) moves it to the top; a team id moves it under that team.  **Who:** a passkey session (an API key is refused).
+     * Rename, open or restrict, move under another parent, or set its metadata (the caller&#39;s own JSON, free-form, kept as given). &#x60;parent&#x60; absent leaves the team where it is; &#x60;parent: null&#x60; (an explicit null) moves it to the top; a team id moves it under that team.  **Who:** a passkey session (an API key is refused).
      * @param org 
      * @param team 
      * @param teamUpdateRequest 

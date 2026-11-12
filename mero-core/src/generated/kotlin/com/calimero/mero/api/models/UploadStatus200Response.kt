@@ -35,6 +35,7 @@ import kotlinx.serialization.Contextual
  * @param partBytes 
  * @param parts 
  * @param expiresAt 
+ * @param propertySize 
  * @param next 
  */
 @Serializable
@@ -52,6 +53,9 @@ data class UploadStatus200Response (
 
     @SerialName(value = "expiresAt")
     val expiresAt: kotlin.Long,
+
+    @SerialName(value = "size")
+    val propertySize: kotlin.Long,
 
     @SerialName(value = "next")
     val next: kotlin.Long

@@ -51,14 +51,14 @@ data class Health200Response (
     @SerialName(value = "systemLeader")
     val systemLeader: kotlin.Long?,
 
-    @Contextual @SerialName(value = "release")
-    val release: kotlinx.serialization.json.JsonElement?,
+    @SerialName(value = "release")
+    val release: kotlin.String,
 
     @SerialName(value = "clusterVersion")
     val clusterVersion: kotlin.String,
 
     @SerialName(value = "rollbackEpoch")
-    val rollbackEpoch: kotlin.Long? = null
+    val rollbackEpoch: kotlin.Long?
 
 ) {
 

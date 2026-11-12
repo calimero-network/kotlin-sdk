@@ -33,7 +33,7 @@ import kotlinx.serialization.Contextual
  * 
  *
  * @param index 
- * @param result 
+ * @param result Free-form JSON: its shape is not this API's (see the description around it for whose it is).
  * @param receipt 
  */
 @Serializable
@@ -43,6 +43,7 @@ data class Views200Response (
     @SerialName(value = "index")
     val index: kotlin.Long,
 
+    /* Free-form JSON: its shape is not this API's (see the description around it for whose it is). */
     @Contextual @SerialName(value = "result")
     val result: kotlinx.serialization.json.JsonElement?,
 

@@ -186,7 +186,7 @@ class DeploymentsFacade internal constructor(
         id: kotlin.String,
         app: kotlin.String,
         passkey: PasskeyProvider? = null,
-    ): kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement> =
+    ): DeploymentOffer200Response =
         api(passkey, null, emptySet()).signUpAndDeployments.deploymentWithdraw(id = id, app = app)
 
     /**
@@ -233,7 +233,7 @@ class DeploymentsFacade internal constructor(
     suspend fun signUpInviteRevoke(
         key: kotlin.String,
         passkey: PasskeyProvider? = null,
-    ): kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement> =
+    ): InviteKey =
         api(passkey, null, emptySet()).signUpAndDeployments.signUpInviteRevoke(key = key)
 
     /**
@@ -266,6 +266,6 @@ class DeploymentsFacade internal constructor(
     suspend fun signUpSet(
         policy: SignUp,
         passkey: PasskeyProvider? = null,
-    ): kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement> =
+    ): SignUpSet =
         api(passkey, null, emptySet()).signUpAndDeployments.signUpSet(signUpSetRequest = SignUpSetRequest(policy = policy))
 }

@@ -29,11 +29,11 @@ import kotlinx.serialization.SerialName
 import kotlinx.serialization.Contextual
 
 /**
- * An entry an app's log applied: its index, how it ended and the app's error, if any.
+ * An entry an app's log applied: its index, how it ended and the app's error (`null` when it ended `ok`; the app's own error value otherwise, free-form). `details` of a `422 UPGRADE_FAILED`.
  *
  * @param index 
  * @param status 
- * @param error 
+ * @param error Free-form JSON: its shape is not this API's (see the description around it for whose it is).
  */
 @Serializable
 
@@ -43,13 +43,25 @@ data class Applied (
     val index: kotlin.Long,
 
     @SerialName(value = "status")
-    val status: kotlin.String,
+    val status: Applied.Status,
 
+    /* Free-form JSON: its shape is not this API's (see the description around it for whose it is). */
     @Contextual @SerialName(value = "error")
     val error: kotlinx.serialization.json.JsonElement?
 
 ) {
 
+    /**
+     * 
+     *
+     * Values: OK,APP_ERROR,TRAP
+     */
+    @Serializable
+    enum class Status(val value: kotlin.String) {
+        @SerialName(value = "ok") OK("ok"),
+        @SerialName(value = "appError") APP_ERROR("appError"),
+        @SerialName(value = "trap") TRAP("trap");
+    }
 
 }
 

@@ -45,7 +45,7 @@ import kotlinx.serialization.Contextual
  * @param capabilities 
  * @param approvedReleases 
  * @param outboundApprovals 
- * @param metadata 
+ * @param metadata Free-form JSON: its shape is not this API's (see the description around it for whose it is).
  * @param memberMetadata 
  * @param upgradeRuns 
  * @param recovery 
@@ -83,6 +83,7 @@ data class Org (
     @Contextual @SerialName(value = "outboundApprovals")
     val outboundApprovals: kotlin.collections.Map<kotlin.String, OutboundApproval>,
 
+    /* Free-form JSON: its shape is not this API's (see the description around it for whose it is). */
     @Contextual @SerialName(value = "metadata")
     val metadata: kotlinx.serialization.json.JsonElement?,
 
