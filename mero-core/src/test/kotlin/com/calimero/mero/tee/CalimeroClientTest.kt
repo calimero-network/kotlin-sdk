@@ -14,6 +14,7 @@ import com.calimero.mero.ConfirmCancelled
 import com.calimero.mero.ConfirmRequired
 import com.calimero.mero.ConsentOutcome
 import com.calimero.mero.ConsentRequest
+import com.calimero.mero.ConsentResult
 import com.calimero.mero.ConsentScope
 import com.calimero.mero.Deployer
 import com.calimero.mero.DirectoryError
@@ -570,9 +571,9 @@ class CalimeroClientTest {
         assertEquals(ConsentOutcome.Other("createInvite", outcome("""{"token":1}""")), ConsentOutcome.of("createInvite", outcome("""{"token":1}""")))
         // The result reads back as it was sent.
         val text = """{"requestId":"r","kind":"createInvite","status":"approved","decidedAt":3,"outcome":{"token":"t"}}"""
-        val result = Json.decodeFromString(com.calimero.mero.ConsentResult.serializer(), text)
+        val result = Json.decodeFromString(ConsentResult.serializer(), text)
         assertEquals(ConsentOutcome.InviteCreated("t"), result.outcome)
-        assertEquals(Json.parseToJsonElement(text), Json.parseToJsonElement(Json.encodeToString(com.calimero.mero.ConsentResult.serializer(), result)))
+        assertEquals(Json.parseToJsonElement(text), Json.parseToJsonElement(Json.encodeToString(ConsentResult.serializer(), result)))
     }
 
     @Test
