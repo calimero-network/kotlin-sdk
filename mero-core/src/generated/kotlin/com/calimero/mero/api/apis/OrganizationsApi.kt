@@ -173,7 +173,7 @@ open class OrganizationsApi(basePath: kotlin.String = defaultBasePath, client: C
     /**
      * POST /orgs/{org}/app-teams
      * Give apps app teams, or open or close one
-     * The owner or an admin; &#x60;keep&#x60; names who stays when a team closes. &#x60;412&#x60; first.  **Who:** a passkey session (an API key is refused). **Step-up:** answers &#x60;412 CONFIRM_REQUIRED&#x60; first; send the same request again with &#x60;confirm&#x60;, a passkey assertion over &#x60;details.challenge&#x60;.
+     * The owner or an admin; &#x60;keep&#x60; names who stays when a team closes; &#x60;childTeams&#x60; says whether the app team&#39;s members make restricted teams below it (private channels), adding or removing &#x60;CREATE_CHILD_TEAM&#x60; (absent: as they are). Naming &#x60;join&#x60; or &#x60;childTeams&#x60; on any package leaves &#x60;shared&#x60; unset to mean no other team. &#x60;412&#x60; first.  **Who:** a passkey session (an API key is refused). **Step-up:** answers &#x60;412 CONFIRM_REQUIRED&#x60; first; send the same request again with &#x60;confirm&#x60;, a passkey assertion over &#x60;details.challenge&#x60;.
      * @param org 
      * @param appTeamsScopeRequest 
      * @return AppTeamsScope200Response
@@ -206,7 +206,7 @@ open class OrganizationsApi(basePath: kotlin.String = defaultBasePath, client: C
     /**
      * POST /orgs/{org}/app-teams
      * Give apps app teams, or open or close one
-     * The owner or an admin; &#x60;keep&#x60; names who stays when a team closes. &#x60;412&#x60; first.  **Who:** a passkey session (an API key is refused). **Step-up:** answers &#x60;412 CONFIRM_REQUIRED&#x60; first; send the same request again with &#x60;confirm&#x60;, a passkey assertion over &#x60;details.challenge&#x60;.
+     * The owner or an admin; &#x60;keep&#x60; names who stays when a team closes; &#x60;childTeams&#x60; says whether the app team&#39;s members make restricted teams below it (private channels), adding or removing &#x60;CREATE_CHILD_TEAM&#x60; (absent: as they are). Naming &#x60;join&#x60; or &#x60;childTeams&#x60; on any package leaves &#x60;shared&#x60; unset to mean no other team. &#x60;412&#x60; first.  **Who:** a passkey session (an API key is refused). **Step-up:** answers &#x60;412 CONFIRM_REQUIRED&#x60; first; send the same request again with &#x60;confirm&#x60;, a passkey assertion over &#x60;details.challenge&#x60;.
      * @param org 
      * @param appTeamsScopeRequest 
      * @return ApiResponse<AppTeamsScope200Response?>

@@ -23,6 +23,7 @@
 
 package com.calimero.mero.api.models
 
+import com.calimero.mero.api.models.OpsRemoveNode200ResponseStatus
 
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.SerialName
@@ -38,7 +39,7 @@ import kotlinx.serialization.Contextual
 data class OpsRemoveNode200Response (
 
     @SerialName(value = "status")
-    val status: kotlin.String
+    val status: OpsRemoveNode200ResponseStatus
 
 ) {
 
