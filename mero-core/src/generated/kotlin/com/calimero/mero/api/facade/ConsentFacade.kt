@@ -20,7 +20,7 @@ class ConsentFacade internal constructor(
     /**
      * Ask the account's owner to approve
      *
-     * From an app's frontend: a release approval, an upgrade of its instance, or outbound prefixes, approved on the node's own consent page (`url`), which takes the passkey. 64 KiB at most.
+     * From an app's frontend: a release approval, an upgrade of its instance, outbound prefixes, a new organization, a new invite or joining with one, leaving an organization, a member's removal, role, teams or capabilities, an invite's revocation, an organization's name, its deletion, defaults or all-apps grants, approved on the node's own consent page (`url`), which takes the passkey. What the approval made (`orgId`, an invite's `token`, the `org` joined, a rename's `{ orgId, name }`, a deletion's `apps`) is in `/consent/{request}/result`'s `outcome`. 64 KiB at most.
      *
      * **Who:** a passkey session (an API key is refused).
      *
@@ -36,7 +36,7 @@ class ConsentFacade internal constructor(
     /**
      * What became of a consent request
      *
-     * `decidedAt` (Unix seconds) is `null` while it is pending.
+     * `decidedAt` (Unix seconds) is `null` while it is pending. `outcome`, once approved, is what the approval made: `{ orgId }` for `createOrg`, `{ token }` for `createInvite`, `{ org }` for `acceptInvite`, `{ orgId, name }` for `renameOrg`, `{ apps }` (the apps deleted) for `deleteOrg`; absent for the other kinds.
      *
      * **Who:** a passkey session (an API key is refused).
      *

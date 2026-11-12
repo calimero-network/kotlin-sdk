@@ -24,6 +24,7 @@
 package com.calimero.mero.api.models
 
 import com.calimero.mero.api.models.OperatorProof
+import com.calimero.mero.api.models.OpsRestoreRequestRecovery
 
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.SerialName
@@ -33,6 +34,7 @@ import kotlinx.serialization.Contextual
  * 
  *
  * @param backup 
+ * @param recovery 
  * @param operatorProof 
  */
 @Serializable
@@ -41,6 +43,9 @@ data class OpsRestoreRequest (
 
     @SerialName(value = "backup")
     val backup: kotlin.String? = null,
+
+    @SerialName(value = "recovery")
+    val recovery: OpsRestoreRequestRecovery? = null,
 
     @SerialName(value = "operatorProof")
     val operatorProof: OperatorProof? = null

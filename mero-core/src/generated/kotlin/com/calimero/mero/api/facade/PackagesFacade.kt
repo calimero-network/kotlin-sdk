@@ -135,6 +135,23 @@ class PackagesFacade internal constructor(
         api(null, null, emptySet()).packages.packageList()
 
     /**
+     * A release's pipelines
+     *
+     * The pipelines the release registers, by name: `hash`, `worstCaseFuel` (a decimal string), the `modules` they pin and the canonical `pipeline`. `404` for a release the caller may not see.
+     *
+     * **Who:** signed in (a session or an API key).
+     *
+     * `GET /packages/{package}/{version}/pipelines` (`package_pipelines`).
+     *
+     * @throws com.calimero.mero.CalimeroError the node's refusal, typed by [com.calimero.mero.errorFrom].
+     */
+    suspend fun pipelines(
+        `package`: kotlin.String,
+        version: kotlin.String,
+    ): kotlin.collections.Map<kotlin.String, PackagePipelines200ResponseValue> =
+        api(null, null, emptySet()).packages.packagePipelines(`package` = `package`, version = version)
+
+    /**
      * Uninstall a package
      *
      * Every version; refused while an app runs one.

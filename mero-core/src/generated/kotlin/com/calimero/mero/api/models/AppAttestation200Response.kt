@@ -33,6 +33,7 @@ import kotlinx.serialization.Contextual
  * 
  *
  * @param appId 
+ * @param cluster 
  * @param replicas 
  */
 @Serializable
@@ -41,6 +42,9 @@ data class AppAttestation200Response (
 
     @SerialName(value = "appId")
     val appId: kotlin.String,
+
+    @SerialName(value = "cluster")
+    val cluster: kotlin.String,
 
     @SerialName(value = "replicas")
     val replicas: kotlin.collections.List<AppAttestation200ResponseReplicasInner>

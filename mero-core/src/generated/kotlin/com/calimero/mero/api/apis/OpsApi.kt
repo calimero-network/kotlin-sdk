@@ -28,6 +28,7 @@ import okhttp3.Call
 import okhttp3.HttpUrl
 
 import com.calimero.mero.api.models.ApprovedReleases
+import com.calimero.mero.api.models.BackupKeyAnswer
 import com.calimero.mero.api.models.Deadlines
 import com.calimero.mero.api.models.Error
 import com.calimero.mero.api.models.InviteKey
@@ -50,7 +51,12 @@ import com.calimero.mero.api.models.OpsPackageUpload200Response
 import com.calimero.mero.api.models.OpsPlacement200Response
 import com.calimero.mero.api.models.OpsPoolsGet200Response
 import com.calimero.mero.api.models.OpsPoolsSetRequest
+import com.calimero.mero.api.models.OpsPricesGet200Response
+import com.calimero.mero.api.models.OpsPricesSetRequest
 import com.calimero.mero.api.models.OpsReceiptKey200Response
+import com.calimero.mero.api.models.OpsRecover200Response
+import com.calimero.mero.api.models.OpsRecoverRequest
+import com.calimero.mero.api.models.OpsRecoveryFiles200Response
 import com.calimero.mero.api.models.OpsRegisterNodeRequest
 import com.calimero.mero.api.models.OpsReleaseDeadlineRequest
 import com.calimero.mero.api.models.OpsReleaseRequest
@@ -58,6 +64,7 @@ import com.calimero.mero.api.models.OpsRemoveNode200Response
 import com.calimero.mero.api.models.OpsRestore200Response
 import com.calimero.mero.api.models.OpsRestoreRequest
 import com.calimero.mero.api.models.OpsServed200Response
+import com.calimero.mero.api.models.OpsSetBackupKeyRequest
 import com.calimero.mero.api.models.OpsSetReplicas200Response
 import com.calimero.mero.api.models.OpsSetReplicasRequest
 import com.calimero.mero.api.models.OpsSignUpInviteCreateRequest
@@ -258,6 +265,76 @@ open class OpsApi(basePath: kotlin.String = defaultBasePath, client: Call.Factor
         return RequestConfig(
             method = RequestMethod.POST,
             path = "/ops/backup",
+            query = localVariableQuery,
+            headers = localVariableHeaders,
+            requiresAuthentication = true,
+            body = localVariableBody
+        )
+    }
+
+    /**
+     * GET /ops/backup-key
+     * The operator&#39;s backup key
+     * The X25519 public key every app&#39;s recovery-disk backups are sealed to where the operator upgrades apps (&#x60;key&#x60;, &#x60;null&#x60; while none is set).  **Who:** the ops token.
+     * @return BackupKeyAnswer
+     * @throws IllegalStateException If the request is not correctly configured
+     * @throws IOException Rethrows the OkHttp execute method exception
+     * @throws UnsupportedOperationException If the API returns an informational or redirection response
+     * @throws ClientException If the API returns a client error response
+     * @throws ServerException If the API returns a server error response
+     */
+    @Suppress("UNCHECKED_CAST")
+    @Throws(IllegalStateException::class, IOException::class, UnsupportedOperationException::class, ClientException::class, ServerException::class)
+    suspend fun opsBackupKey() : BackupKeyAnswer = withContext(Dispatchers.IO) {
+        val localVarResponse = opsBackupKeyWithHttpInfo()
+
+        return@withContext when (localVarResponse.responseType) {
+            ResponseType.Success -> (localVarResponse as Success<*>).data as BackupKeyAnswer
+            ResponseType.Informational -> throw UnsupportedOperationException("Client does not support Informational responses.")
+            ResponseType.Redirection -> throw UnsupportedOperationException("Client does not support Redirection responses.")
+            ResponseType.ClientError -> {
+                val localVarError = localVarResponse as ClientError<*>
+                throw ClientException("Client error : ${localVarError.statusCode} ${localVarError.message.orEmpty()}", localVarError.statusCode, localVarResponse)
+            }
+            ResponseType.ServerError -> {
+                val localVarError = localVarResponse as ServerError<*>
+                throw ServerException("Server error : ${localVarError.statusCode} ${localVarError.message.orEmpty()} ${localVarError.body}", localVarError.statusCode, localVarResponse)
+            }
+        }
+    }
+
+    /**
+     * GET /ops/backup-key
+     * The operator&#39;s backup key
+     * The X25519 public key every app&#39;s recovery-disk backups are sealed to where the operator upgrades apps (&#x60;key&#x60;, &#x60;null&#x60; while none is set).  **Who:** the ops token.
+     * @return ApiResponse<BackupKeyAnswer?>
+     * @throws IllegalStateException If the request is not correctly configured
+     * @throws IOException Rethrows the OkHttp execute method exception
+     */
+    @Suppress("UNCHECKED_CAST")
+    @Throws(IllegalStateException::class, IOException::class)
+    suspend fun opsBackupKeyWithHttpInfo() : ApiResponse<BackupKeyAnswer?> = withContext(Dispatchers.IO) {
+        val localVariableConfig = opsBackupKeyRequestConfig()
+
+        return@withContext request<Unit, BackupKeyAnswer>(
+            localVariableConfig
+        )
+    }
+
+    /**
+     * To obtain the request config of the operation opsBackupKey
+     *
+     * @return RequestConfig
+     */
+    fun opsBackupKeyRequestConfig() : RequestConfig<Unit> {
+        val localVariableBody = null
+        val localVariableQuery: MultiValueMap = mutableMapOf()
+        val localVariableHeaders: MutableMap<String, String> = mutableMapOf()
+        localVariableHeaders["Accept"] = "application/json"
+
+        return RequestConfig(
+            method = RequestMethod.GET,
+            path = "/ops/backup-key",
             query = localVariableQuery,
             headers = localVariableHeaders,
             requiresAuthentication = true,
@@ -1598,6 +1675,150 @@ open class OpsApi(basePath: kotlin.String = defaultBasePath, client: Call.Factor
     }
 
     /**
+     * GET /ops/prices
+     * The price table
+     * In micro-units of the billing currency; &#x60;{}&#x60; until one is set.  **Who:** the ops token.
+     * @return OpsPricesGet200Response
+     * @throws IllegalStateException If the request is not correctly configured
+     * @throws IOException Rethrows the OkHttp execute method exception
+     * @throws UnsupportedOperationException If the API returns an informational or redirection response
+     * @throws ClientException If the API returns a client error response
+     * @throws ServerException If the API returns a server error response
+     */
+    @Suppress("UNCHECKED_CAST")
+    @Throws(IllegalStateException::class, IOException::class, UnsupportedOperationException::class, ClientException::class, ServerException::class)
+    suspend fun opsPricesGet() : OpsPricesGet200Response = withContext(Dispatchers.IO) {
+        val localVarResponse = opsPricesGetWithHttpInfo()
+
+        return@withContext when (localVarResponse.responseType) {
+            ResponseType.Success -> (localVarResponse as Success<*>).data as OpsPricesGet200Response
+            ResponseType.Informational -> throw UnsupportedOperationException("Client does not support Informational responses.")
+            ResponseType.Redirection -> throw UnsupportedOperationException("Client does not support Redirection responses.")
+            ResponseType.ClientError -> {
+                val localVarError = localVarResponse as ClientError<*>
+                throw ClientException("Client error : ${localVarError.statusCode} ${localVarError.message.orEmpty()}", localVarError.statusCode, localVarResponse)
+            }
+            ResponseType.ServerError -> {
+                val localVarError = localVarResponse as ServerError<*>
+                throw ServerException("Server error : ${localVarError.statusCode} ${localVarError.message.orEmpty()} ${localVarError.body}", localVarError.statusCode, localVarResponse)
+            }
+        }
+    }
+
+    /**
+     * GET /ops/prices
+     * The price table
+     * In micro-units of the billing currency; &#x60;{}&#x60; until one is set.  **Who:** the ops token.
+     * @return ApiResponse<OpsPricesGet200Response?>
+     * @throws IllegalStateException If the request is not correctly configured
+     * @throws IOException Rethrows the OkHttp execute method exception
+     */
+    @Suppress("UNCHECKED_CAST")
+    @Throws(IllegalStateException::class, IOException::class)
+    suspend fun opsPricesGetWithHttpInfo() : ApiResponse<OpsPricesGet200Response?> = withContext(Dispatchers.IO) {
+        val localVariableConfig = opsPricesGetRequestConfig()
+
+        return@withContext request<Unit, OpsPricesGet200Response>(
+            localVariableConfig
+        )
+    }
+
+    /**
+     * To obtain the request config of the operation opsPricesGet
+     *
+     * @return RequestConfig
+     */
+    fun opsPricesGetRequestConfig() : RequestConfig<Unit> {
+        val localVariableBody = null
+        val localVariableQuery: MultiValueMap = mutableMapOf()
+        val localVariableHeaders: MutableMap<String, String> = mutableMapOf()
+        localVariableHeaders["Accept"] = "application/json"
+
+        return RequestConfig(
+            method = RequestMethod.GET,
+            path = "/ops/prices",
+            query = localVariableQuery,
+            headers = localVariableHeaders,
+            requiresAuthentication = true,
+            body = localVariableBody
+        )
+    }
+
+    /**
+     * POST /ops/prices
+     * Set the price table
+     * Signed over &#x60;cluster / __set_price_table / { table }&#x60;; &#x60;PRICE_VERSION&#x60; unless &#x60;version&#x60; is the current one plus one (1 for the first), &#x60;BAD_PRICES&#x60; for a zero &#x60;fuelPerVcpuSecond&#x60;.  **Who:** the ops token. **Operator signature:** answers &#x60;428 OPERATOR_SIGNATURE_REQUIRED&#x60; first; send it again with &#x60;operatorProof&#x60;, the operator key&#39;s signature over &#x60;details.message&#x60; and its &#x60;nonce&#x60;.
+     * @param opsPricesSetRequest 
+     * @return kotlinx.serialization.json.JsonObject
+     * @throws IllegalStateException If the request is not correctly configured
+     * @throws IOException Rethrows the OkHttp execute method exception
+     * @throws UnsupportedOperationException If the API returns an informational or redirection response
+     * @throws ClientException If the API returns a client error response
+     * @throws ServerException If the API returns a server error response
+     */
+    @Suppress("UNCHECKED_CAST")
+    @Throws(IllegalStateException::class, IOException::class, UnsupportedOperationException::class, ClientException::class, ServerException::class)
+    suspend fun opsPricesSet(opsPricesSetRequest: OpsPricesSetRequest) : kotlinx.serialization.json.JsonObject = withContext(Dispatchers.IO) {
+        val localVarResponse = opsPricesSetWithHttpInfo(opsPricesSetRequest = opsPricesSetRequest)
+
+        return@withContext when (localVarResponse.responseType) {
+            ResponseType.Success -> (localVarResponse as Success<*>).data as kotlinx.serialization.json.JsonObject
+            ResponseType.Informational -> throw UnsupportedOperationException("Client does not support Informational responses.")
+            ResponseType.Redirection -> throw UnsupportedOperationException("Client does not support Redirection responses.")
+            ResponseType.ClientError -> {
+                val localVarError = localVarResponse as ClientError<*>
+                throw ClientException("Client error : ${localVarError.statusCode} ${localVarError.message.orEmpty()}", localVarError.statusCode, localVarResponse)
+            }
+            ResponseType.ServerError -> {
+                val localVarError = localVarResponse as ServerError<*>
+                throw ServerException("Server error : ${localVarError.statusCode} ${localVarError.message.orEmpty()} ${localVarError.body}", localVarError.statusCode, localVarResponse)
+            }
+        }
+    }
+
+    /**
+     * POST /ops/prices
+     * Set the price table
+     * Signed over &#x60;cluster / __set_price_table / { table }&#x60;; &#x60;PRICE_VERSION&#x60; unless &#x60;version&#x60; is the current one plus one (1 for the first), &#x60;BAD_PRICES&#x60; for a zero &#x60;fuelPerVcpuSecond&#x60;.  **Who:** the ops token. **Operator signature:** answers &#x60;428 OPERATOR_SIGNATURE_REQUIRED&#x60; first; send it again with &#x60;operatorProof&#x60;, the operator key&#39;s signature over &#x60;details.message&#x60; and its &#x60;nonce&#x60;.
+     * @param opsPricesSetRequest 
+     * @return ApiResponse<kotlinx.serialization.json.JsonObject?>
+     * @throws IllegalStateException If the request is not correctly configured
+     * @throws IOException Rethrows the OkHttp execute method exception
+     */
+    @Suppress("UNCHECKED_CAST")
+    @Throws(IllegalStateException::class, IOException::class)
+    suspend fun opsPricesSetWithHttpInfo(opsPricesSetRequest: OpsPricesSetRequest) : ApiResponse<kotlinx.serialization.json.JsonObject?> = withContext(Dispatchers.IO) {
+        val localVariableConfig = opsPricesSetRequestConfig(opsPricesSetRequest = opsPricesSetRequest)
+
+        return@withContext request<OpsPricesSetRequest, kotlinx.serialization.json.JsonObject>(
+            localVariableConfig
+        )
+    }
+
+    /**
+     * To obtain the request config of the operation opsPricesSet
+     *
+     * @param opsPricesSetRequest 
+     * @return RequestConfig
+     */
+    fun opsPricesSetRequestConfig(opsPricesSetRequest: OpsPricesSetRequest) : RequestConfig<OpsPricesSetRequest> {
+        val localVariableBody = opsPricesSetRequest
+        val localVariableQuery: MultiValueMap = mutableMapOf()
+        val localVariableHeaders: MutableMap<String, String> = mutableMapOf()
+        localVariableHeaders["Content-Type"] = "application/json"
+        localVariableHeaders["Accept"] = "application/json"
+
+        return RequestConfig(
+            method = RequestMethod.POST,
+            path = "/ops/prices",
+            query = localVariableQuery,
+            headers = localVariableHeaders,
+            requiresAuthentication = true,
+            body = localVariableBody
+        )
+    }
+
+    /**
      * GET /ops/quotas
      * The quotas
      * The per-account quotas, and the per-payer overrides under &#x60;orgs&#x60;.  **Who:** the ops token.
@@ -1807,6 +2028,158 @@ open class OpsApi(basePath: kotlin.String = defaultBasePath, client: Call.Factor
         return RequestConfig(
             method = RequestMethod.GET,
             path = "/ops/nodes/{id}/receipt-key".replace("{"+"id"+"}", encodeURIComponent(id.toString())),
+            query = localVariableQuery,
+            headers = localVariableHeaders,
+            requiresAuthentication = true,
+            body = localVariableBody
+        )
+    }
+
+    /**
+     * POST /ops/recover
+     * Found the cluster again from its recovery disk
+     * On the founder started with &#x60;--bootstrap --recover-from DIR&#x60;, its system state empty: the newest &#x60;system&#x60; file in &#x60;DIR/operator/&#x60; and the apps&#39; &#x60;code&#x60; files, each with the data key the operator opened from it (hex). Checked as founding from backups is (governance, operator key, no node of the old cluster answering), then the system group is seeded; each app waits for &#x60;POST /ops/apps/{app}/restore { recovery }&#x60;.  **Who:** the ops token.
+     * @param opsRecoverRequest 
+     * @return OpsRecover200Response
+     * @throws IllegalStateException If the request is not correctly configured
+     * @throws IOException Rethrows the OkHttp execute method exception
+     * @throws UnsupportedOperationException If the API returns an informational or redirection response
+     * @throws ClientException If the API returns a client error response
+     * @throws ServerException If the API returns a server error response
+     */
+    @Suppress("UNCHECKED_CAST")
+    @Throws(IllegalStateException::class, IOException::class, UnsupportedOperationException::class, ClientException::class, ServerException::class)
+    suspend fun opsRecover(opsRecoverRequest: OpsRecoverRequest) : OpsRecover200Response = withContext(Dispatchers.IO) {
+        val localVarResponse = opsRecoverWithHttpInfo(opsRecoverRequest = opsRecoverRequest)
+
+        return@withContext when (localVarResponse.responseType) {
+            ResponseType.Success -> (localVarResponse as Success<*>).data as OpsRecover200Response
+            ResponseType.Informational -> throw UnsupportedOperationException("Client does not support Informational responses.")
+            ResponseType.Redirection -> throw UnsupportedOperationException("Client does not support Redirection responses.")
+            ResponseType.ClientError -> {
+                val localVarError = localVarResponse as ClientError<*>
+                throw ClientException("Client error : ${localVarError.statusCode} ${localVarError.message.orEmpty()}", localVarError.statusCode, localVarResponse)
+            }
+            ResponseType.ServerError -> {
+                val localVarError = localVarResponse as ServerError<*>
+                throw ServerException("Server error : ${localVarError.statusCode} ${localVarError.message.orEmpty()} ${localVarError.body}", localVarError.statusCode, localVarResponse)
+            }
+        }
+    }
+
+    /**
+     * POST /ops/recover
+     * Found the cluster again from its recovery disk
+     * On the founder started with &#x60;--bootstrap --recover-from DIR&#x60;, its system state empty: the newest &#x60;system&#x60; file in &#x60;DIR/operator/&#x60; and the apps&#39; &#x60;code&#x60; files, each with the data key the operator opened from it (hex). Checked as founding from backups is (governance, operator key, no node of the old cluster answering), then the system group is seeded; each app waits for &#x60;POST /ops/apps/{app}/restore { recovery }&#x60;.  **Who:** the ops token.
+     * @param opsRecoverRequest 
+     * @return ApiResponse<OpsRecover200Response?>
+     * @throws IllegalStateException If the request is not correctly configured
+     * @throws IOException Rethrows the OkHttp execute method exception
+     */
+    @Suppress("UNCHECKED_CAST")
+    @Throws(IllegalStateException::class, IOException::class)
+    suspend fun opsRecoverWithHttpInfo(opsRecoverRequest: OpsRecoverRequest) : ApiResponse<OpsRecover200Response?> = withContext(Dispatchers.IO) {
+        val localVariableConfig = opsRecoverRequestConfig(opsRecoverRequest = opsRecoverRequest)
+
+        return@withContext request<OpsRecoverRequest, OpsRecover200Response>(
+            localVariableConfig
+        )
+    }
+
+    /**
+     * To obtain the request config of the operation opsRecover
+     *
+     * @param opsRecoverRequest 
+     * @return RequestConfig
+     */
+    fun opsRecoverRequestConfig(opsRecoverRequest: OpsRecoverRequest) : RequestConfig<OpsRecoverRequest> {
+        val localVariableBody = opsRecoverRequest
+        val localVariableQuery: MultiValueMap = mutableMapOf()
+        val localVariableHeaders: MutableMap<String, String> = mutableMapOf()
+        localVariableHeaders["Content-Type"] = "application/json"
+        localVariableHeaders["Accept"] = "application/json"
+
+        return RequestConfig(
+            method = RequestMethod.POST,
+            path = "/ops/recover",
+            query = localVariableQuery,
+            headers = localVariableHeaders,
+            requiresAuthentication = true,
+            body = localVariableBody
+        )
+    }
+
+    /**
+     * GET /ops/recovery-files
+     * The recovery files a node reads
+     * In &#x60;--recover-from&#x60;, else &#x60;--recovery-dir&#x60;, of &#x60;holder&#x60; (&#x60;operator&#x60;, the default; &#x60;org:&lt;id&gt;&#x60;; &#x60;account:&lt;id&gt;&#x60;): each file&#39;s name, its header as signed (JSON text) and the node&#39;s Ed25519 signature over &#x60;calimero.recovery-backup.v1\\0&#x60; and those bytes (hex), for the holder&#39;s device to check before it opens a key with its own.  **Who:** the ops token.
+     * @param holder  (optional)
+     * @return OpsRecoveryFiles200Response
+     * @throws IllegalStateException If the request is not correctly configured
+     * @throws IOException Rethrows the OkHttp execute method exception
+     * @throws UnsupportedOperationException If the API returns an informational or redirection response
+     * @throws ClientException If the API returns a client error response
+     * @throws ServerException If the API returns a server error response
+     */
+    @Suppress("UNCHECKED_CAST")
+    @Throws(IllegalStateException::class, IOException::class, UnsupportedOperationException::class, ClientException::class, ServerException::class)
+    suspend fun opsRecoveryFiles(holder: kotlin.String? = null) : OpsRecoveryFiles200Response = withContext(Dispatchers.IO) {
+        val localVarResponse = opsRecoveryFilesWithHttpInfo(holder = holder)
+
+        return@withContext when (localVarResponse.responseType) {
+            ResponseType.Success -> (localVarResponse as Success<*>).data as OpsRecoveryFiles200Response
+            ResponseType.Informational -> throw UnsupportedOperationException("Client does not support Informational responses.")
+            ResponseType.Redirection -> throw UnsupportedOperationException("Client does not support Redirection responses.")
+            ResponseType.ClientError -> {
+                val localVarError = localVarResponse as ClientError<*>
+                throw ClientException("Client error : ${localVarError.statusCode} ${localVarError.message.orEmpty()}", localVarError.statusCode, localVarResponse)
+            }
+            ResponseType.ServerError -> {
+                val localVarError = localVarResponse as ServerError<*>
+                throw ServerException("Server error : ${localVarError.statusCode} ${localVarError.message.orEmpty()} ${localVarError.body}", localVarError.statusCode, localVarResponse)
+            }
+        }
+    }
+
+    /**
+     * GET /ops/recovery-files
+     * The recovery files a node reads
+     * In &#x60;--recover-from&#x60;, else &#x60;--recovery-dir&#x60;, of &#x60;holder&#x60; (&#x60;operator&#x60;, the default; &#x60;org:&lt;id&gt;&#x60;; &#x60;account:&lt;id&gt;&#x60;): each file&#39;s name, its header as signed (JSON text) and the node&#39;s Ed25519 signature over &#x60;calimero.recovery-backup.v1\\0&#x60; and those bytes (hex), for the holder&#39;s device to check before it opens a key with its own.  **Who:** the ops token.
+     * @param holder  (optional)
+     * @return ApiResponse<OpsRecoveryFiles200Response?>
+     * @throws IllegalStateException If the request is not correctly configured
+     * @throws IOException Rethrows the OkHttp execute method exception
+     */
+    @Suppress("UNCHECKED_CAST")
+    @Throws(IllegalStateException::class, IOException::class)
+    suspend fun opsRecoveryFilesWithHttpInfo(holder: kotlin.String?) : ApiResponse<OpsRecoveryFiles200Response?> = withContext(Dispatchers.IO) {
+        val localVariableConfig = opsRecoveryFilesRequestConfig(holder = holder)
+
+        return@withContext request<Unit, OpsRecoveryFiles200Response>(
+            localVariableConfig
+        )
+    }
+
+    /**
+     * To obtain the request config of the operation opsRecoveryFiles
+     *
+     * @param holder  (optional)
+     * @return RequestConfig
+     */
+    fun opsRecoveryFilesRequestConfig(holder: kotlin.String?) : RequestConfig<Unit> {
+        val localVariableBody = null
+        val localVariableQuery: MultiValueMap = mutableMapOf<kotlin.String, kotlin.collections.List<kotlin.String>>()
+            .apply {
+                if (holder != null) {
+                    put("holder", listOf(holder.toString()))
+                }
+            }
+        val localVariableHeaders: MutableMap<String, String> = mutableMapOf()
+        localVariableHeaders["Accept"] = "application/json"
+
+        return RequestConfig(
+            method = RequestMethod.GET,
+            path = "/ops/recovery-files",
             query = localVariableQuery,
             headers = localVariableHeaders,
             requiresAuthentication = true,
@@ -2196,7 +2569,7 @@ open class OpsApi(basePath: kotlin.String = defaultBasePath, client: Call.Factor
     /**
      * POST /ops/apps/{app}/restore
      * Restore an app from its sealed backup
-     * Signed over &#x60;&lt;app&gt; / __restore_app / { backup, sha256 }&#x60;. The receiving node holds the backup (&#x60;backup&#x60;, else the newest, in &#x60;{backup-dir}/{app}/&#x60;) and seeds the restore; answers once every replica holds the restored state: the rows restored, the backup (&#x60;format&#x60; 0, with &#x60;merod&#x60; and &#x60;release&#x60; &#x60;null&#x60;, for one written before manifests) and the app group&#39;s Raft status.  **Who:** the ops token. **Operator signature:** answers &#x60;428 OPERATOR_SIGNATURE_REQUIRED&#x60; first; send it again with &#x60;operatorProof&#x60;, the operator key&#39;s signature over &#x60;details.message&#x60; and its &#x60;nonce&#x60;.
+     * Signed over &#x60;&lt;app&gt; / __restore_app / { backup, sha256 }&#x60;. The receiving node holds the backup (&#x60;backup&#x60;, else the newest, in &#x60;{backup-dir}/{app}/&#x60;) and seeds the restore; answers once every replica holds the restored state: the rows restored, the backup (&#x60;format&#x60; 0, with &#x60;merod&#x60; and &#x60;release&#x60; &#x60;null&#x60;, for one written before manifests) and the app group&#39;s Raft status. &#x60;recovery&#x60; restores from a recovery-disk file instead (in the app&#39;s holder&#39;s directory under &#x60;--recover-from&#x60;, else &#x60;--recovery-dir&#x60;), opened with the data key its holder opened from it (hex); &#x60;backup&#x60; is then the file&#39;s name and &#x60;sha256&#x60; its body&#39;s.  **Who:** the ops token. **Operator signature:** answers &#x60;428 OPERATOR_SIGNATURE_REQUIRED&#x60; first; send it again with &#x60;operatorProof&#x60;, the operator key&#39;s signature over &#x60;details.message&#x60; and its &#x60;nonce&#x60;.
      * @param app 
      * @param opsRestoreRequest 
      * @return OpsRestore200Response
@@ -2229,7 +2602,7 @@ open class OpsApi(basePath: kotlin.String = defaultBasePath, client: Call.Factor
     /**
      * POST /ops/apps/{app}/restore
      * Restore an app from its sealed backup
-     * Signed over &#x60;&lt;app&gt; / __restore_app / { backup, sha256 }&#x60;. The receiving node holds the backup (&#x60;backup&#x60;, else the newest, in &#x60;{backup-dir}/{app}/&#x60;) and seeds the restore; answers once every replica holds the restored state: the rows restored, the backup (&#x60;format&#x60; 0, with &#x60;merod&#x60; and &#x60;release&#x60; &#x60;null&#x60;, for one written before manifests) and the app group&#39;s Raft status.  **Who:** the ops token. **Operator signature:** answers &#x60;428 OPERATOR_SIGNATURE_REQUIRED&#x60; first; send it again with &#x60;operatorProof&#x60;, the operator key&#39;s signature over &#x60;details.message&#x60; and its &#x60;nonce&#x60;.
+     * Signed over &#x60;&lt;app&gt; / __restore_app / { backup, sha256 }&#x60;. The receiving node holds the backup (&#x60;backup&#x60;, else the newest, in &#x60;{backup-dir}/{app}/&#x60;) and seeds the restore; answers once every replica holds the restored state: the rows restored, the backup (&#x60;format&#x60; 0, with &#x60;merod&#x60; and &#x60;release&#x60; &#x60;null&#x60;, for one written before manifests) and the app group&#39;s Raft status. &#x60;recovery&#x60; restores from a recovery-disk file instead (in the app&#39;s holder&#39;s directory under &#x60;--recover-from&#x60;, else &#x60;--recovery-dir&#x60;), opened with the data key its holder opened from it (hex); &#x60;backup&#x60; is then the file&#39;s name and &#x60;sha256&#x60; its body&#39;s.  **Who:** the ops token. **Operator signature:** answers &#x60;428 OPERATOR_SIGNATURE_REQUIRED&#x60; first; send it again with &#x60;operatorProof&#x60;, the operator key&#39;s signature over &#x60;details.message&#x60; and its &#x60;nonce&#x60;.
      * @param app 
      * @param opsRestoreRequest 
      * @return ApiResponse<OpsRestore200Response?>
@@ -2333,6 +2706,80 @@ open class OpsApi(basePath: kotlin.String = defaultBasePath, client: Call.Factor
         return RequestConfig(
             method = RequestMethod.GET,
             path = "/ops/served-origins",
+            query = localVariableQuery,
+            headers = localVariableHeaders,
+            requiresAuthentication = true,
+            body = localVariableBody
+        )
+    }
+
+    /**
+     * POST /ops/backup-key
+     * Set the operator&#39;s backup key
+     * Signed over &#x60;operator / __set_backup_key / { publicKey }&#x60;, where the operator upgrades apps (else &#x60;403&#x60;). &#x60;publicKey&#x60;: 64 lowercase hex, an X25519 public key whose private half the operator keeps (never a node).  **Who:** the ops token. **Operator signature:** answers &#x60;428 OPERATOR_SIGNATURE_REQUIRED&#x60; first; send it again with &#x60;operatorProof&#x60;, the operator key&#39;s signature over &#x60;details.message&#x60; and its &#x60;nonce&#x60;.
+     * @param opsSetBackupKeyRequest 
+     * @return BackupKeyAnswer
+     * @throws IllegalStateException If the request is not correctly configured
+     * @throws IOException Rethrows the OkHttp execute method exception
+     * @throws UnsupportedOperationException If the API returns an informational or redirection response
+     * @throws ClientException If the API returns a client error response
+     * @throws ServerException If the API returns a server error response
+     */
+    @Suppress("UNCHECKED_CAST")
+    @Throws(IllegalStateException::class, IOException::class, UnsupportedOperationException::class, ClientException::class, ServerException::class)
+    suspend fun opsSetBackupKey(opsSetBackupKeyRequest: OpsSetBackupKeyRequest) : BackupKeyAnswer = withContext(Dispatchers.IO) {
+        val localVarResponse = opsSetBackupKeyWithHttpInfo(opsSetBackupKeyRequest = opsSetBackupKeyRequest)
+
+        return@withContext when (localVarResponse.responseType) {
+            ResponseType.Success -> (localVarResponse as Success<*>).data as BackupKeyAnswer
+            ResponseType.Informational -> throw UnsupportedOperationException("Client does not support Informational responses.")
+            ResponseType.Redirection -> throw UnsupportedOperationException("Client does not support Redirection responses.")
+            ResponseType.ClientError -> {
+                val localVarError = localVarResponse as ClientError<*>
+                throw ClientException("Client error : ${localVarError.statusCode} ${localVarError.message.orEmpty()}", localVarError.statusCode, localVarResponse)
+            }
+            ResponseType.ServerError -> {
+                val localVarError = localVarResponse as ServerError<*>
+                throw ServerException("Server error : ${localVarError.statusCode} ${localVarError.message.orEmpty()} ${localVarError.body}", localVarError.statusCode, localVarResponse)
+            }
+        }
+    }
+
+    /**
+     * POST /ops/backup-key
+     * Set the operator&#39;s backup key
+     * Signed over &#x60;operator / __set_backup_key / { publicKey }&#x60;, where the operator upgrades apps (else &#x60;403&#x60;). &#x60;publicKey&#x60;: 64 lowercase hex, an X25519 public key whose private half the operator keeps (never a node).  **Who:** the ops token. **Operator signature:** answers &#x60;428 OPERATOR_SIGNATURE_REQUIRED&#x60; first; send it again with &#x60;operatorProof&#x60;, the operator key&#39;s signature over &#x60;details.message&#x60; and its &#x60;nonce&#x60;.
+     * @param opsSetBackupKeyRequest 
+     * @return ApiResponse<BackupKeyAnswer?>
+     * @throws IllegalStateException If the request is not correctly configured
+     * @throws IOException Rethrows the OkHttp execute method exception
+     */
+    @Suppress("UNCHECKED_CAST")
+    @Throws(IllegalStateException::class, IOException::class)
+    suspend fun opsSetBackupKeyWithHttpInfo(opsSetBackupKeyRequest: OpsSetBackupKeyRequest) : ApiResponse<BackupKeyAnswer?> = withContext(Dispatchers.IO) {
+        val localVariableConfig = opsSetBackupKeyRequestConfig(opsSetBackupKeyRequest = opsSetBackupKeyRequest)
+
+        return@withContext request<OpsSetBackupKeyRequest, BackupKeyAnswer>(
+            localVariableConfig
+        )
+    }
+
+    /**
+     * To obtain the request config of the operation opsSetBackupKey
+     *
+     * @param opsSetBackupKeyRequest 
+     * @return RequestConfig
+     */
+    fun opsSetBackupKeyRequestConfig(opsSetBackupKeyRequest: OpsSetBackupKeyRequest) : RequestConfig<OpsSetBackupKeyRequest> {
+        val localVariableBody = opsSetBackupKeyRequest
+        val localVariableQuery: MultiValueMap = mutableMapOf()
+        val localVariableHeaders: MutableMap<String, String> = mutableMapOf()
+        localVariableHeaders["Content-Type"] = "application/json"
+        localVariableHeaders["Accept"] = "application/json"
+
+        return RequestConfig(
+            method = RequestMethod.POST,
+            path = "/ops/backup-key",
             query = localVariableQuery,
             headers = localVariableHeaders,
             requiresAuthentication = true,

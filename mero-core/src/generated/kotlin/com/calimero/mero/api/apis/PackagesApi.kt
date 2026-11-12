@@ -38,6 +38,7 @@ import com.calimero.mero.api.models.Package
 import com.calimero.mero.api.models.PackageInstallRequest
 import com.calimero.mero.api.models.PackageList200Response
 import com.calimero.mero.api.models.PackageOrigin
+import com.calimero.mero.api.models.PackagePipelines200ResponseValue
 import com.calimero.mero.api.models.Uninstalled
 
 import kotlinx.serialization.SerialName
@@ -578,6 +579,82 @@ open class PackagesApi(basePath: kotlin.String = defaultBasePath, client: Call.F
         return RequestConfig(
             method = RequestMethod.GET,
             path = "/packages",
+            query = localVariableQuery,
+            headers = localVariableHeaders,
+            requiresAuthentication = true,
+            body = localVariableBody
+        )
+    }
+
+    /**
+     * GET /packages/{package}/{version}/pipelines
+     * A release&#39;s pipelines
+     * The pipelines the release registers, by name: &#x60;hash&#x60;, &#x60;worstCaseFuel&#x60; (a decimal string), the &#x60;modules&#x60; they pin and the canonical &#x60;pipeline&#x60;. &#x60;404&#x60; for a release the caller may not see.  **Who:** signed in (a session or an API key).
+     * @param `package` 
+     * @param version 
+     * @return kotlin.collections.Map<kotlin.String, PackagePipelines200ResponseValue>
+     * @throws IllegalStateException If the request is not correctly configured
+     * @throws IOException Rethrows the OkHttp execute method exception
+     * @throws UnsupportedOperationException If the API returns an informational or redirection response
+     * @throws ClientException If the API returns a client error response
+     * @throws ServerException If the API returns a server error response
+     */
+    @Suppress("UNCHECKED_CAST")
+    @Throws(IllegalStateException::class, IOException::class, UnsupportedOperationException::class, ClientException::class, ServerException::class)
+    suspend fun packagePipelines(`package`: kotlin.String, version: kotlin.String) : kotlin.collections.Map<kotlin.String, PackagePipelines200ResponseValue> = withContext(Dispatchers.IO) {
+        val localVarResponse = packagePipelinesWithHttpInfo(`package` = `package`, version = version)
+
+        return@withContext when (localVarResponse.responseType) {
+            ResponseType.Success -> (localVarResponse as Success<*>).data as kotlin.collections.Map<kotlin.String, PackagePipelines200ResponseValue>
+            ResponseType.Informational -> throw UnsupportedOperationException("Client does not support Informational responses.")
+            ResponseType.Redirection -> throw UnsupportedOperationException("Client does not support Redirection responses.")
+            ResponseType.ClientError -> {
+                val localVarError = localVarResponse as ClientError<*>
+                throw ClientException("Client error : ${localVarError.statusCode} ${localVarError.message.orEmpty()}", localVarError.statusCode, localVarResponse)
+            }
+            ResponseType.ServerError -> {
+                val localVarError = localVarResponse as ServerError<*>
+                throw ServerException("Server error : ${localVarError.statusCode} ${localVarError.message.orEmpty()} ${localVarError.body}", localVarError.statusCode, localVarResponse)
+            }
+        }
+    }
+
+    /**
+     * GET /packages/{package}/{version}/pipelines
+     * A release&#39;s pipelines
+     * The pipelines the release registers, by name: &#x60;hash&#x60;, &#x60;worstCaseFuel&#x60; (a decimal string), the &#x60;modules&#x60; they pin and the canonical &#x60;pipeline&#x60;. &#x60;404&#x60; for a release the caller may not see.  **Who:** signed in (a session or an API key).
+     * @param `package` 
+     * @param version 
+     * @return ApiResponse<kotlin.collections.Map<kotlin.String, PackagePipelines200ResponseValue>?>
+     * @throws IllegalStateException If the request is not correctly configured
+     * @throws IOException Rethrows the OkHttp execute method exception
+     */
+    @Suppress("UNCHECKED_CAST")
+    @Throws(IllegalStateException::class, IOException::class)
+    suspend fun packagePipelinesWithHttpInfo(`package`: kotlin.String, version: kotlin.String) : ApiResponse<kotlin.collections.Map<kotlin.String, PackagePipelines200ResponseValue>?> = withContext(Dispatchers.IO) {
+        val localVariableConfig = packagePipelinesRequestConfig(`package` = `package`, version = version)
+
+        return@withContext request<Unit, kotlin.collections.Map<kotlin.String, PackagePipelines200ResponseValue>>(
+            localVariableConfig
+        )
+    }
+
+    /**
+     * To obtain the request config of the operation packagePipelines
+     *
+     * @param `package` 
+     * @param version 
+     * @return RequestConfig
+     */
+    fun packagePipelinesRequestConfig(`package`: kotlin.String, version: kotlin.String) : RequestConfig<Unit> {
+        val localVariableBody = null
+        val localVariableQuery: MultiValueMap = mutableMapOf()
+        val localVariableHeaders: MutableMap<String, String> = mutableMapOf()
+        localVariableHeaders["Accept"] = "application/json"
+
+        return RequestConfig(
+            method = RequestMethod.GET,
+            path = "/packages/{package}/{version}/pipelines".replace("{"+"package"+"}", encodeURIComponent(`package`.toString())).replace("{"+"version"+"}", encodeURIComponent(version.toString())),
             query = localVariableQuery,
             headers = localVariableHeaders,
             requiresAuthentication = true,

@@ -62,7 +62,7 @@ open class ConsentApi(basePath: kotlin.String = defaultBasePath, client: Call.Fa
     /**
      * POST /consent/requests
      * Ask the account&#39;s owner to approve
-     * From an app&#39;s frontend: a release approval, an upgrade of its instance, or outbound prefixes, approved on the node&#39;s own consent page (&#x60;url&#x60;), which takes the passkey. 64 KiB at most.  **Who:** a passkey session (an API key is refused).
+     * From an app&#39;s frontend: a release approval, an upgrade of its instance, outbound prefixes, a new organization, a new invite or joining with one, leaving an organization, a member&#39;s removal, role, teams or capabilities, an invite&#39;s revocation, an organization&#39;s name, its deletion, defaults or all-apps grants, approved on the node&#39;s own consent page (&#x60;url&#x60;), which takes the passkey. What the approval made (&#x60;orgId&#x60;, an invite&#39;s &#x60;token&#x60;, the &#x60;org&#x60; joined, a rename&#39;s &#x60;{ orgId, name }&#x60;, a deletion&#39;s &#x60;apps&#x60;) is in &#x60;/consent/{request}/result&#x60;&#39;s &#x60;outcome&#x60;. 64 KiB at most.  **Who:** a passkey session (an API key is refused).
      * @param comCalimeroMeroConsentRequest 
      * @return ConsentPageCreate200Response
      * @throws IllegalStateException If the request is not correctly configured
@@ -94,7 +94,7 @@ open class ConsentApi(basePath: kotlin.String = defaultBasePath, client: Call.Fa
     /**
      * POST /consent/requests
      * Ask the account&#39;s owner to approve
-     * From an app&#39;s frontend: a release approval, an upgrade of its instance, or outbound prefixes, approved on the node&#39;s own consent page (&#x60;url&#x60;), which takes the passkey. 64 KiB at most.  **Who:** a passkey session (an API key is refused).
+     * From an app&#39;s frontend: a release approval, an upgrade of its instance, outbound prefixes, a new organization, a new invite or joining with one, leaving an organization, a member&#39;s removal, role, teams or capabilities, an invite&#39;s revocation, an organization&#39;s name, its deletion, defaults or all-apps grants, approved on the node&#39;s own consent page (&#x60;url&#x60;), which takes the passkey. What the approval made (&#x60;orgId&#x60;, an invite&#39;s &#x60;token&#x60;, the &#x60;org&#x60; joined, a rename&#39;s &#x60;{ orgId, name }&#x60;, a deletion&#39;s &#x60;apps&#x60;) is in &#x60;/consent/{request}/result&#x60;&#39;s &#x60;outcome&#x60;. 64 KiB at most.  **Who:** a passkey session (an API key is refused).
      * @param comCalimeroMeroConsentRequest 
      * @return ApiResponse<ConsentPageCreate200Response?>
      * @throws IllegalStateException If the request is not correctly configured
@@ -136,7 +136,7 @@ open class ConsentApi(basePath: kotlin.String = defaultBasePath, client: Call.Fa
     /**
      * GET /consent/{request}/result
      * What became of a consent request
-     * &#x60;decidedAt&#x60; (Unix seconds) is &#x60;null&#x60; while it is pending.  **Who:** a passkey session (an API key is refused).
+     * &#x60;decidedAt&#x60; (Unix seconds) is &#x60;null&#x60; while it is pending. &#x60;outcome&#x60;, once approved, is what the approval made: &#x60;{ orgId }&#x60; for &#x60;createOrg&#x60;, &#x60;{ token }&#x60; for &#x60;createInvite&#x60;, &#x60;{ org }&#x60; for &#x60;acceptInvite&#x60;, &#x60;{ orgId, name }&#x60; for &#x60;renameOrg&#x60;, &#x60;{ apps }&#x60; (the apps deleted) for &#x60;deleteOrg&#x60;; absent for the other kinds.  **Who:** a passkey session (an API key is refused).
      * @param request 
      * @return ConsentPageResult200Response
      * @throws IllegalStateException If the request is not correctly configured
@@ -168,7 +168,7 @@ open class ConsentApi(basePath: kotlin.String = defaultBasePath, client: Call.Fa
     /**
      * GET /consent/{request}/result
      * What became of a consent request
-     * &#x60;decidedAt&#x60; (Unix seconds) is &#x60;null&#x60; while it is pending.  **Who:** a passkey session (an API key is refused).
+     * &#x60;decidedAt&#x60; (Unix seconds) is &#x60;null&#x60; while it is pending. &#x60;outcome&#x60;, once approved, is what the approval made: &#x60;{ orgId }&#x60; for &#x60;createOrg&#x60;, &#x60;{ token }&#x60; for &#x60;createInvite&#x60;, &#x60;{ org }&#x60; for &#x60;acceptInvite&#x60;, &#x60;{ orgId, name }&#x60; for &#x60;renameOrg&#x60;, &#x60;{ apps }&#x60; (the apps deleted) for &#x60;deleteOrg&#x60;; absent for the other kinds.  **Who:** a passkey session (an API key is refused).
      * @param request 
      * @return ApiResponse<ConsentPageResult200Response?>
      * @throws IllegalStateException If the request is not correctly configured

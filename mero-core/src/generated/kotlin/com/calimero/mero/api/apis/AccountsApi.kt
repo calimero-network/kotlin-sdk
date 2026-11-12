@@ -36,6 +36,7 @@ import com.calimero.mero.api.models.AccountRecoveryFinishRequest
 import com.calimero.mero.api.models.AccountRecoveryStart200Response
 import com.calimero.mero.api.models.AccountRecoveryStartRequest
 import com.calimero.mero.api.models.AccountReleaseApprovalRequest
+import com.calimero.mero.api.models.AccountSetBackupKeyRequest
 import com.calimero.mero.api.models.ActivityList200Response
 import com.calimero.mero.api.models.AliasGet200Response
 import com.calimero.mero.api.models.AliasList200Response
@@ -44,6 +45,7 @@ import com.calimero.mero.api.models.ApikeyCreate200Response
 import com.calimero.mero.api.models.ApikeyCreateRequest
 import com.calimero.mero.api.models.ApikeyList200Response
 import com.calimero.mero.api.models.ApprovedReleases
+import com.calimero.mero.api.models.BackupKeyAnswer
 import com.calimero.mero.api.models.ConfirmOnly
 import com.calimero.mero.api.models.Error
 import com.calimero.mero.api.models.LoginBegin200Response
@@ -169,6 +171,76 @@ open class AccountsApi(basePath: kotlin.String = defaultBasePath, client: Call.F
         return RequestConfig(
             method = RequestMethod.GET,
             path = "/auth/apps",
+            query = localVariableQuery,
+            headers = localVariableHeaders,
+            requiresAuthentication = true,
+            body = localVariableBody
+        )
+    }
+
+    /**
+     * GET /auth/backup-key
+     * The account&#39;s backup key
+     * The X25519 public key the recovery-disk backups of the account&#39;s personal apps are sealed to (&#x60;key&#x60;, &#x60;null&#x60; while none is set).  **Who:** an account holder (a passkey session not bound to an app&#39;s frontend).
+     * @return BackupKeyAnswer
+     * @throws IllegalStateException If the request is not correctly configured
+     * @throws IOException Rethrows the OkHttp execute method exception
+     * @throws UnsupportedOperationException If the API returns an informational or redirection response
+     * @throws ClientException If the API returns a client error response
+     * @throws ServerException If the API returns a server error response
+     */
+    @Suppress("UNCHECKED_CAST")
+    @Throws(IllegalStateException::class, IOException::class, UnsupportedOperationException::class, ClientException::class, ServerException::class)
+    suspend fun accountBackupKey() : BackupKeyAnswer = withContext(Dispatchers.IO) {
+        val localVarResponse = accountBackupKeyWithHttpInfo()
+
+        return@withContext when (localVarResponse.responseType) {
+            ResponseType.Success -> (localVarResponse as Success<*>).data as BackupKeyAnswer
+            ResponseType.Informational -> throw UnsupportedOperationException("Client does not support Informational responses.")
+            ResponseType.Redirection -> throw UnsupportedOperationException("Client does not support Redirection responses.")
+            ResponseType.ClientError -> {
+                val localVarError = localVarResponse as ClientError<*>
+                throw ClientException("Client error : ${localVarError.statusCode} ${localVarError.message.orEmpty()}", localVarError.statusCode, localVarResponse)
+            }
+            ResponseType.ServerError -> {
+                val localVarError = localVarResponse as ServerError<*>
+                throw ServerException("Server error : ${localVarError.statusCode} ${localVarError.message.orEmpty()} ${localVarError.body}", localVarError.statusCode, localVarResponse)
+            }
+        }
+    }
+
+    /**
+     * GET /auth/backup-key
+     * The account&#39;s backup key
+     * The X25519 public key the recovery-disk backups of the account&#39;s personal apps are sealed to (&#x60;key&#x60;, &#x60;null&#x60; while none is set).  **Who:** an account holder (a passkey session not bound to an app&#39;s frontend).
+     * @return ApiResponse<BackupKeyAnswer?>
+     * @throws IllegalStateException If the request is not correctly configured
+     * @throws IOException Rethrows the OkHttp execute method exception
+     */
+    @Suppress("UNCHECKED_CAST")
+    @Throws(IllegalStateException::class, IOException::class)
+    suspend fun accountBackupKeyWithHttpInfo() : ApiResponse<BackupKeyAnswer?> = withContext(Dispatchers.IO) {
+        val localVariableConfig = accountBackupKeyRequestConfig()
+
+        return@withContext request<Unit, BackupKeyAnswer>(
+            localVariableConfig
+        )
+    }
+
+    /**
+     * To obtain the request config of the operation accountBackupKey
+     *
+     * @return RequestConfig
+     */
+    fun accountBackupKeyRequestConfig() : RequestConfig<Unit> {
+        val localVariableBody = null
+        val localVariableQuery: MultiValueMap = mutableMapOf()
+        val localVariableHeaders: MutableMap<String, String> = mutableMapOf()
+        localVariableHeaders["Accept"] = "application/json"
+
+        return RequestConfig(
+            method = RequestMethod.GET,
+            path = "/auth/backup-key",
             query = localVariableQuery,
             headers = localVariableHeaders,
             requiresAuthentication = true,
@@ -687,6 +759,80 @@ open class AccountsApi(basePath: kotlin.String = defaultBasePath, client: Call.F
         return RequestConfig(
             method = RequestMethod.POST,
             path = "/auth/releases",
+            query = localVariableQuery,
+            headers = localVariableHeaders,
+            requiresAuthentication = true,
+            body = localVariableBody
+        )
+    }
+
+    /**
+     * POST /auth/backup-key
+     * Set the account&#39;s backup key
+     * &#x60;publicKey&#x60;: 64 lowercase hex, an X25519 public key whose private half the account holder keeps (never a node), for its personal apps, where owners upgrade apps. &#x60;412&#x60; first.  **Who:** an account holder (a passkey session not bound to an app&#39;s frontend). **Step-up:** answers &#x60;412 CONFIRM_REQUIRED&#x60; first; send the same request again with &#x60;confirm&#x60;, a passkey assertion over &#x60;details.challenge&#x60;.
+     * @param accountSetBackupKeyRequest 
+     * @return BackupKeyAnswer
+     * @throws IllegalStateException If the request is not correctly configured
+     * @throws IOException Rethrows the OkHttp execute method exception
+     * @throws UnsupportedOperationException If the API returns an informational or redirection response
+     * @throws ClientException If the API returns a client error response
+     * @throws ServerException If the API returns a server error response
+     */
+    @Suppress("UNCHECKED_CAST")
+    @Throws(IllegalStateException::class, IOException::class, UnsupportedOperationException::class, ClientException::class, ServerException::class)
+    suspend fun accountSetBackupKey(accountSetBackupKeyRequest: AccountSetBackupKeyRequest) : BackupKeyAnswer = withContext(Dispatchers.IO) {
+        val localVarResponse = accountSetBackupKeyWithHttpInfo(accountSetBackupKeyRequest = accountSetBackupKeyRequest)
+
+        return@withContext when (localVarResponse.responseType) {
+            ResponseType.Success -> (localVarResponse as Success<*>).data as BackupKeyAnswer
+            ResponseType.Informational -> throw UnsupportedOperationException("Client does not support Informational responses.")
+            ResponseType.Redirection -> throw UnsupportedOperationException("Client does not support Redirection responses.")
+            ResponseType.ClientError -> {
+                val localVarError = localVarResponse as ClientError<*>
+                throw ClientException("Client error : ${localVarError.statusCode} ${localVarError.message.orEmpty()}", localVarError.statusCode, localVarResponse)
+            }
+            ResponseType.ServerError -> {
+                val localVarError = localVarResponse as ServerError<*>
+                throw ServerException("Server error : ${localVarError.statusCode} ${localVarError.message.orEmpty()} ${localVarError.body}", localVarError.statusCode, localVarResponse)
+            }
+        }
+    }
+
+    /**
+     * POST /auth/backup-key
+     * Set the account&#39;s backup key
+     * &#x60;publicKey&#x60;: 64 lowercase hex, an X25519 public key whose private half the account holder keeps (never a node), for its personal apps, where owners upgrade apps. &#x60;412&#x60; first.  **Who:** an account holder (a passkey session not bound to an app&#39;s frontend). **Step-up:** answers &#x60;412 CONFIRM_REQUIRED&#x60; first; send the same request again with &#x60;confirm&#x60;, a passkey assertion over &#x60;details.challenge&#x60;.
+     * @param accountSetBackupKeyRequest 
+     * @return ApiResponse<BackupKeyAnswer?>
+     * @throws IllegalStateException If the request is not correctly configured
+     * @throws IOException Rethrows the OkHttp execute method exception
+     */
+    @Suppress("UNCHECKED_CAST")
+    @Throws(IllegalStateException::class, IOException::class)
+    suspend fun accountSetBackupKeyWithHttpInfo(accountSetBackupKeyRequest: AccountSetBackupKeyRequest) : ApiResponse<BackupKeyAnswer?> = withContext(Dispatchers.IO) {
+        val localVariableConfig = accountSetBackupKeyRequestConfig(accountSetBackupKeyRequest = accountSetBackupKeyRequest)
+
+        return@withContext request<AccountSetBackupKeyRequest, BackupKeyAnswer>(
+            localVariableConfig
+        )
+    }
+
+    /**
+     * To obtain the request config of the operation accountSetBackupKey
+     *
+     * @param accountSetBackupKeyRequest 
+     * @return RequestConfig
+     */
+    fun accountSetBackupKeyRequestConfig(accountSetBackupKeyRequest: AccountSetBackupKeyRequest) : RequestConfig<AccountSetBackupKeyRequest> {
+        val localVariableBody = accountSetBackupKeyRequest
+        val localVariableQuery: MultiValueMap = mutableMapOf()
+        val localVariableHeaders: MutableMap<String, String> = mutableMapOf()
+        localVariableHeaders["Content-Type"] = "application/json"
+        localVariableHeaders["Accept"] = "application/json"
+
+        return RequestConfig(
+            method = RequestMethod.POST,
+            path = "/auth/backup-key",
             query = localVariableQuery,
             headers = localVariableHeaders,
             requiresAuthentication = true,

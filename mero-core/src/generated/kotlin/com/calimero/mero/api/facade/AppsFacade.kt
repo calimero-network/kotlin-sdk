@@ -36,6 +36,8 @@ class AppsFacade internal constructor(
     /**
      * Set who may reach an app
      *
+     * A package-bound session: only its own package's app, from one of its package's teams to another.
+     *
      * **Who:** a passkey session (an API key is refused).
      *
      * `POST /apps/{app}/access` (`app_access`).
@@ -51,7 +53,7 @@ class AppsFacade internal constructor(
     /**
      * Every replica's receipt-key attestation
      *
-     * Each replica's `/attestation?purpose=receipts` for `nonce` (32 bytes, hex), or why it could not be had (`error`). Any other query parameter is ignored.
+     * Each replica's `/attestation?purpose=receipts` for `nonce` (32 bytes, hex), or why it could not be had (`error`), and `cluster`, the cluster id each quote binds (with the replica's `node`): the documents are fetched in the clear, so their own `cluster` and `node` fields count for nothing. Any other query parameter is ignored.
      *
      * **Who:** whoever the app's access admits (a public app: anyone).
      *
@@ -463,6 +465,42 @@ class AppsFacade internal constructor(
         api(null, null, emptySet()).apps.events(app = app, from = from)
 
     /**
+     * Export a sealed file's key
+     *
+     * The owner and the organization's members. `recipient` is an X25519 public key (64 hex characters); the file's data key comes back wrapped to it, with the file's `segments` (each one's hash, hex) and `ephemeral` public key. The node never answers plaintext or a key in the clear. 30 a minute per account.
+     *
+     * **Who:** signed in (a session or an API key).
+     *
+     * `POST /apps/{app}/files/{id}/export` (`exports_export`).
+     *
+     * @throws com.calimero.mero.CalimeroError the node's refusal, typed by [com.calimero.mero.errorFrom].
+     */
+    suspend fun exportsExport(
+        app: kotlin.String,
+        id: kotlin.String,
+        recipient: kotlin.String,
+    ): ExportsExport200Response =
+        api(null, null, emptySet()).apps.exportsExport(app = app, id = id, exportsExportRequest = ExportsExportRequest(recipient = recipient))
+
+    /**
+     * One segment of a sealed file
+     *
+     * Segment `k` (from 0) of the file's ciphertext, raw; the owner and the organization's members.
+     *
+     * **Who:** signed in (a session or an API key).
+     *
+     * `GET /apps/{app}/files/{id}/segments/{k}` (`exports_segment`).
+     *
+     * @throws com.calimero.mero.CalimeroError the node's refusal, typed by [com.calimero.mero.errorFrom].
+     */
+    suspend fun exportsSegment(
+        app: kotlin.String,
+        id: kotlin.String,
+        k: kotlin.String,
+    ): kotlin.ByteArray =
+        api(null, null, emptySet()).apps.exportsSegment(app = app, id = id, k = k)
+
+    /**
      * One sealed file
      *
      * Its plaintext size and SHA-256, never its key.
@@ -531,6 +569,168 @@ class AppsFacade internal constructor(
         passkey: PasskeyProvider? = null,
     ): Intents200Response =
         api(passkey, null, emptySet()).apps.intents(app = app, intentsRequest = IntentsRequest(method = method, args = args, idempotencyKey = idempotencyKey))
+
+    /**
+     * A pipeline run as server-sent events
+     *
+     * Whoever may read the run. Metadata only; at most 64 streams per app per node, and one lasts an hour.
+     *
+     * **Who:** whoever the app's access admits (a public app: anyone).
+     *
+     * `GET /apps/{app}/pipeline-runs/{run}/events` (`pipeline_events_events`).
+     *
+     * @throws com.calimero.mero.CalimeroError the node's refusal, typed by [com.calimero.mero.errorFrom].
+     */
+    suspend fun pipelineEventsEvents(
+        app: kotlin.String,
+        run: kotlin.String,
+    ): kotlin.String =
+        api(null, null, emptySet()).apps.pipelineEventsEvents(app = app, run = run)
+
+    /**
+     * A pipeline run's receipt
+     *
+     * The owner and the organization's members. For an ended run: the receipt, the answering node and its signature over it, by the node's receipt key.
+     *
+     * **Who:** signed in (a session or an API key).
+     *
+     * `GET /apps/{app}/pipeline-runs/{run}/receipt` (`pipeline_receipt_receipt`).
+     *
+     * @throws com.calimero.mero.CalimeroError the node's refusal, typed by [com.calimero.mero.errorFrom].
+     */
+    suspend fun pipelineReceiptReceipt(
+        app: kotlin.String,
+        run: kotlin.String,
+    ): PipelineReceiptReceipt200Response =
+        api(null, null, emptySet()).apps.pipelineReceiptReceipt(app = app, run = run)
+
+    /**
+     * Cancel a pipeline run
+     *
+     * The owner and the organization's members. Its pending steps end cancelled and its running steps' runs stop.
+     *
+     * **Who:** signed in (a session or an API key).
+     *
+     * `POST /apps/{app}/pipeline-runs/{run}/cancel` (`pipelines_cancel`).
+     *
+     * @throws com.calimero.mero.CalimeroError the node's refusal, typed by [com.calimero.mero.errorFrom].
+     */
+    suspend fun pipelinesCancel(
+        app: kotlin.String,
+        run: kotlin.String,
+    ): PipelinesCancel200Response =
+        api(null, null, emptySet()).apps.pipelinesCancel(app = app, run = run)
+
+    /**
+     * Estimate a pipeline run
+     *
+     * The owner and the organization's members. Runs, fuel and cost of a run of a pipeline the app's release registers, for `inputs` (file ids, only counted) or `counts`, not both; numbers as decimal strings.
+     *
+     * **Who:** signed in (a session or an API key).
+     *
+     * `POST /apps/{app}/pipelines/{name}/estimate` (`pipelines_estimate_run`).
+     *
+     * @throws com.calimero.mero.CalimeroError the node's refusal, typed by [com.calimero.mero.errorFrom].
+     */
+    suspend fun pipelinesEstimateRun(
+        app: kotlin.String,
+        name: kotlin.String,
+        inputs: kotlin.collections.Map<kotlin.String, kotlin.collections.List<kotlin.String>>? = null,
+        counts: kotlin.collections.Map<kotlin.String, kotlin.Long>? = null,
+        params: kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement>? = null,
+    ): PipelinesEstimateRun200Response =
+        api(null, null, emptySet()).apps.pipelinesEstimateRun(app = app, name = name, pipelinesEstimateRunRequest = PipelinesEstimateRunRequest(inputs = inputs, counts = counts, params = params))
+
+    /**
+     * One pipeline run
+     *
+     * Its record: `state`, `version`, `hash`, `computeBundle`, `inputs`, `params`, per-step `status`, `runs`, `outputs`, `result`, `reason` and `cost` (`cost` and `costSoFar` for a run with a cap). Sizes, hashes and results only for callers who may list the app's files.
+     *
+     * **Who:** whoever the app's access admits (a public app: anyone).
+     *
+     * `GET /apps/{app}/pipeline-runs/{run}` (`pipelines_get`).
+     *
+     * @throws com.calimero.mero.CalimeroError the node's refusal, typed by [com.calimero.mero.errorFrom].
+     */
+    suspend fun pipelinesGet(
+        app: kotlin.String,
+        run: kotlin.String,
+    ): kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement> =
+        api(null, null, emptySet()).apps.pipelinesGet(app = app, run = run)
+
+    /**
+     * An app's pipeline runs
+     *
+     * The recent runs, newest first, as `{ runs }`; `limit` 1 to 100. Sizes, hashes and results only for callers who may list the app's files.
+     *
+     * **Who:** whoever the app's access admits (a public app: anyone).
+     *
+     * `GET /apps/{app}/pipeline-runs` (`pipelines_list`).
+     *
+     * @throws com.calimero.mero.CalimeroError the node's refusal, typed by [com.calimero.mero.errorFrom].
+     */
+    suspend fun pipelinesList(
+        app: kotlin.String,
+        limit: kotlin.String? = null,
+    ): kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement> =
+        api(null, null, emptySet()).apps.pipelinesList(app = app, limit = limit)
+
+    /**
+     * Retry a pipeline run
+     *
+     * The owner and the organization's members. A new run of an ended run's pipeline at the same release, hash and compute component, with the same inputs and params, the `limits` applied and `retryOf` set. `202`.
+     *
+     * **Who:** signed in (a session or an API key).
+     *
+     * `POST /apps/{app}/pipeline-runs/{run}/retry` (`pipelines_retry`).
+     *
+     * @throws com.calimero.mero.CalimeroError the node's refusal, typed by [com.calimero.mero.errorFrom].
+     */
+    suspend fun pipelinesRetry(
+        app: kotlin.String,
+        run: kotlin.String,
+        limits: kotlin.collections.Map<kotlin.String, PipelinesRetryRequestLimitsValue>? = null,
+        maxCost: kotlin.String? = null,
+    ): PipelinesRetry200Response =
+        api(null, null, emptySet()).apps.pipelinesRetry(app = app, run = run, pipelinesRetryRequest = PipelinesRetryRequest(limits = limits, maxCost = maxCost))
+
+    /**
+     * Start a pipeline run
+     *
+     * The owner and the organization's members. Starts a run of a pipeline the app's release registers. `maxCost` (micro-units, a decimal string) caps the run, and `worstCase` answers it. `202`.
+     *
+     * **Who:** signed in (a session or an API key).
+     *
+     * `POST /apps/{app}/pipelines/{name}/runs` (`pipelines_start`).
+     *
+     * @throws com.calimero.mero.CalimeroError the node's refusal, typed by [com.calimero.mero.errorFrom].
+     */
+    suspend fun pipelinesStart(
+        app: kotlin.String,
+        name: kotlin.String,
+        inputs: kotlin.collections.Map<kotlin.String, kotlin.collections.List<kotlin.String>>? = null,
+        params: kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement>? = null,
+        maxCost: kotlin.String? = null,
+    ): PipelinesStart200Response =
+        api(null, null, emptySet()).apps.pipelinesStart(app = app, name = name, pipelinesStartRequest = PipelinesStartRequest(inputs = inputs, params = params, maxCost = maxCost))
+
+    /**
+     * Validate a pipeline
+     *
+     * Every problem of `source`; with `package` and `version` (both, a release the caller sees) also against that release's methods, modules and the cluster's pools. Writes nothing.
+     *
+     * **Who:** signed in (a session or an API key).
+     *
+     * `POST /pipelines/validate` (`pipelines_validate`).
+     *
+     * @throws com.calimero.mero.CalimeroError the node's refusal, typed by [com.calimero.mero.errorFrom].
+     */
+    suspend fun pipelinesValidate(
+        source: kotlin.String,
+        `package`: kotlin.String? = null,
+        version: kotlin.String? = null,
+    ): PipelinesValidate200Response =
+        api(null, null, emptySet()).apps.pipelinesValidate(pipelinesValidateRequest = PipelinesValidateRequest(source = source, `package` = `package`, version = version))
 
     /**
      * Who is present
