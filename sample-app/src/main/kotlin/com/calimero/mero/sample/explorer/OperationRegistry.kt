@@ -3,6 +3,7 @@ package com.calimero.mero.sample.explorer
 import com.calimero.mero.AppAccess
 import com.calimero.mero.ConsentRequest
 import com.calimero.mero.ConsentScope
+import com.calimero.mero.ConsentTeamMembership
 import com.calimero.mero.Explicit
 import com.calimero.mero.api.models.OrgRole
 import com.calimero.mero.api.models.TeamJoin
@@ -225,6 +226,37 @@ private val approvalOps =
         },
         op("consentAcceptInvite", "Approvals", "requestConsent", "Ask to accept an invitation on the consent page", OpField.line("token", "Invitation token")) { e, v ->
             e.client.requestConsent(ConsentRequest.AcceptInvite(v.v("token"), SampleViewModel.CONSENT_CALLBACK))
+        },
+        op("consentLeaveOrg", "Approvals", "requestConsent", "Ask to leave an organization on the consent page", org) { e, v ->
+            e.client.requestConsent(ConsentRequest.LeaveOrg(v.v("org"), SampleViewModel.CONSENT_CALLBACK))
+        },
+        op("consentRemoveMember", "Approvals", "requestConsent", "Ask to remove a member on the consent page", org, account) { e, v ->
+            e.client.requestConsent(ConsentRequest.RemoveMember(v.v("org"), v.v("account"), SampleViewModel.CONSENT_CALLBACK))
+        },
+        op("consentSetMemberRole", "Approvals", "requestConsent", "Ask to change a member's role on the consent page", org, account, OpField.line("role", "Role (guest|member|admin|owner)", "member")) { e, v ->
+            e.client.requestConsent(ConsentRequest.SetMemberRole(v.v("org"), v.v("account"), checkNotNull(OrgRole.decode(v.v("role"))), SampleViewModel.CONSENT_CALLBACK))
+        },
+        op("consentSetMemberTeams", "Approvals", "requestConsent", "Ask to add a member to a team on the consent page", org, account, team, OpField.line("role", "Team role (lead|member|readOnly, optional)")) { e, v ->
+            val membership = ConsentTeamMembership(v.v("team"), v.opt("role")?.let { checkNotNull(TeamRole.decode(it)) })
+            e.client.requestConsent(ConsentRequest.SetMemberTeams(v.v("org"), v.v("account"), listOf(membership), SampleViewModel.CONSENT_CALLBACK))
+        },
+        op("consentRemoveMemberTeams", "Approvals", "requestConsent", "Ask to take a member out of a team on the consent page", org, account, team) { e, v ->
+            e.client.requestConsent(ConsentRequest.RemoveMemberTeams(v.v("org"), v.v("account"), listOf(v.v("team")), SampleViewModel.CONSENT_CALLBACK))
+        },
+        op("consentRevokeInvite", "Approvals", "requestConsent", "Ask to revoke an invitation on the consent page", org, OpField.line("inviteKey", "Invitation key")) { e, v ->
+            e.client.requestConsent(ConsentRequest.RevokeInvite(v.v("org"), v.v("inviteKey"), SampleViewModel.CONSENT_CALLBACK))
+        },
+        op("consentRenameOrg", "Approvals", "requestConsent", "Ask to rename an organization on the consent page", org, OpField.line("name", "New name")) { e, v ->
+            e.client.requestConsent(ConsentRequest.RenameOrg(v.v("org"), v.v("name"), SampleViewModel.CONSENT_CALLBACK))
+        },
+        op("consentDeleteOrg", "Approvals", "requestConsent", "Ask to delete an organization on the consent page", org) { e, v ->
+            e.client.requestConsent(ConsentRequest.DeleteOrg(v.v("org"), SampleViewModel.CONSENT_CALLBACK))
+        },
+        op("consentSetCapabilities", "Approvals", "requestConsent", "Ask to set capabilities on the consent page", org, OpField.line("capabilities", "Capability bits", "1"), OpField.line("account", "Account id (blank: a default)"), OpField.line("team", "Team id (optional)")) { e, v ->
+            e.client.requestConsent(ConsentRequest.SetCapabilities(v.v("org"), v.v("capabilities").toLong(), SampleViewModel.CONSENT_CALLBACK, v.opt("account"), v.opt("team")))
+        },
+        op("consentSetAllApps", "Approvals", "requestConsent", "Ask to give a member every app on the consent page", org, account, OpField.line("allApps", "Every app (true|false)", "true")) { e, v ->
+            e.client.requestConsent(ConsentRequest.SetAllApps(v.v("org"), v.v("account"), v.v("allApps").toBooleanStrict(), SampleViewModel.CONSENT_CALLBACK))
         },
         // The outcome prints with a created invitation's token redacted (ConsentOutcome.InviteCreated).
         op("consentResult", "Approvals", "consentResult", "The decision on a consent request", OpField.line("id", "Request id")) { e, v -> e.client.consentResult(v.v("id")) },

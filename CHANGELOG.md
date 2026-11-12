@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+### Consent: organization management kinds (mero-core)
+
+- The ten consent page kinds of calimero-network/core#5018 as `ConsentRequest` cases: `LeaveOrg`,
+  `RemoveMember`, `SetMemberRole`, `SetMemberTeams` (with `ConsentTeamMembership`),
+  `RemoveMemberTeams`, `RevokeInvite`, `RenameOrg`, `DeleteOrg`, `SetCapabilities`, `SetAllApps`.
+- Their `ConsentOutcome`s: `OrgRenamed(orgId, name)`, `OrgDeleted(apps)`, and an object for each kind
+  the node answers nothing for (`LeftOrg`, `MemberRemoved`, …), so an approval of a known kind never
+  reads as `Other`.
+- `ConsentRequest.kind` and `ConsentRequest.subject()`: each case writes its own wire subject.
+
 ### Consent: organizations and invitations, typed outcomes (mero-core, mero-compose)
 
 - `ConsentRequest.CreateOrg`, `ConsentRequest.CreateInvite` and `ConsentRequest.AcceptInvite`:

@@ -16,6 +16,7 @@ import com.calimero.mero.ConsentOutcome
 import com.calimero.mero.ConsentRequest
 import com.calimero.mero.ConsentResult
 import com.calimero.mero.ConsentScope
+import com.calimero.mero.ConsentTeamMembership
 import com.calimero.mero.Deployer
 import com.calimero.mero.DirectoryError
 import com.calimero.mero.DirectoryFailure
@@ -557,6 +558,101 @@ class CalimeroClientTest {
             consentReturnTo("https://x.apps.calimero.network", "../evil")
             fail("a path is not a version")
         } catch (_: IllegalArgumentException) {
+        }
+    }
+
+    @Test
+    fun `asks for the organization management kinds and types their outcomes`() =
+        runBlocking {
+            val cluster =
+                Cluster({ head, _ ->
+                    when (path(head)) {
+                        "/consent/requests" -> json(200, """{"requestId":"r9","url":"https://node0.example/consent/r9","expiresAt":9,"code":"${confirmationCode("r9")}"}""")
+                        "/consent/ren/result" -> json(200, """{"requestId":"ren","kind":"renameOrg","status":"approved","decidedAt":1,"outcome":{"orgId":"org-1","name":"Acme Labs"}}""")
+                        "/consent/del/result" -> json(200, """{"requestId":"del","kind":"deleteOrg","status":"approved","decidedAt":1,"outcome":{"apps":["a1","a2"]}}""")
+                        "/consent/left/result" -> json(200, """{"requestId":"left","kind":"leaveOrg","status":"approved","decidedAt":1}""")
+                        else -> refused(404, "NOT_FOUND")
+                    }
+                })
+            val client = cluster.client()
+            val to = "https://app.example/consent"
+            val requests =
+                listOf(
+                    ConsentRequest.LeaveOrg("org-1", to),
+                    ConsentRequest.RemoveMember("org-1", "acc-2", to),
+                    ConsentRequest.SetMemberRole("org-1", "acc-2", ApiOrgRole.OWNER, to),
+                    ConsentRequest.SetMemberTeams(
+                        "org-1",
+                        "acc-2",
+                        listOf(ConsentTeamMembership("t1", ApiTeamRole.READ_ONLY, 4), ConsentTeamMembership("t2")),
+                        to,
+                    ),
+                    ConsentRequest.RemoveMemberTeams("org-1", "acc-2", listOf("t1", "t2"), to),
+                    ConsentRequest.RevokeInvite("org-1", "key-1", to),
+                    ConsentRequest.RenameOrg("org-1", "Acme Labs", to),
+                    ConsentRequest.DeleteOrg("org-1", to),
+                    ConsentRequest.SetCapabilities("org-1", 3, to, account = "acc-2", team = "t1"),
+                    ConsentRequest.SetCapabilities("org-1", 0, to),
+                    ConsentRequest.SetAllApps("org-1", "acc-2", true, to),
+                )
+            for (request in requests) assertEquals("r9", client.requestConsent(request).requestId)
+            val subject = """"returnTo":"https://app.example/consent""""
+            assertEquals(
+                listOf(
+                    """{"kind":"leaveOrg","subject":{"org":"org-1"},$subject}""",
+                    """{"kind":"removeMember","subject":{"org":"org-1","account":"acc-2"},$subject}""",
+                    """{"kind":"setMemberRole","subject":{"org":"org-1","account":"acc-2","role":"owner"},$subject}""",
+                    """{"kind":"setMemberTeams","subject":{"org":"org-1","account":"acc-2","teams":[{"team":"t1","role":"readOnly","capabilities":4},{"team":"t2"}]},$subject}""",
+                    """{"kind":"removeMemberTeams","subject":{"org":"org-1","account":"acc-2","teams":["t1","t2"]},$subject}""",
+                    """{"kind":"revokeInvite","subject":{"org":"org-1","inviteKey":"key-1"},$subject}""",
+                    """{"kind":"renameOrg","subject":{"org":"org-1","name":"Acme Labs"},$subject}""",
+                    """{"kind":"deleteOrg","subject":{"org":"org-1"},$subject}""",
+                    """{"kind":"setCapabilities","subject":{"org":"org-1","account":"acc-2","team":"t1","capabilities":3},$subject}""",
+                    """{"kind":"setCapabilities","subject":{"org":"org-1","capabilities":0},$subject}""",
+                    """{"kind":"setAllApps","subject":{"org":"org-1","account":"acc-2","allApps":true},$subject}""",
+                ),
+                cluster.nodes[0].requests.map { Json.parseToJsonElement(it.second).toString() },
+            )
+            try {
+                ConsentRequest.SetCapabilities("org-1", -1, to)
+                fail("negative capabilities are refused")
+            } catch (_: IllegalArgumentException) {
+            }
+
+            assertEquals(ConsentOutcome.OrgRenamed("org-1", "Acme Labs"), client.consentResult("ren").outcome)
+            assertEquals(ConsentOutcome.OrgDeleted(listOf("a1", "a2")), client.consentResult("del").outcome)
+            assertEquals(ConsentOutcome.LeftOrg, client.consentResult("left").outcome)
+        }
+
+    @Test
+    fun `types every organization kind's outcome`() {
+        fun outcome(raw: String) = Json.parseToJsonElement(raw).jsonObject
+        val plain =
+            mapOf(
+                "leaveOrg" to ConsentOutcome.LeftOrg,
+                "removeMember" to ConsentOutcome.MemberRemoved,
+                "setMemberRole" to ConsentOutcome.MemberRoleSet,
+                "setMemberTeams" to ConsentOutcome.MemberTeamsSet,
+                "removeMemberTeams" to ConsentOutcome.MemberTeamsRemoved,
+                "revokeInvite" to ConsentOutcome.InviteRevoked,
+                "setCapabilities" to ConsentOutcome.CapabilitiesSet,
+                "setAllApps" to ConsentOutcome.AllAppsSet,
+            )
+        for ((kind, expected) in plain) {
+            assertEquals(expected, ConsentOutcome.of(kind, null))
+            assertEquals(kind, expected.kind)
+        }
+        // An outcome missing its fields, or of the wrong shape, stays raw.
+        assertEquals(ConsentOutcome.Other("renameOrg", outcome("""{"orgId":"o"}""")), ConsentOutcome.of("renameOrg", outcome("""{"orgId":"o"}""")))
+        assertEquals(ConsentOutcome.Other("deleteOrg", outcome("""{"apps":[1]}""")), ConsentOutcome.of("deleteOrg", outcome("""{"apps":[1]}""")))
+        assertEquals(ConsentOutcome.OrgDeleted(emptyList()), ConsentOutcome.of("deleteOrg", outcome("""{"apps":[]}""")))
+        // Both outcomes read back as sent.
+        for (text in listOf(
+            """{"requestId":"r","kind":"renameOrg","status":"approved","decidedAt":3,"outcome":{"orgId":"o","name":"n"}}""",
+            """{"requestId":"r","kind":"deleteOrg","status":"approved","decidedAt":3,"outcome":{"apps":["a"]}}""",
+        )) {
+            val result = Json.decodeFromString(ConsentResult.serializer(), text)
+            assertEquals(Json.parseToJsonElement(text), Json.parseToJsonElement(Json.encodeToString(ConsentResult.serializer(), result)))
         }
     }
 

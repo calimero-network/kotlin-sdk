@@ -3,13 +3,17 @@ package com.calimero.mero
 import com.calimero.mero.api.models.ConsentPageResult200Response
 import com.calimero.mero.tee.compareReleaseVersions
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import java.net.URLEncoder
+import com.calimero.mero.api.models.OrgRole as ApiOrgRole
+import com.calimero.mero.api.models.TeamRole as ApiTeamRole
 
 // Approvals: the scope reports, release deadlines, publishers, and the node's consent page
 // (mero-js `cloud-v2/approvals.ts`). Approvals happen only on the node's consent page:
@@ -264,14 +268,30 @@ sealed interface ConsentRequest {
         val version: String,
         override val returnTo: String,
         val withdraw: Boolean = false,
-    ) : ConsentRequest
+    ) : ConsentRequest {
+        override val kind: String get() = "release"
+
+        override fun subject(): JsonObject =
+            buildJsonObject {
+                put("version", version)
+                if (withdraw) put("withdraw", true)
+            }
+    }
 
     /** Upgrade [app] to [toVersion] of its package. */
     data class Upgrade(
         val app: String,
         val toVersion: String,
         override val returnTo: String,
-    ) : ConsentRequest
+    ) : ConsentRequest {
+        override val kind: String get() = "upgrade"
+
+        override fun subject(): JsonObject =
+            buildJsonObject {
+                put("app", app)
+                put("toVersion", toVersion)
+            }
+    }
 
     /** Approve outbound URL prefixes for [scope]; [pkg] a package-bound session's own when null, [prefixes] every one the latest release declares when null. */
     data class Outbound(
@@ -279,13 +299,26 @@ sealed interface ConsentRequest {
         override val returnTo: String,
         val pkg: String? = null,
         val prefixes: List<String>? = null,
-    ) : ConsentRequest
+    ) : ConsentRequest {
+        override val kind: String get() = "outbound"
+
+        override fun subject(): JsonObject =
+            buildJsonObject {
+                pkg?.let { put("package", it) }
+                prefixes?.let { put("prefixes", strings(it)) }
+            }
+    }
 
     /** Create an organization named [name], owned by the account; the outcome is [ConsentOutcome.OrgCreated]. */
     data class CreateOrg(
         val name: String,
         override val returnTo: String,
-    ) : ConsentRequest
+    ) : ConsentRequest {
+        override val kind: String get() = "createOrg"
+
+        override fun subject(): JsonObject =
+            buildJsonObject { put("name", name) }
+    }
 
     /**
      * Mint an invitation to [org] as [role] (guest, member or admin; never owner), on [teams], valid
@@ -295,15 +328,27 @@ sealed interface ConsentRequest {
      */
     data class CreateInvite(
         val org: String,
-        val role: com.calimero.mero.api.models.OrgRole,
+        val role: ApiOrgRole,
         override val returnTo: String,
         val teams: List<String>? = null,
         val ttlSecs: Long? = null,
         val uses: Long? = null,
         val allApps: Boolean? = null,
     ) : ConsentRequest {
+        override val kind: String get() = "createInvite"
+
+        override fun subject(): JsonObject =
+            buildJsonObject {
+                put("org", org)
+                put("role", role.value)
+                teams?.let { put("teams", strings(it)) }
+                ttlSecs?.let { put("ttlSecs", it) }
+                uses?.let { put("uses", it) }
+                allApps?.let { put("allApps", it) }
+            }
+
         init {
-            require(role != com.calimero.mero.api.models.OrgRole.OWNER) { "an invitation is for a guest, a member or an admin" }
+            require(role != ApiOrgRole.OWNER) { "an invitation is for a guest, a member or an admin" }
             require(ttlSecs == null || ttlSecs >= 0) { "ttlSecs is not negative" }
             require(uses == null || uses >= 0) { "uses is not negative" }
         }
@@ -317,6 +362,11 @@ sealed interface ConsentRequest {
         val token: String,
         override val returnTo: String,
     ) : ConsentRequest {
+        override val kind: String get() = "acceptInvite"
+
+        override fun subject(): JsonObject =
+            buildJsonObject { put("token", token) }
+
         override fun equals(other: Any?): Boolean = other is AcceptInvite && other.token == token && other.returnTo == returnTo
 
         override fun hashCode(): Int = 31 * token.hashCode() + returnTo.hashCode()
@@ -324,68 +374,202 @@ sealed interface ConsentRequest {
         override fun toString(): String = "AcceptInvite(token=<redacted>, returnTo=$returnTo)"
     }
 
-    /** The wire body. */
-    fun toJson(): JsonObject =
-        when (this) {
-            is Release ->
-                buildJsonObject {
-                    put("kind", "release")
-                    put("scope", scope.toJson())
-                    put(
-                        "subject",
-                        buildJsonObject {
-                            put("version", version)
-                            if (withdraw) put("withdraw", true)
-                        },
-                    )
-                    put("returnTo", returnTo)
-                }
-            is Upgrade ->
-                buildJsonObject {
-                    put("kind", "upgrade")
-                    put(
-                        "subject",
-                        buildJsonObject {
-                            put("app", app)
-                            put("toVersion", toVersion)
-                        },
-                    )
-                    put("returnTo", returnTo)
-                }
-            is Outbound ->
-                buildJsonObject {
-                    put("kind", "outbound")
-                    put("scope", scope.toJson())
-                    put(
-                        "subject",
-                        buildJsonObject {
-                            pkg?.let { put("package", it) }
-                            prefixes?.let { list -> put("prefixes", kotlinx.serialization.json.JsonArray(list.map { kotlinx.serialization.json.JsonPrimitive(it) })) }
-                        },
-                    )
-                    put("returnTo", returnTo)
-                }
-            is CreateOrg -> body("createOrg") { put("name", name) }
-            is CreateInvite ->
-                body("createInvite") {
-                    put("org", org)
-                    put("role", role.value)
-                    teams?.let { list -> put("teams", kotlinx.serialization.json.JsonArray(list.map { kotlinx.serialization.json.JsonPrimitive(it) })) }
-                    ttlSecs?.let { put("ttlSecs", it) }
-                    uses?.let { put("uses", it) }
-                    allApps?.let { put("allApps", it) }
-                }
-            is AcceptInvite -> body("acceptInvite") { put("token", token) }
-        }
+    /** Leave [org] (the account's own membership). */
+    data class LeaveOrg(
+        val org: String,
+        override val returnTo: String,
+    ) : ConsentRequest {
+        override val kind: String get() = "leaveOrg"
 
-    private fun body(
-        kind: String,
-        subject: kotlinx.serialization.json.JsonObjectBuilder.() -> Unit,
-    ): JsonObject =
+        override fun subject(): JsonObject =
+            buildJsonObject { put("org", org) }
+    }
+
+    /** Remove [account] from [org]. */
+    data class RemoveMember(
+        val org: String,
+        val account: String,
+        override val returnTo: String,
+    ) : ConsentRequest {
+        override val kind: String get() = "removeMember"
+
+        override fun subject(): JsonObject =
+            buildJsonObject {
+                put("org", org)
+                put("account", account)
+            }
+    }
+
+    /** Make [account] a [role] of [org]; `owner` hands ownership over (the page flags it). */
+    data class SetMemberRole(
+        val org: String,
+        val account: String,
+        val role: ApiOrgRole,
+        override val returnTo: String,
+    ) : ConsentRequest {
+        override val kind: String get() = "setMemberRole"
+
+        override fun subject(): JsonObject =
+            buildJsonObject {
+                put("org", org)
+                put("account", account)
+                put("role", role.value)
+            }
+    }
+
+    /** Add [account] to [teams] of [org], or change its role or capabilities there. */
+    data class SetMemberTeams(
+        val org: String,
+        val account: String,
+        val teams: List<ConsentTeamMembership>,
+        override val returnTo: String,
+    ) : ConsentRequest {
+        override val kind: String get() = "setMemberTeams"
+
+        override fun subject(): JsonObject =
+            buildJsonObject {
+                put("org", org)
+                put("account", account)
+                put("teams", JsonArray(teams.map { it.toJson() }))
+            }
+    }
+
+    /** Take [account] out of [teams] of [org]. */
+    data class RemoveMemberTeams(
+        val org: String,
+        val account: String,
+        val teams: List<String>,
+        override val returnTo: String,
+    ) : ConsentRequest {
+        override val kind: String get() = "removeMemberTeams"
+
+        override fun subject(): JsonObject =
+            buildJsonObject {
+                put("org", org)
+                put("account", account)
+                put("teams", strings(teams))
+            }
+    }
+
+    /** Revoke the invitation [inviteKey] of [org] (its key, not its token). */
+    data class RevokeInvite(
+        val org: String,
+        val inviteKey: String,
+        override val returnTo: String,
+    ) : ConsentRequest {
+        override val kind: String get() = "revokeInvite"
+
+        override fun subject(): JsonObject =
+            buildJsonObject {
+                put("org", org)
+                put("inviteKey", inviteKey)
+            }
+    }
+
+    /** Rename [org] to [name]; the outcome is [ConsentOutcome.OrgRenamed]. */
+    data class RenameOrg(
+        val org: String,
+        val name: String,
+        override val returnTo: String,
+    ) : ConsentRequest {
+        override val kind: String get() = "renameOrg"
+
+        override fun subject(): JsonObject =
+            buildJsonObject {
+                put("org", org)
+                put("name", name)
+            }
+    }
+
+    /** Delete [org] and what it holds; the outcome is [ConsentOutcome.OrgDeleted]. */
+    data class DeleteOrg(
+        val org: String,
+        override val returnTo: String,
+    ) : ConsentRequest {
+        override val kind: String get() = "deleteOrg"
+
+        override fun subject(): JsonObject =
+            buildJsonObject { put("org", org) }
+    }
+
+    /**
+     * Set [capabilities] ([OrgCapabilities] bits): [account]'s in [org] (on [team] when given), or
+     * without [account] the default of [team] or of the organization.
+     */
+    data class SetCapabilities(
+        val org: String,
+        val capabilities: Long,
+        override val returnTo: String,
+        val account: String? = null,
+        val team: String? = null,
+    ) : ConsentRequest {
+        override val kind: String get() = "setCapabilities"
+
+        override fun subject(): JsonObject =
+            buildJsonObject {
+                put("org", org)
+                account?.let { put("account", it) }
+                team?.let { put("team", it) }
+                put("capabilities", capabilities)
+            }
+
+        init {
+            require(capabilities >= 0) { "capabilities is not negative" }
+        }
+    }
+
+    /** Give [account] every app of [org] ([allApps]), or only those of its teams. */
+    data class SetAllApps(
+        val org: String,
+        val account: String,
+        val allApps: Boolean,
+        override val returnTo: String,
+    ) : ConsentRequest {
+        override val kind: String get() = "setAllApps"
+
+        override fun subject(): JsonObject =
+            buildJsonObject {
+                put("org", org)
+                put("account", account)
+                put("allApps", allApps)
+            }
+    }
+
+    /** The request's `kind` on the wire. */
+    val kind: String
+
+    /** The request's `subject` on the wire. */
+    fun subject(): JsonObject
+
+    /** The wire body: `kind`, the `scope` of a release or outbound request, `subject` and `returnTo`. */
+    fun toJson(): JsonObject =
         buildJsonObject {
             put("kind", kind)
-            put("subject", buildJsonObject(subject))
+            when (this@ConsentRequest) {
+                is Release -> put("scope", scope.toJson())
+                is Outbound -> put("scope", scope.toJson())
+                else -> Unit
+            }
+            put("subject", subject())
             put("returnTo", returnTo)
+        }
+}
+
+/** One team of [ConsentRequest.SetMemberTeams]: [team], with the member's [role] and [capabilities] there (the node's defaults when null). */
+data class ConsentTeamMembership(
+    val team: String,
+    val role: ApiTeamRole? = null,
+    val capabilities: Long? = null,
+) {
+    init {
+        require(capabilities == null || capabilities >= 0) { "capabilities is not negative" }
+    }
+
+    internal fun toJson(): JsonObject =
+        buildJsonObject {
+            put("team", team)
+            role?.let { put("role", it.value) }
+            capabilities?.let { put("capabilities", it) }
         }
 }
 
@@ -487,6 +671,53 @@ sealed interface ConsentOutcome {
         override val kind: String = "acceptInvite"
     }
 
+    data object LeftOrg : ConsentOutcome {
+        override val kind: String = "leaveOrg"
+    }
+
+    data object MemberRemoved : ConsentOutcome {
+        override val kind: String = "removeMember"
+    }
+
+    data object MemberRoleSet : ConsentOutcome {
+        override val kind: String = "setMemberRole"
+    }
+
+    data object MemberTeamsSet : ConsentOutcome {
+        override val kind: String = "setMemberTeams"
+    }
+
+    data object MemberTeamsRemoved : ConsentOutcome {
+        override val kind: String = "removeMemberTeams"
+    }
+
+    data object InviteRevoked : ConsentOutcome {
+        override val kind: String = "revokeInvite"
+    }
+
+    data object CapabilitiesSet : ConsentOutcome {
+        override val kind: String = "setCapabilities"
+    }
+
+    data object AllAppsSet : ConsentOutcome {
+        override val kind: String = "setAllApps"
+    }
+
+    /** [ConsentRequest.RenameOrg]: the organization and its new name. */
+    data class OrgRenamed(
+        val orgId: String,
+        val name: String,
+    ) : ConsentOutcome {
+        override val kind: String = "renameOrg"
+    }
+
+    /** [ConsentRequest.DeleteOrg]: the apps it deleted with the organization. */
+    data class OrgDeleted(
+        val apps: List<String>,
+    ) : ConsentOutcome {
+        override val kind: String = "deleteOrg"
+    }
+
     /** A kind this SDK does not know (a newer node), or a known kind whose `outcome` lacks its field. */
     data class Other(
         override val kind: String,
@@ -510,6 +741,20 @@ sealed interface ConsentOutcome {
                 "createOrg" -> field("orgId")?.let(::OrgCreated)
                 "createInvite" -> field("token")?.let(::InviteCreated)
                 "acceptInvite" -> field("org")?.let(::InviteAccepted)
+                "leaveOrg" -> LeftOrg
+                "removeMember" -> MemberRemoved
+                "setMemberRole" -> MemberRoleSet
+                "setMemberTeams" -> MemberTeamsSet
+                "removeMemberTeams" -> MemberTeamsRemoved
+                "revokeInvite" -> InviteRevoked
+                "setCapabilities" -> CapabilitiesSet
+                "setAllApps" -> AllAppsSet
+                "renameOrg" -> {
+                    val orgId = field("orgId")
+                    val name = field("name")
+                    if (orgId != null && name != null) OrgRenamed(orgId, name) else null
+                }
+                "deleteOrg" -> strings(outcome?.get("apps"))?.let(::OrgDeleted)
                 else -> null
             } ?: Other(kind, outcome)
         }
@@ -558,6 +803,16 @@ data class ConsentResult(
     }
 }
 
+/** [values] as a JSON array of strings. */
+private fun strings(values: List<String>): JsonArray = JsonArray(values.map { JsonPrimitive(it) })
+
+/** Every element of [element] when it is an array of strings, else null. */
+private fun strings(element: JsonElement?): List<String>? {
+    val array = element as? JsonArray ?: return null
+    val out = array.map { (it as? JsonPrimitive)?.takeIf { p -> p.isString }?.content }
+    return if (out.any { it == null }) null else out.filterNotNull()
+}
+
 /** Reads [ConsentResult.fromJson]; writes the wire shape back (`outcome` with its fields). */
 internal object ConsentResultSerializer : kotlinx.serialization.KSerializer<ConsentResult> {
     override val descriptor: kotlinx.serialization.descriptors.SerialDescriptor = JsonObject.serializer().descriptor
@@ -576,6 +831,15 @@ internal object ConsentResultSerializer : kotlinx.serialization.KSerializer<Cons
                     is ConsentOutcome.OrgCreated -> put("outcome", buildJsonObject { put("orgId", o.orgId) })
                     is ConsentOutcome.InviteCreated -> put("outcome", buildJsonObject { put("token", o.token) })
                     is ConsentOutcome.InviteAccepted -> put("outcome", buildJsonObject { put("org", o.org) })
+                    is ConsentOutcome.OrgRenamed ->
+                        put(
+                            "outcome",
+                            buildJsonObject {
+                                put("orgId", o.orgId)
+                                put("name", o.name)
+                            },
+                        )
+                    is ConsentOutcome.OrgDeleted -> put("outcome", buildJsonObject { put("apps", JsonArray(o.apps.map { JsonPrimitive(it) })) })
                     is ConsentOutcome.Other -> o.raw?.let { put("outcome", it) }
                     else -> Unit
                 }
