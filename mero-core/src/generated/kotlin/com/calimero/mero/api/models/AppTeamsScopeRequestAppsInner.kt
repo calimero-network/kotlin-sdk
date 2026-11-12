@@ -37,6 +37,7 @@ import kotlinx.serialization.Contextual
  * @param instances 
  * @param join 
  * @param keep 
+ * @param childTeams 
  */
 @Serializable
 
@@ -55,7 +56,10 @@ data class AppTeamsScopeRequestAppsInner (
     val join: TeamJoin? = null,
 
     @SerialName(value = "keep")
-    val keep: kotlin.collections.List<kotlin.String>? = null
+    val keep: kotlin.collections.List<kotlin.String>? = null,
+
+    @SerialName(value = "childTeams")
+    val childTeams: kotlin.Boolean? = null
 
 ) {
 
