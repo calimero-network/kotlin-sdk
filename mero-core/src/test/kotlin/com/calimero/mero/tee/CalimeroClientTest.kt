@@ -311,7 +311,8 @@ class CalimeroClientTest {
             val cluster =
                 Cluster({ _, body ->
                     if (body.contains("confirm")) {
-                        json(200, "{}")
+                        // core 92ac297a1: deleting an organization answers the apps it removed.
+                        json(200, """{"apps":[]}""")
                     } else {
                         refused(412, "CONFIRM_REQUIRED", """{"challengeId":"c1","challenge":"AQID","rpId":"localhost"}""")
                     }
@@ -665,7 +666,7 @@ class CalimeroClientTest {
                             } else {
                                 stepUp("""{"key":"org:o1","deployer":{"org":"o1"},"grant":{"grantedAt":1,"grantedBy":"acc-1"}}""")(head, body)
                             }
-                        "/apps" -> json(200, """{"appId":"a1","contextId":"c1","group":1,"replicas":[0]}""")
+                        "/apps" -> json(200, """{"appId":"a1","contextId":"c1","group":1,"replicas":[0],"compute":false}""")
                         "/deployers/org%3Ao1" -> stepUp("""{"key":"org:o1"}""")(head, body)
                         else ->
                             stepUp(
@@ -808,7 +809,11 @@ class CalimeroClientTest {
                                 """{"package":"com.x","origins":[{"package":"com.x","origin":"https://x.example","rpId":"x.example","addedBy":"acc-1",""" +
                                     """"addedAt":"2026-11-05T10:00:00Z","served":false}]}""",
                             )
-                        "POST" -> stepUp("""{"package":"com.x","origin":"https://x.example","rpId":"x.example","addedBy":"acc-1","addedAt":"2026-11-05T10:00:00Z"}""")(head, body)
+                        "POST" ->
+                            stepUp(
+                                """{"package":"com.x","origin":"https://x.example","rpId":"x.example","addedBy":"acc-1",""" +
+                                    """"addedAt":"2026-11-05T10:00:00Z","served":false}""",
+                            )(head, body)
                         else -> stepUp("""{"package":"com.x","origin":"https://x.example","removed":true}""")(head, body)
                     }
                 })
@@ -822,18 +827,18 @@ class CalimeroClientTest {
                     .rpId,
             )
             assertEquals("/package-origins/com.x", path(cluster.nodes[0].requests[0].first))
+            // core 92ac297a1: the add answers the typed `PackageOrigin`, the remove `{ package, origin, removed }`.
             assertEquals(
                 "2026-11-05T10:00:00Z",
                 client.packages
-                    .originsAdd(`package` = "com.x", origin = "https://x.example", rpId = "x.example", passkey = passkey)["addedAt"]!!
-                    .jsonPrimitive.content,
+                    .originsAdd(`package` = "com.x", origin = "https://x.example", rpId = "x.example", passkey = passkey)
+                    .addedAt,
             )
             assertEquals("x.example", sent(cluster, 2)["rpId"]!!.jsonPrimitive.content)
             assertTrue(
                 client.packages
-                    .originsRemove(`package` = "com.x", origin = "https://x.example", passkey = passkey)["removed"]!!
-                    .jsonPrimitive.content
-                    .toBoolean(),
+                    .originsRemove(`package` = "com.x", origin = "https://x.example", passkey = passkey)
+                    .removed,
             )
             assertEquals("https://x.example", sent(cluster, 4)["origin"]!!.jsonPrimitive.content)
         }
@@ -880,7 +885,7 @@ class CalimeroClientTest {
                     ?.pending
                     ?.account,
             )
-            assertEquals(JsonArray(listOf(JsonPrimitive("acc-1"))), client.orgs.recoveryFinish(org = "o1", passkey = passkey).previousOwners)
+            assertEquals(listOf("acc-1"), client.orgs.recoveryFinish(org = "o1", passkey = passkey).previousOwners)
             client.orgs.recoverySet(org = "o1", publicKey = Explicit(null), passkey = passkey)
             assertEquals(JsonNull, sent(cluster, 7)["publicKey"])
             client.orgs.recoveryCancel(org = "o1", passkey = passkey)
@@ -981,7 +986,8 @@ class CalimeroClientTest {
             val cluster =
                 Cluster({ _, body ->
                     if (body.contains("\"operatorProof\"")) {
-                        json(200, "{}")
+                        // core 92ac297a1: lifting a deadline answers the deadlines left.
+                        json(200, """{"deadlines":[]}""")
                     } else {
                         refused(
                             428,
