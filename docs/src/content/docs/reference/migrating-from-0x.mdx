@@ -35,7 +35,7 @@ Apps on `MeroAppSession` / `MeroAppBackend` keep their method names; these chang
   `SignedGroupOpenInvitation`). Link payload: `{"invitation":"inv_…","namespaceId":"<org>",…}`.
 - `GovernanceMemberRole` moved to `com.calimero.mero.app`.
 - `NoRelayException` / `NoRelayContextContract` → `SignedOutException` /
-  `SignedOutContextContract` (deprecated aliases kept).
+  `SignedOutContextContract` (rename them: the deprecated aliases are removed).
 - Subgroup group ids are `"{orgId}/{teamId}"`; `AppSubgroup` gained `isPublic`;
   `AppContextEvent` gained `data` and `id`.
 - `hasRelay` and `canSubscribe` are `true` whenever signed in; `didJoinNamespace()` only bumps

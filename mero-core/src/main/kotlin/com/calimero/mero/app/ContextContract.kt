@@ -61,7 +61,7 @@ class CloudContextContract(
     ): JsonElement? = client.call(contextId, method, args).result.takeUnless { it is JsonNull }
 }
 
-/** No one is signed in: there is no account to call the contract as. (0.x: `NoRelayException`.) */
+/** No one is signed in: there is no account to call the contract as. */
 class SignedOutException(
     /** The method that was called. */
     val method: String,
@@ -77,10 +77,6 @@ class PasskeyRequired(
     val method: String,
 ) : IllegalStateException("$method needs a passkey approval; give the backend a passkey")
 
-/** 0.x name of [SignedOutException]. */
-@Deprecated("No relays on Calimero 1.0", ReplaceWith("SignedOutException"))
-typealias NoRelayException = SignedOutException
-
 /** The contract while no one is signed in: every call throws [SignedOutException], naming the method. */
 object SignedOutContextContract : ContextContract {
     override suspend fun query(
@@ -95,10 +91,6 @@ object SignedOutContextContract : ContextContract {
         args: JsonElement,
     ): JsonElement? = throw SignedOutException(method)
 }
-
-/** 0.x name of [SignedOutContextContract]. */
-@Deprecated("No relays on Calimero 1.0", ReplaceWith("SignedOutContextContract"))
-val NoRelayContextContract: ContextContract get() = SignedOutContextContract
 
 /**
  * One context's contract, in the shape a generated client calls: JSON in, JSON out, as strings.
