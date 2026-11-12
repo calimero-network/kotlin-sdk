@@ -5,10 +5,10 @@ import com.calimero.mero.AppSource
 import com.calimero.mero.CalimeroClient
 import com.calimero.mero.NotFound
 import com.calimero.mero.OrgInfo
-import com.calimero.mero.OrgRole
 import com.calimero.mero.PasskeyProvider
-import com.calimero.mero.TeamJoin
-import com.calimero.mero.TeamRole
+import com.calimero.mero.api.models.OrgRole
+import com.calimero.mero.api.models.TeamJoin
+import com.calimero.mero.api.models.TeamRole
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 import kotlinx.serialization.json.JsonElement
@@ -56,7 +56,7 @@ class CalimeroAppBackend(
         val org = client.getOrg(namespaceId)
         val apps = appsByTeam(namespaceId)
         return org.teams.values.map { team ->
-            AppSubgroup(teamGroupId(namespaceId, team.teamId), team.name.ifEmpty { null }, apps[team.teamId].orEmpty().map { it.app }, team.join == TeamJoin.Everyone.wire)
+            AppSubgroup(teamGroupId(namespaceId, team.teamId), team.name.ifEmpty { null }, apps[team.teamId].orEmpty().map { it.app }, team.join == TeamJoin.EVERYONE.value)
         }
     }
 
@@ -79,13 +79,13 @@ class CalimeroAppBackend(
         client.getApp(contextId)
     }
 
-    override suspend fun foundNamespace(name: String): AppFoundedNamespace = AppFoundedNamespace(client.createOrg(name))
+    override suspend fun foundNamespace(name: String): AppFoundedNamespace = AppFoundedNamespace(client.orgs.create(name = name).orgId)
 
     override suspend fun createSubgroup(
         namespaceId: String,
         name: String,
         isPublic: Boolean,
-    ): String = teamGroupId(namespaceId, client.createTeam(namespaceId, name, if (isPublic) TeamJoin.Everyone else TeamJoin.Invite))
+    ): String = teamGroupId(namespaceId, client.orgs.teamCreate(org = namespaceId, name = name, join = if (isPublic) TeamJoin.EVERYONE else TeamJoin.INVITE).teamId)
 
     override suspend fun createContext(
         groupId: String,
@@ -106,7 +106,7 @@ class CalimeroAppBackend(
     }
 
     override suspend fun createInvitation(namespaceId: String): OrgInvitation {
-        val token = client.invite(namespaceId, OrgRole.Member, approver("createInvitation"))
+        val token = client.orgs.inviteCreate(org = namespaceId, role = OrgRole.MEMBER, teams = emptyList(), passkey = approver("createInvitation")).token
         val name = runCatching { client.getOrg(namespaceId).name }.getOrNull()
         return OrgInvitation(namespaceId, token, name = name)
     }
@@ -115,8 +115,11 @@ class CalimeroAppBackend(
         namespaceId: String,
         invitation: OrgInvitation,
     ): AppJoinedNamespace {
-        val answer = client.redeemInvite(invitation.token)
-        val org = (answer["org"] as? JsonPrimitive)?.contentOrNull ?: invitation.namespaceId
+        val org =
+            client.orgs
+                .inviteRedeem(token = invitation.token)
+                .org
+                .ifEmpty { invitation.namespaceId }
         return AppJoinedNamespace(org, published = true, relayUrl = client.nodeUrl)
     }
 
@@ -148,9 +151,9 @@ class CalimeroAppBackend(
     ) {
         val ref = GroupRef.parse(groupId)
         if (ref.team != null) {
-            client.updateTeam(ref.org, ref.team, name = name)
+            client.orgs.teamUpdate(org = ref.org, team = ref.team, name = name)
         } else {
-            client.setOrgMetadata(ref.org, withName(client.getOrg(ref.org).metadata, name))
+            client.orgs.metadata(org = ref.org, metadata = withName(client.getOrg(ref.org).metadata, name))
         }
     }
 
@@ -159,7 +162,7 @@ class CalimeroAppBackend(
         contextId: String,
         name: String,
     ) {
-        client.setAppMetadata(contextId, withName(client.getApp(contextId)["metadata"] ?: JsonNull, name))
+        client.apps.metadata(app = contextId, metadata = withName(client.getApp(contextId)["metadata"] ?: JsonNull, name))
     }
 
     // ---- blobs ---------------------------------------------------------------------------
@@ -172,30 +175,30 @@ class CalimeroAppBackend(
     override suspend fun getBlob(
         blobId: String,
         contextId: String,
-    ): ByteArray = client.downloadBlob(contextId, blobId)
+    ): ByteArray = client.apps.blobDownload(app = contextId, id = blobId)
 
     // ---- leaving and deleting ------------------------------------------------------------
 
     override suspend fun leaveNamespace(namespaceId: String) {
-        client.removeMember(namespaceId, account, approver("leaveNamespace"))
+        client.orgs.removeMember(org = namespaceId, account = account, passkey = approver("leaveNamespace"))
     }
 
     override suspend fun leaveSubgroup(groupId: String) {
         val ref = GroupRef.parse(groupId)
         val team = ref.team ?: return leaveNamespace(ref.org)
-        client.removeTeamMember(ref.org, team, account, approver("leaveSubgroup"))
+        client.orgs.teamRemoveMember(org = ref.org, team = team, account = account, passkey = approver("leaveSubgroup"))
     }
 
     override suspend fun deleteSubgroup(groupId: String) {
         val ref = GroupRef.parse(groupId)
-        client.deleteTeam(ref.org, ref.team ?: throw IllegalArgumentException("$groupId is an organization, not a team"))
+        client.orgs.teamDelete(org = ref.org, team = ref.team ?: throw IllegalArgumentException("$groupId is an organization, not a team"))
     }
 
     override suspend fun removeContext(
         groupId: String,
         contextId: String,
     ) {
-        client.deleteApp(contextId)
+        client.apps.delete(app = contextId)
     }
 
     // ---- members -------------------------------------------------------------------------
@@ -220,7 +223,7 @@ class CalimeroAppBackend(
             }
         }
         val team = org.teams[ref.team] ?: return emptyList()
-        val accounts = if (team.join == TeamJoin.Everyone.wire) org.members.keys + team.members.keys else team.members.keys
+        val accounts = if (team.join == TeamJoin.EVERYONE.value) org.members.keys + team.members.keys else team.members.keys
         return accounts.map { account ->
             val role =
                 when {
@@ -241,19 +244,19 @@ class CalimeroAppBackend(
         if (ref.team == null) {
             val orgRole =
                 when (role) {
-                    GovernanceMemberRole.Admin -> OrgRole.Admin
-                    GovernanceMemberRole.Member -> OrgRole.Member
-                    GovernanceMemberRole.ReadOnly -> OrgRole.Guest
+                    GovernanceMemberRole.Admin -> OrgRole.ADMIN
+                    GovernanceMemberRole.Member -> OrgRole.MEMBER
+                    GovernanceMemberRole.ReadOnly -> OrgRole.GUEST
                 }
-            client.setMember(ref.org, identity, orgRole, approver("setMemberRole"))
+            client.orgs.setMember(org = ref.org, account = identity, role = orgRole, passkey = approver("setMemberRole"))
         } else {
             val teamRole =
                 when (role) {
-                    GovernanceMemberRole.Admin -> TeamRole.Lead
-                    GovernanceMemberRole.Member -> TeamRole.Member
-                    GovernanceMemberRole.ReadOnly -> TeamRole.ReadOnly
+                    GovernanceMemberRole.Admin -> TeamRole.LEAD
+                    GovernanceMemberRole.Member -> TeamRole.MEMBER
+                    GovernanceMemberRole.ReadOnly -> TeamRole.READ_ONLY
                 }
-            client.setTeamMember(ref.org, ref.team, identity, approver("setMemberRole"), role = teamRole)
+            client.orgs.teamSetMember(org = ref.org, team = ref.team, account = identity, role = teamRole, passkey = approver("setMemberRole"))
         }
     }
 
@@ -263,7 +266,11 @@ class CalimeroAppBackend(
     ) {
         val ref = GroupRef.parse(groupId)
         val passkey = approver("removeMember")
-        if (ref.team == null) client.removeMember(ref.org, identity, passkey) else client.removeTeamMember(ref.org, ref.team, identity, passkey)
+        if (ref.team == null) {
+            client.orgs.removeMember(org = ref.org, account = identity, passkey = passkey)
+        } else {
+            client.orgs.teamRemoveMember(org = ref.org, team = ref.team, account = identity, passkey = passkey)
+        }
     }
 
     override suspend fun setMemberName(
@@ -272,7 +279,7 @@ class CalimeroAppBackend(
     ) {
         val org = GroupRef.parse(groupId).org
         val current = client.getOrg(org).memberMetadata[account] ?: JsonNull
-        client.setMemberMetadata(org, account, withName(current, name))
+        client.orgs.memberMetadata(org = org, account = account, metadata = withName(current, name))
     }
 
     // ---- helpers -------------------------------------------------------------------------

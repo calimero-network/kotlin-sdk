@@ -11,6 +11,8 @@ with the same names: `CalimeroClient` verifies a node's TDX attestation, seals e
 > relays, delegated execution, `/api/cloud/*`) is gone from core, and from this SDK. See
 > [Migrating from 0.x](https://calimero-network.github.io/kotlin-sdk/reference/migrating-from-0x/).
 
+> **Before committing, titling a pull request, or releasing**, read [RELEASING.md](RELEASING.md): the PR title is the release commit, and the rules are shared by every Calimero repository that ships releases.
+
 ## Modules
 
 | Module | What it is |
@@ -60,10 +62,10 @@ val client = CalimeroClient(
 )
 client.signIn(PlatformPasskey(activity))
 
-val org = client.createOrg("Acme")
-val app = client.createApp("general", AppSource.Package("com.calimero.chat"), org = org, initArgs = args)
-client.call(app, "send_message", message)              // retried on 503 with one idempotency key
-client.view(app, "get_messages", page).result
+val org = client.orgs.create(name = "Acme").orgId
+val app = client.apps.create(name = "general", `package` = "com.calimero.chat", org = org, initArgs = args).appId
+client.apps.intents(app = app, method = "send_message", args = message)   // retried on 503 with one idempotency key
+client.apps.views(app = app, method = "get_messages", args = page).result
 client.events(app).collect { /* sealed SSE */ }
 ```
 
@@ -78,8 +80,8 @@ val info = client.orgs.get(org = org)
 val apps = client.apps.list().apps
 ```
 
-The older one-route methods (`client.invite(...)`, `client.getOrg(...)`) still work and are
-deprecated with a `ReplaceWith` to the facade.
+1.0 removed the one-route methods that 0.x deprecated (`client.invite(...)`, `client.getOrg(...)`, …);
+CHANGELOG.md maps each one to its facade method.
 
 By cluster name instead of a node URL: `CalimeroClient.connect(CalimeroConnectOptions("eu-shared-1",
 CloudPolicy.production))` reads the nodes from the Calimero Cloud node directory and fails over

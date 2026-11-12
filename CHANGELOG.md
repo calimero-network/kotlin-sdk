@@ -1,5 +1,124 @@
 # Changelog
 
+## 1.0.0 (unreleased)
+
+### Breaking: the deprecated one-route methods are gone (mero-core)
+
+The `CalimeroClient` methods that 0.x deprecated in favour of the generated facade are removed;
+call the facade method each one named (`client.orgs`, `client.apps`, `client.auth`,
+`client.packages`, `client.deployments`, `client.consent`, `client.public`, `client.ops`).
+Facade methods take named parameters and the generated enums (`com.calimero.mero.api.models.OrgRole.MEMBER`,
+`TeamRole.LEAD`, `TeamJoin.EVERYONE`), approve a `412` with the call's `passkey` or the client's
+(`CalimeroClient.passkey`), and answer the generated success model.
+
+Kept, because no single operation replaces them: the passkey ceremonies (`signUp`, `signIn`,
+`addPasskey`, `refresh`, `signOut`, `signOutEverywhere`), the streams (`events`, `presenceStream`),
+`uploadBlob` (a caller's content type), `blobContent`, `attestation`, and the composites
+(`appsReportAll`, `pendingApprovals`, `openConsentPage`, `waitForConsent`, `startRecovery`,
+`connect`). New: `ConsentResult.from` reads `client.consent.pageResult`'s answer.
+
+| Removed | Use instead |
+|---|---|
+| `appXcalls` | `` client.apps.xcalls(app = app) `` |
+| `requestConsent` | `` client.consent.pageCreate(consentRequest = request) `` |
+| `uploadFile` | none: core refuses a sealed upload (`400`); `` client.apps.blobUpload(app = app, body = data) `` for a plain one |
+| `post` | the facade method for the route (raw plumbing) |
+| `get` | the facade method for the route (raw plumbing) |
+| `put` | the facade method for the route (raw plumbing) |
+| `delete` | the facade method for the route (raw plumbing) |
+| `signUpPolicy` | `` client.deployments.signUpPublic() `` |
+| `me` | `` client.auth.me() `` |
+| `removePasskey` | `` client.auth.passkeyRemove(cred = credentialId, passkey = passkey) `` |
+| `labelPasskey` | `` client.auth.passkeyLabel(cred = credentialId, label = label) `` |
+| `usage` | `` client.auth.usage() `` |
+| `listApiKeys` | `` client.auth.apikeyList().propertyKeys `` |
+| `revokeApiKey` | `` client.auth.apikeyRevoke(key = keyId, passkey = passkey) `` |
+| `createApiKey` | `` client.auth.apikeyCreate(label = options.label, apps = options.apps, methods = options.methods, readOnly = options.readOnly, passkey = passkey) `` |
+| `uploadBundle` | `` client.packages.bundlePut(body = wasm).hash `` |
+| `downloadBlob` | `` client.apps.blobDownload(app = app, id = id) `` |
+| `downloadBlobGranted` | `` client.apps.blobDownload(app = app, id = id, grant = grant) `` |
+| `listBlobs` | `` client.apps.blobList(app = app).blobs `` |
+| `blobInfo` | `` client.apps.blobInfo(app = app, id = id) `` |
+| `deleteBlob` | `` client.apps.blobDelete(app = app, id = id) `` |
+| `uploadPackage` | `` client.packages.upload(body = mpk) `` |
+| `installPackage` | `` client.packages.install(`package` = pkg, version = version) `` |
+| `packages` | `` client.packages.list().packages `` |
+| `package` | `` client.packages.get(`package` = pkg) `` |
+| `uninstallPackage` | `` client.packages.uninstall(`package` = pkg) `` (With a version: packages.versionUninstall) |
+| `listApps` | `` client.apps.list(`package` = pkg, bundle = bundle).apps `` |
+| `getApp` | `` client.apps.get(app = app) `` |
+| `deleteApp` | `` client.apps.delete(app = app) `` |
+| `setAccess` | `` client.apps.access(app = app, access = access) `` |
+| `setAppMetadata` | `` client.apps.metadata(app = app, metadata = metadata) `` |
+| `appStorage` | `` client.apps.storage(app = app) `` |
+| `appAbi` | `` client.apps.abi(app = app) `` |
+| `transferApp` | `` client.apps.transfer(app = app, to = to, passkey = passkey) `` |
+| `upgradeApp` | `` client.apps.upgrade(app = app, bundle = target.bundle, `package` = target.`package`, version = target.version, service = target.service, migrate = target.migrate, passkey = passkey) `` |
+| `postConfirmed` | the facade method for the route (raw plumbing) |
+| `deleteConfirmed` | the facade method for the route (raw plumbing) |
+| `createApp` | `` client.apps.create(name = name, org = org, access = access, initArgs = initArgs, metadata = metadata).appId `` (The spec has no confirmMethods) |
+| `call` | `` client.apps.intents(app = app, method = method, args = args, idempotencyKey = idempotencyKey) `` |
+| `callConfirmed` | `` client.apps.intents(app = app, method = method, args = args, idempotencyKey = idempotencyKey, passkey = passkey) `` |
+| `view` | `` client.apps.views(app = app, method = method, args = args, consistency = if (stale) ViewsRequest.Consistency.STALE else ViewsRequest.Consistency.STRONG, minIndex = minIndex) `` |
+| `publishPresence` | `` client.apps.presencePublish(app = app, seq = seq, state = Explicit(state?.let(Hex::encode))) `` |
+| `presence` | `` client.apps.presenceGet(app = app).present `` |
+| `setAlias` | `` client.auth.aliasSet(alias = alias, app = app) `` |
+| `aliases` | `` client.auth.aliasList().aliases `` |
+| `alias` | `` client.auth.aliasGet(alias = alias).appId `` |
+| `deleteAlias` | `` client.auth.aliasDelete(alias = alias) `` |
+| `createOrg` | `` client.orgs.create(name = name, recoveryKey = recoveryKey).orgId `` |
+| `setRecoveryKey` | `` client.orgs.recoverySet(org = org, publicKey = Explicit(publicKey), passkey = passkey) `` (`Explicit(null)` removes the key) |
+| `cancelRecovery` | `` client.orgs.recoveryCancel(org = org, passkey = passkey) `` |
+| `finishRecovery` | `` client.orgs.recoveryFinish(org = org, passkey = passkey) `` |
+| `getOrg` | `` client.orgs.get(org = org) `` |
+| `deleteOrg` | `` client.orgs.delete(org = org, passkey = passkey) `` |
+| `setOrgMetadata` | `` client.orgs.metadata(org = org, metadata = metadata) `` |
+| `setMemberMetadata` | `` client.orgs.memberMetadata(org = org, account = account, metadata = metadata) `` |
+| `upgradeOrg` | `` client.orgs.upgrade(org = org, `package` = target.`package`, version = target.version, team = target.team, cascade = target.cascade, migrate = target.migrate, passkey = passkey) `` |
+| `upgradeRun` | `` client.orgs.upgradeStatus(org = org, run = run) `` |
+| `retryUpgradeRun` | `` client.orgs.upgradeRetry(org = org, run = run, passkey = passkey) `` |
+| `approveRelease` | `` client.orgs.releaseApproval(org = org, version = version, approved = approved, passkey = passkey) `` (With no org: auth.accountReleaseApproval) |
+| `approveOutbound` | `` client.orgs.outboundApproval(org = org, `package` = pkg, prefixes = prefixes?.let { OutboundSelection.Prefixes(it) } ?: OutboundSelection.Manifest, replace = replace, passkey = passkey) `` (With no org: auth.accountOutboundApproval) |
+| `appsReport` | `` client.orgs.apps(org = org, after = page.after, limit = page.limit?.toLong()) `` (With no org: auth.accountApps) |
+| `releaseRules` | `` client.public.releasesPublic() `` |
+| `consentResult` | `` client.consent.pageResult(request = requestId) `` |
+| `publisherBinding` | `` client.public.publisherBinding(signer = signerId) `` |
+| `bindPublisher` | `` client.orgs.publisher(org = org, signerId = proof.signerId, publicKey = proof.publicKey, signature = proof.signature, passkey = passkey) `` |
+| `upgradePublished` | `` client.orgs.publisherUpgrade(org = org, `package` = pkg, version = version, migrate = migrate, passkey = passkey) `` |
+| `opsApps` | `` client.ops.apps(after = page.after, limit = page.limit?.toLong()) `` |
+| `opsOrgs` | `` client.ops.orgs(after = page.after, limit = page.limit?.toLong()) `` |
+| `setReleaseDeadline` | `` client.ops.releaseDeadline(version = version, after = after.toString()) `` |
+| `liftReleaseDeadline` | `` client.ops.releaseDeadlineLift(version = version) `` |
+| `setMember` | `` client.orgs.setMember(org = org, account = account, role = OrgRole.decode(role.wire)!!, passkey = passkey) `` |
+| `removeMember` | `` client.orgs.removeMember(org = org, account = account, passkey = passkey) `` |
+| `setCapabilities` | `` client.orgs.capabilities(org = org, capabilities = capabilities.toLong(), account = account, team = team, passkey = passkey) `` |
+| `createTeam` | `` client.orgs.teamCreate(org = org, name = name, join = TeamJoin.decode(join.wire)!!, parent = parent).teamId `` |
+| `getTeam` | `` client.orgs.teamGet(org = org, team = team) `` |
+| `updateTeam` | `` client.orgs.teamUpdate(org = org, team = team, name = name, join = join?.let { TeamJoin.decode(it.wire) }, parent = if (toTop) Explicit(null) else parent?.let(::Explicit), metadata = metadata) `` |
+| `deleteTeam` | `` client.orgs.teamDelete(org = org, team = team) `` |
+| `setTeamMember` | `` client.orgs.teamSetMember(org = org, team = team, account = account, lead = lead, role = role?.let { TeamRole.decode(it.wire) }, capabilities = capabilities?.toLong(), passkey = passkey) `` |
+| `removeTeamMember` | `` client.orgs.teamRemoveMember(org = org, team = team, account = account, passkey = passkey) `` |
+| `invite` | `` client.orgs.inviteCreate(org = org, role = OrgRole.decode(role.wire)!!, teams = teams, ttlSecs = ttlSecs, uses = uses?.toLong(), passkey = passkey).token `` |
+| `redeemInvite` | `` client.orgs.inviteRedeem(token = token) `` |
+| `packageOrigins` | `` client.packages.originsList(`package` = pkg).origins `` |
+| `addPackageOrigin` | `` client.packages.originsAdd(`package` = pkg, origin = origin, rpId = rpId, passkey = passkey) `` |
+| `removePackageOrigin` | `` client.packages.originsRemove(`package` = pkg, origin = origin, passkey = passkey) `` |
+| `grantDeployer` | `` client.deployments.deployerGrant(deployer = deployer, until = until?.toString(), passkey = passkey) `` |
+| `deployers` | `` client.deployments.deployerList() `` |
+| `revokeDeployer` | `` client.deployments.deployerRevoke(key = deployer.key, passkey = passkey) `` |
+| `createDeployment` | `` client.deployments.create(name = name, owner = owner, passkey = passkey).id `` |
+| `deployments` | `` client.deployments.list().deployments `` |
+| `deployment` | `` client.deployments.get(id = id) `` |
+| `deleteDeployment` | `` client.deployments.delete(id = id, passkey = passkey) `` |
+| `offerApp` | `` client.deployments.offer(id = id, app = app, `package` = pkg, version = version, passkey = passkey) `` |
+| `withdrawApp` | `` client.deployments.withdraw(id = id, app = app, passkey = passkey) `` |
+| `deploymentOrgs` | `` client.deployments.orgs(id = id) `` |
+
+
+A removed method that sent an explicit `null` (`setRecoveryKey(org, null, …)`, `updateTeam(toTop = true)`,
+`publishPresence(state = null)`) maps to the facade's `Explicit(null)` (`publicKey`, `parent`, `state`).
+The sample app's SDK tab runs the facade methods, named `group.method`.
+
 ## 0.4.0
 
 ### Releases are cut on merge (CI)

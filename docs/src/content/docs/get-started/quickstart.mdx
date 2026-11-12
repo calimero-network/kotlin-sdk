@@ -45,9 +45,9 @@ val client = CalimeroClient(
 val passkey = SoftPasskey(rpId = "localhost", origin = "http://localhost:3000")
 client.signUp(passkey, "ada")
 
-val appId = client.createApp("kv", AppSource.Package("com.calimero.kv-store"), initArgs = buildJsonObject {})
-client.call(appId, "set", buildJsonObject { put("key", "a"); put("value", "1") })
-val value = client.view(appId, "get", buildJsonObject { put("key", "a") }).result
+val appId = client.apps.create(name = "kv", `package` = "com.calimero.kv-store", initArgs = buildJsonObject {}).appId
+client.apps.intents(app = appId, method = "set", args = buildJsonObject { put("key", "a"); put("value", "1") })
+val value = client.apps.views(app = appId, method = "get", args = buildJsonObject { put("key", "a") }).result
 client.events(appId).collect { println("${it.kind}: ${it.data}") }
 ```
 

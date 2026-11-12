@@ -1,6 +1,6 @@
 ---
 title: CalimeroClient
-description: Every CalimeroClient method, grouped as mero-js groups them.
+description: The CalimeroClient facade groups and the methods the client keeps by hand.
 ---
 
 `CalimeroClient(CalimeroClientOptions(baseUrl, nodes, policy, httpClient, retry, onSession))`, or
@@ -8,34 +8,25 @@ by cluster name through the node directory:
 `CalimeroClient.connect(CalimeroConnectOptions(cluster, policy, directory, zone, …))`.
 Every method is `suspend`; paths are relative to the node and sealed.
 
-Methods that change credentials, memberships or invites, deployments and deployers are passkey
-step-ups: they take a `passkey` and answer the node's `412 CONFIRM_REQUIRED` with it
-(`addPasskey(passkey, approver)`, `removePasskey(id, passkey)`, `createApiKey(options, passkey)`,
-`setMember(org, account, role, passkey)`, `removeMember(org, account, passkey)` (also to leave),
-`setCapabilities(org, bits, passkey, account?, team?)`, `setTeamMember(org, team, account, passkey, …)`,
-`removeTeamMember(org, team, account, passkey)`, `invite(org, role, passkey, teams, ttlSecs, uses)`).
-`redeemInvite(token)` needs no approval.
+Every route of core's node API is a method of the facade generated from core's OpenAPI document,
+one property per group: `client.auth`, `client.apps`, `client.orgs`, `client.packages`,
+`client.deployments`, `client.consent`, `client.public`, `client.ops`
+(`client.orgs.inviteCreate(org = org, role = OrgRole.MEMBER)`). Each method takes named parameters
+and answers the generated model. A passkey step-up (`412 CONFIRM_REQUIRED`) is approved with the
+call's `passkey`, else `client.passkey`; an operator decision (`428`) is signed with the call's
+`operator`, else `client.operator`. A field whose `null` means something takes `Explicit(null)`.
+`client.api()` is the generated client under the facade.
+
+What `CalimeroClient` keeps besides:
 
 | Group | Methods |
 |---|---|
-| Session | `connect`, `useApiKey`, `useSession`, `session`, `nodeUrl`, `nodes`, `onSessionChange`, `forget` |
-| Identity | `signUp(passkey, name, SignUpOptions(origin, invite))`, `signUpPolicy`, `signIn(passkey, SignInOptions(origin))`, `refresh`, `signOut`, `signOutEverywhere`, `me`, `addPasskey`, `removePasskey`, `labelPasskey`, `usage`, `attestation` |
-| API keys | `listApiKeys`, `createApiKey` (`ApiKeyOptions.upgrades` makes an upgrade key), `revokeApiKey(keyId, passkey)` |
-| Package origins | `packageOrigins(pkg)`, `addPackageOrigin(pkg, origin, passkey, rpId?)`, `removePackageOrigin(pkg, origin, passkey)` |
-| Packages | `uploadBundle`, `uploadPackage`, `installPackage`, `packages`, `` `package` ``, `uninstallPackage` |
-| App instances | `listApps`, `getApp`, `createApp` (from a bundle, a package, or a deployment's offer), `deleteApp`, `setAccess`, `setAppMetadata`, `appStorage`, `appAbi`, `appXcalls`, `transferApp`, `upgradeApp` |
-| Calls | `call`, `callConfirmed`, `view`, `events` |
-| Blobs | `uploadBlob(app, data, contentType)`, `downloadBlob`, `downloadBlobGranted(app, id, grant)`, `blobContent` (bytes and content type), `listBlobs`, `blobInfo`, `deleteBlob`, `uploadFile(app, data)` (a component app's sealed file: `sealed`, plaintext `sha256`) |
-| Presence | `publishPresence`, `presence`, `presenceStream` |
-| Aliases | `setAlias`, `aliases`, `alias`, `deleteAlias` |
-| Organizations | `createOrg(name, recoveryKey?)`, `getOrg`, `setRecoveryKey`, `startRecovery`, `cancelRecovery`, `finishRecovery`, `deleteOrg`, `setOrgMetadata`, `setMember`, `removeMember`, `setMemberMetadata`, `setCapabilities`, `invite`, `redeemInvite` |
-| Teams | `createTeam`, `getTeam`, `updateTeam`, `deleteTeam`, `setTeamMember`, `removeTeamMember` |
-| Upgrades | `upgradeOrg`, `upgradeRun`, `retryUpgradeRun`, `upgradePublished` |
-| Approvals | `approveRelease`, `approveOutbound`, `appsReport`, `appsReportAll`, `releaseRules`, `pendingApprovals`, `requestConsent`, `openConsentPage` (with `OpenConsentOptions(navigate, confirm)`; a code that is not `confirmationCode(requestId)` throws `CONSENT_CODE_MISMATCH`, `checkConsentCode`), `consentResult`, `waitForConsent`, `publisherBinding`, `bindPublisher` |
-| Deployments | `createDeployment`, `deployments`, `deployment` (public), `deleteDeployment`, `offerApp`, `withdrawApp`, `deploymentOrgs` |
-| Deployers | `grantDeployer`, `deployers`, `revokeDeployer` (the cluster owner's, with a passkey) |
-| Operator | `opsApps`, `opsOrgs`, `setReleaseDeadline`, `liftReleaseDeadline` |
-| Raw | `get`, `post`, `put`, `delete`, `postConfirmed`, `deleteConfirmed` |
+| Session | `connect`, `useApiKey`, `useSession`, `session`, `nodeUrl`, `nodes`, `onSessionChange`, `forget`, `passkey`, `operator` |
+| Identity | `signUp(passkey, name, SignUpOptions(origin, invite))`, `signIn(passkey, SignInOptions(origin))`, `refresh`, `signOut`, `signOutEverywhere`, `addPasskey(passkey, approver)`, `attestation` |
+| Streams | `events`, `presenceStream` |
+| Blobs | `uploadBlob(app, data, contentType)`, `blobContent` (bytes and content type) |
+| Organizations | `startRecovery(org, seed)` (the seed signs here) |
+| Approvals | `appsReportAll`, `pendingApprovals`, `openConsentPage` (with `OpenConsentOptions(navigate, confirm)`; a code that is not `confirmationCode(requestId)` throws `CONSENT_CODE_MISMATCH`, `checkConsentCode`), `waitForConsent` |
 
 Helpers beside it: `errorFrom`, `fetchAttestedKey`, `claimedRelease`, `pendingApprovalsFrom`,
 `releaseConsent`, `withdrawConsent`, `upgradeConsent`, `consentReturn`, `stalledBy`,

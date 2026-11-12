@@ -16,7 +16,7 @@ Calimero 1.0 is a different node: no `/admin-api`, `/jsonrpc`, `/ws`, `/sse`, me
 | namespace / group / context / application | organization / team / app instance / package |
 | `rpc.execute`, `/admin-api/contexts/{id}/query` | `call` (`/intents`), `view` (`/views`) |
 | `/admin-api/tee/attest` | `GET /attestation` (`fetchAttestedKey`) |
-| admin-dashboard approvals | the node's consent page (`requestConsent`) |
+| admin-dashboard approvals | the node's consent page (`client.consent.pageCreate`, `openConsentPage`) |
 | `MeroClient` (compose), `LoginSheet`, invitation flows, state holders | `MeroAppSession`, `ConsentLauncher` |
 | `FakeNode`, `FakeCloud` (testkit) | `InMemoryAppBackend` |
 
