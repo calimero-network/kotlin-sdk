@@ -176,7 +176,7 @@ open class PublicApi(basePath: kotlin.String = defaultBasePath, client: Call.Fac
     /**
      * GET /health
      * Node health
-     * In the clear. The node&#39;s id, the system group&#39;s leader, its release, the newest cluster version it supports (&#x60;clusterVersion&#x60;) and the cluster&#39;s rollback epoch.  **Who:** anyone.
+     * In the clear. The node&#39;s id, the system group&#39;s leader (&#x60;null&#x60;: none known), its &#x60;merod&#x60; release, the newest cluster version it supports (&#x60;clusterVersion&#x60;) and the cluster&#39;s rollback epoch (&#x60;null&#x60; on a node without a rollback counter).  **Who:** anyone.
      * @return Health200Response
      * @throws IllegalStateException If the request is not correctly configured
      * @throws IOException Rethrows the OkHttp execute method exception
@@ -207,7 +207,7 @@ open class PublicApi(basePath: kotlin.String = defaultBasePath, client: Call.Fac
     /**
      * GET /health
      * Node health
-     * In the clear. The node&#39;s id, the system group&#39;s leader, its release, the newest cluster version it supports (&#x60;clusterVersion&#x60;) and the cluster&#39;s rollback epoch.  **Who:** anyone.
+     * In the clear. The node&#39;s id, the system group&#39;s leader (&#x60;null&#x60;: none known), its &#x60;merod&#x60; release, the newest cluster version it supports (&#x60;clusterVersion&#x60;) and the cluster&#39;s rollback epoch (&#x60;null&#x60; on a node without a rollback counter).  **Who:** anyone.
      * @return ApiResponse<Health200Response?>
      * @throws IllegalStateException If the request is not correctly configured
      * @throws IOException Rethrows the OkHttp execute method exception

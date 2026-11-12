@@ -37,8 +37,8 @@ import kotlinx.serialization.Contextual
 
 data class OpsBackup200Response (
 
-    @Contextual @SerialName(value = "written")
-    val written: kotlinx.serialization.json.JsonElement?
+    @SerialName(value = "written")
+    val written: kotlin.Long
 
 ) {
 

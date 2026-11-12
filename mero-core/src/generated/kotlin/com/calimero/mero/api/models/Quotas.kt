@@ -29,7 +29,7 @@ import kotlinx.serialization.SerialName
 import kotlinx.serialization.Contextual
 
 /**
- * Other properties than those listed may be present: the ones listed are those clients rely on.
+ * The per-account limits, and the compute and file limits of each organization (or personal account) that has no override. `maxFuelPerDeveloperPerDay` (0: no limit) is a decimal string; the others are JSON numbers.
  *
  * @param maxAppsPerAccount 
  * @param maxBundleBytesPerAccount 
@@ -40,11 +40,10 @@ import kotlinx.serialization.Contextual
  * @param maxConcurrentRunsPerOrg 
  * @param computeFuelPerOrg 
  * @param maxFuelPerDeveloperPerDay an unsigned 64-bit integer as a decimal string (D20)
- * @param orgs 
  */
 @Serializable
 
-data class OpsQuotasGet200Response (
+data class Quotas (
 
     @SerialName(value = "maxAppsPerAccount")
     val maxAppsPerAccount: kotlin.Long,
@@ -72,10 +71,7 @@ data class OpsQuotasGet200Response (
 
     /* an unsigned 64-bit integer as a decimal string (D20) */
     @SerialName(value = "maxFuelPerDeveloperPerDay")
-    val maxFuelPerDeveloperPerDay: kotlin.String,
-
-    @Contextual @SerialName(value = "orgs")
-    val orgs: kotlinx.serialization.json.JsonElement?
+    val maxFuelPerDeveloperPerDay: kotlin.String
 
 ) {
 

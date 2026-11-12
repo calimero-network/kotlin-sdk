@@ -23,6 +23,7 @@
 
 package com.calimero.mero.api.models
 
+import com.calimero.mero.api.models.NodeRole
 
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.SerialName
@@ -48,7 +49,7 @@ data class OpsPlacement200ResponseNodesInner (
     val zone: kotlin.String,
 
     @Contextual @SerialName(value = "role")
-    val role: kotlinx.serialization.json.JsonElement?,
+    val role: NodeRole,
 
     @SerialName(value = "release")
     val release: kotlin.String?,

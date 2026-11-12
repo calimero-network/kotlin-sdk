@@ -40,6 +40,7 @@ import com.calimero.mero.api.models.AppMethod200Response
 import com.calimero.mero.api.models.AppMethodRequest
 import com.calimero.mero.api.models.AppMove200Response
 import com.calimero.mero.api.models.AppMoveRequest
+import com.calimero.mero.api.models.AppRuns200Response
 import com.calimero.mero.api.models.AppStorage200Response
 import com.calimero.mero.api.models.AppTransferRequest
 import com.calimero.mero.api.models.AppUpgrade200Response
@@ -56,8 +57,10 @@ import com.calimero.mero.api.models.FilesList200Response
 import com.calimero.mero.api.models.FilesUpload200Response
 import com.calimero.mero.api.models.Intents200Response
 import com.calimero.mero.api.models.IntentsRequest
+import com.calimero.mero.api.models.Null
 import com.calimero.mero.api.models.PresenceGet200Response
 import com.calimero.mero.api.models.PresencePublishRequest
+import com.calimero.mero.api.models.Run
 import com.calimero.mero.api.models.UploadBegin200Response
 import com.calimero.mero.api.models.UploadBeginRequest
 import com.calimero.mero.api.models.UploadComplete200Response
@@ -97,7 +100,7 @@ open class AppsApi(basePath: kotlin.String = defaultBasePath, client: Call.Facto
     /**
      * GET /apps/{app}/abi
      * An app&#39;s ABI
-     * The ABI its bundle embeds: methods, events, errors and state.  **Who:** whoever the app&#39;s access admits (a public app: anyone).
+     * The ABI its bundle embeds: methods, events, errors and state. &#x60;abi&#x60; is the bundle&#39;s own document, free-form here: its format is the ABI&#39;s, not this API&#39;s.  **Who:** whoever the app&#39;s access admits (a public app: anyone).
      * @param app 
      * @return AppAbi200Response
      * @throws IllegalStateException If the request is not correctly configured
@@ -129,7 +132,7 @@ open class AppsApi(basePath: kotlin.String = defaultBasePath, client: Call.Facto
     /**
      * GET /apps/{app}/abi
      * An app&#39;s ABI
-     * The ABI its bundle embeds: methods, events, errors and state.  **Who:** whoever the app&#39;s access admits (a public app: anyone).
+     * The ABI its bundle embeds: methods, events, errors and state. &#x60;abi&#x60; is the bundle&#39;s own document, free-form here: its format is the ABI&#39;s, not this API&#39;s.  **Who:** whoever the app&#39;s access admits (a public app: anyone).
      * @param app 
      * @return ApiResponse<AppAbi200Response?>
      * @throws IllegalStateException If the request is not correctly configured
@@ -245,31 +248,11 @@ open class AppsApi(basePath: kotlin.String = defaultBasePath, client: Call.Facto
     }
 
     /**
-     * enum for parameter purpose
-     */
-     enum class PurposeAppAttestation(val value: kotlin.String) {
-         @SerialName(value = "receipts") RECEIPTS("receipts"),
-         @SerialName(value = "kms") KMS("kms");
-
-        /**
-         * Override [toString()] to avoid using the enum variable name as the value, and instead use
-         * the actual value defined in the API spec file.
-         *
-         * This solves a problem when the variable name and its value are different, and ensures that
-         * the client sends the correct enum values to the server always.
-         */
-        override fun toString(): kotlin.String = "$value"
-     }
-
-    /**
      * GET /apps/{app}/attestation
      * Every replica&#39;s receipt-key attestation
-     * Each replica&#39;s &#x60;/attestation?purpose&#x3D;receipts&#x60; for &#x60;nonce&#x60;. It reads the query &#x60;/attestation&#x60; does, but only &#x60;nonce&#x60;: &#x60;app&#x60;, &#x60;appHash&#x60; and &#x60;purpose&#x60; are ignored here.  **Who:** whoever the app&#39;s access admits (a public app: anyone).
+     * Each replica&#39;s &#x60;/attestation?purpose&#x3D;receipts&#x60; for &#x60;nonce&#x60; (32 bytes, hex), or why it could not be had (&#x60;error&#x60;). Any other query parameter is ignored.  **Who:** whoever the app&#39;s access admits (a public app: anyone).
      * @param app 
      * @param nonce 
-     * @param app2  (optional)
-     * @param appHash  (optional)
-     * @param purpose  (optional)
      * @return AppAttestation200Response
      * @throws IllegalStateException If the request is not correctly configured
      * @throws IOException Rethrows the OkHttp execute method exception
@@ -279,8 +262,8 @@ open class AppsApi(basePath: kotlin.String = defaultBasePath, client: Call.Facto
      */
     @Suppress("UNCHECKED_CAST")
     @Throws(IllegalStateException::class, IOException::class, UnsupportedOperationException::class, ClientException::class, ServerException::class)
-    suspend fun appAttestation(app: kotlin.String, nonce: kotlin.String, app2: kotlin.String? = null, appHash: kotlin.String? = null, purpose: PurposeAppAttestation? = null) : AppAttestation200Response = withContext(Dispatchers.IO) {
-        val localVarResponse = appAttestationWithHttpInfo(app = app, nonce = nonce, app2 = app2, appHash = appHash, purpose = purpose)
+    suspend fun appAttestation(app: kotlin.String, nonce: kotlin.String) : AppAttestation200Response = withContext(Dispatchers.IO) {
+        val localVarResponse = appAttestationWithHttpInfo(app = app, nonce = nonce)
 
         return@withContext when (localVarResponse.responseType) {
             ResponseType.Success -> (localVarResponse as Success<*>).data as AppAttestation200Response
@@ -300,20 +283,17 @@ open class AppsApi(basePath: kotlin.String = defaultBasePath, client: Call.Facto
     /**
      * GET /apps/{app}/attestation
      * Every replica&#39;s receipt-key attestation
-     * Each replica&#39;s &#x60;/attestation?purpose&#x3D;receipts&#x60; for &#x60;nonce&#x60;. It reads the query &#x60;/attestation&#x60; does, but only &#x60;nonce&#x60;: &#x60;app&#x60;, &#x60;appHash&#x60; and &#x60;purpose&#x60; are ignored here.  **Who:** whoever the app&#39;s access admits (a public app: anyone).
+     * Each replica&#39;s &#x60;/attestation?purpose&#x3D;receipts&#x60; for &#x60;nonce&#x60; (32 bytes, hex), or why it could not be had (&#x60;error&#x60;). Any other query parameter is ignored.  **Who:** whoever the app&#39;s access admits (a public app: anyone).
      * @param app 
      * @param nonce 
-     * @param app2  (optional)
-     * @param appHash  (optional)
-     * @param purpose  (optional)
      * @return ApiResponse<AppAttestation200Response?>
      * @throws IllegalStateException If the request is not correctly configured
      * @throws IOException Rethrows the OkHttp execute method exception
      */
     @Suppress("UNCHECKED_CAST")
     @Throws(IllegalStateException::class, IOException::class)
-    suspend fun appAttestationWithHttpInfo(app: kotlin.String, nonce: kotlin.String, app2: kotlin.String?, appHash: kotlin.String?, purpose: PurposeAppAttestation?) : ApiResponse<AppAttestation200Response?> = withContext(Dispatchers.IO) {
-        val localVariableConfig = appAttestationRequestConfig(app = app, nonce = nonce, app2 = app2, appHash = appHash, purpose = purpose)
+    suspend fun appAttestationWithHttpInfo(app: kotlin.String, nonce: kotlin.String) : ApiResponse<AppAttestation200Response?> = withContext(Dispatchers.IO) {
+        val localVariableConfig = appAttestationRequestConfig(app = app, nonce = nonce)
 
         return@withContext request<Unit, AppAttestation200Response>(
             localVariableConfig
@@ -325,25 +305,13 @@ open class AppsApi(basePath: kotlin.String = defaultBasePath, client: Call.Facto
      *
      * @param app 
      * @param nonce 
-     * @param app2  (optional)
-     * @param appHash  (optional)
-     * @param purpose  (optional)
      * @return RequestConfig
      */
-    fun appAttestationRequestConfig(app: kotlin.String, nonce: kotlin.String, app2: kotlin.String?, appHash: kotlin.String?, purpose: PurposeAppAttestation?) : RequestConfig<Unit> {
+    fun appAttestationRequestConfig(app: kotlin.String, nonce: kotlin.String) : RequestConfig<Unit> {
         val localVariableBody = null
         val localVariableQuery: MultiValueMap = mutableMapOf<kotlin.String, kotlin.collections.List<kotlin.String>>()
             .apply {
                 put("nonce", listOf(nonce.toString()))
-                if (app2 != null) {
-                    put("app", listOf(app2.toString()))
-                }
-                if (appHash != null) {
-                    put("appHash", listOf(appHash.toString()))
-                }
-                if (purpose != null) {
-                    put("purpose", listOf(purpose.value))
-                }
             }
         val localVariableHeaders: MutableMap<String, String> = mutableMapOf()
         localVariableHeaders["Accept"] = "application/json"
@@ -361,7 +329,7 @@ open class AppsApi(basePath: kotlin.String = defaultBasePath, client: Call.Facto
     /**
      * POST /apps
      * Create an app instance
-     * From a release (&#x60;package&#x60;, &#x60;version&#x60;, &#x60;service&#x60;), a deployment&#39;s offer (&#x60;deployment&#x60;), or an uploaded &#x60;bundle&#x60;; in an organization (&#x60;org&#x60;) or the caller&#39;s own. &#x60;initArgs&#x60; go to the app&#39;s &#x60;init&#x60;.  **Who:** an installer (an account holder, or an unscoped API key that is not read-only).
+     * From a release (&#x60;package&#x60;, &#x60;version&#x60;, &#x60;service&#x60;), a deployment&#39;s offer (&#x60;deployment&#x60;), or an uploaded &#x60;bundle&#x60;; in an organization (&#x60;org&#x60;) or the caller&#39;s own. &#x60;initArgs&#x60; go to the app&#39;s &#x60;init&#x60; and &#x60;metadata&#x60; is kept as given (both free-form JSON). Answers once &#x60;init&#x60; committed; &#x60;compute&#x60; says whether the app has a compute component.  **Who:** an installer (an account holder, or an unscoped API key that is not read-only).
      * @param appCreateRequest 
      * @return AppCreate200Response
      * @throws IllegalStateException If the request is not correctly configured
@@ -393,7 +361,7 @@ open class AppsApi(basePath: kotlin.String = defaultBasePath, client: Call.Facto
     /**
      * POST /apps
      * Create an app instance
-     * From a release (&#x60;package&#x60;, &#x60;version&#x60;, &#x60;service&#x60;), a deployment&#39;s offer (&#x60;deployment&#x60;), or an uploaded &#x60;bundle&#x60;; in an organization (&#x60;org&#x60;) or the caller&#39;s own. &#x60;initArgs&#x60; go to the app&#39;s &#x60;init&#x60;.  **Who:** an installer (an account holder, or an unscoped API key that is not read-only).
+     * From a release (&#x60;package&#x60;, &#x60;version&#x60;, &#x60;service&#x60;), a deployment&#39;s offer (&#x60;deployment&#x60;), or an uploaded &#x60;bundle&#x60;; in an organization (&#x60;org&#x60;) or the caller&#39;s own. &#x60;initArgs&#x60; go to the app&#39;s &#x60;init&#x60; and &#x60;metadata&#x60; is kept as given (both free-form JSON). Answers once &#x60;init&#x60; committed; &#x60;compute&#x60; says whether the app has a compute component.  **Who:** an installer (an account holder, or an unscoped API key that is not read-only).
      * @param appCreateRequest 
      * @return ApiResponse<AppCreate200Response?>
      * @throws IllegalStateException If the request is not correctly configured
@@ -665,7 +633,7 @@ open class AppsApi(basePath: kotlin.String = defaultBasePath, client: Call.Facto
     /**
      * POST /apps/{app}/metadata
      * Set an app&#39;s metadata
-     * The owner or an organization admin; 16 KiB at most.  **Who:** signed in (a session or an API key).
+     * The owner or an organization admin; 16 KiB at most. &#x60;metadata&#x60; is the caller&#39;s own JSON, free-form, kept as given.  **Who:** signed in (a session or an API key).
      * @param app 
      * @param appMetadataRequest 
      * @return kotlinx.serialization.json.JsonObject
@@ -698,7 +666,7 @@ open class AppsApi(basePath: kotlin.String = defaultBasePath, client: Call.Facto
     /**
      * POST /apps/{app}/metadata
      * Set an app&#39;s metadata
-     * The owner or an organization admin; 16 KiB at most.  **Who:** signed in (a session or an API key).
+     * The owner or an organization admin; 16 KiB at most. &#x60;metadata&#x60; is the caller&#39;s own JSON, free-form, kept as given.  **Who:** signed in (a session or an API key).
      * @param app 
      * @param appMetadataRequest 
      * @return ApiResponse<kotlinx.serialization.json.JsonObject?>
@@ -742,7 +710,7 @@ open class AppsApi(basePath: kotlin.String = defaultBasePath, client: Call.Facto
     /**
      * POST /apps/{app}/methods/{method}
      * Call a method by its path
-     * The body of &#x60;/intents&#x60; or &#x60;/views&#x60; without &#x60;method&#x60;, which the path names, as the app&#39;s OpenAPI document lists it: a view the running bundle&#39;s ABI declares (without &#x60;confirm&#x60;) is answered as &#x60;/views&#x60;, anything else as &#x60;/intents&#x60;, with that route&#39;s gate, step-up and limits. Retry-safe as a view always, as a call with &#x60;idempotencyKey&#x60;.  **Who:** whoever the app&#39;s access admits (a public app: anyone). **Step-up:** when the method is a &#x60;confirm&#x60; method of the app&#39;s ABI, answers &#x60;412 CONFIRM_REQUIRED&#x60; first; send the same request again with &#x60;confirm&#x60;, a passkey assertion over &#x60;details.challenge&#x60;.
+     * The body of &#x60;/intents&#x60; or &#x60;/views&#x60; without &#x60;method&#x60;, which the path names, as the app&#39;s OpenAPI document lists it: a view the running bundle&#39;s ABI declares (without &#x60;confirm&#x60;) is answered as &#x60;/views&#x60;, anything else as &#x60;/intents&#x60;, with that route&#39;s gate, step-up and limits. Retry-safe as a view always, as a call with &#x60;idempotencyKey&#x60;. &#x60;args&#x60;, &#x60;result&#x60; and each event&#39;s &#x60;data&#x60; are the app&#39;s own JSON, free-form here: the app&#39;s ABI (&#x60;GET /apps/{app}/abi&#x60;, or its OpenAPI document) types them.  **Who:** whoever the app&#39;s access admits (a public app: anyone). **Step-up:** when the method is a &#x60;confirm&#x60; method of the app&#39;s ABI, answers &#x60;412 CONFIRM_REQUIRED&#x60; first; send the same request again with &#x60;confirm&#x60;, a passkey assertion over &#x60;details.challenge&#x60;.
      * @param app 
      * @param method 
      * @param appMethodRequest 
@@ -776,7 +744,7 @@ open class AppsApi(basePath: kotlin.String = defaultBasePath, client: Call.Facto
     /**
      * POST /apps/{app}/methods/{method}
      * Call a method by its path
-     * The body of &#x60;/intents&#x60; or &#x60;/views&#x60; without &#x60;method&#x60;, which the path names, as the app&#39;s OpenAPI document lists it: a view the running bundle&#39;s ABI declares (without &#x60;confirm&#x60;) is answered as &#x60;/views&#x60;, anything else as &#x60;/intents&#x60;, with that route&#39;s gate, step-up and limits. Retry-safe as a view always, as a call with &#x60;idempotencyKey&#x60;.  **Who:** whoever the app&#39;s access admits (a public app: anyone). **Step-up:** when the method is a &#x60;confirm&#x60; method of the app&#39;s ABI, answers &#x60;412 CONFIRM_REQUIRED&#x60; first; send the same request again with &#x60;confirm&#x60;, a passkey assertion over &#x60;details.challenge&#x60;.
+     * The body of &#x60;/intents&#x60; or &#x60;/views&#x60; without &#x60;method&#x60;, which the path names, as the app&#39;s OpenAPI document lists it: a view the running bundle&#39;s ABI declares (without &#x60;confirm&#x60;) is answered as &#x60;/views&#x60;, anything else as &#x60;/intents&#x60;, with that route&#39;s gate, step-up and limits. Retry-safe as a view always, as a call with &#x60;idempotencyKey&#x60;. &#x60;args&#x60;, &#x60;result&#x60; and each event&#39;s &#x60;data&#x60; are the app&#39;s own JSON, free-form here: the app&#39;s ABI (&#x60;GET /apps/{app}/abi&#x60;, or its OpenAPI document) types them.  **Who:** whoever the app&#39;s access admits (a public app: anyone). **Step-up:** when the method is a &#x60;confirm&#x60; method of the app&#39;s ABI, answers &#x60;412 CONFIRM_REQUIRED&#x60; first; send the same request again with &#x60;confirm&#x60;, a passkey assertion over &#x60;details.challenge&#x60;.
      * @param app 
      * @param method 
      * @param appMethodRequest 
@@ -899,9 +867,9 @@ open class AppsApi(basePath: kotlin.String = defaultBasePath, client: Call.Facto
     /**
      * GET /apps/{app}/openapi.json
      * An app&#39;s OpenAPI document
-     * Generated from the ABI of the bundle the app runs, under the access &#x60;/abi&#x60; has: one &#x60;POST /apps/{app}/methods/{method}&#x60; per method, with its arguments, result and errors.  **Who:** whoever the app&#39;s access admits (a public app: anyone).
+     * Generated from the ABI of the bundle the app runs, under the access &#x60;/abi&#x60; has: one &#x60;POST /apps/{app}/methods/{method}&#x60; per method, with its arguments, result and errors. Free-form here: it is a document of its own, which a client reads as OpenAPI.  **Who:** whoever the app&#39;s access admits (a public app: anyone).
      * @param app 
-     * @return kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement>
+     * @return kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement?>
      * @throws IllegalStateException If the request is not correctly configured
      * @throws IOException Rethrows the OkHttp execute method exception
      * @throws UnsupportedOperationException If the API returns an informational or redirection response
@@ -910,11 +878,11 @@ open class AppsApi(basePath: kotlin.String = defaultBasePath, client: Call.Facto
      */
     @Suppress("UNCHECKED_CAST")
     @Throws(IllegalStateException::class, IOException::class, UnsupportedOperationException::class, ClientException::class, ServerException::class)
-    suspend fun appOpenapi(app: kotlin.String) : kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement> = withContext(Dispatchers.IO) {
+    suspend fun appOpenapi(app: kotlin.String) : kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement?> = withContext(Dispatchers.IO) {
         val localVarResponse = appOpenapiWithHttpInfo(app = app)
 
         return@withContext when (localVarResponse.responseType) {
-            ResponseType.Success -> (localVarResponse as Success<*>).data as kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement>
+            ResponseType.Success -> (localVarResponse as Success<*>).data as kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement?>
             ResponseType.Informational -> throw UnsupportedOperationException("Client does not support Informational responses.")
             ResponseType.Redirection -> throw UnsupportedOperationException("Client does not support Redirection responses.")
             ResponseType.ClientError -> {
@@ -931,18 +899,18 @@ open class AppsApi(basePath: kotlin.String = defaultBasePath, client: Call.Facto
     /**
      * GET /apps/{app}/openapi.json
      * An app&#39;s OpenAPI document
-     * Generated from the ABI of the bundle the app runs, under the access &#x60;/abi&#x60; has: one &#x60;POST /apps/{app}/methods/{method}&#x60; per method, with its arguments, result and errors.  **Who:** whoever the app&#39;s access admits (a public app: anyone).
+     * Generated from the ABI of the bundle the app runs, under the access &#x60;/abi&#x60; has: one &#x60;POST /apps/{app}/methods/{method}&#x60; per method, with its arguments, result and errors. Free-form here: it is a document of its own, which a client reads as OpenAPI.  **Who:** whoever the app&#39;s access admits (a public app: anyone).
      * @param app 
-     * @return ApiResponse<kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement>?>
+     * @return ApiResponse<kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement?>?>
      * @throws IllegalStateException If the request is not correctly configured
      * @throws IOException Rethrows the OkHttp execute method exception
      */
     @Suppress("UNCHECKED_CAST")
     @Throws(IllegalStateException::class, IOException::class)
-    suspend fun appOpenapiWithHttpInfo(app: kotlin.String) : ApiResponse<kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement>?> = withContext(Dispatchers.IO) {
+    suspend fun appOpenapiWithHttpInfo(app: kotlin.String) : ApiResponse<kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement?>?> = withContext(Dispatchers.IO) {
         val localVariableConfig = appOpenapiRequestConfig(app = app)
 
-        return@withContext request<Unit, kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement>>(
+        return@withContext request<Unit, kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement?>>(
             localVariableConfig
         )
     }
@@ -975,7 +943,7 @@ open class AppsApi(basePath: kotlin.String = defaultBasePath, client: Call.Facto
      * Its record without arguments or keys: method, state, &#x60;cancelRequested&#x60;, &#x60;startTsMs&#x60;, attempts, input and output ids (sizes and SHA-256 only for callers who may list the app&#39;s files), usage, and &#x60;progress&#x60; as the leader last polled it.  **Who:** whoever the app&#39;s access admits (a public app: anyone).
      * @param app 
      * @param run 
-     * @return kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement>
+     * @return Run
      * @throws IllegalStateException If the request is not correctly configured
      * @throws IOException Rethrows the OkHttp execute method exception
      * @throws UnsupportedOperationException If the API returns an informational or redirection response
@@ -984,11 +952,11 @@ open class AppsApi(basePath: kotlin.String = defaultBasePath, client: Call.Facto
      */
     @Suppress("UNCHECKED_CAST")
     @Throws(IllegalStateException::class, IOException::class, UnsupportedOperationException::class, ClientException::class, ServerException::class)
-    suspend fun appRun(app: kotlin.String, run: kotlin.String) : kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement> = withContext(Dispatchers.IO) {
+    suspend fun appRun(app: kotlin.String, run: kotlin.String) : Run = withContext(Dispatchers.IO) {
         val localVarResponse = appRunWithHttpInfo(app = app, run = run)
 
         return@withContext when (localVarResponse.responseType) {
-            ResponseType.Success -> (localVarResponse as Success<*>).data as kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement>
+            ResponseType.Success -> (localVarResponse as Success<*>).data as Run
             ResponseType.Informational -> throw UnsupportedOperationException("Client does not support Informational responses.")
             ResponseType.Redirection -> throw UnsupportedOperationException("Client does not support Redirection responses.")
             ResponseType.ClientError -> {
@@ -1008,16 +976,16 @@ open class AppsApi(basePath: kotlin.String = defaultBasePath, client: Call.Facto
      * Its record without arguments or keys: method, state, &#x60;cancelRequested&#x60;, &#x60;startTsMs&#x60;, attempts, input and output ids (sizes and SHA-256 only for callers who may list the app&#39;s files), usage, and &#x60;progress&#x60; as the leader last polled it.  **Who:** whoever the app&#39;s access admits (a public app: anyone).
      * @param app 
      * @param run 
-     * @return ApiResponse<kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement>?>
+     * @return ApiResponse<Run?>
      * @throws IllegalStateException If the request is not correctly configured
      * @throws IOException Rethrows the OkHttp execute method exception
      */
     @Suppress("UNCHECKED_CAST")
     @Throws(IllegalStateException::class, IOException::class)
-    suspend fun appRunWithHttpInfo(app: kotlin.String, run: kotlin.String) : ApiResponse<kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement>?> = withContext(Dispatchers.IO) {
+    suspend fun appRunWithHttpInfo(app: kotlin.String, run: kotlin.String) : ApiResponse<Run?> = withContext(Dispatchers.IO) {
         val localVariableConfig = appRunRequestConfig(app = app, run = run)
 
-        return@withContext request<Unit, kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement>>(
+        return@withContext request<Unit, Run>(
             localVariableConfig
         )
     }
@@ -1048,11 +1016,11 @@ open class AppsApi(basePath: kotlin.String = defaultBasePath, client: Call.Facto
     /**
      * GET /apps/{app}/runs
      * An app&#39;s compute runs
-     * **Who:** whoever the app&#39;s access admits (a public app: anyone).
+     * Newest first, &#x60;limit&#x60; (1 to 100, default 20) at a time; &#x60;next&#x60; is the &#x60;before&#x60; of the next page, &#x60;null&#x60; on the last.  **Who:** whoever the app&#39;s access admits (a public app: anyone).
      * @param app 
      * @param limit  (optional)
      * @param before  (optional)
-     * @return kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement>
+     * @return AppRuns200Response
      * @throws IllegalStateException If the request is not correctly configured
      * @throws IOException Rethrows the OkHttp execute method exception
      * @throws UnsupportedOperationException If the API returns an informational or redirection response
@@ -1061,11 +1029,11 @@ open class AppsApi(basePath: kotlin.String = defaultBasePath, client: Call.Facto
      */
     @Suppress("UNCHECKED_CAST")
     @Throws(IllegalStateException::class, IOException::class, UnsupportedOperationException::class, ClientException::class, ServerException::class)
-    suspend fun appRuns(app: kotlin.String, limit: kotlin.String? = null, before: kotlin.String? = null) : kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement> = withContext(Dispatchers.IO) {
+    suspend fun appRuns(app: kotlin.String, limit: kotlin.String? = null, before: kotlin.String? = null) : AppRuns200Response = withContext(Dispatchers.IO) {
         val localVarResponse = appRunsWithHttpInfo(app = app, limit = limit, before = before)
 
         return@withContext when (localVarResponse.responseType) {
-            ResponseType.Success -> (localVarResponse as Success<*>).data as kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement>
+            ResponseType.Success -> (localVarResponse as Success<*>).data as AppRuns200Response
             ResponseType.Informational -> throw UnsupportedOperationException("Client does not support Informational responses.")
             ResponseType.Redirection -> throw UnsupportedOperationException("Client does not support Redirection responses.")
             ResponseType.ClientError -> {
@@ -1082,20 +1050,20 @@ open class AppsApi(basePath: kotlin.String = defaultBasePath, client: Call.Facto
     /**
      * GET /apps/{app}/runs
      * An app&#39;s compute runs
-     * **Who:** whoever the app&#39;s access admits (a public app: anyone).
+     * Newest first, &#x60;limit&#x60; (1 to 100, default 20) at a time; &#x60;next&#x60; is the &#x60;before&#x60; of the next page, &#x60;null&#x60; on the last.  **Who:** whoever the app&#39;s access admits (a public app: anyone).
      * @param app 
      * @param limit  (optional)
      * @param before  (optional)
-     * @return ApiResponse<kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement>?>
+     * @return ApiResponse<AppRuns200Response?>
      * @throws IllegalStateException If the request is not correctly configured
      * @throws IOException Rethrows the OkHttp execute method exception
      */
     @Suppress("UNCHECKED_CAST")
     @Throws(IllegalStateException::class, IOException::class)
-    suspend fun appRunsWithHttpInfo(app: kotlin.String, limit: kotlin.String?, before: kotlin.String?) : ApiResponse<kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement>?> = withContext(Dispatchers.IO) {
+    suspend fun appRunsWithHttpInfo(app: kotlin.String, limit: kotlin.String?, before: kotlin.String?) : ApiResponse<AppRuns200Response?> = withContext(Dispatchers.IO) {
         val localVariableConfig = appRunsRequestConfig(app = app, limit = limit, before = before)
 
-        return@withContext request<Unit, kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement>>(
+        return@withContext request<Unit, AppRuns200Response>(
             localVariableConfig
         )
     }
@@ -1208,10 +1176,10 @@ open class AppsApi(basePath: kotlin.String = defaultBasePath, client: Call.Facto
     /**
      * POST /apps/{app}/transfer
      * Hand an app to another account
-     * The owner (for an organization&#39;s app, while a member and in the app&#39;s team), or an organization admin; an organization&#39;s app only to a member.  **Who:** an account holder (a passkey session not bound to an app&#39;s frontend). **Step-up:** answers &#x60;412 CONFIRM_REQUIRED&#x60; first; send the same request again with &#x60;confirm&#x60;, a passkey assertion over &#x60;details.challenge&#x60;.
+     * The owner (for an organization&#39;s app, while a member and in the app&#39;s team), or an organization admin; an organization&#39;s app only to a member. Answers &#x60;null&#x60;.  **Who:** an account holder (a passkey session not bound to an app&#39;s frontend). **Step-up:** answers &#x60;412 CONFIRM_REQUIRED&#x60; first; send the same request again with &#x60;confirm&#x60;, a passkey assertion over &#x60;details.challenge&#x60;.
      * @param app 
      * @param appTransferRequest 
-     * @return kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement>
+     * @return Null
      * @throws IllegalStateException If the request is not correctly configured
      * @throws IOException Rethrows the OkHttp execute method exception
      * @throws UnsupportedOperationException If the API returns an informational or redirection response
@@ -1220,11 +1188,11 @@ open class AppsApi(basePath: kotlin.String = defaultBasePath, client: Call.Facto
      */
     @Suppress("UNCHECKED_CAST")
     @Throws(IllegalStateException::class, IOException::class, UnsupportedOperationException::class, ClientException::class, ServerException::class)
-    suspend fun appTransfer(app: kotlin.String, appTransferRequest: AppTransferRequest) : kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement> = withContext(Dispatchers.IO) {
+    suspend fun appTransfer(app: kotlin.String, appTransferRequest: AppTransferRequest) : Null = withContext(Dispatchers.IO) {
         val localVarResponse = appTransferWithHttpInfo(app = app, appTransferRequest = appTransferRequest)
 
         return@withContext when (localVarResponse.responseType) {
-            ResponseType.Success -> (localVarResponse as Success<*>).data as kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement>
+            ResponseType.Success -> (localVarResponse as Success<*>).data as Null
             ResponseType.Informational -> throw UnsupportedOperationException("Client does not support Informational responses.")
             ResponseType.Redirection -> throw UnsupportedOperationException("Client does not support Redirection responses.")
             ResponseType.ClientError -> {
@@ -1241,19 +1209,19 @@ open class AppsApi(basePath: kotlin.String = defaultBasePath, client: Call.Facto
     /**
      * POST /apps/{app}/transfer
      * Hand an app to another account
-     * The owner (for an organization&#39;s app, while a member and in the app&#39;s team), or an organization admin; an organization&#39;s app only to a member.  **Who:** an account holder (a passkey session not bound to an app&#39;s frontend). **Step-up:** answers &#x60;412 CONFIRM_REQUIRED&#x60; first; send the same request again with &#x60;confirm&#x60;, a passkey assertion over &#x60;details.challenge&#x60;.
+     * The owner (for an organization&#39;s app, while a member and in the app&#39;s team), or an organization admin; an organization&#39;s app only to a member. Answers &#x60;null&#x60;.  **Who:** an account holder (a passkey session not bound to an app&#39;s frontend). **Step-up:** answers &#x60;412 CONFIRM_REQUIRED&#x60; first; send the same request again with &#x60;confirm&#x60;, a passkey assertion over &#x60;details.challenge&#x60;.
      * @param app 
      * @param appTransferRequest 
-     * @return ApiResponse<kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement>?>
+     * @return ApiResponse<Null?>
      * @throws IllegalStateException If the request is not correctly configured
      * @throws IOException Rethrows the OkHttp execute method exception
      */
     @Suppress("UNCHECKED_CAST")
     @Throws(IllegalStateException::class, IOException::class)
-    suspend fun appTransferWithHttpInfo(app: kotlin.String, appTransferRequest: AppTransferRequest) : ApiResponse<kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement>?> = withContext(Dispatchers.IO) {
+    suspend fun appTransferWithHttpInfo(app: kotlin.String, appTransferRequest: AppTransferRequest) : ApiResponse<Null?> = withContext(Dispatchers.IO) {
         val localVariableConfig = appTransferRequestConfig(app = app, appTransferRequest = appTransferRequest)
 
-        return@withContext request<AppTransferRequest, kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement>>(
+        return@withContext request<AppTransferRequest, Null>(
             localVariableConfig
         )
     }
@@ -1285,7 +1253,7 @@ open class AppsApi(basePath: kotlin.String = defaultBasePath, client: Call.Facto
     /**
      * POST /apps/{app}/upgrade
      * Upgrade an app instance
-     * To a release (&#x60;version&#x60;, of the app&#39;s own package unless &#x60;package&#x60; names another) or a &#x60;bundle&#x60;, code only: the state stays and is read by the new code. Whoever the package&#39;s manifest names (&#x60;upgrades&#x60;: the owner, or its publisher&#39;s &#x60;MANAGE_APPLICATION&#x60; holders), with a step-up over &#x60;{ bundle, migrate, manifest }&#x60;; an upgrade key signs in place of it. A refused or failed upgrade leaves the app on its release and answers &#x60;422 UPGRADE_FAILED&#x60; with the app log&#39;s error in &#x60;details&#x60; (&#x60;MigrationsNotSupported&#x60; when &#x60;migrate&#x60; is named: there are no migrations in this version).  **Who:** an account holder (a passkey session not bound to an app&#39;s frontend). **Step-up:** answers &#x60;412 CONFIRM_REQUIRED&#x60; first; send the same request again with &#x60;confirm&#x60;, a passkey assertion over &#x60;details.challenge&#x60;.
+     * To a release (&#x60;version&#x60;, of the app&#39;s own package unless &#x60;package&#x60; names another) or a &#x60;bundle&#x60;, code only: the state stays and is read by the new code. Whoever the package&#39;s manifest names (&#x60;upgrades&#x60;: the owner, or its publisher&#39;s &#x60;MANAGE_APPLICATION&#x60; holders), with a step-up over &#x60;{ bundle, migrate, manifest }&#x60;; an upgrade key signs in place of it. A refused or failed upgrade leaves the app on its release and answers &#x60;422 UPGRADE_FAILED&#x60; with the app log&#39;s error in &#x60;details&#x60; (&#x60;MigrationsNotSupported&#x60; when &#x60;migrate&#x60; is named: there are no migrations in this version). &#x60;error&#x60; is the app log&#39;s error value (&#x60;null&#x60; when it ran), free-form: the app&#39;s own.  **Who:** an account holder (a passkey session not bound to an app&#39;s frontend). **Step-up:** answers &#x60;412 CONFIRM_REQUIRED&#x60; first; send the same request again with &#x60;confirm&#x60;, a passkey assertion over &#x60;details.challenge&#x60;.
      * @param app 
      * @param appUpgradeRequest 
      * @return AppUpgrade200Response
@@ -1318,7 +1286,7 @@ open class AppsApi(basePath: kotlin.String = defaultBasePath, client: Call.Facto
     /**
      * POST /apps/{app}/upgrade
      * Upgrade an app instance
-     * To a release (&#x60;version&#x60;, of the app&#39;s own package unless &#x60;package&#x60; names another) or a &#x60;bundle&#x60;, code only: the state stays and is read by the new code. Whoever the package&#39;s manifest names (&#x60;upgrades&#x60;: the owner, or its publisher&#39;s &#x60;MANAGE_APPLICATION&#x60; holders), with a step-up over &#x60;{ bundle, migrate, manifest }&#x60;; an upgrade key signs in place of it. A refused or failed upgrade leaves the app on its release and answers &#x60;422 UPGRADE_FAILED&#x60; with the app log&#39;s error in &#x60;details&#x60; (&#x60;MigrationsNotSupported&#x60; when &#x60;migrate&#x60; is named: there are no migrations in this version).  **Who:** an account holder (a passkey session not bound to an app&#39;s frontend). **Step-up:** answers &#x60;412 CONFIRM_REQUIRED&#x60; first; send the same request again with &#x60;confirm&#x60;, a passkey assertion over &#x60;details.challenge&#x60;.
+     * To a release (&#x60;version&#x60;, of the app&#39;s own package unless &#x60;package&#x60; names another) or a &#x60;bundle&#x60;, code only: the state stays and is read by the new code. Whoever the package&#39;s manifest names (&#x60;upgrades&#x60;: the owner, or its publisher&#39;s &#x60;MANAGE_APPLICATION&#x60; holders), with a step-up over &#x60;{ bundle, migrate, manifest }&#x60;; an upgrade key signs in place of it. A refused or failed upgrade leaves the app on its release and answers &#x60;422 UPGRADE_FAILED&#x60; with the app log&#39;s error in &#x60;details&#x60; (&#x60;MigrationsNotSupported&#x60; when &#x60;migrate&#x60; is named: there are no migrations in this version). &#x60;error&#x60; is the app log&#39;s error value (&#x60;null&#x60; when it ran), free-form: the app&#39;s own.  **Who:** an account holder (a passkey session not bound to an app&#39;s frontend). **Step-up:** answers &#x60;412 CONFIRM_REQUIRED&#x60; first; send the same request again with &#x60;confirm&#x60;, a passkey assertion over &#x60;details.challenge&#x60;.
      * @param app 
      * @param appUpgradeRequest 
      * @return ApiResponse<AppUpgrade200Response?>
@@ -1893,9 +1861,9 @@ open class AppsApi(basePath: kotlin.String = defaultBasePath, client: Call.Facto
     /**
      * POST /apps/{app}/blobs
      * Upload a blob
-     * A plain blob, stored with the request&#39;s &#x60;Content-Type&#x60; (default &#x60;application/octet-stream&#x60;), which a component app&#39;s download answers with. Any &#x60;sealed&#x60; parameter, &#x60;true&#x60; or &#x60;false&#x60;, is refused &#x60;400 USE_FILES_API&#x60;: sealed files go through &#x60;/files&#x60;.  **Who:** whoever the app&#39;s access admits (a public app: anyone).
+     * A plain blob, stored with the request&#39;s &#x60;Content-Type&#x60;, which a component app&#39;s download answers with: any media type (printable ASCII, 127 bytes at most; another is &#x60;400 BAD_REQUEST&#x60;), &#x60;application/octet-stream&#x60; when the request names none. Send the blob&#39;s own type, not &#x60;*_/_*&#x60;, which would be stored as its type. Any &#x60;sealed&#x60; parameter, &#x60;true&#x60; or &#x60;false&#x60;, is refused &#x60;400 USE_FILES_API&#x60;: sealed files go through &#x60;/files&#x60;.  **Who:** whoever the app&#39;s access admits (a public app: anyone).
      * @param app 
-     * @param body the blob, of any media type
+     * @param body the blob; its &#x60;Content-Type&#x60; is the type it is stored and served with
      * @param `sealed`  (optional)
      * @return BlobUpload200Response
      * @throws IllegalStateException If the request is not correctly configured
@@ -1927,9 +1895,9 @@ open class AppsApi(basePath: kotlin.String = defaultBasePath, client: Call.Facto
     /**
      * POST /apps/{app}/blobs
      * Upload a blob
-     * A plain blob, stored with the request&#39;s &#x60;Content-Type&#x60; (default &#x60;application/octet-stream&#x60;), which a component app&#39;s download answers with. Any &#x60;sealed&#x60; parameter, &#x60;true&#x60; or &#x60;false&#x60;, is refused &#x60;400 USE_FILES_API&#x60;: sealed files go through &#x60;/files&#x60;.  **Who:** whoever the app&#39;s access admits (a public app: anyone).
+     * A plain blob, stored with the request&#39;s &#x60;Content-Type&#x60;, which a component app&#39;s download answers with: any media type (printable ASCII, 127 bytes at most; another is &#x60;400 BAD_REQUEST&#x60;), &#x60;application/octet-stream&#x60; when the request names none. Send the blob&#39;s own type, not &#x60;*_/_*&#x60;, which would be stored as its type. Any &#x60;sealed&#x60; parameter, &#x60;true&#x60; or &#x60;false&#x60;, is refused &#x60;400 USE_FILES_API&#x60;: sealed files go through &#x60;/files&#x60;.  **Who:** whoever the app&#39;s access admits (a public app: anyone).
      * @param app 
-     * @param body the blob, of any media type
+     * @param body the blob; its &#x60;Content-Type&#x60; is the type it is stored and served with
      * @param `sealed`  (optional)
      * @return ApiResponse<BlobUpload200Response?>
      * @throws IllegalStateException If the request is not correctly configured
@@ -1949,7 +1917,7 @@ open class AppsApi(basePath: kotlin.String = defaultBasePath, client: Call.Facto
      * To obtain the request config of the operation blobUpload
      *
      * @param app 
-     * @param body the blob, of any media type
+     * @param body the blob; its &#x60;Content-Type&#x60; is the type it is stored and served with
      * @param `sealed`  (optional)
      * @return RequestConfig
      */
@@ -1962,6 +1930,7 @@ open class AppsApi(basePath: kotlin.String = defaultBasePath, client: Call.Facto
                 }
             }
         val localVariableHeaders: MutableMap<String, String> = mutableMapOf()
+        localVariableHeaders["Content-Type"] = "application/octet-stream"
         localVariableHeaders["Accept"] = "application/json"
 
         return RequestConfig(
@@ -2284,7 +2253,7 @@ open class AppsApi(basePath: kotlin.String = defaultBasePath, client: Call.Facto
     /**
      * POST /apps/{app}/intents
      * Call a method
-     * A logged call: the result, the events of the call the caller receives, and the answering node&#39;s receipt. A &#x60;confirm&#x60; method answers &#x60;412&#x60; first. An app error is &#x60;422 APP_ERROR&#x60; with &#x60;details { index, code, fields }&#x60;; a trap &#x60;422 TRAP&#x60;.  **Who:** whoever the app&#39;s access admits (a public app: anyone). **Step-up:** when the method is a &#x60;confirm&#x60; method of the app&#39;s ABI, answers &#x60;412 CONFIRM_REQUIRED&#x60; first; send the same request again with &#x60;confirm&#x60;, a passkey assertion over &#x60;details.challenge&#x60;.
+     * A logged call: the result, the events of the call the caller receives, and the answering node&#39;s receipt. A &#x60;confirm&#x60; method answers &#x60;412&#x60; first. An app error is &#x60;422 APP_ERROR&#x60; with &#x60;details { index, code, fields }&#x60;; a trap &#x60;422 TRAP&#x60;. &#x60;args&#x60;, &#x60;result&#x60; and each event&#39;s &#x60;data&#x60; are the app&#39;s own JSON, free-form here: the app&#39;s ABI (&#x60;GET /apps/{app}/abi&#x60;, or its OpenAPI document) types them.  **Who:** whoever the app&#39;s access admits (a public app: anyone). **Step-up:** when the method is a &#x60;confirm&#x60; method of the app&#39;s ABI, answers &#x60;412 CONFIRM_REQUIRED&#x60; first; send the same request again with &#x60;confirm&#x60;, a passkey assertion over &#x60;details.challenge&#x60;.
      * @param app 
      * @param intentsRequest 
      * @return Intents200Response
@@ -2317,7 +2286,7 @@ open class AppsApi(basePath: kotlin.String = defaultBasePath, client: Call.Facto
     /**
      * POST /apps/{app}/intents
      * Call a method
-     * A logged call: the result, the events of the call the caller receives, and the answering node&#39;s receipt. A &#x60;confirm&#x60; method answers &#x60;412&#x60; first. An app error is &#x60;422 APP_ERROR&#x60; with &#x60;details { index, code, fields }&#x60;; a trap &#x60;422 TRAP&#x60;.  **Who:** whoever the app&#39;s access admits (a public app: anyone). **Step-up:** when the method is a &#x60;confirm&#x60; method of the app&#39;s ABI, answers &#x60;412 CONFIRM_REQUIRED&#x60; first; send the same request again with &#x60;confirm&#x60;, a passkey assertion over &#x60;details.challenge&#x60;.
+     * A logged call: the result, the events of the call the caller receives, and the answering node&#39;s receipt. A &#x60;confirm&#x60; method answers &#x60;412&#x60; first. An app error is &#x60;422 APP_ERROR&#x60; with &#x60;details { index, code, fields }&#x60;; a trap &#x60;422 TRAP&#x60;. &#x60;args&#x60;, &#x60;result&#x60; and each event&#39;s &#x60;data&#x60; are the app&#39;s own JSON, free-form here: the app&#39;s ABI (&#x60;GET /apps/{app}/abi&#x60;, or its OpenAPI document) types them.  **Who:** whoever the app&#39;s access admits (a public app: anyone). **Step-up:** when the method is a &#x60;confirm&#x60; method of the app&#39;s ABI, answers &#x60;412 CONFIRM_REQUIRED&#x60; first; send the same request again with &#x60;confirm&#x60;, a passkey assertion over &#x60;details.challenge&#x60;.
      * @param app 
      * @param intentsRequest 
      * @return ApiResponse<Intents200Response?>
@@ -2587,7 +2556,7 @@ open class AppsApi(basePath: kotlin.String = defaultBasePath, client: Call.Facto
      * **Who:** signed in (a session or an API key).
      * @param app 
      * @param upload 
-     * @return kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement?>
+     * @return kotlinx.serialization.json.JsonObject
      * @throws IllegalStateException If the request is not correctly configured
      * @throws IOException Rethrows the OkHttp execute method exception
      * @throws UnsupportedOperationException If the API returns an informational or redirection response
@@ -2596,11 +2565,11 @@ open class AppsApi(basePath: kotlin.String = defaultBasePath, client: Call.Facto
      */
     @Suppress("UNCHECKED_CAST")
     @Throws(IllegalStateException::class, IOException::class, UnsupportedOperationException::class, ClientException::class, ServerException::class)
-    suspend fun uploadAbort(app: kotlin.String, upload: kotlin.String) : kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement?> = withContext(Dispatchers.IO) {
+    suspend fun uploadAbort(app: kotlin.String, upload: kotlin.String) : kotlinx.serialization.json.JsonObject = withContext(Dispatchers.IO) {
         val localVarResponse = uploadAbortWithHttpInfo(app = app, upload = upload)
 
         return@withContext when (localVarResponse.responseType) {
-            ResponseType.Success -> (localVarResponse as Success<*>).data as kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement?>
+            ResponseType.Success -> (localVarResponse as Success<*>).data as kotlinx.serialization.json.JsonObject
             ResponseType.Informational -> throw UnsupportedOperationException("Client does not support Informational responses.")
             ResponseType.Redirection -> throw UnsupportedOperationException("Client does not support Redirection responses.")
             ResponseType.ClientError -> {
@@ -2620,16 +2589,16 @@ open class AppsApi(basePath: kotlin.String = defaultBasePath, client: Call.Facto
      * **Who:** signed in (a session or an API key).
      * @param app 
      * @param upload 
-     * @return ApiResponse<kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement?>?>
+     * @return ApiResponse<kotlinx.serialization.json.JsonObject?>
      * @throws IllegalStateException If the request is not correctly configured
      * @throws IOException Rethrows the OkHttp execute method exception
      */
     @Suppress("UNCHECKED_CAST")
     @Throws(IllegalStateException::class, IOException::class)
-    suspend fun uploadAbortWithHttpInfo(app: kotlin.String, upload: kotlin.String) : ApiResponse<kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement?>?> = withContext(Dispatchers.IO) {
+    suspend fun uploadAbortWithHttpInfo(app: kotlin.String, upload: kotlin.String) : ApiResponse<kotlinx.serialization.json.JsonObject?> = withContext(Dispatchers.IO) {
         val localVariableConfig = uploadAbortRequestConfig(app = app, upload = upload)
 
-        return@withContext request<Unit, kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement?>>(
+        return@withContext request<Unit, kotlinx.serialization.json.JsonObject>(
             localVariableConfig
         )
     }
@@ -2737,7 +2706,7 @@ open class AppsApi(basePath: kotlin.String = defaultBasePath, client: Call.Facto
     /**
      * POST /apps/{app}/files/uploads/{upload}/complete
      * Commit an upload
-     * Charges and commits the file; a retry answers the same file.  **Who:** signed in (a session or an API key).
+     * Charges and commits the file; a retry answers the same file. &#x60;409 UPLOAD_INCOMPLETE&#x60; names the part still missing.  **Who:** signed in (a session or an API key).
      * @param app 
      * @param upload 
      * @return UploadComplete200Response
@@ -2770,7 +2739,7 @@ open class AppsApi(basePath: kotlin.String = defaultBasePath, client: Call.Facto
     /**
      * POST /apps/{app}/files/uploads/{upload}/complete
      * Commit an upload
-     * Charges and commits the file; a retry answers the same file.  **Who:** signed in (a session or an API key).
+     * Charges and commits the file; a retry answers the same file. &#x60;409 UPLOAD_INCOMPLETE&#x60; names the part still missing.  **Who:** signed in (a session or an API key).
      * @param app 
      * @param upload 
      * @return ApiResponse<UploadComplete200Response?>
@@ -2813,7 +2782,7 @@ open class AppsApi(basePath: kotlin.String = defaultBasePath, client: Call.Facto
     /**
      * PUT /apps/{app}/files/uploads/{upload}/parts/{k}
      * Send one part
-     * Part &#x60;k&#x60; (from 0), raw bytes; a part out of order answers the next one expected in &#x60;details.next&#x60;.  **Who:** signed in (a session or an API key).
+     * Part &#x60;k&#x60; (from 0), raw bytes; a part out of order (&#x60;409 PART_OUT_OF_ORDER&#x60;), or one that differs from the part sent before as &#x60;k&#x60; (&#x60;409 PART_CONFLICT&#x60;), answers the next one expected in &#x60;details.next&#x60;.  **Who:** signed in (a session or an API key).
      * @param app 
      * @param upload 
      * @param k 
@@ -2848,7 +2817,7 @@ open class AppsApi(basePath: kotlin.String = defaultBasePath, client: Call.Facto
     /**
      * PUT /apps/{app}/files/uploads/{upload}/parts/{k}
      * Send one part
-     * Part &#x60;k&#x60; (from 0), raw bytes; a part out of order answers the next one expected in &#x60;details.next&#x60;.  **Who:** signed in (a session or an API key).
+     * Part &#x60;k&#x60; (from 0), raw bytes; a part out of order (&#x60;409 PART_OUT_OF_ORDER&#x60;), or one that differs from the part sent before as &#x60;k&#x60; (&#x60;409 PART_CONFLICT&#x60;), answers the next one expected in &#x60;details.next&#x60;.  **Who:** signed in (a session or an API key).
      * @param app 
      * @param upload 
      * @param k 
@@ -2972,7 +2941,7 @@ open class AppsApi(basePath: kotlin.String = defaultBasePath, client: Call.Facto
     /**
      * POST /apps/{app}/views
      * Read with a view method
-     * Read on a caught-up replica (&#x60;consistency: \&quot;strong\&quot;&#x60;, the default; any value but &#x60;\&quot;stale\&quot;&#x60; reads as it), or (&#x60;\&quot;stale\&quot;&#x60;) on the one answering; &#x60;minIndex&#x60; waits until the replica applied it (&#x60;503 NOT_CAUGHT_UP&#x60;).  **Who:** whoever the app&#39;s access admits (a public app: anyone).
+     * Read on a caught-up replica (&#x60;consistency: \&quot;strong\&quot;&#x60;, the default; any value but &#x60;\&quot;stale\&quot;&#x60; reads as it), or (&#x60;\&quot;stale\&quot;&#x60;) on the one answering; &#x60;minIndex&#x60; waits until the replica applied it (&#x60;503 NOT_CAUGHT_UP&#x60;). &#x60;args&#x60;, &#x60;result&#x60; and each event&#39;s &#x60;data&#x60; are the app&#39;s own JSON, free-form here: the app&#39;s ABI (&#x60;GET /apps/{app}/abi&#x60;, or its OpenAPI document) types them.  **Who:** whoever the app&#39;s access admits (a public app: anyone).
      * @param app 
      * @param viewsRequest 
      * @return Views200Response
@@ -3005,7 +2974,7 @@ open class AppsApi(basePath: kotlin.String = defaultBasePath, client: Call.Facto
     /**
      * POST /apps/{app}/views
      * Read with a view method
-     * Read on a caught-up replica (&#x60;consistency: \&quot;strong\&quot;&#x60;, the default; any value but &#x60;\&quot;stale\&quot;&#x60; reads as it), or (&#x60;\&quot;stale\&quot;&#x60;) on the one answering; &#x60;minIndex&#x60; waits until the replica applied it (&#x60;503 NOT_CAUGHT_UP&#x60;).  **Who:** whoever the app&#39;s access admits (a public app: anyone).
+     * Read on a caught-up replica (&#x60;consistency: \&quot;strong\&quot;&#x60;, the default; any value but &#x60;\&quot;stale\&quot;&#x60; reads as it), or (&#x60;\&quot;stale\&quot;&#x60;) on the one answering; &#x60;minIndex&#x60; waits until the replica applied it (&#x60;503 NOT_CAUGHT_UP&#x60;). &#x60;args&#x60;, &#x60;result&#x60; and each event&#39;s &#x60;data&#x60; are the app&#39;s own JSON, free-form here: the app&#39;s ABI (&#x60;GET /apps/{app}/abi&#x60;, or its OpenAPI document) types them.  **Who:** whoever the app&#39;s access admits (a public app: anyone).
      * @param app 
      * @param viewsRequest 
      * @return ApiResponse<Views200Response?>

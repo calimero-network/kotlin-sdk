@@ -32,7 +32,7 @@ import kotlinx.serialization.Contextual
  * 
  *
  * @param kind 
- * @param `data` 
+ * @param `data` Free-form JSON: its shape is not this API's (see the description around it for whose it is).
  */
 @Serializable
 
@@ -41,6 +41,7 @@ data class Intents200ResponseEventsInner (
     @SerialName(value = "kind")
     val kind: kotlin.String,
 
+    /* Free-form JSON: its shape is not this API's (see the description around it for whose it is). */
     @Contextual @SerialName(value = "data")
     val `data`: kotlinx.serialization.json.JsonElement?
 

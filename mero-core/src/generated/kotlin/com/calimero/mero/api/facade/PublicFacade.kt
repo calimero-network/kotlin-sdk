@@ -39,7 +39,7 @@ class PublicFacade internal constructor(
     /**
      * Node health
      *
-     * In the clear. The node's id, the system group's leader, its release, the newest cluster version it supports (`clusterVersion`) and the cluster's rollback epoch.
+     * In the clear. The node's id, the system group's leader (`null`: none known), its `merod` release, the newest cluster version it supports (`clusterVersion`) and the cluster's rollback epoch (`null` on a node without a rollback counter).
      *
      * **Who:** anyone.
      *

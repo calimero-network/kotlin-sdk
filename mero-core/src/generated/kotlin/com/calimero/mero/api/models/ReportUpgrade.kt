@@ -38,7 +38,7 @@ import kotlinx.serialization.Contextual
  * @param ok 
  * @param actorKind 
  * @param actor 
- * @param error 
+ * @param error Free-form JSON: its shape is not this API's (see the description around it for whose it is).
  * @param run 
  * @param apiKey 
  */
@@ -64,6 +64,7 @@ data class ReportUpgrade (
     @SerialName(value = "actor")
     val actor: kotlin.String? = null,
 
+    /* Free-form JSON: its shape is not this API's (see the description around it for whose it is). */
     @Contextual @SerialName(value = "error")
     val error: kotlinx.serialization.json.JsonElement? = null,
 

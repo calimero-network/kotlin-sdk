@@ -20,7 +20,7 @@ class AppsFacade internal constructor(
     /**
      * An app's ABI
      *
-     * The ABI its bundle embeds: methods, events, errors and state.
+     * The ABI its bundle embeds: methods, events, errors and state. `abi` is the bundle's own document, free-form here: its format is the ABI's, not this API's.
      *
      * **Who:** whoever the app's access admits (a public app: anyone).
      *
@@ -51,7 +51,7 @@ class AppsFacade internal constructor(
     /**
      * Every replica's receipt-key attestation
      *
-     * Each replica's `/attestation?purpose=receipts` for `nonce`. It reads the query `/attestation` does, but only `nonce`: `app`, `appHash` and `purpose` are ignored here.
+     * Each replica's `/attestation?purpose=receipts` for `nonce` (32 bytes, hex), or why it could not be had (`error`). Any other query parameter is ignored.
      *
      * **Who:** whoever the app's access admits (a public app: anyone).
      *
@@ -62,16 +62,13 @@ class AppsFacade internal constructor(
     suspend fun attestation(
         app: kotlin.String,
         nonce: kotlin.String,
-        app2: kotlin.String? = null,
-        appHash: kotlin.String? = null,
-        purpose: com.calimero.mero.api.apis.AppsApi.PurposeAppAttestation? = null,
     ): AppAttestation200Response =
-        api(null, null, emptySet()).apps.appAttestation(app = app, nonce = nonce, app2 = app2, appHash = appHash, purpose = purpose)
+        api(null, null, emptySet()).apps.appAttestation(app = app, nonce = nonce)
 
     /**
      * Create an app instance
      *
-     * From a release (`package`, `version`, `service`), a deployment's offer (`deployment`), or an uploaded `bundle`; in an organization (`org`) or the caller's own. `initArgs` go to the app's `init`.
+     * From a release (`package`, `version`, `service`), a deployment's offer (`deployment`), or an uploaded `bundle`; in an organization (`org`) or the caller's own. `initArgs` go to the app's `init` and `metadata` is kept as given (both free-form JSON). Answers once `init` committed; `compute` says whether the app has a compute component.
      *
      * **Who:** an installer (an account holder, or an unscoped API key that is not read-only).
      *
@@ -145,7 +142,7 @@ class AppsFacade internal constructor(
     /**
      * Set an app's metadata
      *
-     * The owner or an organization admin; 16 KiB at most.
+     * The owner or an organization admin; 16 KiB at most. `metadata` is the caller's own JSON, free-form, kept as given.
      *
      * **Who:** signed in (a session or an API key).
      *
@@ -162,7 +159,7 @@ class AppsFacade internal constructor(
     /**
      * Call a method by its path
      *
-     * The body of `/intents` or `/views` without `method`, which the path names, as the app's OpenAPI document lists it: a view the running bundle's ABI declares (without `confirm`) is answered as `/views`, anything else as `/intents`, with that route's gate, step-up and limits. Retry-safe as a view always, as a call with `idempotencyKey`.
+     * The body of `/intents` or `/views` without `method`, which the path names, as the app's OpenAPI document lists it: a view the running bundle's ABI declares (without `confirm`) is answered as `/views`, anything else as `/intents`, with that route's gate, step-up and limits. Retry-safe as a view always, as a call with `idempotencyKey`. `args`, `result` and each event's `data` are the app's own JSON, free-form here: the app's ABI (`GET /apps/{app}/abi`, or its OpenAPI document) types them.
      *
      * **Who:** whoever the app's access admits (a public app: anyone). **Step-up:** when the method is a `confirm` method of the app's ABI, answers `412 CONFIRM_REQUIRED` first; send the same request again with `confirm`, a passkey assertion over `details.challenge`.
      *
@@ -207,7 +204,7 @@ class AppsFacade internal constructor(
     /**
      * An app's OpenAPI document
      *
-     * Generated from the ABI of the bundle the app runs, under the access `/abi` has: one `POST /apps/{app}/methods/{method}` per method, with its arguments, result and errors.
+     * Generated from the ABI of the bundle the app runs, under the access `/abi` has: one `POST /apps/{app}/methods/{method}` per method, with its arguments, result and errors. Free-form here: it is a document of its own, which a client reads as OpenAPI.
      *
      * **Who:** whoever the app's access admits (a public app: anyone).
      *
@@ -217,7 +214,7 @@ class AppsFacade internal constructor(
      */
     suspend fun openapi(
         app: kotlin.String,
-    ): kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement> =
+    ): kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement?> =
         api(null, null, emptySet()).apps.appOpenapi(app = app)
 
     /**
@@ -234,11 +231,13 @@ class AppsFacade internal constructor(
     suspend fun run(
         app: kotlin.String,
         run: kotlin.String,
-    ): kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement> =
+    ): Run =
         api(null, null, emptySet()).apps.appRun(app = app, run = run)
 
     /**
      * An app's compute runs
+     *
+     * Newest first, `limit` (1 to 100, default 20) at a time; `next` is the `before` of the next page, `null` on the last.
      *
      * **Who:** whoever the app's access admits (a public app: anyone).
      *
@@ -250,7 +249,7 @@ class AppsFacade internal constructor(
         app: kotlin.String,
         limit: kotlin.String? = null,
         before: kotlin.String? = null,
-    ): kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement> =
+    ): AppRuns200Response =
         api(null, null, emptySet()).apps.appRuns(app = app, limit = limit, before = before)
 
     /**
@@ -272,7 +271,7 @@ class AppsFacade internal constructor(
     /**
      * Hand an app to another account
      *
-     * The owner (for an organization's app, while a member and in the app's team), or an organization admin; an organization's app only to a member.
+     * The owner (for an organization's app, while a member and in the app's team), or an organization admin; an organization's app only to a member. Answers `null`.
      *
      * **Who:** an account holder (a passkey session not bound to an app's frontend). **Step-up:** answers `412 CONFIRM_REQUIRED` first; send the same request again with `confirm`, a passkey assertion over `details.challenge`.
      *
@@ -286,13 +285,13 @@ class AppsFacade internal constructor(
         app: kotlin.String,
         to: kotlin.String,
         passkey: PasskeyProvider? = null,
-    ): kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement> =
+    ): Null =
         api(passkey, null, emptySet()).apps.appTransfer(app = app, appTransferRequest = AppTransferRequest(to = to))
 
     /**
      * Upgrade an app instance
      *
-     * To a release (`version`, of the app's own package unless `package` names another) or a `bundle`, code only: the state stays and is read by the new code. Whoever the package's manifest names (`upgrades`: the owner, or its publisher's `MANAGE_APPLICATION` holders), with a step-up over `{ bundle, migrate, manifest }`; an upgrade key signs in place of it. A refused or failed upgrade leaves the app on its release and answers `422 UPGRADE_FAILED` with the app log's error in `details` (`MigrationsNotSupported` when `migrate` is named: there are no migrations in this version).
+     * To a release (`version`, of the app's own package unless `package` names another) or a `bundle`, code only: the state stays and is read by the new code. Whoever the package's manifest names (`upgrades`: the owner, or its publisher's `MANAGE_APPLICATION` holders), with a step-up over `{ bundle, migrate, manifest }`; an upgrade key signs in place of it. A refused or failed upgrade leaves the app on its release and answers `422 UPGRADE_FAILED` with the app log's error in `details` (`MigrationsNotSupported` when `migrate` is named: there are no migrations in this version). `error` is the app log's error value (`null` when it ran), free-form: the app's own.
      *
      * **Who:** an account holder (a passkey session not bound to an app's frontend). **Step-up:** answers `412 CONFIRM_REQUIRED` first; send the same request again with `confirm`, a passkey assertion over `details.challenge`.
      *
@@ -431,7 +430,7 @@ class AppsFacade internal constructor(
     /**
      * Upload a blob
      *
-     * A plain blob, stored with the request's `Content-Type` (default `application/octet-stream`), which a component app's download answers with. Any `sealed` parameter, `true` or `false`, is refused `400 USE_FILES_API`: sealed files go through `/files`.
+     * A plain blob, stored with the request's `Content-Type`, which a component app's download answers with: any media type (printable ASCII, 127 bytes at most; another is `400 BAD_REQUEST`), `application/octet-stream` when the request names none. Send the blob's own type, not `*&#47;*`, which would be stored as its type. Any `sealed` parameter, `true` or `false`, is refused `400 USE_FILES_API`: sealed files go through `/files`.
      *
      * **Who:** whoever the app's access admits (a public app: anyone).
      *
@@ -514,7 +513,7 @@ class AppsFacade internal constructor(
     /**
      * Call a method
      *
-     * A logged call: the result, the events of the call the caller receives, and the answering node's receipt. A `confirm` method answers `412` first. An app error is `422 APP_ERROR` with `details { index, code, fields }`; a trap `422 TRAP`.
+     * A logged call: the result, the events of the call the caller receives, and the answering node's receipt. A `confirm` method answers `412` first. An app error is `422 APP_ERROR` with `details { index, code, fields }`; a trap `422 TRAP`. `args`, `result` and each event's `data` are the app's own JSON, free-form here: the app's ABI (`GET /apps/{app}/abi`, or its OpenAPI document) types them.
      *
      * **Who:** whoever the app's access admits (a public app: anyone). **Step-up:** when the method is a `confirm` method of the app's ABI, answers `412 CONFIRM_REQUIRED` first; send the same request again with `confirm`, a passkey assertion over `details.challenge`.
      *
@@ -593,7 +592,7 @@ class AppsFacade internal constructor(
     suspend fun uploadAbort(
         app: kotlin.String,
         upload: kotlin.String,
-    ): kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement?> =
+    ): kotlinx.serialization.json.JsonObject =
         api(null, null, emptySet()).apps.uploadAbort(app = app, upload = upload)
 
     /**
@@ -616,7 +615,7 @@ class AppsFacade internal constructor(
     /**
      * Commit an upload
      *
-     * Charges and commits the file; a retry answers the same file.
+     * Charges and commits the file; a retry answers the same file. `409 UPLOAD_INCOMPLETE` names the part still missing.
      *
      * **Who:** signed in (a session or an API key).
      *
@@ -633,7 +632,7 @@ class AppsFacade internal constructor(
     /**
      * Send one part
      *
-     * Part `k` (from 0), raw bytes; a part out of order answers the next one expected in `details.next`.
+     * Part `k` (from 0), raw bytes; a part out of order (`409 PART_OUT_OF_ORDER`), or one that differs from the part sent before as `k` (`409 PART_CONFLICT`), answers the next one expected in `details.next`.
      *
      * **Who:** signed in (a session or an API key).
      *
@@ -667,7 +666,7 @@ class AppsFacade internal constructor(
     /**
      * Read with a view method
      *
-     * Read on a caught-up replica (`consistency: "strong"`, the default; any value but `"stale"` reads as it), or (`"stale"`) on the one answering; `minIndex` waits until the replica applied it (`503 NOT_CAUGHT_UP`).
+     * Read on a caught-up replica (`consistency: "strong"`, the default; any value but `"stale"` reads as it), or (`"stale"`) on the one answering; `minIndex` waits until the replica applied it (`503 NOT_CAUGHT_UP`). `args`, `result` and each event's `data` are the app's own JSON, free-form here: the app's ABI (`GET /apps/{app}/abi`, or its OpenAPI document) types them.
      *
      * **Who:** whoever the app's access admits (a public app: anyone).
      *

@@ -50,7 +50,7 @@ class AuthFacade internal constructor(
         prefixes: com.calimero.mero.OutboundSelection? = null,
         replace: kotlin.Boolean? = null,
         passkey: PasskeyProvider? = null,
-    ): kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement> =
+    ): OutboundApproved =
         api(passkey, null, emptySet()).accounts.accountOutboundApproval(accountOutboundApprovalRequest = AccountOutboundApprovalRequest(`package` = `package`, prefixes = prefixes, replace = replace))
 
     /**
@@ -67,13 +67,13 @@ class AuthFacade internal constructor(
     suspend fun accountProofProve(
         nonce: kotlin.String,
         audience: kotlin.String,
-    ): kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement> =
+    ): AccountProof =
         api(null, null, emptySet()).accounts.accountProofProve(accountProofProveRequest = AccountProofProveRequest(nonce = nonce, audience = audience))
 
     /**
      * Start an account recovery
      *
-     * Signed out, with the recovery code: creation options for the passkey that will replace the lost ones.
+     * Signed out, with the recovery code: creation options for the passkey that will replace the lost ones. `options` are the WebAuthn options to hand to the browser as they are: free-form here, their shape is WebAuthn's.
      *
      * **Who:** anyone.
      *
@@ -158,7 +158,7 @@ class AuthFacade internal constructor(
         version: kotlin.String,
         approved: kotlin.Boolean? = null,
         passkey: PasskeyProvider? = null,
-    ): kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement> =
+    ): ApprovedReleases =
         api(passkey, null, emptySet()).accounts.accountReleaseApproval(accountReleaseApprovalRequest = AccountReleaseApprovalRequest(version = version, approved = approved))
 
     /**
@@ -289,7 +289,7 @@ class AuthFacade internal constructor(
     /**
      * Start a sign-in
      *
-     * A WebAuthn challenge for any passkey of the cluster. `origin` is an app frontend's registered origin, whose rp-id the ceremony then uses.
+     * A WebAuthn challenge for any passkey of the cluster. `origin` is an app frontend's registered origin, whose rp-id the ceremony then uses. `options` are the WebAuthn options to hand to the browser as they are: free-form here, their shape is WebAuthn's.
      *
      * **Who:** anyone.
      *
@@ -332,13 +332,15 @@ class AuthFacade internal constructor(
     /**
      * End every session of the account
      *
+     * `revoked`: how many sessions ended.
+     *
      * **Who:** an account holder (a passkey session not bound to an app's frontend).
      *
      * `POST /auth/logout-all` (`logout_all`).
      *
      * @throws com.calimero.mero.CalimeroError the node's refusal, typed by [com.calimero.mero.errorFrom].
      */
-    suspend fun logoutAll(): kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement> =
+    suspend fun logoutAll(): LogoutAll200Response =
         api(null, null, emptySet()).accounts.logoutAll()
 
     /**
@@ -358,7 +360,7 @@ class AuthFacade internal constructor(
     /**
      * Start adding a passkey
      *
-     * Creation options for another passkey (a device) on the caller's account.
+     * Creation options for another passkey (a device) on the caller's account. `options` are the WebAuthn options to hand to the browser as they are: free-form here, their shape is WebAuthn's.
      *
      * **Who:** an account holder (a passkey session not bound to an app's frontend).
      *
@@ -476,7 +478,7 @@ class AuthFacade internal constructor(
     /**
      * Start a sign-up
      *
-     * Creation options for a new passkey. `invite` is an organization or cluster sign-up invite token, which the policy may require; `403 SIGN_UP_REFUSED` when the policy would refuse the sign-up.
+     * Creation options for a new passkey. `invite` is an organization or cluster sign-up invite token, which the policy may require; `403 SIGN_UP_REFUSED` when the policy would refuse the sign-up. `options` are the WebAuthn options to hand to the browser as they are: free-form here, their shape is WebAuthn's.
      *
      * **Who:** anyone.
      *
@@ -545,7 +547,7 @@ class AuthFacade internal constructor(
     /**
      * The account's usage against its quotas
      *
-     * Apps, bundle bytes, API keys and owned organizations; what today's runs of the apps the account develops used (decimal strings).
+     * The apps the account owns, its bundle bytes (a decimal string), API keys and owned organizations; the file bytes held by each payer it belongs to (each organization it is in, and `account:<id>` for its own apps); the cluster's quotas; and what today's runs of the apps the account develops used (decimal strings).
      *
      * **Who:** signed in (a session or an API key).
      *

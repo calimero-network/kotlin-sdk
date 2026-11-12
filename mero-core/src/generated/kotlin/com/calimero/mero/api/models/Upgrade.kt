@@ -37,7 +37,7 @@ import kotlinx.serialization.Contextual
  * @param at 
  * @param by 
  * @param ok 
- * @param error 
+ * @param error Free-form JSON: its shape is not this API's (see the description around it for whose it is).
  * @param run 
  * @param apiKey 
  * @param fromRelease 
@@ -62,6 +62,7 @@ data class Upgrade (
     @SerialName(value = "ok")
     val ok: kotlin.Boolean,
 
+    /* Free-form JSON: its shape is not this API's (see the description around it for whose it is). */
     @Contextual @SerialName(value = "error")
     val error: kotlinx.serialization.json.JsonElement? = null,
 

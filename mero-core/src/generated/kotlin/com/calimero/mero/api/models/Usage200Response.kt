@@ -23,15 +23,21 @@
 
 package com.calimero.mero.api.models
 
+import com.calimero.mero.api.models.Quotas
 
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Contextual
 
 /**
- * Other properties than those listed may be present: the ones listed are those clients rely on.
+ * 
  *
+ * @param apps 
  * @param bundleBytes an unsigned 64-bit integer as a decimal string (D20)
+ * @param apiKeys 
+ * @param orgsOwned 
+ * @param fileBytes 
+ * @param quotas 
  * @param developerFuelToday an unsigned 64-bit integer as a decimal string (D20)
  * @param developerWritesToday an unsigned 64-bit integer as a decimal string (D20)
  */
@@ -39,17 +45,32 @@ import kotlinx.serialization.Contextual
 
 data class Usage200Response (
 
+    @SerialName(value = "apps")
+    val apps: kotlin.Long,
+
     /* an unsigned 64-bit integer as a decimal string (D20) */
     @SerialName(value = "bundleBytes")
     val bundleBytes: kotlin.String,
 
+    @SerialName(value = "apiKeys")
+    val apiKeys: kotlin.Long,
+
+    @SerialName(value = "orgsOwned")
+    val orgsOwned: kotlin.Long,
+
+    @SerialName(value = "fileBytes")
+    val fileBytes: kotlin.collections.Map<kotlin.String, kotlin.Long>,
+
+    @SerialName(value = "quotas")
+    val quotas: Quotas,
+
     /* an unsigned 64-bit integer as a decimal string (D20) */
     @SerialName(value = "developerFuelToday")
-    val developerFuelToday: kotlin.String? = null,
+    val developerFuelToday: kotlin.String,
 
     /* an unsigned 64-bit integer as a decimal string (D20) */
     @SerialName(value = "developerWritesToday")
-    val developerWritesToday: kotlin.String? = null
+    val developerWritesToday: kotlin.String
 
 ) {
 

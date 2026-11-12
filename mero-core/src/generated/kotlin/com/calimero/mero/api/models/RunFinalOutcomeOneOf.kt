@@ -23,30 +23,34 @@
 
 package com.calimero.mero.api.models
 
-import com.calimero.mero.api.models.OperatorProof
 
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Contextual
 
 /**
- * Other properties than those listed may be present: the ones listed are those clients rely on.
+ * 
  *
- * @param org 
- * @param operatorProof 
+ * @param kind 
  */
 @Serializable
 
-data class OpsQuotasSetRequest (
+data class RunFinalOutcomeOneOf (
 
-    @SerialName(value = "org")
-    val org: kotlin.String? = null,
-
-    @SerialName(value = "operatorProof")
-    val operatorProof: OperatorProof? = null
+    @SerialName(value = "kind")
+    val kind: RunFinalOutcomeOneOf.Kind
 
 ) {
 
+    /**
+     * 
+     *
+     * Values: DONE
+     */
+    @Serializable
+    enum class Kind(val value: kotlin.String) {
+        @SerialName(value = "done") DONE("done");
+    }
 
 }
 

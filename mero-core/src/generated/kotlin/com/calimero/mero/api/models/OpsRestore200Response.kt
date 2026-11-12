@@ -23,6 +23,8 @@
 
 package com.calimero.mero.api.models
 
+import com.calimero.mero.api.models.GroupStatus
+import com.calimero.mero.api.models.OpsRestore200ResponseBackup
 
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.SerialName
@@ -50,11 +52,11 @@ data class OpsRestore200Response (
     @SerialName(value = "rows")
     val rows: kotlin.Long,
 
-    @Contextual @SerialName(value = "backup")
-    val backup: kotlinx.serialization.json.JsonElement?,
+    @SerialName(value = "backup")
+    val backup: OpsRestore200ResponseBackup,
 
     @SerialName(value = "status")
-    val status: kotlin.String
+    val status: GroupStatus
 
 ) {
 

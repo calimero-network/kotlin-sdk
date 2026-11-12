@@ -33,7 +33,7 @@ import kotlinx.serialization.Contextual
  * 
  *
  * @param method 
- * @param args 
+ * @param args Free-form JSON: its shape is not this API's (see the description around it for whose it is).
  * @param idempotencyKey 
  * @param confirm 
  */
@@ -44,6 +44,7 @@ data class IntentsRequest (
     @SerialName(value = "method")
     val method: kotlin.String,
 
+    /* Free-form JSON: its shape is not this API's (see the description around it for whose it is). */
     @Contextual @SerialName(value = "args")
     val args: kotlinx.serialization.json.JsonElement? = null,
 

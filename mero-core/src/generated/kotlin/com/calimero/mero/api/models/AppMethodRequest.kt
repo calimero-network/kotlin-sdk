@@ -32,7 +32,7 @@ import kotlinx.serialization.Contextual
 /**
  * 
  *
- * @param args 
+ * @param args Free-form JSON: its shape is not this API's (see the description around it for whose it is).
  * @param idempotencyKey 
  * @param confirm 
  * @param consistency 
@@ -42,6 +42,7 @@ import kotlinx.serialization.Contextual
 
 data class AppMethodRequest (
 
+    /* Free-form JSON: its shape is not this API's (see the description around it for whose it is). */
     @Contextual @SerialName(value = "args")
     val args: kotlinx.serialization.json.JsonElement? = null,
 

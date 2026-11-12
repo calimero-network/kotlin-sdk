@@ -29,36 +29,16 @@ import kotlinx.serialization.SerialName
 import kotlinx.serialization.Contextual
 
 /**
- * 
+ * The mero-tee releases the scope approves now, after the change.
  *
- * @param `package` 
- * @param origin 
- * @param rpId 
- * @param addedBy 
- * @param addedAt 
- * @param served 
+ * @param approvedReleases 
  */
 @Serializable
 
-data class OriginsList200ResponseOriginsInner (
+data class ApprovedReleases (
 
-    @SerialName(value = "package")
-    val `package`: kotlin.String,
-
-    @SerialName(value = "origin")
-    val origin: kotlin.String,
-
-    @SerialName(value = "rpId")
-    val rpId: kotlin.String,
-
-    @SerialName(value = "addedBy")
-    val addedBy: kotlin.String,
-
-    @SerialName(value = "addedAt")
-    val addedAt: kotlin.String,
-
-    @SerialName(value = "served")
-    val served: kotlin.Boolean
+    @SerialName(value = "approvedReleases")
+    val approvedReleases: kotlin.collections.List<kotlin.String>
 
 ) {
 

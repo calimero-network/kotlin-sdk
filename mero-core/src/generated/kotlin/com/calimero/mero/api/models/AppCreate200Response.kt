@@ -53,8 +53,8 @@ data class AppCreate200Response (
     @SerialName(value = "replicas")
     val replicas: kotlin.collections.List<kotlin.Long>,
 
-    @Contextual @SerialName(value = "compute")
-    val compute: kotlinx.serialization.json.JsonElement? = null
+    @SerialName(value = "compute")
+    val compute: kotlin.Boolean
 
 ) {
 

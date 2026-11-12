@@ -41,10 +41,12 @@ import com.calimero.mero.api.models.DeploymentOffer200Response
 import com.calimero.mero.api.models.DeploymentOfferRequest
 import com.calimero.mero.api.models.DeploymentOrgs200Response
 import com.calimero.mero.api.models.Error
+import com.calimero.mero.api.models.InviteKey
 import com.calimero.mero.api.models.SignUpInviteCreate200Response
 import com.calimero.mero.api.models.SignUpInviteCreateRequest
 import com.calimero.mero.api.models.SignUpInviteList200Response
 import com.calimero.mero.api.models.SignUpPublic200Response
+import com.calimero.mero.api.models.SignUpSet
 import com.calimero.mero.api.models.SignUpSetRequest
 
 import kotlinx.serialization.SerialName
@@ -747,7 +749,7 @@ open class SignUpAndDeploymentsApi(basePath: kotlin.String = defaultBasePath, cl
      * @param id 
      * @param app 
      * @param confirmOnly May be absent. (optional)
-     * @return kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement>
+     * @return DeploymentOffer200Response
      * @throws IllegalStateException If the request is not correctly configured
      * @throws IOException Rethrows the OkHttp execute method exception
      * @throws UnsupportedOperationException If the API returns an informational or redirection response
@@ -756,11 +758,11 @@ open class SignUpAndDeploymentsApi(basePath: kotlin.String = defaultBasePath, cl
      */
     @Suppress("UNCHECKED_CAST")
     @Throws(IllegalStateException::class, IOException::class, UnsupportedOperationException::class, ClientException::class, ServerException::class)
-    suspend fun deploymentWithdraw(id: kotlin.String, app: kotlin.String, confirmOnly: ConfirmOnly? = null) : kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement> = withContext(Dispatchers.IO) {
+    suspend fun deploymentWithdraw(id: kotlin.String, app: kotlin.String, confirmOnly: ConfirmOnly? = null) : DeploymentOffer200Response = withContext(Dispatchers.IO) {
         val localVarResponse = deploymentWithdrawWithHttpInfo(id = id, app = app, confirmOnly = confirmOnly)
 
         return@withContext when (localVarResponse.responseType) {
-            ResponseType.Success -> (localVarResponse as Success<*>).data as kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement>
+            ResponseType.Success -> (localVarResponse as Success<*>).data as DeploymentOffer200Response
             ResponseType.Informational -> throw UnsupportedOperationException("Client does not support Informational responses.")
             ResponseType.Redirection -> throw UnsupportedOperationException("Client does not support Redirection responses.")
             ResponseType.ClientError -> {
@@ -781,16 +783,16 @@ open class SignUpAndDeploymentsApi(basePath: kotlin.String = defaultBasePath, cl
      * @param id 
      * @param app 
      * @param confirmOnly May be absent. (optional)
-     * @return ApiResponse<kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement>?>
+     * @return ApiResponse<DeploymentOffer200Response?>
      * @throws IllegalStateException If the request is not correctly configured
      * @throws IOException Rethrows the OkHttp execute method exception
      */
     @Suppress("UNCHECKED_CAST")
     @Throws(IllegalStateException::class, IOException::class)
-    suspend fun deploymentWithdrawWithHttpInfo(id: kotlin.String, app: kotlin.String, confirmOnly: ConfirmOnly?) : ApiResponse<kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement>?> = withContext(Dispatchers.IO) {
+    suspend fun deploymentWithdrawWithHttpInfo(id: kotlin.String, app: kotlin.String, confirmOnly: ConfirmOnly?) : ApiResponse<DeploymentOffer200Response?> = withContext(Dispatchers.IO) {
         val localVariableConfig = deploymentWithdrawRequestConfig(id = id, app = app, confirmOnly = confirmOnly)
 
-        return@withContext request<ConfirmOnly, kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement>>(
+        return@withContext request<ConfirmOnly, DeploymentOffer200Response>(
             localVariableConfig
         )
     }
@@ -970,7 +972,7 @@ open class SignUpAndDeploymentsApi(basePath: kotlin.String = defaultBasePath, cl
      * **Who:** an account holder (a passkey session not bound to an app&#39;s frontend). **Step-up:** answers &#x60;412 CONFIRM_REQUIRED&#x60; first; send the same request again with &#x60;confirm&#x60;, a passkey assertion over &#x60;details.challenge&#x60;.
      * @param key 
      * @param confirmOnly May be absent. (optional)
-     * @return kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement>
+     * @return InviteKey
      * @throws IllegalStateException If the request is not correctly configured
      * @throws IOException Rethrows the OkHttp execute method exception
      * @throws UnsupportedOperationException If the API returns an informational or redirection response
@@ -979,11 +981,11 @@ open class SignUpAndDeploymentsApi(basePath: kotlin.String = defaultBasePath, cl
      */
     @Suppress("UNCHECKED_CAST")
     @Throws(IllegalStateException::class, IOException::class, UnsupportedOperationException::class, ClientException::class, ServerException::class)
-    suspend fun signUpInviteRevoke(key: kotlin.String, confirmOnly: ConfirmOnly? = null) : kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement> = withContext(Dispatchers.IO) {
+    suspend fun signUpInviteRevoke(key: kotlin.String, confirmOnly: ConfirmOnly? = null) : InviteKey = withContext(Dispatchers.IO) {
         val localVarResponse = signUpInviteRevokeWithHttpInfo(key = key, confirmOnly = confirmOnly)
 
         return@withContext when (localVarResponse.responseType) {
-            ResponseType.Success -> (localVarResponse as Success<*>).data as kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement>
+            ResponseType.Success -> (localVarResponse as Success<*>).data as InviteKey
             ResponseType.Informational -> throw UnsupportedOperationException("Client does not support Informational responses.")
             ResponseType.Redirection -> throw UnsupportedOperationException("Client does not support Redirection responses.")
             ResponseType.ClientError -> {
@@ -1003,16 +1005,16 @@ open class SignUpAndDeploymentsApi(basePath: kotlin.String = defaultBasePath, cl
      * **Who:** an account holder (a passkey session not bound to an app&#39;s frontend). **Step-up:** answers &#x60;412 CONFIRM_REQUIRED&#x60; first; send the same request again with &#x60;confirm&#x60;, a passkey assertion over &#x60;details.challenge&#x60;.
      * @param key 
      * @param confirmOnly May be absent. (optional)
-     * @return ApiResponse<kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement>?>
+     * @return ApiResponse<InviteKey?>
      * @throws IllegalStateException If the request is not correctly configured
      * @throws IOException Rethrows the OkHttp execute method exception
      */
     @Suppress("UNCHECKED_CAST")
     @Throws(IllegalStateException::class, IOException::class)
-    suspend fun signUpInviteRevokeWithHttpInfo(key: kotlin.String, confirmOnly: ConfirmOnly?) : ApiResponse<kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement>?> = withContext(Dispatchers.IO) {
+    suspend fun signUpInviteRevokeWithHttpInfo(key: kotlin.String, confirmOnly: ConfirmOnly?) : ApiResponse<InviteKey?> = withContext(Dispatchers.IO) {
         val localVariableConfig = signUpInviteRevokeRequestConfig(key = key, confirmOnly = confirmOnly)
 
-        return@withContext request<ConfirmOnly, kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement>>(
+        return@withContext request<ConfirmOnly, InviteKey>(
             localVariableConfig
         )
     }
@@ -1116,7 +1118,7 @@ open class SignUpAndDeploymentsApi(basePath: kotlin.String = defaultBasePath, cl
      * Set the sign-up policy
      * The cluster&#39;s owner, once named, with a passkey (&#x60;412&#x60; first).  **Who:** an account holder (a passkey session not bound to an app&#39;s frontend). **Step-up:** answers &#x60;412 CONFIRM_REQUIRED&#x60; first; send the same request again with &#x60;confirm&#x60;, a passkey assertion over &#x60;details.challenge&#x60;.
      * @param signUpSetRequest 
-     * @return kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement>
+     * @return SignUpSet
      * @throws IllegalStateException If the request is not correctly configured
      * @throws IOException Rethrows the OkHttp execute method exception
      * @throws UnsupportedOperationException If the API returns an informational or redirection response
@@ -1125,11 +1127,11 @@ open class SignUpAndDeploymentsApi(basePath: kotlin.String = defaultBasePath, cl
      */
     @Suppress("UNCHECKED_CAST")
     @Throws(IllegalStateException::class, IOException::class, UnsupportedOperationException::class, ClientException::class, ServerException::class)
-    suspend fun signUpSet(signUpSetRequest: SignUpSetRequest) : kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement> = withContext(Dispatchers.IO) {
+    suspend fun signUpSet(signUpSetRequest: SignUpSetRequest) : SignUpSet = withContext(Dispatchers.IO) {
         val localVarResponse = signUpSetWithHttpInfo(signUpSetRequest = signUpSetRequest)
 
         return@withContext when (localVarResponse.responseType) {
-            ResponseType.Success -> (localVarResponse as Success<*>).data as kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement>
+            ResponseType.Success -> (localVarResponse as Success<*>).data as SignUpSet
             ResponseType.Informational -> throw UnsupportedOperationException("Client does not support Informational responses.")
             ResponseType.Redirection -> throw UnsupportedOperationException("Client does not support Redirection responses.")
             ResponseType.ClientError -> {
@@ -1148,16 +1150,16 @@ open class SignUpAndDeploymentsApi(basePath: kotlin.String = defaultBasePath, cl
      * Set the sign-up policy
      * The cluster&#39;s owner, once named, with a passkey (&#x60;412&#x60; first).  **Who:** an account holder (a passkey session not bound to an app&#39;s frontend). **Step-up:** answers &#x60;412 CONFIRM_REQUIRED&#x60; first; send the same request again with &#x60;confirm&#x60;, a passkey assertion over &#x60;details.challenge&#x60;.
      * @param signUpSetRequest 
-     * @return ApiResponse<kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement>?>
+     * @return ApiResponse<SignUpSet?>
      * @throws IllegalStateException If the request is not correctly configured
      * @throws IOException Rethrows the OkHttp execute method exception
      */
     @Suppress("UNCHECKED_CAST")
     @Throws(IllegalStateException::class, IOException::class)
-    suspend fun signUpSetWithHttpInfo(signUpSetRequest: SignUpSetRequest) : ApiResponse<kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement>?> = withContext(Dispatchers.IO) {
+    suspend fun signUpSetWithHttpInfo(signUpSetRequest: SignUpSetRequest) : ApiResponse<SignUpSet?> = withContext(Dispatchers.IO) {
         val localVariableConfig = signUpSetRequestConfig(signUpSetRequest = signUpSetRequest)
 
-        return@withContext request<SignUpSetRequest, kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement>>(
+        return@withContext request<SignUpSetRequest, SignUpSet>(
             localVariableConfig
         )
     }

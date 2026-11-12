@@ -24,6 +24,10 @@
 package com.calimero.mero.api.models
 
 import com.calimero.mero.api.models.Governance
+import com.calimero.mero.api.models.GroupStatus
+import com.calimero.mero.api.models.NodeRecord
+import com.calimero.mero.api.models.OpsStatus200ResponseGroupsInner
+import com.calimero.mero.api.models.RollbackStatus
 
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.SerialName
@@ -45,29 +49,29 @@ import kotlinx.serialization.Contextual
 
 data class OpsStatus200Response (
 
-    @Contextual @SerialName(value = "node")
-    val node: kotlinx.serialization.json.JsonElement?,
+    @SerialName(value = "node")
+    val node: kotlin.Long,
 
-    @Contextual @SerialName(value = "system")
-    val system: kotlinx.serialization.json.JsonElement?,
+    @SerialName(value = "system")
+    val system: GroupStatus,
 
     @SerialName(value = "governance")
     val governance: Governance,
 
-    @Contextual @SerialName(value = "groups")
-    val groups: kotlinx.serialization.json.JsonElement?,
+    @SerialName(value = "groups")
+    val groups: kotlin.collections.List<OpsStatus200ResponseGroupsInner>,
 
-    @Contextual @SerialName(value = "nodes")
-    val nodes: kotlinx.serialization.json.JsonElement?,
+    @SerialName(value = "nodes")
+    val nodes: kotlin.collections.List<NodeRecord>,
 
-    @Contextual @SerialName(value = "apps")
-    val apps: kotlinx.serialization.json.JsonElement?,
+    @SerialName(value = "apps")
+    val apps: kotlin.Long,
 
-    @Contextual @SerialName(value = "accounts")
-    val accounts: kotlinx.serialization.json.JsonElement?,
+    @SerialName(value = "accounts")
+    val accounts: kotlin.Long,
 
-    @Contextual @SerialName(value = "rollback")
-    val rollback: kotlinx.serialization.json.JsonElement? = null
+    @SerialName(value = "rollback")
+    val rollback: RollbackStatus?
 
 ) {
 

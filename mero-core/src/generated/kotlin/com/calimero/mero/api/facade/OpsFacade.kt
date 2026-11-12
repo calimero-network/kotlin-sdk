@@ -37,7 +37,7 @@ class OpsFacade internal constructor(
     /**
      * Snapshot the apps this node leads
      *
-     * Into `--backup-dir`. With `all=true`, every group this node holds, leader or not: what a node of a cluster that lost a majority still has, to found the cluster again from (`merod --bootstrap --restore-from`).
+     * Into `--backup-dir`. With `all=true`, every group this node holds, leader or not: what a node of a cluster that lost a majority still has, to found the cluster again from (`merod --bootstrap --restore-from`). `written`: how many snapshots it wrote.
      *
      * **Who:** the ops token.
      *
@@ -52,6 +52,8 @@ class OpsFacade internal constructor(
 
     /**
      * The cluster's identity
+     *
+     * The cluster's name and the identity this replica holds (hex).
      *
      * **Who:** the ops token.
      *
@@ -224,7 +226,7 @@ class OpsFacade internal constructor(
         prefixes: com.calimero.mero.OutboundSelection? = null,
         replace: kotlin.Boolean? = null,
         operator: DeviceSigner? = null,
-    ): kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement> =
+    ): OutboundApproved =
         api(null, operator, emptySet()).ops.opsOutbound(opsOutboundRequest = OpsOutboundRequest(`package` = `package`, prefixes = prefixes, replace = replace))
 
     /**
@@ -265,7 +267,7 @@ class OpsFacade internal constructor(
      */
     suspend fun packageUninstall(
         `package`: kotlin.String,
-    ): kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement> =
+    ): Uninstalled =
         api(null, null, emptySet()).ops.opsPackageUninstall(`package` = `package`)
 
     /**
@@ -294,7 +296,7 @@ class OpsFacade internal constructor(
     suspend fun packageVersionUninstall(
         `package`: kotlin.String,
         version: kotlin.String,
-    ): kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement> =
+    ): Uninstalled =
         api(null, null, emptySet()).ops.opsPackageVersionUninstall(`package` = `package`, version = version)
 
     /**
@@ -355,13 +357,13 @@ class OpsFacade internal constructor(
      *
      * @throws com.calimero.mero.CalimeroError the node's refusal, typed by [com.calimero.mero.errorFrom].
      */
-    suspend fun quotasGet(): OpsQuotasGet200Response =
+    suspend fun quotasGet(): QuotaSettings =
         api(null, null, emptySet()).ops.opsQuotasGet()
 
     /**
      * Change quotas
      *
-     * Changes the limits the body names, the others keep their value; signed over `cluster / __set_quotas / { quotas }` with every limit after the change. With `org`: one payer's `maxConcurrentRuns`, `computeFuel` (decimal string) and `maxFileBytes` (`null` clears one). A name that is no quota is refused.
+     * Changes the limits the body names, the others keep their value; signed over `cluster / __set_quotas / { quotas }` with every limit after the change. Without `org`, the cluster's limits (`GET /ops/quotas` names them); `orgs`, which that answer carries, is ignored, so its answer may be sent back changed. With `org`: one payer's `maxConcurrentRuns`, `computeFuel` (decimal string) and `maxFileBytes` (`null` clears one, back to the cluster's), and no other limit. A property that is no limit (of the cluster's, or with `org` of a payer's) is refused `400 UNKNOWN_QUOTA`.
      *
      * **Who:** the ops token. **Operator signature:** answers `428 OPERATOR_SIGNATURE_REQUIRED` first; send it again with `operatorProof`, the operator key's signature over `details.message` and its `nonce`.
      *
@@ -373,9 +375,22 @@ class OpsFacade internal constructor(
      */
     suspend fun quotasSet(
         org: kotlin.String? = null,
+        orgs: kotlinx.serialization.json.JsonElement? = null,
+        maxAppsPerAccount: kotlin.Long? = null,
+        maxBundleBytesPerAccount: kotlin.Long? = null,
+        maxApiKeysPerAccount: kotlin.Long? = null,
+        maxOrgsPerAccount: kotlin.Long? = null,
+        maxAccounts: kotlin.Long? = null,
+        maxFileBytesPerOrg: kotlin.Long? = null,
+        maxConcurrentRunsPerOrg: kotlin.Long? = null,
+        computeFuelPerOrg: kotlin.Long? = null,
+        maxFuelPerDeveloperPerDay: kotlin.String? = null,
+        maxConcurrentRuns: com.calimero.mero.Explicit<kotlin.Long>? = null,
+        computeFuel: com.calimero.mero.Explicit<kotlin.String>? = null,
+        maxFileBytes: com.calimero.mero.Explicit<kotlin.Long>? = null,
         operator: DeviceSigner? = null,
     ): kotlinx.serialization.json.JsonObject =
-        api(null, operator, emptySet()).ops.opsQuotasSet(opsQuotasSetRequest = OpsQuotasSetRequest(org = org))
+        api(null, operator, setOfNotNull("maxConcurrentRuns".takeIf { maxConcurrentRuns != null && maxConcurrentRuns.value == null }, "computeFuel".takeIf { computeFuel != null && computeFuel.value == null }, "maxFileBytes".takeIf { maxFileBytes != null && maxFileBytes.value == null })).ops.opsQuotasSet(quotaChanges = QuotaChanges(org = org, orgs = orgs, maxAppsPerAccount = maxAppsPerAccount, maxBundleBytesPerAccount = maxBundleBytesPerAccount, maxApiKeysPerAccount = maxApiKeysPerAccount, maxOrgsPerAccount = maxOrgsPerAccount, maxAccounts = maxAccounts, maxFileBytesPerOrg = maxFileBytesPerOrg, maxConcurrentRunsPerOrg = maxConcurrentRunsPerOrg, computeFuelPerOrg = computeFuelPerOrg, maxFuelPerDeveloperPerDay = maxFuelPerDeveloperPerDay, maxConcurrentRuns = maxConcurrentRuns?.value, computeFuel = computeFuel?.value, maxFileBytes = maxFileBytes?.value))
 
     /**
      * A node's receipt key
@@ -431,7 +446,7 @@ class OpsFacade internal constructor(
         version: kotlin.String,
         approved: kotlin.Boolean? = null,
         operator: DeviceSigner? = null,
-    ): kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement> =
+    ): ApprovedReleases =
         api(null, operator, emptySet()).ops.opsRelease(opsReleaseRequest = OpsReleaseRequest(version = version, approved = approved))
 
     /**
@@ -451,7 +466,7 @@ class OpsFacade internal constructor(
         version: kotlin.String,
         after: kotlin.String? = null,
         operator: DeviceSigner? = null,
-    ): kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement> =
+    ): Deadlines =
         api(null, operator, emptySet()).ops.opsReleaseDeadline(version = version, opsReleaseDeadlineRequest = OpsReleaseDeadlineRequest(after = after))
 
     /**
@@ -468,7 +483,7 @@ class OpsFacade internal constructor(
     suspend fun releaseDeadlineLift(
         version: kotlin.String,
         operator: DeviceSigner? = null,
-    ): kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement> =
+    ): Deadlines =
         api(null, operator, emptySet()).ops.opsReleaseDeadlineLift(version = version)
 
     /**
@@ -493,7 +508,7 @@ class OpsFacade internal constructor(
     /**
      * Restore an app from its sealed backup
      *
-     * Signed over `<app> / __restore_app / { backup, sha256 }`. The receiving node holds the backup (`backup`, else the newest, in `{backup-dir}/{app}/`) and seeds the restore; answers once every replica holds the restored state.
+     * Signed over `<app> / __restore_app / { backup, sha256 }`. The receiving node holds the backup (`backup`, else the newest, in `{backup-dir}/{app}/`) and seeds the restore; answers once every replica holds the restored state: the rows restored, the backup (`format` 0, with `merod` and `release` `null`, for one written before manifests) and the app group's Raft status.
      *
      * **Who:** the ops token. **Operator signature:** answers `428 OPERATOR_SIGNATURE_REQUIRED` first; send it again with `operatorProof`, the operator key's signature over `details.message` and its `nonce`.
      *
@@ -589,7 +604,7 @@ class OpsFacade internal constructor(
     suspend fun signUpInviteRevokeDelete(
         key: kotlin.String,
         operator: DeviceSigner? = null,
-    ): kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement> =
+    ): InviteKey =
         api(null, operator, emptySet()).ops.opsSignUpInviteRevokeDelete(key = key)
 
     /**
@@ -608,7 +623,7 @@ class OpsFacade internal constructor(
     suspend fun signUpInviteRevokePost(
         key: kotlin.String,
         operator: DeviceSigner? = null,
-    ): kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement> =
+    ): InviteKey =
         api(null, operator, emptySet()).ops.opsSignUpInviteRevokePost(key = key)
 
     /**
@@ -627,13 +642,13 @@ class OpsFacade internal constructor(
     suspend fun signUpSet(
         policy: SignUp,
         operator: DeviceSigner? = null,
-    ): kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement> =
+    ): SignUpSet =
         api(null, operator, emptySet()).ops.opsSignUpSet(opsSignUpSetRequest = OpsSignUpSetRequest(policy = policy))
 
     /**
      * The node and the cluster
      *
-     * Counts, Raft status and governance; never app state, names or credentials.
+     * Counts, Raft status and governance; never app state, names or credentials. `groups`: the app groups this node hosts; `apps` and `accounts` are counts; `rollback` is this node's rollback counter, `null` on a node without one.
      *
      * **Who:** the ops token.
      *
@@ -647,7 +662,7 @@ class OpsFacade internal constructor(
     /**
      * Upgrade an app as the operator
      *
-     * To a release the operator installed, where the operator holds app upgrades.
+     * To a release the operator installed, where the operator holds app upgrades. `error` is the app log's error value (`null` when it ran), free-form: the app's own.
      *
      * **Who:** the ops token. **Operator signature:** answers `428 OPERATOR_SIGNATURE_REQUIRED` first; send it again with `operatorProof`, the operator key's signature over `details.message` and its `nonce`.
      *

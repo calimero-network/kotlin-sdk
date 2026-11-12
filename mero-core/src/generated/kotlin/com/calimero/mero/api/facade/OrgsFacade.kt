@@ -97,7 +97,7 @@ class OrgsFacade internal constructor(
     /**
      * Join with an invite
      *
-     * No passkey prompt: the node signs the redemption with the token's key.
+     * No passkey prompt: the node signs the redemption with the token's key. Answers the organization joined.
      *
      * **Who:** a passkey session (an API key is refused).
      *
@@ -130,6 +130,8 @@ class OrgsFacade internal constructor(
 
     /**
      * Set a member's metadata
+     *
+     * `metadata` is the caller's own JSON, free-form, kept as given.
      *
      * **Who:** signed in (a session or an API key).
      *
@@ -267,7 +269,7 @@ class OrgsFacade internal constructor(
     /**
      * Delete an organization
      *
-     * With its teams, invites and apps; the owner.
+     * With its teams, invites and apps; the owner. `apps`: the apps deleted with it.
      *
      * **Who:** an account holder (a passkey session not bound to an app's frontend). **Step-up:** answers `412 CONFIRM_REQUIRED` first; send the same request again with `confirm`, a passkey assertion over `details.challenge`.
      *
@@ -280,7 +282,7 @@ class OrgsFacade internal constructor(
     suspend fun delete(
         org: kotlin.String,
         passkey: PasskeyProvider? = null,
-    ): kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement> =
+    ): OrgDelete200Response =
         api(passkey, null, emptySet()).organizations.orgDelete(org = org)
 
     /**
@@ -319,6 +321,8 @@ class OrgsFacade internal constructor(
     /**
      * Set an organization's metadata
      *
+     * `metadata` is the caller's own JSON, free-form, kept as given.
+     *
      * **Who:** signed in (a session or an API key).
      *
      * `POST /orgs/{org}/metadata` (`org_metadata`).
@@ -350,13 +354,13 @@ class OrgsFacade internal constructor(
         prefixes: com.calimero.mero.OutboundSelection? = null,
         replace: kotlin.Boolean? = null,
         passkey: PasskeyProvider? = null,
-    ): kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement> =
+    ): OutboundApproved =
         api(passkey, null, emptySet()).organizations.orgOutboundApproval(org = org, orgOutboundApprovalRequest = OrgOutboundApprovalRequest(`package` = `package`, prefixes = prefixes, replace = replace))
 
     /**
      * Bind a package signing key
      *
-     * The key's signature over the binding proves the organization holds it; then its `MANAGE_APPLICATION` holders upgrade the apps of packages that name `publisher`.
+     * The key's signature over the binding proves the organization holds it; then its `MANAGE_APPLICATION` holders upgrade the apps of packages that name `publisher`. Answers the key's binding generation now.
      *
      * **Who:** an account holder (a passkey session not bound to an app's frontend). **Step-up:** answers `412 CONFIRM_REQUIRED` first; send the same request again with `confirm`, a passkey assertion over `details.challenge`.
      *
@@ -393,7 +397,7 @@ class OrgsFacade internal constructor(
         version: kotlin.String,
         approved: kotlin.Boolean? = null,
         passkey: PasskeyProvider? = null,
-    ): kotlin.collections.Map<kotlin.String, kotlinx.serialization.json.JsonElement> =
+    ): ApprovedReleases =
         api(passkey, null, emptySet()).organizations.orgReleaseApproval(org = org, orgReleaseApprovalRequest = OrgReleaseApprovalRequest(version = version, approved = approved))
 
     /**
@@ -524,7 +528,7 @@ class OrgsFacade internal constructor(
     /**
      * An organization's usage
      *
-     * An admin: what today's runs of the apps the organization develops used (decimal strings) and its quotas; a member gets `403`.
+     * An admin: how many apps the organization develops, what their runs used today (decimal strings) and the cluster's quotas; a member gets `403`.
      *
      * **Who:** signed in (a session or an API key).
      *
@@ -733,7 +737,7 @@ class OrgsFacade internal constructor(
     /**
      * Update a team
      *
-     * Rename, open or restrict, move under another parent, or set its metadata. `parent` absent leaves the team where it is; `parent: null` (an explicit null) moves it to the top; a team id moves it under that team.
+     * Rename, open or restrict, move under another parent, or set its metadata (the caller's own JSON, free-form, kept as given). `parent` absent leaves the team where it is; `parent: null` (an explicit null) moves it to the top; a team id moves it under that team.
      *
      * **Who:** a passkey session (an API key is refused).
      *

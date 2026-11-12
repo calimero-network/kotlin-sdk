@@ -38,11 +38,11 @@ import kotlinx.serialization.Contextual
 
 data class OpsCluster200Response (
 
-    @Contextual @SerialName(value = "cluster")
-    val cluster: kotlinx.serialization.json.JsonElement?,
+    @SerialName(value = "cluster")
+    val cluster: kotlin.String,
 
-    @Contextual @SerialName(value = "identity")
-    val identity: kotlinx.serialization.json.JsonElement?
+    @SerialName(value = "identity")
+    val identity: kotlin.String
 
 ) {
 
