@@ -42,6 +42,10 @@ import kotlinx.serialization.json.put
  * [foundNamespace], [createInvitation] and [joinNamespace] are approved on the node's consent page
  * instead (`createOrg`, `createInvite`, `acceptInvite`), with the same answers. Declining throws
  * [OrgConsentNotApproved], and nothing is changed.
+ *
+ * The package's app team ([OrgInfo.appTeam], which an organization made on the consent page starts
+ * with) is the organization's own place for the app: open instances reach it, invites name it, and
+ * teams are made under it (a package-bound session makes teams there only).
  */
 @Suppress("TooManyFunctions")
 class CalimeroAppBackend(
@@ -78,7 +82,9 @@ class CalimeroAppBackend(
     override suspend fun listSubgroups(namespaceId: String): List<AppSubgroup> {
         val org = client.getOrg(namespaceId)
         val apps = appsByTeam(namespaceId)
-        return org.teams.values.map { team ->
+        // The package's app team is the org's own place for the app (listContextEntries lists its instances with the org's).
+        val own = org.appTeam(packageName)
+        return org.teams.values.filter { it.teamId != own }.map { team ->
             AppSubgroup(teamGroupId(namespaceId, team.teamId), team.name.ifEmpty { null }, apps[team.teamId].orEmpty().map { it.app }, team.join == TeamJoin.EVERYONE.value)
         }
     }
@@ -87,7 +93,11 @@ class CalimeroAppBackend(
 
     override suspend fun listContextEntries(groupId: String): List<AppContextEntry> {
         val ref = GroupRef.parse(groupId)
-        return appsByTeam(ref.org)[ref.team].orEmpty().map { AppContextEntry(it.app, it.name) }
+        val byTeam = appsByTeam(ref.org)
+        if (ref.team != null) return byTeam[ref.team].orEmpty().map { AppContextEntry(it.app, it.name) }
+        // The org's own: its apps that no team holds, and those of the package's app team.
+        val own = client.getOrg(ref.org).appTeam(packageName)
+        return (byTeam[null].orEmpty() + own?.let { byTeam[it] }.orEmpty()).map { AppContextEntry(it.app, it.name) }
     }
 
     override suspend fun isMember(contextId: String): Boolean =
@@ -134,7 +144,12 @@ class CalimeroAppBackend(
         namespaceId: String,
         name: String,
         isPublic: Boolean,
-    ): String = teamGroupId(namespaceId, client.orgs.teamCreate(org = namespaceId, name = name, join = if (isPublic) TeamJoin.EVERYONE else TeamJoin.INVITE).teamId)
+    ): String {
+        // Under the package's app team when the org has one: a session bound to the package makes teams there only.
+        val parent = client.getOrg(namespaceId).appTeam(packageName)
+        val join = if (isPublic) TeamJoin.EVERYONE else TeamJoin.INVITE
+        return teamGroupId(namespaceId, client.orgs.teamCreate(org = namespaceId, name = name, join = join, parent = parent).teamId)
+    }
 
     override suspend fun createContext(
         groupId: String,
@@ -145,26 +160,35 @@ class CalimeroAppBackend(
         val ref = GroupRef.parse(groupId)
         val pkg = applicationId.substringBefore('#').ifEmpty { packageName }
         val service = applicationId.substringAfter('#', "").ifEmpty { null }
+        // The org's own instance reaches the package's app team when the org has one, else the whole org.
+        val team = ref.team ?: client.getOrg(ref.org).appTeam(packageName)
         return client.createApp(
             name,
             AppSource.Package(pkg, service = service),
             org = ref.org,
-            access = ref.team?.let { AppAccess.Team(it) } ?: AppAccess.Org,
+            access = team?.let { AppAccess.Team(it) } ?: AppAccess.Org,
             initArgs = initArgs,
         )
     }
 
     override suspend fun createInvitation(namespaceId: String): OrgInvitation {
+        val org =
+            try {
+                client.getOrg(namespaceId)
+            } catch (_: CalimeroError) {
+                null
+            }
+        // Naming the package's app team when the org has one: an invitee outside it has no way into the app.
+        val teams = listOfNotNull(org?.appTeam(packageName))
         val consent = consent
         val token =
             if (consent != null) {
-                val result = approved(consent.decide { ConsentRequest.CreateInvite(namespaceId, OrgRole.MEMBER, it, teams = emptyList()) })
+                val result = approved(consent.decide { ConsentRequest.CreateInvite(namespaceId, OrgRole.MEMBER, it, teams = teams) })
                 (result.outcome as? ConsentOutcome.InviteCreated)?.token ?: throw noOutcome(result)
             } else {
-                client.orgs.inviteCreate(org = namespaceId, role = OrgRole.MEMBER, teams = emptyList(), passkey = approver("createInvitation")).token
+                client.orgs.inviteCreate(org = namespaceId, role = OrgRole.MEMBER, teams = teams, passkey = approver("createInvitation")).token
             }
-        val name = runCatching { client.getOrg(namespaceId).name }.getOrNull()
-        return OrgInvitation(namespaceId, token, name = name)
+        return OrgInvitation(namespaceId, token, name = org?.name)
     }
 
     override suspend fun joinNamespace(

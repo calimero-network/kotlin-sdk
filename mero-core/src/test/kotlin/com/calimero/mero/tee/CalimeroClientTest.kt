@@ -807,6 +807,169 @@ class CalimeroClientTest {
             assertEquals("the workspace name could not be saved", founded.nameError)
         }
 
+    @Test
+    fun `declining an invite or a join throws and calls no organization route`() =
+        runBlocking {
+            val cluster = orgNode()
+            val backend = CalimeroAppBackend(cluster.client(), "com.calimero.chat", "acc-1", { null }, RecordingOrgConsent(status = "declined"))
+            try {
+                backend.createInvitation("org_consent")
+                fail("a declined invite makes no token")
+            } catch (e: OrgConsentNotApproved) {
+                assertEquals("createInvite", e.kind)
+                assertEquals("Declined. Nothing was changed.", e.message)
+            }
+            try {
+                backend.joinNamespace("org_consent", OrgInvitation("org_consent", "inv_org_consent"))
+                fail("a declined join joins nothing")
+            } catch (e: OrgConsentNotApproved) {
+                assertEquals("acceptInvite", e.kind)
+            }
+            assertEquals(emptyList<String>(), orgRoutes(cluster))
+        }
+
+    @Test
+    fun `a page left without deciding is not an approval`() =
+        runBlocking {
+            val backend = CalimeroAppBackend(orgNode().client(), "com.calimero.chat", "acc-1", { null }, RecordingOrgConsent(status = "pending"))
+            try {
+                backend.foundNamespace("Acme")
+                fail("an undecided request founds nothing")
+            } catch (e: OrgConsentNotApproved) {
+                assertEquals("pending", e.status)
+                assertEquals("Not approved. Nothing was changed.", e.message)
+            }
+        }
+
+    @Test
+    fun `an approval without its outcome is refused`() =
+        runBlocking {
+            val backend = CalimeroAppBackend(orgNode().client(), "com.calimero.chat", "acc-1", { null }, RecordingOrgConsent(outcome = "null"))
+            try {
+                backend.foundNamespace("Acme")
+                fail("an approved createOrg without an org id")
+            } catch (e: OrgConsentNotApproved) {
+                fail("not a decline: $e")
+            } catch (e: IllegalStateException) {
+                assertTrue(e.message, e.message!!.contains("createOrg"))
+            }
+        }
+
+    @Test
+    fun `a package-bound session runs the whole app without a refused route`() =
+        runBlocking {
+            val fake = FakeOrgCluster().apply { boundPackage = "com.calimero.chat" }
+            val cluster = Cluster(fake.node)
+            val consent = ClusterConsent(fake)
+            val backend = CalimeroAppBackend(cluster.client(), "com.calimero.chat", FakeOrgCluster.ME, { null }, consent)
+
+            // Create a workspace: on the consent page, with Chat's app team.
+            val org = backend.foundNamespace("Acme").namespaceId
+            val appTeam = consent.appTeams.getValue(org)
+            assertEquals(listOf("Acme"), backend.listNamespaces().map { it.name })
+
+            // #general: an open channel reaches the app team.
+            val general = backend.createContext(org, "", "general", JsonObject(emptyMap()))
+            val created =
+                cluster.nodes[0]
+                    .requests
+                    .last { path(it.first) == "/apps" }
+                    .second
+            assertTrue(created, created.contains(""""access":{"kind":"team","team":"$appTeam"}"""))
+            assertEquals(listOf(general), backend.listContexts(org))
+            assertEquals("the app team is not a channel", emptyList<Any>(), backend.listSubgroups(org))
+
+            // A private channel: its team is made under the app team.
+            val secret = backend.createSubgroup(org, "secret", isPublic = false)
+            val secretTeam = secret.substringAfter('/')
+            assertEquals(appTeam, fake.teams.getValue(secretTeam).parent)
+            val inSecret = backend.createContext(secret, "", "secret", JsonObject(emptyMap()))
+            val subgroups = backend.listSubgroups(org)
+            assertEquals(listOf(secret), subgroups.map { it.groupId })
+            assertEquals(listOf(inSecret), subgroups.single().contextIds)
+            assertEquals(listOf(general), backend.listContexts(org))
+
+            // Invite: on the consent page, naming the app team, so the invitee has Chat.
+            val invitation = backend.createInvitation(org)
+            assertEquals("Acme", invitation.name)
+            assertEquals(listOf(appTeam), fake.inviteTeams[invitation.token])
+
+            // Join: on the consent page.
+            assertEquals(org, backend.joinNamespace("", invitation).namespaceId)
+
+            assertEquals(listOf("createOrg", "createInvite", "acceptInvite"), consent.kinds)
+            assertEquals(emptyList<String>(), fake.refused)
+        }
+
+    @Test
+    fun `without the consent page a package-bound session is refused`() =
+        runBlocking {
+            val fake = FakeOrgCluster().apply { boundPackage = "com.calimero.chat" }
+            val backend = CalimeroAppBackend(Cluster(fake.node).client(), "com.calimero.chat", FakeOrgCluster.ME)
+            try {
+                backend.foundNamespace("Acme")
+                fail("POST /orgs is refused to a package-bound session")
+            } catch (_: com.calimero.mero.CalimeroError) {
+            }
+            val org = fake.consentOrg("Legacy", "com.calimero.other").first
+            try {
+                backend.createSubgroup(org, "x", isPublic = false)
+                fail("a team outside the package's app team is refused")
+            } catch (_: com.calimero.mero.CalimeroError) {
+            }
+            assertEquals(listOf("POST /orgs", "POST /orgs/$org/teams"), fake.refused)
+        }
+
+    @Test
+    fun `an org without an app team keeps org access and invites to no team`() =
+        runBlocking {
+            val fake = FakeOrgCluster()
+            val cluster = Cluster(fake.node)
+            val passkey = softPasskey()
+            val backend = CalimeroAppBackend(cluster.client(), "com.calimero.chat", FakeOrgCluster.ME) { passkey }
+            val org = backend.foundNamespace("Acme").namespaceId
+            backend.createContext(org, "", "general", JsonObject(emptyMap()))
+            val created =
+                cluster.nodes[0]
+                    .requests
+                    .last { path(it.first) == "/apps" }
+                    .second
+            assertTrue(created, created.contains(""""access":{"kind":"org"}"""))
+            val token = backend.createInvitation(org).token
+            assertEquals(emptyList<String>(), fake.inviteTeams[token])
+            val team = backend.createSubgroup(org, "t", isPublic = true)
+            assertNull(fake.teams.getValue(team.substringAfter('/')).parent)
+        }
+
+    @Test
+    fun `the app team is the top-level team marked with the package`() {
+        fun app(pkg: String) = buildJsonObject { put("app", buildJsonObject { put("package", pkg) }) }
+        val org =
+            com.calimero.mero.OrgInfo(
+                raw = JsonObject(emptyMap()),
+                orgId = "o",
+                name = "",
+                members = emptyMap(),
+                teams =
+                    listOf(
+                        com.calimero.mero.TeamInfo("t_nested", parent = "t_chat", metadata = app("com.chat")),
+                        com.calimero.mero.TeamInfo("t_other", metadata = app("com.other")),
+                        com.calimero.mero.TeamInfo("t_plain"),
+                        com.calimero.mero.TeamInfo("t_chat", metadata = app("com.chat")),
+                        com.calimero.mero.TeamInfo("t_chat2", metadata = app("com.chat")),
+                    ).associateBy { it.teamId },
+                metadata = JsonNull,
+                memberMetadata = emptyMap(),
+                releaseApprovers = emptyList(),
+                publishes = emptyList(),
+                newWorkStopped = null,
+            )
+        assertEquals("t_chat", org.appTeam("com.chat"))
+        assertEquals("t_other", org.appTeam("com.other"))
+        assertNull(org.appTeam("com.none"))
+        assertNull(org.appTeam(""))
+    }
+
     /** The node's consent routes for [ServedPageConsent]: request `r1`, decided as [result] says. */
     private fun consentNode(result: String): Cluster =
         Cluster(
@@ -825,7 +988,7 @@ class CalimeroClientTest {
     @Test
     fun `served page consent returns through the package's page and reads the node's decision`() =
         runBlocking {
-            val cluster = consentNode("""{"requestId":"r1","kind":"createOrg","status":"approved","decidedAt":1,"outcome":{"orgId":"org-9"}}""")
+            val cluster = consentNode("""{"requestId":"r1","kind":"createInvite","status":"approved","decidedAt":1,"outcome":{"token":"inv_1"}}""")
             val opened = mutableListOf<String>()
             val consent =
                 ServedPageConsent(
@@ -838,15 +1001,16 @@ class CalimeroClientTest {
                     },
                     cluster.net.client,
                 )
-            val result = consent.decide { ConsentRequest.CreateOrg("Acme", it) }
-            assertEquals(ConsentOutcome.OrgCreated("org-9"), result.outcome)
+            val result = consent.decide { ConsentRequest.CreateInvite("org_1", ApiOrgRole.MEMBER, it, teams = listOf("t_chat")) }
+            assertEquals(ConsentOutcome.InviteCreated("inv_1"), result.outcome)
             assertEquals(listOf("https://node0.example/consent/r1"), opened)
             val asked =
                 cluster.nodes[0]
                     .requests
                     .single { path(it.first) == "/consent/requests" }
                     .second
-            assertTrue(asked, asked.contains("https://x.apps.calimero.network/3.1.72/?native-consent=1"))
+            assertTrue(asked, asked.contains(""""returnTo":"https://x.apps.calimero.network/3.1.72/?native-consent=1""""))
+            assertTrue(asked, asked.contains(""""kind":"createInvite"""") && asked.contains(""""teams":["t_chat"]"""))
         }
 
     @Test

@@ -20,6 +20,8 @@ class RecordingOrgConsent(
     val joinedOrg: String = "org_joined",
     /** The request id every answer names. */
     val requestId: String = "r1",
+    /** Replaces an approval's outcome (`"null"`: none), as the node's JSON. */
+    val outcome: String? = null,
 ) : OrgConsentApprover {
     private val asked = java.util.Collections.synchronizedList(mutableListOf<ConsentRequest>())
 
@@ -36,7 +38,7 @@ class RecordingOrgConsent(
                 is ConsentRequest.AcceptInvite -> """{"org":"$joinedOrg"}"""
                 else -> "null"
             }
-        val body = if (status == "approved") outcome else "null"
+        val body = if (status == "approved") this.outcome ?: outcome else "null"
         val text = """{"requestId":"$requestId","kind":"${made.kind}","status":"$status","outcome":$body}"""
         return ConsentResult.fromJson(Json.parseToJsonElement(text) as JsonObject)
     }
