@@ -38,13 +38,17 @@ import com.calimero.mero.SignUpRefusal
 import com.calimero.mero.SignUpRefused
 import com.calimero.mero.SoftPasskey
 import com.calimero.mero.UnavailableError
+import com.calimero.mero.WebAuthenticationCancelled
 import com.calimero.mero.WrongNode
 import com.calimero.mero.api.models.ApikeyCreateRequestUpgrades
 import com.calimero.mero.api.models.ConsentPageResult200Response
 import com.calimero.mero.api.models.SignUp
 import com.calimero.mero.app.CalimeroAppBackend
+import com.calimero.mero.app.OrgConsentNotApproved
 import com.calimero.mero.app.OrgInvitation
 import com.calimero.mero.app.PasskeyRequired
+import com.calimero.mero.app.ServedPageConsent
+import com.calimero.mero.app.servedPageConsent
 import com.calimero.mero.confirmationCode
 import com.calimero.mero.consentReturn
 import com.calimero.mero.consentReturnTo
@@ -62,6 +66,7 @@ import com.calimero.mero.pageDeployment
 import com.calimero.mero.parseRecoverySeed
 import com.calimero.mero.recoveryPublicKey
 import com.calimero.mero.recoverySeedText
+import com.calimero.mero.testkit.RecordingOrgConsent
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.flow.take
@@ -721,6 +726,170 @@ class CalimeroClientTest {
             assertEquals("org-1", backend.joinNamespace("org-1", invitation).namespaceId)
             assertTrue(!backend.isMember("missing"))
         }
+
+    // ---------------------------------------------------------------- organization actions on the consent page
+
+    /** A node that answers the organization routes directly, so a test sees whether they were called. */
+    private fun orgNode(): Cluster =
+        Cluster({ head, _ ->
+            when (path(head)) {
+                "/orgs" -> json(200, """{"orgId":"org_direct"}""")
+                "/orgs/org_consent/metadata" -> json(200, "{}")
+                "/orgs/org_consent" -> json(200, """{"orgId":"org_consent","name":"Acme","members":{"acc-1":"owner"},"teams":{}}""")
+                else -> refused(404, "NOT_FOUND")
+            }
+        })
+
+    private fun orgRoutes(cluster: Cluster): List<String> =
+        cluster.nodes[0].requests.map { path(it.first) }.filter {
+            it == "/orgs" || it.endsWith("/invites") || it.endsWith("/redeem")
+        }
+
+    @Test
+    fun `with consent the backend founds, invites and joins on the consent page`() =
+        runBlocking {
+            val cluster = orgNode()
+            val consent = RecordingOrgConsent()
+            val passkey = softPasskey()
+            val backend = CalimeroAppBackend(cluster.client(), "com.calimero.chat", "acc-1", { passkey }, consent)
+            val founded = backend.foundNamespace("Acme")
+            assertEquals("org_consent", founded.namespaceId)
+            assertNull(founded.nameError)
+            val invitation = backend.createInvitation("org_consent")
+            assertEquals("inv_consent", invitation.token)
+            assertEquals("org_joined", backend.joinNamespace("", invitation).namespaceId)
+            val to = RecordingOrgConsent.RETURN_TO
+            assertEquals(
+                listOf(
+                    ConsentRequest.CreateOrg("Acme", to).toJson(),
+                    ConsentRequest.CreateInvite("org_consent", ApiOrgRole.MEMBER, to, teams = emptyList()).toJson(),
+                    ConsentRequest.AcceptInvite("inv_consent", to).toJson(),
+                ),
+                consent.requests.map { it.toJson() },
+            )
+            assertEquals("the node's organization routes are not called", emptyList<String>(), orgRoutes(cluster))
+            val metadata =
+                cluster.nodes[0]
+                    .requests
+                    .single { path(it.first) == "/orgs/org_consent/metadata" }
+                    .second
+            assertTrue(metadata, metadata.contains(""""package":"com.calimero.chat"""") && metadata.contains(""""name":"Acme""""))
+        }
+
+    @Test
+    fun `a declined consent throws and changes nothing`() =
+        runBlocking {
+            val cluster = orgNode()
+            val backend = CalimeroAppBackend(cluster.client(), "com.calimero.chat", "acc-1", { null }, RecordingOrgConsent(status = "declined"))
+            try {
+                backend.foundNamespace("Acme")
+                fail("a decline founds nothing")
+            } catch (e: OrgConsentNotApproved) {
+                assertEquals(OrgConsentNotApproved("createOrg", "declined"), e)
+                assertEquals("Declined. Nothing was changed.", e.message)
+            }
+            try {
+                backend.joinNamespace("org-1", OrgInvitation("org-1", "inv_x"))
+                fail("a decline joins nothing")
+            } catch (e: OrgConsentNotApproved) {
+                assertEquals("acceptInvite", e.kind)
+            }
+            assertTrue(cluster.nodes[0].requests.isEmpty())
+        }
+
+    @Test
+    fun `the name is kept from the consent page when the metadata write is refused`() =
+        runBlocking {
+            val cluster = Cluster({ _, _ -> refused(403, "FORBIDDEN") })
+            val backend = CalimeroAppBackend(cluster.client(), "com.calimero.chat", "acc-1", { null }, RecordingOrgConsent())
+            val founded = backend.foundNamespace("Acme")
+            assertEquals("org_consent", founded.namespaceId)
+            assertEquals("the workspace name could not be saved", founded.nameError)
+        }
+
+    /** The node's consent routes for [ServedPageConsent]: request `r1`, decided as [result] says. */
+    private fun consentNode(result: String): Cluster =
+        Cluster(
+            { head, _ ->
+                when (path(head)) {
+                    "/consent/requests" -> json(200, """{"requestId":"r1","url":"https://node0.example/consent/r1","expiresAt":9,"code":"${confirmationCode("r1")}"}""")
+                    "/consent/r1/result" -> json(200, result)
+                    else -> refused(404, "NOT_FOUND")
+                }
+            },
+            extra = { request ->
+                if (request.url.encodedPath == "/.well-known/calimero.json") FakeNet.respond(request, 200, """{"versions":["1.0.0","3.1.72"]}""") else null
+            },
+        )
+
+    @Test
+    fun `served page consent returns through the package's page and reads the node's decision`() =
+        runBlocking {
+            val cluster = consentNode("""{"requestId":"r1","kind":"createOrg","status":"approved","decidedAt":1,"outcome":{"orgId":"org-9"}}""")
+            val opened = mutableListOf<String>()
+            val consent =
+                ServedPageConsent(
+                    cluster.client(),
+                    "https://x.apps.calimero.network",
+                    "mero-chat://consent",
+                    { url, callback ->
+                        opened += url
+                        "$callback?request_id=r1&result=approved"
+                    },
+                    cluster.net.client,
+                )
+            val result = consent.decide { ConsentRequest.CreateOrg("Acme", it) }
+            assertEquals(ConsentOutcome.OrgCreated("org-9"), result.outcome)
+            assertEquals(listOf("https://node0.example/consent/r1"), opened)
+            val asked =
+                cluster.nodes[0]
+                    .requests
+                    .single { path(it.first) == "/consent/requests" }
+                    .second
+            assertTrue(asked, asked.contains("https://x.apps.calimero.network/3.1.72/?native-consent=1"))
+        }
+
+    @Test
+    fun `served page consent refuses a return for another request`() =
+        runBlocking {
+            val cluster = consentNode("""{"requestId":"r1","kind":"createOrg","status":"approved","decidedAt":1,"outcome":{"orgId":"org-9"}}""")
+            val consent =
+                ServedPageConsent(cluster.client(), "https://x.apps.calimero.network", "mero-chat://consent", { _, cb -> "$cb?request_id=r2&result=approved" }, cluster.net.client)
+            try {
+                consent.decide { ConsentRequest.CreateOrg("Acme", it) }
+                fail("another request's return is refused")
+            } catch (e: com.calimero.mero.CalimeroError) {
+                assertEquals("CONSENT_REQUEST_MISMATCH", e.code)
+            }
+        }
+
+    @Test
+    fun `served page consent refuses a return while the request is still pending`() =
+        runBlocking {
+            val cluster = consentNode("""{"requestId":"r1","kind":"createOrg","status":"pending","decidedAt":null}""")
+            val consent =
+                ServedPageConsent(cluster.client(), "https://x.apps.calimero.network", "mero-chat://consent", { _, cb -> "$cb?request_id=r1&result=approved" }, cluster.net.client)
+            try {
+                consent.decide { ConsentRequest.CreateOrg("Acme", it) }
+                fail("a pending request's return is refused")
+            } catch (e: com.calimero.mero.CalimeroError) {
+                assertEquals("CONSENT_NOT_DECIDED", e.code)
+            }
+            // Left without deciding: the request's own (pending) result, which the backend refuses.
+            val left = ServedPageConsent(cluster.client(), "https://x.apps.calimero.network", "mero-chat://consent", { _, _ -> throw WebAuthenticationCancelled() }, cluster.net.client)
+            val backend = CalimeroAppBackend(cluster.client(), "com.calimero.chat", "acc-1", { null }, left)
+            try {
+                backend.foundNamespace("Acme")
+                fail("an undecided request founds nothing")
+            } catch (e: OrgConsentNotApproved) {
+                assertEquals(OrgConsentNotApproved("createOrg", "pending"), e)
+            }
+        }
+
+    @Test
+    fun `a development client has no served page consent`() {
+        assertNull(Cluster({ _, _ -> refused(404, "NOT_FOUND") }).client(allowMock = true).servedPageConsent("com.calimero.chat", "mero-chat://consent", { _, _ -> "" }))
+    }
 
     @Test
     fun `reads the app's own error code and named fields`() {

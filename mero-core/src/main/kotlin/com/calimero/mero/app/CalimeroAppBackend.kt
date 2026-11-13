@@ -3,6 +3,10 @@ package com.calimero.mero.app
 import com.calimero.mero.AppAccess
 import com.calimero.mero.AppSource
 import com.calimero.mero.CalimeroClient
+import com.calimero.mero.CalimeroError
+import com.calimero.mero.ConsentOutcome
+import com.calimero.mero.ConsentRequest
+import com.calimero.mero.ConsentResult
 import com.calimero.mero.NotFound
 import com.calimero.mero.OrgInfo
 import com.calimero.mero.PasskeyProvider
@@ -15,7 +19,9 @@ import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.put
 
 /**
  * The real [MeroAppBackend]: an app's screens over a signed-in [CalimeroClient], for the app
@@ -31,6 +37,11 @@ import kotlinx.serialization.json.contentOrNull
  * `MeroAppSession.passkey`, a `PlatformPasskey` over the app's Activity). While it answers null they
  * throw [PasskeyRequired] and send nothing; a dismissed passkey sheet throws
  * [com.calimero.mero.ConfirmCancelled].
+ *
+ * With [consent] (a session bound to the package, which the node refuses organization routes),
+ * [foundNamespace], [createInvitation] and [joinNamespace] are approved on the node's consent page
+ * instead (`createOrg`, `createInvite`, `acceptInvite`), with the same answers. Declining throws
+ * [OrgConsentNotApproved], and nothing is changed.
  */
 @Suppress("TooManyFunctions")
 class CalimeroAppBackend(
@@ -40,8 +51,20 @@ class CalimeroAppBackend(
     /** The signed-in account's id. */
     override val account: String,
     /** The passkey that approves step-ups, asked for each time one is needed; null: none to hand. */
-    val passkey: () -> PasskeyProvider? = { null },
+    val passkey: () -> PasskeyProvider?,
+    /**
+     * Where organization actions are approved for a session bound to the package
+     * ([servedPageConsent]); null: the node is called directly.
+     */
+    val consent: OrgConsentApprover?,
 ) : MeroAppBackend {
+    constructor(
+        client: CalimeroClient,
+        packageName: String,
+        account: String,
+        passkey: () -> PasskeyProvider? = { null },
+    ) : this(client, packageName, account, passkey, null)
+
     override val contract: ContextContract = CloudContextContract(client)
     override val hasRelay: Boolean = true
     override val canSubscribe: Boolean = true
@@ -79,7 +102,33 @@ class CalimeroAppBackend(
         client.getApp(contextId)
     }
 
-    override suspend fun foundNamespace(name: String): AppFoundedNamespace = AppFoundedNamespace(client.orgs.create(name = name).orgId)
+    override suspend fun foundNamespace(name: String): AppFoundedNamespace {
+        val consent = consent ?: return AppFoundedNamespace(client.orgs.create(name = name).orgId)
+        val result = approved(consent.decide { ConsentRequest.CreateOrg(name, it) })
+        val org = (result.outcome as? ConsentOutcome.OrgCreated)?.orgId ?: throw noOutcome(result)
+        // A session bound to the package may be refused the metadata write; the org is then
+        // listed by the app instances it runs.
+        val named =
+            try {
+                setMetadata(org, name)
+                true
+            } catch (e: CalimeroError) {
+                false
+            }
+        return AppFoundedNamespace(org, nameError = if (named) null else "the workspace name could not be saved")
+    }
+
+    private suspend fun setMetadata(
+        org: String,
+        name: String,
+    ) {
+        val metadata =
+            buildJsonObject {
+                put("name", name)
+                if (packageName.isNotEmpty()) put("package", packageName)
+            }
+        client.orgs.metadata(org = org, metadata = metadata)
+    }
 
     override suspend fun createSubgroup(
         namespaceId: String,
@@ -106,7 +155,14 @@ class CalimeroAppBackend(
     }
 
     override suspend fun createInvitation(namespaceId: String): OrgInvitation {
-        val token = client.orgs.inviteCreate(org = namespaceId, role = OrgRole.MEMBER, teams = emptyList(), passkey = approver("createInvitation")).token
+        val consent = consent
+        val token =
+            if (consent != null) {
+                val result = approved(consent.decide { ConsentRequest.CreateInvite(namespaceId, OrgRole.MEMBER, it, teams = emptyList()) })
+                (result.outcome as? ConsentOutcome.InviteCreated)?.token ?: throw noOutcome(result)
+            } else {
+                client.orgs.inviteCreate(org = namespaceId, role = OrgRole.MEMBER, teams = emptyList(), passkey = approver("createInvitation")).token
+            }
         val name = runCatching { client.getOrg(namespaceId).name }.getOrNull()
         return OrgInvitation(namespaceId, token, name = name)
     }
@@ -115,11 +171,15 @@ class CalimeroAppBackend(
         namespaceId: String,
         invitation: OrgInvitation,
     ): AppJoinedNamespace {
-        val org =
-            client.orgs
-                .inviteRedeem(token = invitation.token)
-                .org
-                .ifEmpty { invitation.namespaceId }
+        val consent = consent
+        val joined =
+            if (consent != null) {
+                val result = approved(consent.decide { ConsentRequest.AcceptInvite(invitation.token, it) })
+                (result.outcome as? ConsentOutcome.InviteAccepted)?.org ?: throw noOutcome(result)
+            } else {
+                client.orgs.inviteRedeem(token = invitation.token).org
+            }
+        val org = joined.ifEmpty { invitation.namespaceId }
         return AppJoinedNamespace(org, published = true, relayUrl = client.nodeUrl)
     }
 
@@ -283,6 +343,14 @@ class CalimeroAppBackend(
     }
 
     // ---- helpers -------------------------------------------------------------------------
+
+    /** [result], when approved; [OrgConsentNotApproved] otherwise. */
+    private fun approved(result: ConsentResult): ConsentResult {
+        if (!result.isApproved) throw OrgConsentNotApproved(result.kind, result.status)
+        return result
+    }
+
+    private fun noOutcome(result: ConsentResult): Exception = IllegalStateException("an approved ${result.kind} answered no outcome")
 
     /** The passkey that approves [method]'s step-up, or [PasskeyRequired]. */
     private fun approver(method: String): PasskeyProvider = passkey() ?: throw PasskeyRequired(method)
