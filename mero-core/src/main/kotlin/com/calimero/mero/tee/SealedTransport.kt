@@ -41,7 +41,8 @@ import java.util.concurrent.atomic.AtomicLong
  * mero-js `src/sealed/sealed.ts`, wire-identical with core's `crates/server/src/sealed.rs`:
  *
  *   handshake   Noise_NK_25519_AESGCM_SHA256, prologue "calimero/sealed-http/v2"
- *     request   POST /sealed/v2/handshake   0x02 ‖ transport_pk ‖ Noise message 1
+ *     request   POST /sealed/handshake      0x02 ‖ transport_pk ‖ Noise message 1
+ *               (nodes before it served only /sealed/v2/handshake; see LEGACY_HANDSHAKE_PATH)
  *     response  0x02 ‖ Noise message 2 (payload = session_id(16) ‖ lifetime secs, u32 BE)
  *     keys      (req key, resp key) = Split()
  *   exchange    POST /sealed/v2
@@ -62,7 +63,14 @@ import java.util.concurrent.atomic.AtomicLong
  */
 
 /** Where a session is opened, relative to the node's base URL. */
-const val HANDSHAKE_PATH: String = "/sealed/v2/handshake"
+const val HANDSHAKE_PATH: String = "/sealed/handshake"
+
+/**
+ * Where nodes released before [HANDSHAKE_PATH] existed open a session (newer nodes still serve
+ * it as a deprecated alias). The handshake is tried here only when the node answers 404 or 405
+ * at [HANDSHAKE_PATH].
+ */
+const val LEGACY_HANDSHAKE_PATH: String = "/sealed/v2/handshake"
 
 /** Where sealed requests are posted, relative to the node's base URL. */
 const val SEALED_PATH: String = "/sealed/v2"
@@ -91,6 +99,10 @@ private const val MAX_HANDSHAKE_REPLY = 1024L
 /** Open a new session this long before the node would drop the current one. */
 private const val RENEW_BEFORE_MS = 60_000L
 private const val DEFAULT_BUSY_WAIT_MS = 1_000L
+
+/** What a node from before [HANDSHAKE_PATH] answers there: no such route, or no POST on it. */
+private const val HTTP_NOT_FOUND = 404
+private const val HTTP_BAD_METHOD = 405
 private const val MAX_RETRY_AFTER_SECS = 5.0
 private const val TRANSPORT_BINDING_DOMAIN = "calimero.tee-attest.transport-key.v1"
 private val NULL_BODY_STATUSES = setOf(101, 204, 205, 304)
@@ -319,18 +331,38 @@ class SealedTransport private constructor(
     ): Session {
         if (transportKey.size != 32) throw SealedTransportException("transportPublicKey must be 32 bytes")
         val noise = NoiseInitiator.initiate(transportKey, PROLOGUE)
-        val request =
-            Request
-                .Builder()
-                .url("$nodeUrl$HANDSHAKE_PATH")
-                .post(concat(byteArrayOf(VERSION.toByte()), transportKey, noise.message1).toRequestBody(SEALED_MEDIA))
-                .build()
-        carrier.newCall(request).execute().use { response ->
+        val body = concat(byteArrayOf(VERSION.toByte()), transportKey, noise.message1)
+        postHandshake(carrier, body).use { response ->
             if (response.header("content-type") != SEALED_CONTENT_TYPE) throw envelopeRefusal(response)
             val source = response.body?.source() ?: return sessionFrom(noise, ByteArray(0))
             if (source.request(MAX_HANDSHAKE_REPLY + 1)) throw SealedTransportException("The handshake reply is malformed: it is too long")
             return sessionFrom(noise, source.readByteArray())
         }
+    }
+
+    /**
+     * Post handshake message 1 to [HANDSHAKE_PATH]; a node that does not route it (404 or 405: a
+     * release from before the path) gets the same message once at [LEGACY_HANDSHAKE_PATH]. That
+     * node never read the first message, so sending it again opens nothing twice. Any other answer
+     * is returned as it is.
+     */
+    private fun postHandshake(
+        carrier: OkHttpClient,
+        body: ByteArray,
+    ): Response {
+        fun post(path: String): Response =
+            carrier
+                .newCall(
+                    Request
+                        .Builder()
+                        .url("$nodeUrl$path")
+                        .post(body.toRequestBody(SEALED_MEDIA))
+                        .build(),
+                ).execute()
+        val response = post(HANDSHAKE_PATH)
+        if (response.code != HTTP_NOT_FOUND && response.code != HTTP_BAD_METHOD) return response
+        response.close()
+        return post(LEGACY_HANDSHAKE_PATH)
     }
 
     internal companion object {
