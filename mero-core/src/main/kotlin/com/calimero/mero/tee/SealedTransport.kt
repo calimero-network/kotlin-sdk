@@ -67,8 +67,8 @@ const val HANDSHAKE_PATH: String = "/sealed/handshake"
 
 /**
  * Where nodes released before [HANDSHAKE_PATH] existed open a session (newer nodes still serve
- * it as a deprecated alias). The handshake is tried here only when the node answers 404 or 405
- * at [HANDSHAKE_PATH].
+ * it as a deprecated alias). The handshake is tried here only when the node answers 404, 405 or
+ * 403 `sealed_required` at [HANDSHAKE_PATH].
  */
 const val LEGACY_HANDSHAKE_PATH: String = "/sealed/v2/handshake"
 
@@ -100,9 +100,14 @@ private const val MAX_HANDSHAKE_REPLY = 1024L
 private const val RENEW_BEFORE_MS = 60_000L
 private const val DEFAULT_BUSY_WAIT_MS = 1_000L
 
-/** What a node from before [HANDSHAKE_PATH] answers there: no such route, or no POST on it. */
+/**
+ * What a node from before [HANDSHAKE_PATH] answers there: no such route, no POST on it, or, sealing
+ * everything, a refusal of the path as an unsealed request (`sealed_required`).
+ */
 private const val HTTP_NOT_FOUND = 404
 private const val HTTP_BAD_METHOD = 405
+private const val HTTP_FORBIDDEN = 403
+private const val MAX_REFUSAL_PEEK = 4096L
 private const val MAX_RETRY_AFTER_SECS = 5.0
 private const val TRANSPORT_BINDING_DOMAIN = "calimero.tee-attest.transport-key.v1"
 private val NULL_BODY_STATUSES = setOf(101, 204, 205, 304)
@@ -341,10 +346,11 @@ class SealedTransport private constructor(
     }
 
     /**
-     * Post handshake message 1 to [HANDSHAKE_PATH]; a node that does not route it (404 or 405: a
-     * release from before the path) gets the same message once at [LEGACY_HANDSHAKE_PATH]. That
-     * node never read the first message, so sending it again opens nothing twice. Any other answer
-     * is returned as it is.
+     * Post handshake message 1 to [HANDSHAKE_PATH]; a node from before the path gets the same
+     * message once at [LEGACY_HANDSHAKE_PATH]. Such a node routes nothing there (404, 405) or,
+     * sealing everything as Cloud nodes do, refuses it as an unsealed request (403
+     * `sealed_required`). That node never read the first message, so sending it again opens
+     * nothing twice. Any other answer is returned as it is.
      */
     private fun postHandshake(
         carrier: OkHttpClient,
@@ -360,7 +366,7 @@ class SealedTransport private constructor(
                         .build(),
                 ).execute()
         val response = post(HANDSHAKE_PATH)
-        if (response.code != HTTP_NOT_FOUND && response.code != HTTP_BAD_METHOD) return response
+        if (!predatesHandshakePath(response)) return response
         response.close()
         return post(LEGACY_HANDSHAKE_PATH)
     }
@@ -608,6 +614,18 @@ private class FrameSource(
         response.close()
     }
 }
+
+/** Whether a handshake answer says the node predates [HANDSHAKE_PATH] (see `postHandshake`); reads the body without consuming it. */
+private fun predatesHandshakePath(response: Response): Boolean =
+    when (response.code) {
+        HTTP_NOT_FOUND, HTTP_BAD_METHOD -> true
+        HTTP_FORBIDDEN ->
+            runCatching {
+                val body = response.peekBody(MAX_REFUSAL_PEEK).string()
+                ((sealedJson.parseToJsonElement(body) as JsonObject)["error"] as? JsonObject).string("code") == "sealed_required"
+            }.getOrDefault(false)
+        else -> false
+    }
 
 /** The node's refusal of an envelope, as the exception it means. */
 private fun envelopeRefusal(response: Response): IOException =
