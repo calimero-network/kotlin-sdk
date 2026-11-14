@@ -1112,7 +1112,7 @@ open class OrganizationsApi(basePath: kotlin.String = defaultBasePath, client: C
     /**
      * POST /orgs
      * Create an organization
-     * &#x60;recoveryKey&#x60; is the public half of an organization recovery key.  **Who:** a passkey session (an API key is refused).
+     * &#x60;recoveryKey&#x60; is the public half of an organization recovery key. Every account also has a personal organization from sign-up (&#x60;personal&#x60; in &#x60;/auth/me&#x60;), which this does not make.  **Who:** a passkey session (an API key is refused).
      * @param orgCreateRequest 
      * @return OrgCreate200Response
      * @throws IllegalStateException If the request is not correctly configured
@@ -1144,7 +1144,7 @@ open class OrganizationsApi(basePath: kotlin.String = defaultBasePath, client: C
     /**
      * POST /orgs
      * Create an organization
-     * &#x60;recoveryKey&#x60; is the public half of an organization recovery key.  **Who:** a passkey session (an API key is refused).
+     * &#x60;recoveryKey&#x60; is the public half of an organization recovery key. Every account also has a personal organization from sign-up (&#x60;personal&#x60; in &#x60;/auth/me&#x60;), which this does not make.  **Who:** a passkey session (an API key is refused).
      * @param orgCreateRequest 
      * @return ApiResponse<OrgCreate200Response?>
      * @throws IllegalStateException If the request is not correctly configured

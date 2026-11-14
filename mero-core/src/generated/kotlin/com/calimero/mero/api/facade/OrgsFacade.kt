@@ -268,7 +268,7 @@ class OrgsFacade internal constructor(
     /**
      * Create an organization
      *
-     * `recoveryKey` is the public half of an organization recovery key.
+     * `recoveryKey` is the public half of an organization recovery key. Every account also has a personal organization from sign-up (`personal` in `/auth/me`), which this does not make.
      *
      * **Who:** a passkey session (an API key is refused).
      *
