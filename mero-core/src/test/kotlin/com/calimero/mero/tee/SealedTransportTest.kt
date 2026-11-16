@@ -230,6 +230,46 @@ class SealedTransportTest {
     }
 
     @Test
+    fun `opens the session at sealed handshake and sends requests to sealed`() {
+        val node = StandInNode { _, _ -> ok() }
+        val net = FakeNet(node::handle)
+        val sealed = SealedTransport(base, node.transportKey, net.client)
+        get(sealed.client, "/admin-api/health").use { assertEquals(200, it.code) }
+        assertEquals("/sealed/handshake", HANDSHAKE_PATH)
+        assertEquals("/sealed", SEALED_PATH)
+        assertEquals(listOf("$base/sealed/handshake", "$base/sealed"), net.requests.toList())
+    }
+
+    @Test
+    fun `reports a 404 at the handshake without trying another path`() {
+        // A node from before 1.0.0-rc.25 serves no /sealed/handshake; it is not supported.
+        val net = FakeNet { request, _ -> FakeNet.respond(request, 404, "Not Found", "text/plain") }
+        val sealed = SealedTransport(base, transportKey, net.client)
+        val error = assertRefuses("HTTP 404") { get(sealed.client, "/admin-api/health") }
+        assertEquals(404, (error as SealedTransportException).status)
+        assertEquals(listOf("$base$HANDSHAKE_PATH"), net.requests.toList())
+    }
+
+    @Test
+    fun `does not try another handshake path on any refusal`() {
+        val refusals =
+            listOf(
+                400 to "malformed",
+                403 to "sealed_required",
+                403 to "forbidden",
+                405 to "method_not_allowed",
+                409 to "stale_transport_key",
+                500 to "internal",
+            )
+        for ((status, code) in refusals) {
+            val net = FakeNet { request, _ -> refusal(request, status, code) }
+            val sealed = SealedTransport(base, transportKey, net.client)
+            assertRefuses("") { get(sealed.client, "/admin-api/health") }
+            assertEquals("$status", listOf("$base$HANDSHAKE_PATH"), net.requests.toList())
+        }
+    }
+
+    @Test
     fun `never sends a request outside the node in the clear`() {
         val carrier = FakeNet { _, _ -> error("sent") }
         val sealed = SealedTransport(base, transportKey, carrier.client)

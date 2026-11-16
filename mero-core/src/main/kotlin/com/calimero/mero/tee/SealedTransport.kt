@@ -41,10 +41,10 @@ import java.util.concurrent.atomic.AtomicLong
  * mero-js `src/sealed/sealed.ts`, wire-identical with core's `crates/server/src/sealed.rs`:
  *
  *   handshake   Noise_NK_25519_AESGCM_SHA256, prologue "calimero/sealed-http/v2"
- *     request   POST /sealed/v2/handshake   0x02 ‖ transport_pk ‖ Noise message 1
+ *     request   POST /sealed/handshake      0x02 ‖ transport_pk ‖ Noise message 1
  *     response  0x02 ‖ Noise message 2 (payload = session_id(16) ‖ lifetime secs, u32 BE)
  *     keys      (req key, resp key) = Split()
- *   exchange    POST /sealed/v2
+ *   exchange    POST /sealed
  *     header    0x02 ‖ session_id(16) ‖ request_id (u64 BE; from 1, each used once)
  *     request   header ‖ AES-256-GCM(req key, nonce = request_id ‖ 0u32, aad = header, inner)
  *     response  frames, each u32 BE length ‖ AES-256-GCM(resp key,
@@ -61,11 +61,11 @@ import java.util.concurrent.atomic.AtomicLong
  * stream back frame by frame, so server-sent events are sealed too; WebSockets cannot be.
  */
 
-/** Where a session is opened, relative to the node's base URL. */
-const val HANDSHAKE_PATH: String = "/sealed/v2/handshake"
+/** Where a session is opened, relative to the node's base URL (nodes from 1.0.0-rc.25 on). */
+const val HANDSHAKE_PATH: String = "/sealed/handshake"
 
-/** Where sealed requests are posted, relative to the node's base URL. */
-const val SEALED_PATH: String = "/sealed/v2"
+/** Where sealed requests are posted, relative to the node's base URL (nodes from 1.0.0-rc.25 on). */
+const val SEALED_PATH: String = "/sealed"
 
 /** Content type of every sealed body. */
 const val SEALED_CONTENT_TYPE: String = "application/vnd.calimero.sealed"

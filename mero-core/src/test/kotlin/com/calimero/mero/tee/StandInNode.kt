@@ -54,8 +54,8 @@ internal class StandInNode(
         body: ByteArray,
     ): Response? =
         when (request.url.toString()) {
-            "$base$HANDSHAKE_PATH" -> handshake(request, body)
-            "$base$SEALED_PATH" -> exchange(request, body)
+            "$base/sealed/handshake" -> handshake(request, body)
+            "$base/sealed" -> exchange(request, body)
             else -> null
         }
 
